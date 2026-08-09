@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# SQLite database (regenerable from schema + seed + JSON)
+db/*.db
+db/*.db-shm
+db/*.db-wal
+
+# Scraped data (large, regenerable)
+data/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+.env.*
+
+# OS / System
+.Trash-*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
