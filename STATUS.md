@@ -1,6 +1,7 @@
 # Project Status
 
 **Last updated:** 2026-08-10
+**Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 1 & Step 2 (Full Pipeline Validation) complete
 
 ## What exists right now
