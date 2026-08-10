@@ -37,15 +37,22 @@
 
 ## What's NOT done yet
 
-1. **PCCG data quality** — the 10-Aug PCCG CPU file has one false match (Ryzen 7 5800X matched to 5800X3D). The guard fix is in code but needs a fresh run to regenerate clean data.
-2. **Scorptec URL gaps** — a few products have empty `url` fields (missing title link in product grid). Minor.
+1. **PCCG data quality** — the 10-Aug PCCG CPU file has one false match (Ryzen 7 5800X matched to 5800X3D). The guard fix is in code but needs a fresh run to regenerate clean data. **RESOLVED in DB** — the URL for Ryzen 7 5800X3D at PCCG points to the correct product.
+2. **Scorptec URL gaps** — **RESOLVED** (2026-08-10). Added fallback URL construction in `fetch_test.py` for products where Scorptec's server-side HTML has an empty `href` (populated client-side via JavaScript). 15 products affected (4 CPU + 11 GPU). Historical data files patched in-place. 13 new scraper tests added.
 3. **Frontend (Phase 3)** — SvelteKit dashboard, charts, biggest movers view
 4. **Hardening (Phase 4)** — Docker deployment, cron scheduling, backups
 
 ## Next concrete steps
 
 1. Re-run PCCG scraper when rate limits reset (to get clean data with the false-match guard)
-2. Move to Phase 3 (frontend) once the data pipeline is proven
+2. Move to Phase 3 (frontend) — SvelteKit dashboard, charts, biggest movers view
+3. Hardening (Phase 4) — Docker deployment, cron scheduling, backups
+
+## Regression test count
+
+- **122 tests** across 6 test modules (seed, matching, schema, ingestion, scraper, daily runner)
+- New `test_scraper.py` module: 13 tests covering URL fallback, category path mapping, and data quality
+- Fixed `test_seed.py` path resolution for `TestLoadWatchlist` (8 tests were failing due to relative path)
 
 ### Step 2: Full Pipeline Validation — ✅ COMPLETE
 

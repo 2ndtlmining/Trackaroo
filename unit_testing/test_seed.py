@@ -42,49 +42,54 @@ class TestParseSpec:
         assert result["cores"] is None
 
 
+# Project root for resolving paths when tests run from unit_testing/
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+WATCHLIST_PATH = PROJECT_ROOT / "db" / "watchlist.csv"
+
+
 class TestLoadWatchlist:
     """Test watchlist CSV loading."""
 
     def test_loads_all_products(self):
-        products = load_watchlist(Path("db/watchlist.csv"))
+        products = load_watchlist(WATCHLIST_PATH)
         assert len(products) == 100
 
     def test_cpu_count(self):
-        products = load_watchlist(Path("db/watchlist.csv"))
+        products = load_watchlist(WATCHLIST_PATH)
         cpus = [p for p in products if p["category"] == "cpu"]
         assert len(cpus) == 53
 
     def test_gpu_count(self):
-        products = load_watchlist(Path("db/watchlist.csv"))
+        products = load_watchlist(WATCHLIST_PATH)
         gpus = [p for p in products if p["category"] == "gpu"]
         assert len(gpus) == 47
 
     def test_all_have_brand(self):
-        products = load_watchlist(Path("db/watchlist.csv"))
+        products = load_watchlist(WATCHLIST_PATH)
         for p in products:
             assert p["brand"] in ("AMD", "Intel", "NVIDIA")
 
     def test_all_have_valid_tier(self):
-        products = load_watchlist(Path("db/watchlist.csv"))
+        products = load_watchlist(WATCHLIST_PATH)
         for p in products:
             assert p["generation_tier"] in ("current", "current-1", "current-2")
 
     def test_all_cpus_have_cores(self):
-        products = load_watchlist(Path("db/watchlist.csv"))
+        products = load_watchlist(WATCHLIST_PATH)
         for p in products:
             if p["category"] == "cpu":
                 assert p["cores"] is not None
                 assert p["vram_gb"] is None
 
     def test_all_gpus_have_vram(self):
-        products = load_watchlist(Path("db/watchlist.csv"))
+        products = load_watchlist(WATCHLIST_PATH)
         for p in products:
             if p["category"] == "gpu":
                 assert p["vram_gb"] is not None
                 assert p["cores"] is None
 
     def test_tracked_is_true(self):
-        products = load_watchlist(Path("db/watchlist.csv"))
+        products = load_watchlist(WATCHLIST_PATH)
         for p in products:
             assert p["tracked"] == 1
 

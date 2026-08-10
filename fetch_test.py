@@ -27,6 +27,20 @@ CATEGORY_URLS = {
     "gpu_intel": f"{BASE}/product/graphics-cards/intel",
 }
 
+# Fallback URL category paths — when a product <a> tag has an empty href
+# (Scorptec populates some links client-side via JavaScript), we construct
+# the URL from the SKU using the correct product-detail path.
+CATEGORY_URL_PATHS = {
+    "cpu_amd_am4": "cpu/amd-socket-am4",
+    "cpu_amd_am5_7000": "cpu/amd-socket-am5",
+    "cpu_amd_am5_8000": "cpu/amd-socket-am5",
+    "cpu_amd_am5_9000": "cpu/amd-socket-am5",
+    "cpu_intel_all": "cpu/intel",
+    "gpu_nvidia": "graphics-cards/nvidia",
+    "gpu_amd": "graphics-cards/amd",
+    "gpu_intel": "graphics-cards/intel",
+}
+
 
 def load_watchlist(path="db/watchlist.csv"):
     """Load watchlist CSV, skipping comment lines."""
@@ -61,8 +75,18 @@ def fetch_page(url, retries=2):
     return None
 
 
-def parse_product_grid(html):
-    """Extract products from Scorptec product-grid elements using data attributes."""
+def parse_product_grid(html, category_path=""):
+    """Extract products from Scorptec product-grid elements using data attributes.
+
+    Parameters
+    ----------
+    html : str
+        Raw HTML from a Scorptec category page.
+    category_path : str
+        URL path segment for constructing fallback product URLs when the
+        server-side <a> tag has an empty href (Scorptec populates some links
+        client-side via JavaScript). E.g. "cpu/intel" or "graphics-cards/nvidia".
+    """
     soup = BeautifulSoup(html, "html.parser")
     products = []
     for grid in soup.select(".product-grid"):
@@ -78,6 +102,10 @@ def parse_product_grid(html):
         url = title_link["href"] if title_link else ""
         if url and not url.startswith("http"):
             url = BASE + url
+
+        # Fallback: when href is empty (JS-populated link), construct URL from SKU
+        if not url and sku and category_path:
+            url = f"{BASE}/product/{category_path}/{sku}"
 
         # Parse price
         price = None
@@ -164,16 +192,18 @@ def scrape_scorptec(watchlist):
     matched_watchlist_ids = set()
     all_scraped = {}  # Track all scraped products per category for debugging
 
-    for cat_key, url in CATEGORY_URLS.items():
-        print(f"\nScraping: {cat_key} -> {url}")
+    for cat_key, cat_url in CATEGORY_URLS.items():
+        print(f"\nScraping: {cat_key} -> {cat_url}")
         time.sleep(0.5)  # Be polite
 
-        html = fetch_page(url)
+        html = fetch_page(cat_url)
         if not html:
-            print(f"  Failed to fetch {url}, skipping.")
+            print(f"  Failed to fetch {cat_url}, skipping.")
             continue
 
-        scraped_products = parse_product_grid(html)
+        # Pass the category URL path so fallback URLs can be constructed
+        fallback_path = CATEGORY_URL_PATHS.get(cat_key, "")
+        scraped_products = parse_product_grid(html, category_path=fallback_path)
         all_scraped[cat_key] = scraped_products
         print(f"  Found {len(scraped_products)} products on page")
 
