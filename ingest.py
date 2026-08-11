@@ -102,11 +102,18 @@ def find_or_create_listing(conn: sqlite3.Connection, product_id: int, retailer: 
     """
     # Check by retailer + URL (each URL = one listing, regardless of product mapping)
     cursor = conn.execute(
-        "SELECT id FROM retailer_listings WHERE retailer = ? AND listing_url = ?",
+        "SELECT id, variant_name FROM retailer_listings WHERE retailer = ? AND listing_url = ?",
         (retailer, url),
     )
     row = cursor.fetchone()
     if row:
+        # If variant_name is missing, backfill it from the scraped data
+        if not row[1] and variant_name:
+            if not dry_run:
+                conn.execute(
+                    "UPDATE retailer_listings SET variant_name = ? WHERE id = ?",
+                    (variant_name, row[0]),
+                )
         return row[0]
 
     if dry_run:

@@ -165,6 +165,28 @@ class TestFindOrCreateListing:
         assert lid1 == lid2
         assert db.execute("SELECT COUNT(*) FROM retailer_listings").fetchone()[0] == 1
 
+    def test_backfills_missing_variant_name(self, db):
+        """When variant_name is NULL, it gets backfilled on next call."""
+        pid = self._create_product(db)
+        url = "https://scorptec.com.au/products/12345"
+        # Create listing without variant_name
+        lid = find_or_create_listing(db, pid, "scorptec", url, variant_name=None)
+        assert db.execute("SELECT variant_name FROM retailer_listings WHERE id = ?", (lid,)).fetchone()[0] is None
+        # Call again with variant_name — should backfill
+        find_or_create_listing(db, pid, "scorptec", url, variant_name="GIGABYTE AORUS RTX 5090")
+        variant = db.execute("SELECT variant_name FROM retailer_listings WHERE id = ?", (lid,)).fetchone()[0]
+        assert variant == "GIGABYTE AORUS RTX 5090"
+
+    def test_does_not_overwrite_existing_variant_name(self, db):
+        """An existing variant_name is not overwritten."""
+        pid = self._create_product(db)
+        url = "https://scorptec.com.au/products/12345"
+        lid = find_or_create_listing(db, pid, "scorptec", url, variant_name="Original Variant")
+        # Call again with different variant_name — should NOT change
+        find_or_create_listing(db, pid, "scorptec", url, variant_name="Different Variant")
+        variant = db.execute("SELECT variant_name FROM retailer_listings WHERE id = ?", (lid,)).fetchone()[0]
+        assert variant == "Original Variant"
+
 
 # ── Full ingestion tests ────────────────────────────────────────────
 
