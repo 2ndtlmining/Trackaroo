@@ -75,6 +75,83 @@ def fetch_page(url, retries=2):
     return None
 
 
+def get_next_page_url(html, base_url):
+    """Extract the next page URL from a Scorptec pagination link.
+
+    Scorptec uses a '.next' CSS class on the pagination <a> tag for the
+    next page. Returns None if there is no next page.
+
+    Parameters
+    ----------
+    html : str
+        Raw HTML from the current category page.
+    base_url : str
+        Base URL for resolving relative links.
+
+    Returns
+    -------
+    str or None
+        Full URL of the next page, or None if this is the last page.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    next_link = soup.select_one("a.next[href]")
+    if next_link:
+        href = next_link["href"]
+        if href.startswith("http"):
+            return href
+        return f"{BASE}{href}"
+    return None
+
+
+def scrape_all_pages(url, category_path, max_pages=20):
+    """Scrape all pages of a Scorptec category, following pagination links.
+
+    Parameters
+    ----------
+    url : str
+        Starting URL for the category.
+    category_path : str
+        URL path segment for constructing fallback product URLs.
+    max_pages : int
+        Safety limit to avoid infinite loops.
+
+    Returns
+    -------
+    list[dict]
+        All scraped products across all pages.
+    """
+    all_products = []
+    page = 1
+    current_url = url
+
+    while current_url and page <= max_pages:
+        print(f"  Page {page}: {current_url}")
+        time.sleep(0.5)  # Be polite between pages
+
+        html = fetch_page(current_url)
+        if not html:
+            print(f"  Failed to fetch page {page}, stopping pagination.")
+            break
+
+        products = parse_product_grid(html, category_path=category_path)
+        all_products.extend(products)
+        print(f"  Found {len(products)} products on page {page} ({len(all_products)} total)")
+
+        # Check if there's a next page
+        next_url = get_next_page_url(html, url)
+        if not next_url:
+            print(f"  No more pages. Total: {len(all_products)} products.")
+            break
+
+        page += 1
+        current_url = next_url
+
+    if page > max_pages:
+        print(f"  Reached max pages ({max_pages}). Total: {len(all_products)} products.")
+
+    return all_products
+
+
 def parse_product_grid(html, category_path=""):
     """Extract products from Scorptec product-grid elements using data attributes.
 
@@ -180,6 +257,10 @@ def scrape_scorptec(watchlist):
     Key: when iterating the watchlist for each scraped product, we process
     entries with LONGER primary search terms first. This prevents substring
     conflicts — e.g. 'ryzen 5 5600' matching before 'ryzen 5 5600x' can.
+
+    For each watchlist item, we capture ALL matching products and keep only
+    the cheapest in-stock variant. This ensures we don't miss cheaper models
+    (e.g., Zotac 5090 at $6,999 vs ASUS at $7,599).
     """
     # Build sorted index order: longer search terms first (more specific matches first)
     watchlist_order = sorted(
@@ -188,33 +269,25 @@ def scrape_scorptec(watchlist):
         reverse=True,
     )
 
-    results = []
-    matched_watchlist_ids = set()
+    # Track ALL matches per watchlist item, then pick cheapest in-stock
+    all_matches = {}  # watchlist_index -> list of matched product dicts
     all_scraped = {}  # Track all scraped products per category for debugging
 
     for cat_key, cat_url in CATEGORY_URLS.items():
         print(f"\nScraping: {cat_key} -> {cat_url}")
-        time.sleep(0.5)  # Be polite
-
-        html = fetch_page(cat_url)
-        if not html:
-            print(f"  Failed to fetch {cat_url}, skipping.")
-            continue
 
         # Pass the category URL path so fallback URLs can be constructed
         fallback_path = CATEGORY_URL_PATHS.get(cat_key, "")
-        scraped_products = parse_product_grid(html, category_path=fallback_path)
+        # Scrape ALL pages, not just page 1
+        scraped_products = scrape_all_pages(cat_url, category_path=fallback_path)
         all_scraped[cat_key] = scraped_products
-        print(f"  Found {len(scraped_products)} products on page")
+        print(f"  Total for {cat_key}: {len(scraped_products)} products across all pages")
 
         for scraped in scraped_products:
             for i in watchlist_order:
-                if i in matched_watchlist_ids:
-                    continue  # Already matched
-
                 wp = watchlist[i]
                 if match_product(scraped["name"], scraped["full_description"], wp):
-                    results.append({
+                    match_dict = {
                         "watchlist_model": wp["model"],
                         "watchlist_category": wp["category"],
                         "watchlist_brand": wp["brand"],
@@ -225,9 +298,29 @@ def scrape_scorptec(watchlist):
                         "stock_status": scraped["stock_status"],
                         "url": scraped["url"],
                         "retailer_sku": scraped["retailer_sku"],
-                    })
-                    matched_watchlist_ids.add(i)
-                    break  # One match per scraped product
+                    }
+                    if i not in all_matches:
+                        all_matches[i] = []
+                    all_matches[i].append(match_dict)
+                    break  # One match per scraped product (avoid duplicate matches)
+
+    # Save ALL in-stock variants for each watchlist item
+    results = []
+    matched_watchlist_ids = set()
+    for i, matches in all_matches.items():
+        if not matches:
+            continue
+        # Keep only in-stock variants
+        in_stock = [m for m in matches if m["stock_status"] == "in_stock"]
+        if in_stock:
+            results.extend(in_stock)
+            matched_watchlist_ids.add(i)
+            print(f"  {watchlist[i]['model']}: {len(in_stock)} in-stock variants saved")
+        else:
+            # All out of stock — still save them for reference
+            results.extend(matches)
+            matched_watchlist_ids.add(i)
+            print(f"  {watchlist[i]['model']}: {len(matches)} variants found (all out of stock)")
 
     return results, matched_watchlist_ids, all_scraped
 

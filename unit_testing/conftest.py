@@ -4,6 +4,7 @@ Shared fixtures for the Trackaroo test suite.
 Provides an isolated in-memory SQLite database with the full schema,
 so tests don't touch the production DB.
 """
+import os
 import sqlite3
 import tempfile
 from pathlib import Path

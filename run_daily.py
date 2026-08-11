@@ -2,14 +2,16 @@
 Daily scrape-and-ingest runner for Trackaroo.
 
 Runs all configured scrapers, saves JSON snapshots to data/, then ingests
-everything into the SQLite database. One command to collect a full day's data.
+everything into the SQLite database. Health checks validate output at each
+stage. One command to collect a full day's data.
 
 Usage:
-    python run_daily.py              # Run all scrapers + ingest
+    python run_daily.py              # Run all scrapers + ingest + health checks
     python run_daily.py --scorptec   # Only Scorptec
     python run_daily.py --pccg       # Only PCCG
     python run_daily.py --dry-run    # Preview without writing to DB
     python run_daily.py --scrape-only  # Scrape but don't ingest (just save JSON)
+    python run_daily.py --no-health  # Skip health checks
 """
 import argparse
 import json
@@ -96,6 +98,7 @@ def main():
     parser.add_argument("--pccg", action="store_true", help="Only run PCCG scraper")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     parser.add_argument("--scrape-only", action="store_true", help="Scrape but don't ingest")
+    parser.add_argument("--no-health", action="store_true", help="Skip health checks")
     args = parser.parse_args()
 
     # Determine which scrapers to run
@@ -128,6 +131,21 @@ def main():
         print("\nAll scrapers failed. Aborting.")
         sys.exit(1)
 
+    # ── Health check: validate JSON before ingestion ───────
+    if not args.no_health:
+        from health_checks import check_json_files, CheckResult
+        json_results = check_json_files(today_filename())
+        json_errors = [r for r in json_results if r.status == CheckResult.ERROR]
+        json_warnings = [r for r in json_results if r.status == CheckResult.WARNING]
+        if json_errors:
+            print(f"\nJSON validation errors ({len(json_errors)}):")
+            for r in json_errors:
+                print(f"  {r}")
+        if json_warnings:
+            print(f"\nJSON validation warnings ({len(json_warnings)}):")
+            for r in json_warnings:
+                print(f"  {r}")
+
     # ── Ingest ──────────────────────────────────────────────
     if args.scrape_only:
         print("\nScrape-only mode — skipping ingestion.")
@@ -155,6 +173,30 @@ def main():
             conn.commit()
     finally:
         conn.close()
+
+    # ── Health check: validate DB state after ingestion ───
+    if not args.no_health and not args.scrape_only:
+        from health_checks import check_db_freshness, check_match_count_anomalies, CheckResult
+
+        freshness_results = check_db_freshness(Path("db/trackaroo.db"))
+        match_results = check_match_count_anomalies(Path("db/trackaroo.db"))
+        db_results = freshness_results + match_results
+
+        db_errors = [r for r in db_results if r.status == CheckResult.ERROR]
+        db_warnings = [r for r in db_results if r.status == CheckResult.WARNING]
+
+        if db_errors:
+            print(f"\nDB validation errors ({len(db_errors)}):")
+            for r in db_errors:
+                print(f"  {r}")
+        if db_warnings:
+            print(f"\nDB validation warnings ({len(db_warnings)}):")
+            for r in db_warnings:
+                print(f"  {r}")
+
+        ok_count = sum(1 for r in db_results if r.status == CheckResult.OK)
+        if not db_errors and not db_warnings:
+            print(f"\nDB health: all {ok_count} checks passed")
 
 
 if __name__ == "__main__":

@@ -30,9 +30,9 @@ def get_connection():
 
 
 def show_latest_prices(conn, model=None, category=None, retailer=None):
-    """Show latest prices for all tracked products."""
+    """Show latest prices for all tracked products and variants."""
     query = """
-        SELECT p.model, p.category, p.brand, l.retailer, s.snapshot_date,
+        SELECT p.model, p.category, p.brand, l.retailer, l.variant_name, s.snapshot_date,
                s.price_aud, s.stock_status, l.listing_url
         FROM price_snapshots s
         JOIN retailer_listings l ON s.retailer_listing_id = l.id
@@ -58,7 +58,7 @@ def show_latest_prices(conn, model=None, category=None, retailer=None):
         query += " AND l.retailer = ?"
         params.append(retailer)
 
-    query += " ORDER BY p.category, p.model, l.retailer"
+    query += " ORDER BY p.category, p.model, l.retailer, s.price_aud"
 
     rows = conn.execute(query, params).fetchall()
 
@@ -67,10 +67,11 @@ def show_latest_prices(conn, model=None, category=None, retailer=None):
         return
 
     print(f"\nLatest prices ({len(rows)} results):")
-    print("-" * 80)
+    print("-" * 100)
     for row in rows:
-        print(f"  {row['category'].upper():3} | {row['model']:25} | {row['retailer']:10} | ${row['price_aud']:>8.2f} | {row['stock_status']}")
-    print("-" * 80)
+        variant = (row['variant_name'] or "").split(",")[0][:30]  # Short variant for display
+        print(f"  {row['category'].upper():3} | {row['model']:25} | {row['retailer']:10} | ${row['price_aud']:>8.2f} | {variant}")
+    print("-" * 100)
 
 
 def show_trends(conn, model=None, category=None):

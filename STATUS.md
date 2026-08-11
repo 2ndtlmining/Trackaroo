@@ -1,8 +1,27 @@
 # Project Status
 
-**Last updated:** 2026-08-10
+**Last updated:** 2026-08-11 (multi-variant tracking complete)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
-**Current phase:** Phase 1 & Step 2 (Full Pipeline Validation) complete
+**Current phase:** Multi-variant tracking — all tests passing, ready for Phase 3 (frontend)
+
+## Active Issues
+
+### ✅ COMPLETE: Multi-Variant Tracking (11-Aug-2026)
+- **What changed:** Converted from "cheapest-only" to "all in-stock variants" tracking
+- **Impact:** Each in-stock model/brand variant (e.g., GIGABYTE, ASUS, Zotac 5090) now gets its own `retailer_listing` and individual price history
+- **Schema:** Added `variant_name TEXT` column to `retailer_listings` via `migrate.py`
+- **Scrapers:** Both `fetch_test.py` (Scorptec) and `scraper/pccg.py` (PCCG) updated to save ALL in-stock variants
+- **Ingestion:** `ingest.py` passes `variant_name` (from `scraped_name`) when creating listings
+- **Queries:** `query.py` displays variant names in output
+- **Tests:** 5 new `TestVariantTracking` test cases added (173 total tests, all passing)
+- **Health checks:** Thresholds updated for multi-variant counts (Scorptec: 90 total / 30 per category)
+- **Verified:** Fresh 11-Aug Scorptec scrape captured 194 variants (up from 56), including 15 RTX 5090 variants from $6,599–$7,599
+- **Files changed:** `fetch_test.py`, `scraper/pccg.py`, `db/schema.sql`, `migrate.py`, `ingest.py`, `query.py`, `health_checks.py`, `unit_testing/test_ingest.py`, `unit_testing/test_health_checks.py`, `unit_testing/test_run_daily.py`
+
+### ⚠️ PCCG Scraper — Algolia Rate Limited
+- **Problem:** Algolia free tier returns 429 (Too Many Requests) on every attempt
+- **Status:** Multi-variant code is ready but untested against live PCCG data
+- **Next attempt:** Wait for rate limit to reset, then run `python scraper/pccg.py`
 
 ## What exists right now
 
@@ -10,72 +29,53 @@
 - Full specification (`SPEC.md`) — purpose, architecture, data model, scraping approach, frontend scope, risks, build phases
 - Product scope rules (`SCOPE_RULES.md`) — 2-generation tracking limit, defined per product line
 - Decision log (`DECISIONS.md`) — rationale for stack choices and key policies
-- SQLite schema (`db/schema.sql`) — `products` / `retailer_listings` / `price_snapshots` with triggers. Tested and working.
+- SQLite schema (`db/schema.sql`) — `products` / `retailer_listings` (with `variant_name`) / `price_snapshots` with triggers
 - Watchlist (`db/watchlist.csv`) — 100 products (53 CPUs, 47 GPUs) across 3 generations per SCOPE_RULES.md
-- Scorptec scraper (`fetch_test.py`) — working, outputs separate CPU/GPU JSON files with matched products, prices, URLs
-- PCCG scraper (`scraper/pccg.py`) — working via Algolia API (no Playwright needed), batched multi-query with rate-limit handling
-- Historical data: Scorptec snapshots for 09-Aug and 10-Aug; PCCG snapshots for 10-Aug
-- `data/` folder for scraped JSON output
-- `seed.py` — populates SQLite `products` table from `db/watchlist.csv` (idempotent, supports `--dry-run`)
-- `ingest.py` — reads scraped JSON files and writes `retailer_listings` + `price_snapshots` into the DB (idempotent, supports `--dry-run`, `--file`, `--date`)
-- `unit_testing/` — 103 regression tests covering seed, matching, schema, ingestion, and full pipeline validation (runs in ~0.22s)
-- `query.py` — query tool with three modes: latest prices, trends, biggest movers
-- `run_daily.py` — one-command daily runner: scrapes both retailers → saves JSON → ingests into DB
+- Scorptec scraper (`fetch_test.py`) — working, multi-variant, outputs separate CPU/GPU JSON files
+- PCCG scraper (`scraper/pccg.py`) — multi-variant code ready (live data blocked by Algolia rate limit)
+- `migrate.py` — schema migration script (adds `variant_name` column)
+- `seed.py` — populates SQLite `products` table from `db/watchlist.csv`
+- `ingest.py` — reads scraped JSON files and writes `retailer_listings` + `price_snapshots` into the DB
+- `query.py` — query tool with three modes: latest prices, trends, biggest movers (shows variant names)
+- `health_checks.py` — validates scraped JSON output and DB state (updated thresholds for multi-variant)
+- `run_daily.py` — one-command daily runner: scrapes both retailers → validates → ingests → validates DB
+- `unit_testing/` — **173 regression tests** across 7 modules (seed, matching, schema, ingestion, scraper, daily runner, health checks, variant tracking)
 - RAM tracking scope (`RAM_SCOPE.md`) — plan for adding DDR4/DDR5 RAM price tracking
+- Historical data: Scorptec snapshots for 09-Aug, 10-Aug, 11-Aug; PCCG snapshots for 10-Aug
 
 ## What's verified
 
-- **Scorptec:** 56/100 matched on 10-Aug (32 CPUs, 24 GPUs). Unmatched products are delisted or use different naming at Scorptec.
-- **PCCG:** 41/100 matched on 10-Aug (25 CPUs, 16 GPUs). Many older-gen GPUs (RTX 30/40, RX 6000/7000) are delisted at PCCG — they only stock newer gens.
-- **Watchlist:** Verified against SCOPE_RULES.md — all 100 products fall within the 2-generation rule.
-- **Schema:** Tested against SQLite — tables, constraints, and `last_snapshot_at` triggers all work.
-- **Variant guard:** Fixed in `scraper/pccg.py` — prevents false matches like 5800X→5800X3D, 5070→5070 Ti, 14700K→14700KF
-- **Ingestion pipeline:** Verified with real data — 121 snapshots across 2 dates (09-Aug and 10-Aug) ingested into DB with 0 errors
-- **Regression tests:** 108 tests passing in 0.24s — seed (19), matching (20), schema (31), ingestion (26), pipeline integration (7), daily runner (5)
-- **Full pipeline validation (Step 2):** Complete — watchlist → scrape → JSON → DB → query verified end-to-end with real data
-- **Named column access:** Enabled `sqlite3.Row` row_factory in test fixtures for cleaner assertions
+- **Multi-variant tracking:** 173 tests pass in 0.82s — covers variant creation, variant name storage, cheapest queries, per-variant price history, product count integrity
+- **Scorptec:** 194 variants matched on 11-Aug (multi-variant). 15 RTX 5090 variants captured
+- **PCCG:** 41/100 matched on 10-Aug (single-variant; multi-variant untested)
+- **Health checks:** Thresholds updated — Scorptec min_total=90, min_per_category=30
+- **Schema:** `variant_name` column added via migration, tested with named column access
+- **Regression:** All existing 168 tests + 5 new variant tests = 173 passing
 
 ## What's NOT done yet
 
-1. **PCCG data quality** — the 10-Aug PCCG CPU file has one false match (Ryzen 7 5800X matched to 5800X3D). The guard fix is in code but needs a fresh run to regenerate clean data. **RESOLVED in DB** — the URL for Ryzen 7 5800X3D at PCCG points to the correct product.
-2. **Scorptec URL gaps** — **RESOLVED** (2026-08-10). Added fallback URL construction in `fetch_test.py` for products where Scorptec's server-side HTML has an empty `href` (populated client-side via JavaScript). 15 products affected (4 CPU + 11 GPU). Historical data files patched in-place. 13 new scraper tests added.
+1. **PCCG multi-variant live test** — blocked by Algolia rate limit
+2. **Price anomaly detection** — needs 3+ data points per product/retailer; will activate as more scrape dates accumulate
 3. **Frontend (Phase 3)** — SvelteKit dashboard, charts, biggest movers view
 4. **Hardening (Phase 4)** — Docker deployment, cron scheduling, backups
 
 ## Next concrete steps
 
-1. Re-run PCCG scraper when rate limits reset (to get clean data with the false-match guard)
-2. Move to Phase 3 (frontend) — SvelteKit dashboard, charts, biggest movers view
-3. Hardening (Phase 4) — Docker deployment, cron scheduling, backups
+1. **Get fresh PCCG data** — wait for Algolia rate limit to reset, verify multi-variant on PCCG
+2. **Accumulate more scrape data** — run daily scrapes to build historical data
+3. **Move to Phase 3 (frontend)** — SvelteKit dashboard, charts, biggest movers view
+4. **Hardening (Phase 4)** — Docker deployment, cron scheduling, backups
 
 ## Regression test count
 
-- **122 tests** across 6 test modules (seed, matching, schema, ingestion, scraper, daily runner)
-- New `test_scraper.py` module: 13 tests covering URL fallback, category path mapping, and data quality
-- Fixed `test_seed.py` path resolution for `TestLoadWatchlist` (8 tests were failing due to relative path)
-
-### Step 2: Full Pipeline Validation — ✅ COMPLETE
-
-**Goal:** Prove the complete data flow works end-to-end before building the frontend.
-
-**Actions:**
-1. **Scrape fresh data** from one retailer (Scorptec or PCCG) for a single product to verify the scraper still works
-2. **Ingest the fresh JSON** into the DB using `ingest.py`
-3. **Run SQL queries** to verify:
-   - Product exists in `products` table
-   - Listing exists in `retailer_listings` table
-   - Snapshot exists in `price_snapshots` table
-   - Triggers fired correctly (`last_snapshot_at` updated)
-4. **Compare prices** across dates (09-Aug vs 10-Aug) to verify trend data is usable
-5. **Create a simple query script** (`query.py`) to demonstrate data retrieval (e.g., "show me all RTX 5070 prices across retailers")
-6. **Add pipeline integration test** to `unit_testing/` that simulates the full flow with mock data
-
-**Success criteria:**
-- Fresh scrape produces valid JSON
-- Ingestion writes correct rows with no errors
-- SQL queries return expected data
-- Price trends across dates are queryable
-- All 96 existing tests still pass
+- **173 tests** across 7 test modules — all passing in 0.82s
+  - `test_seed.py` — seed, watchlist loading, schema creation
+  - `test_matching.py` — product matching logic
+  - `test_schema.py` — schema validation, triggers, constraints
+  - `test_ingest.py` — ingestion pipeline + **TestVariantTracking** (5 new tests)
+  - `test_scraper.py` — scraper URL fallback, category mapping
+  - `test_run_daily.py` — daily runner integration
+  - `test_health_checks.py` — JSON validation, DB freshness, match count anomalies, price anomalies
 
 ## How to update this file
 

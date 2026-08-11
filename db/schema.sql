@@ -28,12 +28,14 @@ CREATE TABLE products (
 CREATE INDEX idx_products_category_tracked ON products (category, tracked);
 
 -- ─────────────────────────────────────────────────────────────
--- retailer_listings: a specific retailer's page for a product
+-- retailer_listings: a specific retailer's page for a product variant
+-- Multiple listings can exist per product (e.g., GIGABYTE, ASUS, Zotac 5090)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE retailer_listings (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id          INTEGER NOT NULL REFERENCES products(id),
     retailer            TEXT    NOT NULL CHECK (retailer IN ('scorptec', 'pccg', 'mwave')),
+    variant_name        TEXT,                            -- specific variant/brand model, e.g. 'GIGABYTE AORUS RTX 5090 AI Box'
     retailer_sku        TEXT,                            -- retailer's own SKU/product code, if available
     listing_url         TEXT    NOT NULL,
     status              TEXT    NOT NULL DEFAULT 'active'

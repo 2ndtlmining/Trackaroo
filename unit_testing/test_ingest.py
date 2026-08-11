@@ -660,3 +660,275 @@ class TestFullPipeline:
             )
         """).fetchone()[0]
         assert orphaned_listings == 0
+
+
+# ── Variant tracking tests ─────────────────────────────────────────
+
+class TestVariantTracking:
+    """Test that multiple variants of the same product are tracked correctly.
+
+    This verifies the multi-variant feature: when a scraper finds multiple
+    in-stock variants of the same product (e.g., GIGABYTE, ASUS, Zotac 5090),
+    each variant gets its own retailer_listing and price_snapshot.
+    """
+
+    def _create_json(self, tmp_path, products):
+        """Helper to create a JSON file with product data."""
+        data = {
+            "retailer": "scorptec",
+            "scrape_date": "11_August_2026",
+            "category": "gpu",
+            "total_watchlist": 1,
+            "matched": len(products),
+            "unmatched_count": 0,
+            "unmatched_models": [],
+            "products": products,
+        }
+        file_path = tmp_path / "gpu_scorptec_11_August_2026.json"
+        file_path.write_text(json.dumps(data))
+        return file_path
+
+    def test_multiple_variants_create_multiple_listings(self, db, tmp_path):
+        """Multiple variants of the same product create separate listings."""
+        products = [
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "GIGABYTE AORUS RTX 5090 AI Box",
+                "price_aud": 6599.0,
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-gigabyte",
+            },
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "ASUS ROG Astral RTX 5090",
+                "price_aud": 7599.0,
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-asus",
+            },
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "MSI RTX 5090 Gaming Trio",
+                "price_aud": 6999.0,
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-msi",
+            },
+        ]
+        file_path = self._create_json(tmp_path, products)
+        ingest_file(db, file_path)
+
+        # Should have 3 listings for the same product
+        listings = db.execute("""
+            SELECT COUNT(*) FROM retailer_listings rl
+            JOIN products p ON rl.product_id = p.id
+            WHERE p.model = ? AND rl.retailer = ?
+        """, ("GeForce RTX 5090", "scorptec")).fetchone()[0]
+        assert listings == 3
+
+        # Should have 3 snapshots
+        snapshots = db.execute("""
+            SELECT COUNT(*) FROM price_snapshots ps
+            JOIN retailer_listings rl ON ps.retailer_listing_id = rl.id
+            JOIN products p ON rl.product_id = p.id
+            WHERE p.model = ?
+        """, ("GeForce RTX 5090",)).fetchone()[0]
+        assert snapshots == 3
+
+    def test_variant_name_stored_correctly(self, db, tmp_path):
+        """Variant names are stored from scraped_name."""
+        products = [
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "GIGABYTE AORUS RTX 5090 AI Box, 32GB",
+                "price_aud": 6599.0,
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-gigabyte",
+            },
+        ]
+        file_path = self._create_json(tmp_path, products)
+        ingest_file(db, file_path)
+
+        variant = db.execute("""
+            SELECT variant_name FROM retailer_listings
+            WHERE listing_url = ?
+        """, ("https://scorptec.com.au/products/5090-gigabyte",)).fetchone()[0]
+        assert variant == "GIGABYTE AORUS RTX 5090 AI Box, 32GB"
+
+    def test_cheapest_variant_queryable(self, db, tmp_path):
+        """Can query the cheapest variant of a product."""
+        products = [
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "ASUS ROG Astral RTX 5090",
+                "price_aud": 7599.0,
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-asus",
+            },
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "GIGABYTE AORUS RTX 5090 AI Box",
+                "price_aud": 6599.0,
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-gigabyte",
+            },
+        ]
+        file_path = self._create_json(tmp_path, products)
+        ingest_file(db, file_path)
+
+        # Query cheapest
+        cheapest = db.execute("""
+            SELECT MIN(ps.price_aud), rl.variant_name
+            FROM price_snapshots ps
+            JOIN retailer_listings rl ON ps.retailer_listing_id = rl.id
+            JOIN products p ON rl.product_id = p.id
+            WHERE p.model = ?
+        """, ("GeForce RTX 5090",)).fetchone()
+        assert cheapest[0] == 6599.0
+        assert "GIGABYTE" in cheapest[1]
+
+    def test_price_history_per_variant(self, db, tmp_path):
+        """Each variant has its own price history across dates."""
+        # Day 1
+        products_day1 = [
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "GIGABYTE AORUS RTX 5090",
+                "price_aud": 6599.0,
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-gigabyte",
+            },
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "ASUS ROG Astral RTX 5090",
+                "price_aud": 7599.0,
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-asus",
+            },
+        ]
+        file1 = tmp_path / "gpu_scorptec_11_August_2026.json"
+        file1.write_text(json.dumps({
+            "retailer": "scorptec", "scrape_date": "11_August_2026",
+            "category": "gpu", "total_watchlist": 1, "matched": 2,
+            "unmatched_count": 0, "unmatched_models": [], "products": products_day1
+        }))
+        ingest_file(db, file1)
+
+        # Day 2 — prices changed
+        products_day2 = [
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "GIGABYTE AORUS RTX 5090",
+                "price_aud": 6499.0,  # Price dropped
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-gigabyte",
+            },
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": "ASUS ROG Astral RTX 5090",
+                "price_aud": 7699.0,  # Price increased
+                "stock_status": "in_stock",
+                "url": "https://scorptec.com.au/products/5090-asus",
+            },
+        ]
+        file2 = tmp_path / "gpu_scorptec_12_August_2026.json"
+        file2.write_text(json.dumps({
+            "retailer": "scorptec", "scrape_date": "12_August_2026",
+            "category": "gpu", "total_watchlist": 1, "matched": 2,
+            "unmatched_count": 0, "unmatched_models": [], "products": products_day2
+        }))
+        ingest_file(db, file2)
+
+        # Verify GIGABYTE price trend
+        gigabyte_history = db.execute("""
+            SELECT ps.price_aud FROM price_snapshots ps
+            JOIN retailer_listings rl ON ps.retailer_listing_id = rl.id
+            WHERE rl.variant_name LIKE ?
+            ORDER BY ps.snapshot_date
+        """, ("%GIGABYTE%",)).fetchall()
+        assert len(gigabyte_history) == 2
+        assert gigabyte_history[0][0] == 6599.0
+        assert gigabyte_history[1][0] == 6499.0
+
+        # Verify ASUS price trend
+        asus_history = db.execute("""
+            SELECT ps.price_aud FROM price_snapshots ps
+            JOIN retailer_listings rl ON ps.retailer_listing_id = rl.id
+            WHERE rl.variant_name LIKE ?
+            ORDER BY ps.snapshot_date
+        """, ("%ASUS%",)).fetchall()
+        assert len(asus_history) == 2
+        assert asus_history[0][0] == 7599.0
+        assert asus_history[1][0] == 7699.0
+
+    def test_single_product_count_unchanged(self, db, tmp_path):
+        """Multiple variants don't create duplicate product rows."""
+        products = [
+            {
+                "watchlist_model": "GeForce RTX 5090",
+                "watchlist_category": "gpu",
+                "watchlist_brand": "NVIDIA",
+                "watchlist_gen_tier": "current",
+                "retailer": "scorptec",
+                "scraped_name": f"Variant {i} RTX 5090",
+                "price_aud": 6000.0 + i * 100,
+                "stock_status": "in_stock",
+                "url": f"https://scorptec.com.au/products/5090-variant-{i}",
+            }
+            for i in range(5)
+        ]
+        file_path = self._create_json(tmp_path, products)
+        ingest_file(db, file_path)
+
+        # Only 1 product row
+        product_count = db.execute(
+            "SELECT COUNT(*) FROM products WHERE model = ?",
+            ("GeForce RTX 5090",),
+        ).fetchone()[0]
+        assert product_count == 1
+
+        # 5 listing rows
+        listing_count = db.execute("""
+            SELECT COUNT(*) FROM retailer_listings rl
+            JOIN products p ON rl.product_id = p.id
+            WHERE p.model = ?
+        """, ("GeForce RTX 5090",)).fetchone()[0]
+        assert listing_count == 5

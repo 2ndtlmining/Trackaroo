@@ -26,20 +26,21 @@ Daily price and stock tracking for desktop CPUs and GPUs across Australian retai
 |---|---|---|
 | **Watchlist** | ✅ Complete | 100 products (53 CPUs, 47 GPUs) governed by 2-generation rule |
 | **SQLite schema** | ✅ Complete | `products` / `retailer_listings` / `price_snapshots` with triggers |
-| **Scorptec scraper** | ✅ Complete | Outputs separate CPU/GPU JSON files |
-| **PCCG scraper** | ✅ Complete | Batched Algolia multi-query with rate-limit handling |
+| **Scorptec scraper** | ✅ Complete | Multi-variant: captures ALL in-stock model variants |
+| **PCCG scraper** | ✅ Code ready | Multi-variant code complete (live data blocked by Algolia rate limit) |
 | **Seed script** | ✅ Complete | Populates `products` table from `watchlist.csv` |
 | **Ingestion** | ✅ Complete | Reads JSON → writes DB, idempotent, supports dry-run |
 | **Query tool** | ✅ Complete | Latest prices, trends, biggest movers |
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
-| **Regression tests** | ✅ Complete | 108 tests, runs in ~0.24s |
+| **Regression tests** | ✅ Complete | 173 tests across 7 modules (~0.82s) |
+| **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Frontend** | ⏳ Planned | SvelteKit dashboard (Phase 3) |
 | **Deployment** | ⏳ Planned | Docker + cron on Proxmox (Phase 4) |
 
 ## Quick start
 
 ```bash
-# Full daily run — scrape both retailers + ingest into DB
+# Full daily run — scrape both retailers + ingest into DB + health checks
 python run_daily.py
 
 # Scrape only (save JSON, no DB write)
@@ -47,6 +48,14 @@ python run_daily.py --scrape-only
 
 # Dry run (preview without writing)
 python run_daily.py --dry-run
+
+# Skip health checks
+python run_daily.py --no-health
+
+# Run health checks standalone
+python health_checks.py
+python health_checks.py --json-only
+python health_checks.py --db-only
 
 # Query latest prices
 python query.py
@@ -69,7 +78,7 @@ products ────── retailer_listings ────── price_snapshots
 ```
 
 - **products** — canonical identity (category, brand, model, generation tier)
-- **retailer_listings** — a specific retailer's page for a product
+- **retailer_listings** — a specific retailer's page for a product variant (e.g., GIGABYTE, ASUS, Zotac 5090 each get their own listing with `variant_name`)
 - **price_snapshots** — one row per listing per day. Never updated or deleted.
 
 Rows are never deleted. Products that roll out of scope are marked `tracked=0`. See [SPEC.md §7a](SPEC.md#7a-data-retention-policy) for the full retention policy.
@@ -97,7 +106,8 @@ Trackaroo/
 ├── SCOPE_RULES.md      # product watchlist rules
 ├── DECISIONS.md        # rationale for key choices
 │
-├── run_daily.py        # one-command daily scraper + ingest runner
+├── run_daily.py        # one-command daily scraper + ingest runner (with health checks)
+├── health_checks.py    # validate JSON output + DB state after each run
 ├── seed.py             # populate products table from watchlist.csv
 ├── ingest.py           # read JSON snapshots → write to DB
 ├── query.py            # query tool (latest prices, trends, movers)
@@ -118,10 +128,14 @@ Trackaroo/
 │   └── gpu_pccg_10_August_2026.json
 │
 └── unit_testing/
-    ├── conftest.py     # shared pytest fixtures (in-memory DB)
-    ├── test_seed.py    # seed + schema tests
-    ├── test_ingest.py  # ingestion + pipeline tests
-    └── test_run_daily.py  # daily runner tests
+    ├── conftest.py             # shared pytest fixtures (in-memory DB)
+    ├── test_seed.py            # seed + schema tests
+    ├── test_matching.py        # product matching tests
+    ├── test_schema.py          # SQLite schema tests
+    ├── test_ingest.py          # ingestion + pipeline tests
+    ├── test_scraper.py         # scraper data quality tests
+    ├── test_run_daily.py       # daily runner + health check integration tests
+    └── test_health_checks.py   # health check validation tests
 ```
 
 ## Documentation reading order

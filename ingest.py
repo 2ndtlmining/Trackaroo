@@ -93,19 +93,14 @@ def find_or_create_product(conn: sqlite3.Connection, product_data: dict, dry_run
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
-def find_or_create_listing(conn: sqlite3.Connection, product_id: int, retailer: str, url: str, dry_run: bool = False) -> int:
-    """Find existing retailer listing or create new one. Returns listing_id (or None in dry_run if new)."""
-    # First check exact match (product + retailer + url)
-    cursor = conn.execute(
-        "SELECT id FROM retailer_listings WHERE product_id = ? AND retailer = ? AND listing_url = ?",
-        (product_id, retailer, url),
-    )
-    row = cursor.fetchone()
-    if row:
-        return row[0]
+def find_or_create_listing(conn: sqlite3.Connection, product_id: int, retailer: str, url: str,
+                           variant_name: str = None, dry_run: bool = False) -> int:
+    """Find existing retailer listing or create new one. Returns listing_id (or None in dry_run if new).
 
-    # URL might exist under a different product (e.g., scraper matched differently)
-    # Check by retailer + URL only
+    Each unique URL at a retailer gets its own listing. This allows tracking
+    multiple variants of the same product (e.g., GIGABYTE, ASUS, Zotac 5090).
+    """
+    # Check by retailer + URL (each URL = one listing, regardless of product mapping)
     cursor = conn.execute(
         "SELECT id FROM retailer_listings WHERE retailer = ? AND listing_url = ?",
         (retailer, url),
@@ -118,9 +113,9 @@ def find_or_create_listing(conn: sqlite3.Connection, product_id: int, retailer: 
         return None  # Don't create in dry-run mode
 
     conn.execute(
-        """INSERT INTO retailer_listings (product_id, retailer, listing_url, status)
-           VALUES (?, ?, ?, 'active')""",
-        (product_id, retailer, url),
+        """INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status)
+           VALUES (?, ?, ?, ?, 'active')""",
+        (product_id, retailer, variant_name, url),
     )
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -160,8 +155,10 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
                 continue
             model = product_data.get("watchlist_model", "unknown")
 
-            # Step 2: Find or create retailer listing
-            listing_id = find_or_create_listing(conn, product_id, retailer, url, dry_run=dry_run)
+            # Step 2: Find or create retailer listing (with variant name)
+            variant_name = product_data.get("scraped_name", "")
+            listing_id = find_or_create_listing(conn, product_id, retailer, url,
+                                                variant_name=variant_name, dry_run=dry_run)
             if listing_id is None:
                 stats["skipped"] += 1
                 continue

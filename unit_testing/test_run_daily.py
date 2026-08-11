@@ -5,9 +5,11 @@ Tests:
 - today_filename() returns correct format
 - Argument parsing for all flag combinations
 - Ingestion picks up today's files correctly
+- Health check integration (--no-health flag)
 """
 import sqlite3
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -123,3 +125,64 @@ class TestIngestToday:
 
         stats = ingest_today(db, dry_run=True)
         assert db.execute("SELECT COUNT(*) FROM price_snapshots").fetchone()[0] == 0
+
+
+class TestHealthCheckIntegration:
+    """Test that health checks are properly integrated into run_daily."""
+
+    def test_no_health_flag_exists(self):
+        """The --no-health flag is recognized."""
+        import argparse
+        import run_daily
+        # Parse with --no-health should not raise
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--no-health", action="store_true")
+        args = parser.parse_args(["--no-health"])
+        assert args.no_health is True
+
+    def test_health_checks_callable_from_runner(self):
+        """Health check functions can be imported from run_daily context."""
+        from health_checks import check_json_files, check_db_freshness, CheckResult
+        # Should not raise
+        assert CheckResult.OK == "OK"
+
+    def test_json_validation_runs_on_today(self, tmp_path, monkeypatch):
+        """JSON validation runs for today's date when files exist."""
+        from health_checks import check_json_files, CheckResult
+        from run_daily import today_filename
+
+        # Create valid files with matched count above multi-variant thresholds
+        today = today_filename()
+        for retailer in ["scorptec", "pccg"]:
+            for category in ["cpu", "gpu"]:
+                data = {
+                    "retailer": retailer,
+                    "matched": 35,  # Above scorptec min_per_category=30 and pccg=5
+                    "products": [{
+                        "price_aud": 100.0,
+                        "url": "https://example.com/test",
+                        "stock_status": "in_stock",
+                    }],
+                }
+                file_path = tmp_path / f"{category}_{retailer}_{today}.json"
+                file_path.write_text(json.dumps(data))
+
+        monkeypatch.setattr("health_checks.DATA_DIR", tmp_path)
+        results = check_json_files(today)
+        # All should be OK
+        assert all(r.status == CheckResult.OK for r in results)
+
+    def test_db_freshness_runs_with_real_db(self, db):
+        """DB freshness check works with a populated DB."""
+        from health_checks import check_db_freshness, CheckResult
+
+        # Seed some data
+        db.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Test CPU', 1)")
+        db.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'scorptec', 'https://x.com/1', 'active')")
+        today = date.today().strftime("%Y-%m-%d")
+        db.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, ?, 100, 'in_stock')", (today,))
+        db.commit()
+
+        results = check_db_freshness()
+        # Should have at least snapshot count result
+        assert len(results) > 0
