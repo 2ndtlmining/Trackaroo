@@ -1,22 +1,30 @@
 """
 Scrape Scorptec for watchlist products and save results to JSON.
+
 Usage: python fetch_test.py
 """
-import csv
+from __future__ import annotations
+
 import json
+import logging
 import time
 from datetime import date
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import requests
 from bs4 import BeautifulSoup
+
+from db.watchlist import load_watchlist, WatchlistProduct
+
+logger = logging.getLogger(__name__)
 
 UA = "Trackaroo/1.0 (Personal price tracker; daily snapshots)"
 HEADERS = {"User-Agent": UA}
 BASE = "https://www.scorptec.com.au"
 
 # Category pages to scrape per product type
-CATEGORY_URLS = {
+CATEGORY_URLS: Dict[str, str] = {
     "cpu_amd_am4": f"{BASE}/product/cpu/amd-am4-5000",
     "cpu_amd_am5_7000": f"{BASE}/product/cpu/amd-am5-7000",
     "cpu_amd_am5_8000": f"{BASE}/product/cpu/amd-am5-8000",
@@ -30,7 +38,7 @@ CATEGORY_URLS = {
 # Fallback URL category paths — when a product <a> tag has an empty href
 # (Scorptec populates some links client-side via JavaScript), we construct
 # the URL from the SKU using the correct product-detail path.
-CATEGORY_URL_PATHS = {
+CATEGORY_URL_PATHS: Dict[str, str] = {
     "cpu_amd_am4": "cpu/amd-socket-am4",
     "cpu_amd_am5_7000": "cpu/amd-socket-am5",
     "cpu_amd_am5_8000": "cpu/amd-socket-am5",
@@ -42,141 +50,125 @@ CATEGORY_URL_PATHS = {
 }
 
 
-def load_watchlist(path="db/watchlist.csv"):
-    """Load watchlist CSV, skipping comment lines."""
-    products = []
-    with open(path, encoding="utf-8") as f:
-        lines = [l for l in f if not l.startswith("#") and l.strip()]
-    reader = csv.DictReader(lines)
-    for row in reader:
-        # Parse spec into cores or vram_gb
-        spec = row["spec"]
-        if row["category"] == "cpu":
-            row["cores"] = int(spec.replace("c", ""))
-            row["vram_gb"] = None
-        else:
-            row["vram_gb"] = int(spec.replace("GB", ""))
-            row["cores"] = None
-        row["search_terms"] = [t.strip().lower() for t in row["search_aliases"].split("|")]
-        products.append(row)
-    return products
+def fetch_page(url: str, retries: int = 2) -> Optional[str]:
+    """Fetch a URL with retries.
 
+    Args:
+        url: The URL to fetch.
+        retries: Number of retry attempts after the initial try.
 
-def fetch_page(url, retries=2):
-    """Fetch a URL with retries."""
+    Returns:
+        The response text on success, or None if all attempts fail.
+    """
     for attempt in range(retries + 1):
         try:
             r = requests.get(url, headers=HEADERS, timeout=15)
             if r.status_code == 200:
                 return r.text
+            logger.warning("Non-200 status %s for %s", r.status_code, url)
         except requests.RequestException as e:
-            print(f"  Attempt {attempt + 1} failed for {url}: {e}")
+            logger.warning("Attempt %d failed for %s: %s", attempt + 1, url, e)
             time.sleep(2)
     return None
 
 
-def get_next_page_url(html, base_url):
+def get_next_page_url(html: str, base_url: str) -> Optional[str]:
     """Extract the next page URL from a Scorptec pagination link.
 
     Scorptec uses a '.next' CSS class on the pagination <a> tag for the
     next page. Returns None if there is no next page.
 
-    Parameters
-    ----------
-    html : str
-        Raw HTML from the current category page.
-    base_url : str
-        Base URL for resolving relative links.
+    Args:
+        html: Raw HTML from the current category page.
+        base_url: Base URL for resolving relative links.
 
-    Returns
-    -------
-    str or None
+    Returns:
         Full URL of the next page, or None if this is the last page.
     """
     soup = BeautifulSoup(html, "html.parser")
     next_link = soup.select_one("a.next[href]")
     if next_link:
-        href = next_link["href"]
+        href = str(next_link["href"])
         if href.startswith("http"):
             return href
         return f"{BASE}{href}"
     return None
 
 
-def scrape_all_pages(url, category_path, max_pages=20):
+def scrape_all_pages(url: str, category_path: str, max_pages: int = 20) -> List[Dict[str, Any]]:
     """Scrape all pages of a Scorptec category, following pagination links.
 
-    Parameters
-    ----------
-    url : str
-        Starting URL for the category.
-    category_path : str
-        URL path segment for constructing fallback product URLs.
-    max_pages : int
-        Safety limit to avoid infinite loops.
+    Args:
+        url: Starting URL for the category.
+        category_path: URL path segment for constructing fallback product URLs.
+        max_pages: Safety limit to avoid infinite loops.
 
-    Returns
-    -------
-    list[dict]
+    Returns:
         All scraped products across all pages.
     """
-    all_products = []
+    all_products: List[Dict[str, Any]] = []
     page = 1
     current_url = url
 
     while current_url and page <= max_pages:
-        print(f"  Page {page}: {current_url}")
+        logger.info("Page %d: %s", page, current_url)
         time.sleep(0.5)  # Be polite between pages
 
         html = fetch_page(current_url)
         if not html:
-            print(f"  Failed to fetch page {page}, stopping pagination.")
+            logger.warning("Failed to fetch page %d, stopping pagination.", page)
             break
 
         products = parse_product_grid(html, category_path=category_path)
         all_products.extend(products)
-        print(f"  Found {len(products)} products on page {page} ({len(all_products)} total)")
+        logger.info(
+            "Found %d products on page %d (%d total)",
+            len(products),
+            page,
+            len(all_products),
+        )
 
         # Check if there's a next page
         next_url = get_next_page_url(html, url)
         if not next_url:
-            print(f"  No more pages. Total: {len(all_products)} products.")
+            logger.info("No more pages. Total: %d products.", len(all_products))
             break
 
         page += 1
         current_url = next_url
 
     if page > max_pages:
-        print(f"  Reached max pages ({max_pages}). Total: {len(all_products)} products.")
+        logger.info("Reached max pages (%d). Total: %d products.", max_pages, len(all_products))
 
     return all_products
 
 
-def parse_product_grid(html, category_path=""):
+def parse_product_grid(html: str, category_path: str = "") -> List[Dict[str, Any]]:
     """Extract products from Scorptec product-grid elements using data attributes.
 
-    Parameters
-    ----------
-    html : str
-        Raw HTML from a Scorptec category page.
-    category_path : str
-        URL path segment for constructing fallback product URLs when the
-        server-side <a> tag has an empty href (Scorptec populates some links
-        client-side via JavaScript). E.g. "cpu/intel" or "graphics-cards/nvidia".
+    Args:
+        html: Raw HTML from a Scorptec category page.
+        category_path: URL path segment for constructing fallback product URLs
+            when the server-side <a> tag has an empty href (Scorptec populates
+            some links client-side via JavaScript). E.g. "cpu/intel" or
+            "graphics-cards/nvidia".
+
+    Returns:
+        List of scraped product dicts.
     """
     soup = BeautifulSoup(html, "html.parser")
-    products = []
+    products: List[Dict[str, Any]] = []
     for grid in soup.select(".product-grid"):
         # Data attributes are the most reliable source
-        name = grid.get("data-shortintro", "")
-        full_desc = grid.get("data-intro", "")
-        price_str = grid.get("data-price", "")
-        instock = grid.get("data-instock", "")
-        sku = grid.get("data-sku", "")
+        name = str(grid.get("data-shortintro", ""))
+        full_desc = str(grid.get("data-intro", ""))
+        price_str = str(grid.get("data-price", ""))
+        instock = str(grid.get("data-instock", ""))
+        sku = str(grid.get("data-sku", ""))
 
         # Get link from the title element
         title_link = grid.select_one(".grid-product-title a[href]")
-        url = title_link["href"] if title_link else ""
+        url = str(title_link["href"]) if title_link else ""
         if url and not url.startswith("http"):
             url = BASE + url
 
@@ -185,12 +177,12 @@ def parse_product_grid(html, category_path=""):
             url = f"{BASE}/product/{category_path}/{sku}"
 
         # Parse price
-        price = None
+        price: Optional[float] = None
         if price_str:
             try:
                 price = float(price_str)
             except ValueError:
-                pass
+                logger.debug("Could not parse price %r for %s", price_str, name)
 
         # Parse stock status
         stock = "unknown"
@@ -211,13 +203,21 @@ def parse_product_grid(html, category_path=""):
     return products
 
 
-def match_product(scraped_name, scraped_desc, watchlist_product):
+def match_product(scraped_name: str, scraped_desc: str, watchlist_product: WatchlistProduct) -> bool:
     """Check if a scraped product matches a watchlist entry using search terms.
 
     Uses the primary search term (e.g. 'rtx 5070') as the main matcher.
     Brand names like 'Nvidia' or 'AMD' often don't appear in scraped product names
     (e.g. 'ASUS Dual GeForce RTX 5070' has no 'Nvidia'), so we skip the brand check
     and rely on the specific model number in the search term.
+
+    Args:
+        scraped_name: Name of the scraped product.
+        scraped_desc: Full description of the scraped product.
+        watchlist_product: Watchlist entry to test against.
+
+    Returns:
+        True if the scraped product matches the watchlist entry.
     """
     name_lower = scraped_name.lower()
     desc_lower = scraped_desc.lower()
@@ -251,7 +251,7 @@ def match_product(scraped_name, scraped_desc, watchlist_product):
     return True
 
 
-def scrape_scorptec(watchlist):
+def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Scorptec and match against watchlist.
 
     Key: when iterating the watchlist for each scraped product, we process
@@ -261,6 +261,12 @@ def scrape_scorptec(watchlist):
     For each watchlist item, we capture ALL matching products and keep only
     the cheapest in-stock variant. This ensures we don't miss cheaper models
     (e.g., Zotac 5090 at $6,999 vs ASUS at $7,599).
+
+    Args:
+        watchlist: List of watchlist product dicts.
+
+    Returns:
+        Tuple of (matched results, matched watchlist ids, all scraped products per category).
     """
     # Build sorted index order: longer search terms first (more specific matches first)
     watchlist_order = sorted(
@@ -270,18 +276,18 @@ def scrape_scorptec(watchlist):
     )
 
     # Track ALL matches per watchlist item, then pick cheapest in-stock
-    all_matches = {}  # watchlist_index -> list of matched product dicts
-    all_scraped = {}  # Track all scraped products per category for debugging
+    all_matches: Dict[int, List[Dict[str, Any]]] = {}  # watchlist_index -> list of matched product dicts
+    all_scraped: Dict[str, List[Dict[str, Any]]] = {}  # Track all scraped products per category for debugging
 
     for cat_key, cat_url in CATEGORY_URLS.items():
-        print(f"\nScraping: {cat_key} -> {cat_url}")
+        logger.info("Scraping: %s -> %s", cat_key, cat_url)
 
         # Pass the category URL path so fallback URLs can be constructed
         fallback_path = CATEGORY_URL_PATHS.get(cat_key, "")
         # Scrape ALL pages, not just page 1
         scraped_products = scrape_all_pages(cat_url, category_path=fallback_path)
         all_scraped[cat_key] = scraped_products
-        print(f"  Total for {cat_key}: {len(scraped_products)} products across all pages")
+        logger.info("Total for %s: %d products across all pages", cat_key, len(scraped_products))
 
         for scraped in scraped_products:
             for i in watchlist_order:
@@ -305,8 +311,8 @@ def scrape_scorptec(watchlist):
                     break  # One match per scraped product (avoid duplicate matches)
 
     # Save ALL in-stock variants for each watchlist item
-    results = []
-    matched_watchlist_ids = set()
+    results: List[Dict[str, Any]] = []
+    matched_watchlist_ids: Set[int] = set()
     for i, matches in all_matches.items():
         if not matches:
             continue
@@ -315,24 +321,35 @@ def scrape_scorptec(watchlist):
         if in_stock:
             results.extend(in_stock)
             matched_watchlist_ids.add(i)
-            print(f"  {watchlist[i]['model']}: {len(in_stock)} in-stock variants saved")
+            logger.info("%s: %d in-stock variants saved", watchlist[i]["model"], len(in_stock))
         else:
             # All out of stock — still save them for reference
             results.extend(matches)
             matched_watchlist_ids.add(i)
-            print(f"  {watchlist[i]['model']}: {len(matches)} variants found (all out of stock)")
+            logger.info("%s: %d variants found (all out of stock)", watchlist[i]["model"], len(matches))
 
     return results, matched_watchlist_ids, all_scraped
 
 
-def analyze_unmatched(watchlist, matched_ids, all_scraped):
-    """Analyze why products weren't matched."""
-    print(f"\n{'=' * 60}")
-    print("Unmatched product analysis:")
-    print(f"{'=' * 60}")
+def analyze_unmatched(
+    watchlist: List[WatchlistProduct],
+    matched_ids: Set[int],
+    all_scraped: Dict[str, List[Dict[str, Any]]],
+) -> Tuple[List[str], List[Tuple[str, str, Optional[str]]]]:
+    """Analyze why products weren't matched.
 
-    likely_delist = []
-    possible_stocked = []
+    Args:
+        watchlist: List of watchlist product dicts.
+        matched_ids: Set of watchlist indices that matched.
+        all_scraped: All scraped products per category key.
+
+    Returns:
+        Tuple of (likely delisted model names, possible stock/match issues).
+    """
+    logger.info("\n%s\nUnmatched product analysis:\n%s", "=" * 60, "=" * 60)
+
+    likely_delist: List[str] = []
+    possible_stocked: List[Tuple[str, str, Optional[str]]] = []
 
     for i, wp in enumerate(watchlist):
         if i in matched_ids:
@@ -340,7 +357,7 @@ def analyze_unmatched(watchlist, matched_ids, all_scraped):
 
         primary = wp["search_terms"][0] if wp["search_terms"] else ""
         found_anywhere = False
-        matching_scraped = None
+        matching_scraped: Optional[str] = None
 
         for cat_key, scraped in all_scraped.items():
             for s in scraped:
@@ -356,30 +373,33 @@ def analyze_unmatched(watchlist, matched_ids, all_scraped):
         else:
             likely_delist.append(wp["model"])
 
-    print(f"\nLikely delisted at Scorptec ({len(likely_delist)} products):")
+    logger.info("\nLikely delisted at Scorptec (%d products):", len(likely_delist))
     for m in likely_delist:
-        print(f"  - {m}")
+        logger.info("  - %s", m)
 
     if possible_stocked:
-        print(f"\nPossibly stocked but matching issue ({len(possible_stocked)} products):")
+        logger.info("\nPossibly stocked but matching issue (%d products):", len(possible_stocked))
         for model, primary, scraped_name in possible_stocked:
-            print(f"  - {model}")
-            print(f"    Search term: '{primary}' found in: '{scraped_name}'")
+            logger.info("  - %s", model)
+            logger.info("    Search term: '%s' found in: '%s'", primary, scraped_name)
 
     return likely_delist, possible_stocked
 
 
-def main():
-    print("Loading watchlist...")
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    logger.info("Loading watchlist...")
     watchlist = load_watchlist()
-    print(f"  {len(watchlist)} products in watchlist")
+    logger.info("  %d products in watchlist", len(watchlist))
 
-    print("\nScraping Scorptec...")
+    logger.info("\nScraping Scorptec...")
     results, matched_ids, all_scraped = scrape_scorptec(watchlist)
 
     # Report
-    print(f"\n{'=' * 60}")
-    print(f"Results: {len(results)} matched / {len(watchlist)} total")
+    logger.info("\n%s\nResults: %d matched / %d total", "=" * 60, len(results), len(watchlist))
 
     # Analyze unmatched
     delisted, matching_issues = analyze_unmatched(watchlist, matched_ids, all_scraped)
@@ -417,7 +437,7 @@ def main():
         }
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(output_data, f, indent=2, ensure_ascii=False)
-        print(f"\nSaved to: {output_file}")
+        logger.info("\nSaved to: %s", output_file)
 
 
 if __name__ == "__main__":

@@ -27,12 +27,12 @@ Daily price and stock tracking for desktop CPUs and GPUs across Australian retai
 | **Watchlist** | ✅ Complete | 100 products (53 CPUs, 47 GPUs) governed by 2-generation rule |
 | **SQLite schema** | ✅ Complete | `products` / `retailer_listings` / `price_snapshots` with triggers |
 | **Scorptec scraper** | ✅ Complete | Multi-variant: captures ALL in-stock model variants |
-| **PCCG scraper** | ✅ Code ready | Multi-variant code complete (live data blocked by Algolia rate limit) |
+| **PCCG scraper** | ✅ Complete | Multi-variant via Algolia API, verified live |
 | **Seed script** | ✅ Complete | Populates `products` table from `watchlist.csv` |
 | **Ingestion** | ✅ Complete | Reads JSON → writes DB, idempotent, supports dry-run |
 | **Query tool** | ✅ Complete | Latest prices, trends, biggest movers |
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
-| **Regression tests** | ✅ Complete | 173 tests across 7 modules (~0.82s) |
+| **Regression tests** | ✅ Complete | 188 tests across 9 modules (~0.8s) |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Frontend** | ⏳ Planned | SvelteKit dashboard (Phase 3) |
 | **Deployment** | ⏳ Planned | Docker + cron on Proxmox (Phase 4) |
@@ -40,6 +40,9 @@ Daily price and stock tracking for desktop CPUs and GPUs across Australian retai
 ## Quick start
 
 ```bash
+# Install dependencies
+python -m pip install -r requirements.txt
+
 # Full daily run — scrape both retailers + ingest into DB + health checks
 python run_daily.py
 
@@ -112,6 +115,8 @@ Trackaroo/
 ├── ingest.py           # read JSON snapshots → write to DB
 ├── query.py            # query tool (latest prices, trends, movers)
 ├── fetch_test.py       # Scorptec scraper
+├── migrate.py          # schema migration script
+├── requirements.txt    # pinned dependencies
 │
 ├── scraper/
 │   └── pccg.py         # PCCG scraper (Algolia API)
@@ -119,6 +124,7 @@ Trackaroo/
 ├── db/
 │   ├── schema.sql      # SQLite schema with triggers
 │   ├── watchlist.csv   # 100-product watchlist (source of truth)
+│   ├── watchlist.py    # shared watchlist loader (parse_spec, load_watchlist)
 │   └── trackaroo.db    # SQLite database (generated)
 │
 ├── data/               # scraped JSON snapshots (never deleted)
@@ -135,7 +141,9 @@ Trackaroo/
     ├── test_ingest.py          # ingestion + pipeline tests
     ├── test_scraper.py         # scraper data quality tests
     ├── test_run_daily.py       # daily runner + health check integration tests
-    └── test_health_checks.py   # health check validation tests
+    ├── test_health_checks.py   # health check validation tests
+    ├── test_query.py           # query tool tests
+    └── test_cli.py             # CLI entry-point smoke tests
 ```
 
 ## Documentation reading order

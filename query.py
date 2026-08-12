@@ -9,28 +9,56 @@ Usage:
     python query.py --trends                 # Show price trends across dates
     python query.py --biggest-movers         # Show biggest price changes between latest dates
 """
+from __future__ import annotations
+
 import argparse
+import logging
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Optional, Sequence
+
+LOGGER = logging.getLogger(__name__)
 
 DB_PATH = Path("db/trackaroo.db")
 
 
-def get_connection():
-    """Get a database connection."""
-    if not DB_PATH.exists():
-        print(f"Database not found at {DB_PATH}. Run seed.py first.")
+def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
+    """Get a database connection.
+
+    Args:
+        db_path: Path to the SQLite database.
+
+    Returns:
+        An open connection with foreign keys enabled and row access by name.
+
+    Raises:
+        SystemExit: If the database file does not exist.
+    """
+    if not db_path.exists():
+        LOGGER.error("Database not found at %s. Run seed.py first.", db_path)
         sys.exit(1)
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def show_latest_prices(conn, model=None, category=None, retailer=None):
-    """Show latest prices for all tracked products and variants."""
+def show_latest_prices(
+    conn: sqlite3.Connection,
+    model: Optional[str] = None,
+    category: Optional[str] = None,
+    retailer: Optional[str] = None,
+) -> None:
+    """Show latest prices for all tracked products and variants.
+
+    Args:
+        conn: Open SQLite connection.
+        model: Optional partial model match to filter by.
+        category: Optional category ('cpu' or 'gpu') to filter by.
+        retailer: Optional retailer name to filter by.
+    """
     query = """
         SELECT p.model, p.category, p.brand, l.retailer, l.variant_name, s.snapshot_date,
                s.price_aud, s.stock_status, l.listing_url
@@ -46,7 +74,7 @@ def show_latest_prices(conn, model=None, category=None, retailer=None):
                 AND l2.retailer = l.retailer
           )
     """
-    params = []
+    params: list = []
 
     if model:
         query += " AND p.model LIKE ?"
@@ -74,8 +102,18 @@ def show_latest_prices(conn, model=None, category=None, retailer=None):
     print("-" * 100)
 
 
-def show_trends(conn, model=None, category=None):
-    """Show price trends across dates."""
+def show_trends(
+    conn: sqlite3.Connection,
+    model: Optional[str] = None,
+    category: Optional[str] = None,
+) -> None:
+    """Show price trends across dates.
+
+    Args:
+        conn: Open SQLite connection.
+        model: Optional partial model match to filter by.
+        category: Optional category ('cpu' or 'gpu') to filter by.
+    """
     query = """
         SELECT p.model, p.category, l.retailer, s.snapshot_date,
                s.price_aud, s.stock_status
@@ -84,7 +122,7 @@ def show_trends(conn, model=None, category=None):
         JOIN products p ON l.product_id = p.id
         WHERE p.tracked = 1
     """
-    params = []
+    params: list = []
 
     if model:
         query += " AND p.model LIKE ?"
@@ -112,8 +150,12 @@ def show_trends(conn, model=None, category=None):
         print(f"    {row['retailer']:10} | {row['snapshot_date']} | ${row['price_aud']:>8.2f} | {row['stock_status']}")
 
 
-def show_biggest_movers(conn):
-    """Show biggest price changes between the two most recent dates."""
+def show_biggest_movers(conn: sqlite3.Connection) -> None:
+    """Show biggest price changes between the two most recent dates.
+
+    Args:
+        conn: Open SQLite connection.
+    """
     # Get the two most recent dates
     dates = conn.execute("""
         SELECT DISTINCT snapshot_date FROM price_snapshots
@@ -167,14 +209,14 @@ def show_biggest_movers(conn):
     print(f"  {len(rows)} products with price changes")
 
 
-def main():
+def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Query the Trackaroo price database")
     parser.add_argument("--model", type=str, help="Search by model (partial match)")
     parser.add_argument("--category", type=str, choices=['cpu', 'gpu'], help="Filter by category")
-    parser.add_argument("--retailer", type=str, choices=['scorptec', 'pccg', 'mwave'], help="Filter by retailer")
+    parser.add_argument("--retailer", type=str, choices=['scorptec', 'pccg'], help="Filter by retailer")
     parser.add_argument("--trends", action="store_true", help="Show price trends across dates")
     parser.add_argument("--biggest-movers", action="store_true", help="Show biggest price changes")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     conn = get_connection()
 
@@ -191,3 +233,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -14,16 +14,20 @@ Usage:
     python health_checks.py --db-only    # Only validate database state
 
 Exit codes:
-    0 — All checks passed
-    1 — One or more checks failed (warnings logged)
-    2 — Critical error (e.g. database inaccessible)
+    0 — All checks passed (warnings are informational and do not fail the run)
+    1 — One or more checks errored
 """
+from __future__ import annotations
+
 import json
+import logging
 import sqlite3
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
+
+LOGGER = logging.getLogger(__name__)
 
 DATA_DIR = Path("data")
 DB_PATH = Path("db/trackaroo.db")
@@ -323,11 +327,16 @@ def check_match_count_anomalies(db_path: Optional[Path] = None) -> list[CheckRes
         return results
 
     try:
-        # Get match counts per date per retailer
+        # Get match counts per date per retailer.
+        # We count distinct retailer_listings (variants), not distinct products:
+        # a single watchlist product may map to multiple retailer listings
+        # (e.g. GIGABYTE / ASUS / Zotac 5090), so counting products would
+        # under-report and false-alarm against thresholds calibrated for
+        # variant counts (e.g. Scorptec ~194 variants vs ~54 products).
         cursor = conn.execute("""
             SELECT rl.retailer,
                    ps.snapshot_date,
-                   COUNT(DISTINCT rl.product_id) as product_count
+                   COUNT(DISTINCT rl.id) as variant_count
             FROM price_snapshots ps
             JOIN retailer_listings rl ON ps.retailer_listing_id = rl.id
             GROUP BY rl.retailer, ps.snapshot_date
@@ -341,7 +350,7 @@ def check_match_count_anomalies(db_path: Optional[Path] = None) -> list[CheckRes
             retailer = row["retailer"]
             if retailer not in retailer_history:
                 retailer_history[retailer] = []
-            retailer_history[retailer].append((row["snapshot_date"], row["product_count"]))
+            retailer_history[retailer].append((row["snapshot_date"], row["variant_count"]))
 
         for retailer, history in retailer_history.items():
             if not history:
@@ -362,7 +371,7 @@ def check_match_count_anomalies(db_path: Optional[Path] = None) -> list[CheckRes
                 results.append(CheckResult(
                     f"match_anomaly_{retailer}",
                     CheckResult.OK,
-                    f"Match count stable: {latest_count} products on {latest_date}",
+                    f"Match count stable: {latest_count} variants on {latest_date}",
                 ))
 
     except sqlite3.Error as e:
@@ -496,53 +505,54 @@ def run_all_checks(
     """
     all_results: list[CheckResult] = []
 
-    print(f"\n{'=' * 60}")
-    print("Trackaroo Health Checks")
-    print(f"{'=' * 60}")
+    LOGGER.info("\n%s\nTrackaroo Health Checks\n%s", "=" * 60, "=" * 60)
 
     # JSON file validation
-    print(f"\n--- JSON File Validation ({target_date or 'today'}) ---")
+    LOGGER.info("\n--- JSON File Validation (%s) ---", target_date or "today")
     json_results = check_json_files(target_date)
     all_results.extend(json_results)
     for r in json_results:
-        print(f"  {r}")
+        LOGGER.info("  %s", r)
 
     # DB freshness
-    print(f"\n--- Database Freshness ---")
+    LOGGER.info("\n--- Database Freshness ---")
     freshness_results = check_db_freshness(db_path)
     all_results.extend(freshness_results)
     for r in freshness_results:
-        print(f"  {r}")
+        LOGGER.info("  %s", r)
 
     # Match count anomalies
-    print(f"\n--- Match Count Anomalies ---")
+    LOGGER.info("\n--- Match Count Anomalies ---")
     match_results = check_match_count_anomalies(db_path)
     all_results.extend(match_results)
     for r in match_results:
-        print(f"  {r}")
+        LOGGER.info("  %s", r)
 
     # Price anomalies
-    print(f"\n--- Price Anomalies ---")
+    LOGGER.info("\n--- Price Anomalies ---")
     price_results = check_price_anomalies(db_path)
     all_results.extend(price_results)
     for r in price_results:
-        print(f"  {r}")
+        LOGGER.info("  %s", r)
 
     # Summary
     errors = sum(1 for r in all_results if r.status == CheckResult.ERROR)
     warnings = sum(1 for r in all_results if r.status == CheckResult.WARNING)
     ok = sum(1 for r in all_results if r.status == CheckResult.OK)
 
-    print(f"\n{'=' * 60}")
-    print(f"Summary: {ok} OK, {warnings} WARNING, {errors} ERROR")
-    print(f"{'=' * 60}")
+    LOGGER.info("\n%s\nSummary: %d OK, %d WARNING, %d ERROR\n%s",
+                "=" * 60, ok, warnings, errors, "=" * 60)
 
     return all_results
 
 
-def main():
+def main(argv: Optional[List[str]] = None) -> None:
     import argparse
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     parser = argparse.ArgumentParser(description="Trackaroo health checks")
     parser.add_argument("--json-only", action="store_true",
                         help="Only validate JSON files")
@@ -552,7 +562,7 @@ def main():
                         help="Date string for JSON checks (DD_Month_YYYY)")
     parser.add_argument("--db-path", type=Path, default=None,
                         help="Path to SQLite database")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.json_only:
         results = check_json_files(args.date)
@@ -564,6 +574,9 @@ def main():
         )
     else:
         results = run_all_checks(args.date, args.db_path)
+
+    for r in results:
+        LOGGER.info("  %s", r)
 
     # Exit code based on results
     errors = sum(1 for r in results if r.status == CheckResult.ERROR)

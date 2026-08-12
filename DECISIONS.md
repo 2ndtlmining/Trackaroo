@@ -39,3 +39,12 @@ User requested separate files per category: `cpu_scorptec_10_August_2026.json`, 
 
 ### Historical JSON data is never deleted (2026-08-10)
 Scraped JSON files in `data/` are retained indefinitely — they serve as the raw audit trail and can be re-ingested if the DB needs rebuilding. New daily snapshots get new filenames with the date. Old files are not removed.
+
+### Shared watchlist loader module `db/watchlist.py` (2026-08-12)
+The watchlist CSV parsing + spec parsing logic (`parse_spec`, `load_watchlist`) was copy-pasted three times — in `fetch_test.py`, `scraper/pccg.py`, and `seed.py`, with slight drift between them. Extracted into a single `db/watchlist.py` module with three entry points: `load_watchlist` (scraper-shaped rows with `search_terms`), `load_watchlist_products` (seed-shaped rows for the `products` table), and `parse_spec`. The importing modules re-export or delegate to it, so behavior is identical but no longer duplicated. Kept next to `db/watchlist.csv` since it is the loader for that data file.
+
+### Match-count anomaly checks count listings, not products (2026-08-12)
+`health_checks.py`'s `check_match_count_anomalies` originally counted `COUNT(DISTINCT product_id)` per retailer per date. Once multi-variant tracking landed, that under-reported massively (e.g. Scorptec 54 products but 192 variant listings), producing false "Match count dropped" warnings against thresholds calibrated for variants. Fixed to count `COUNT(DISTINCT retailer_listings.id)` so the metric and the thresholds mean the same thing. Lesson: when the semantics of a metric change (products → variants), everything calibrated on it must change together.
+
+### Algolia credentials via environment variables (2026-08-12)
+The PCCG scraper embeds the Algolia app ID and read-only search key found in PCCG's page source. Hardcoded in the repo, they risk being committed/forgotten alongside unrelated changes. Now read from `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` env vars with the known-good values as defaults (they are read-only public search keys, so the defaults keep zero-config local use working).

@@ -13,20 +13,35 @@ existing products table. If a product doesn't exist, it's created automatically.
 
 Idempotent: re-running on the same file skips duplicate snapshots.
 """
+from __future__ import annotations
+
 import argparse
 import json
+import logging
 import sqlite3
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+LOGGER = logging.getLogger(__name__)
 
 DB_PATH = Path("db/trackaroo.db")
 SCHEMA_PATH = Path("db/schema.sql")
 DATA_DIR = Path("data")
 
+Stats = Dict[str, int]
+
 
 def init_db(db_path: Path) -> sqlite3.Connection:
-    """Create the database and tables if they don't exist."""
+    """Create the database and tables if they don't exist.
+
+    Args:
+        db_path: Path to the SQLite database file.
+
+    Returns:
+        An open connection with foreign keys enabled.
+    """
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
 
@@ -44,7 +59,11 @@ def init_db(db_path: Path) -> sqlite3.Connection:
 def parse_date_from_filename(filename: str) -> str:
     """Extract the snapshot date from a filename like cpu_scorptec_10_August_2026.json.
 
-    Returns a YYYY-MM-DD string, or empty string if parsing fails.
+    Args:
+        filename: JSON filename to parse.
+
+    Returns:
+        A YYYY-MM-DD string, or empty string if parsing fails.
     """
     stem = Path(filename).stem  # e.g., "cpu_scorptec_10_August_2026"
     parts = stem.split("_")  # ["cpu", "scorptec", "10", "August", "2026"]
@@ -58,8 +77,21 @@ def parse_date_from_filename(filename: str) -> str:
     return ""
 
 
-def find_or_create_product(conn: sqlite3.Connection, product_data: dict, dry_run: bool = False) -> int:
-    """Find existing product or create new one. Returns product_id (or None in dry_run if new)."""
+def find_or_create_product(
+    conn: sqlite3.Connection,
+    product_data: Dict[str, Any],
+    dry_run: bool = False,
+) -> Optional[int]:
+    """Find existing product or create new one.
+
+    Args:
+        conn: Open SQLite connection.
+        product_data: Scraped product dict.
+        dry_run: When True, don't write new products.
+
+    Returns:
+        product_id, or None in dry_run mode if the product doesn't exist.
+    """
     category = product_data.get("watchlist_category", "")
     brand = product_data.get("watchlist_brand", "")
     model = product_data.get("watchlist_model", "")
@@ -93,12 +125,29 @@ def find_or_create_product(conn: sqlite3.Connection, product_data: dict, dry_run
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
-def find_or_create_listing(conn: sqlite3.Connection, product_id: int, retailer: str, url: str,
-                           variant_name: str = None, dry_run: bool = False) -> int:
-    """Find existing retailer listing or create new one. Returns listing_id (or None in dry_run if new).
+def find_or_create_listing(
+    conn: sqlite3.Connection,
+    product_id: int,
+    retailer: str,
+    url: str,
+    variant_name: Optional[str] = None,
+    dry_run: bool = False,
+) -> Optional[int]:
+    """Find existing retailer listing or create new one.
 
     Each unique URL at a retailer gets its own listing. This allows tracking
     multiple variants of the same product (e.g., GIGABYTE, ASUS, Zotac 5090).
+
+    Args:
+        conn: Open SQLite connection.
+        product_id: ID of the product the listing belongs to.
+        retailer: Retailer name.
+        url: Listing URL (unique per listing).
+        variant_name: Display name of the variant.
+        dry_run: When True, don't write new listings.
+
+    Returns:
+        listing_id, or None in dry_run mode if the listing doesn't exist.
     """
     # Check by retailer + URL (each URL = one listing, regardless of product mapping)
     cursor = conn.execute(
@@ -127,8 +176,17 @@ def find_or_create_listing(conn: sqlite3.Connection, product_id: int, retailer: 
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
-def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False) -> dict:
-    """Ingest a single JSON file. Returns stats dict."""
+def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False) -> Stats:
+    """Ingest a single JSON file.
+
+    Args:
+        conn: Open SQLite connection.
+        file_path: Path to the JSON snapshot file.
+        dry_run: When True, only report what would happen without writing.
+
+    Returns:
+        Stats dict with inserted/skipped/errors/new_products/new_listings counts.
+    """
     stats = {"inserted": 0, "skipped": 0, "errors": 0, "new_products": 0, "new_listings": 0}
 
     with open(file_path, encoding="utf-8") as f:
@@ -138,7 +196,7 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
     snapshot_date = parse_date_from_filename(file_path.name)
 
     if not snapshot_date:
-        print(f"  WARNING: Could not parse date from filename {file_path.name}, skipping")
+        LOGGER.warning("Could not parse date from filename %s, skipping", file_path.name)
         stats["errors"] += 1
         return stats
 
@@ -148,6 +206,7 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
         url = product_data.get("url", "")
         price = product_data.get("price_aud")
         stock_status = product_data.get("stock_status", "unknown")
+        model = product_data.get("watchlist_model", "unknown")
 
         # Skip entries without essential data
         if not url or price is None:
@@ -160,7 +219,6 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
             if product_id is None:
                 stats["skipped"] += 1
                 continue
-            model = product_data.get("watchlist_model", "unknown")
 
             # Step 2: Find or create retailer listing (with variant name)
             variant_name = product_data.get("scraped_name", "")
@@ -188,7 +246,7 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
                 stats["inserted"] += 1
 
         except sqlite3.IntegrityError as e:
-            print(f"  ERROR processing {model}: {e}")
+            LOGGER.error("ERROR processing %s: %s", model, e)
             stats["errors"] += 1
 
     if not dry_run:
@@ -197,33 +255,37 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
     return stats
 
 
-def main():
+def main(argv: Optional[List[str]] = None) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     parser = argparse.ArgumentParser(description="Ingest scraped JSON files into the Trackaroo database")
     parser.add_argument("--file", type=Path, help="Single file to ingest (default: all files in data/)")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
     parser.add_argument("--date", type=str, help="Only ingest files matching this date (YYYY-MM-DD)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    print(f"Database: {DB_PATH}")
+    LOGGER.info("Database: %s", DB_PATH)
 
     # Collect files to process
     if args.file:
-        files = [args.file]
+        files: List[Path] = [args.file]
     else:
         files = sorted(DATA_DIR.glob("*.json"))
 
     if not files:
-        print("No JSON files found to ingest.")
+        LOGGER.info("No JSON files found to ingest.")
         return
 
     # Filter by date if specified
     if args.date:
         files = [f for f in files if parse_date_from_filename(f.name) == args.date]
         if not files:
-            print(f"No files matching date {args.date}")
+            LOGGER.info("No files matching date %s", args.date)
             return
 
-    print(f"Files to process: {len(files)}")
+    LOGGER.info("Files to process: %d", len(files))
 
     # Init DB
     conn = init_db(DB_PATH)
@@ -232,25 +294,30 @@ def main():
 
     for file_path in files:
         date_str = parse_date_from_filename(file_path.name)
-        print(f"\nProcessing: {file_path.name} (date: {date_str})")
+        LOGGER.info("\nProcessing: %s (date: %s)", file_path.name, date_str)
         stats = ingest_file(conn, file_path, dry_run=args.dry_run)
-        print(f"  Inserted: {stats['inserted']}, Skipped: {stats['skipped']}, Errors: {stats['errors']}")
+        LOGGER.info(
+            "  Inserted: %d, Skipped: %d, Errors: %d",
+            stats["inserted"],
+            stats["skipped"],
+            stats["errors"],
+        )
         total_stats["inserted"] += stats["inserted"]
         total_stats["skipped"] += stats["skipped"]
         total_stats["errors"] += stats["errors"]
 
-    print(f"\n{'=' * 50}")
-    print(f"Total: {total_stats['inserted']} inserted, {total_stats['skipped']} skipped, {total_stats['errors']} errors")
+    LOGGER.info("\n%s\nTotal: %d inserted, %d skipped, %d errors", "=" * 50,
+                total_stats["inserted"], total_stats["skipped"], total_stats["errors"])
 
     # Verify
     if not args.dry_run:
         products_count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
         listings_count = conn.execute("SELECT COUNT(*) FROM retailer_listings").fetchone()[0]
         snapshots_count = conn.execute("SELECT COUNT(*) FROM price_snapshots").fetchone()[0]
-        print(f"\nDatabase state:")
-        print(f"  Products: {products_count}")
-        print(f"  Retailer listings: {listings_count}")
-        print(f"  Price snapshots: {snapshots_count}")
+        LOGGER.info("\nDatabase state:")
+        LOGGER.info("  Products: %d", products_count)
+        LOGGER.info("  Retailer listings: %d", listings_count)
+        LOGGER.info("  Price snapshots: %d", snapshots_count)
 
     conn.close()
 
@@ -260,3 +327,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

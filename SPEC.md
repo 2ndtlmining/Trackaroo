@@ -11,14 +11,14 @@ This is a personal-use, self-hosted project. It is not a public-facing price com
 | Retailer | Base URL | Platform notes |
 |---|---|---|
 | Scorptec | https://www.scorptec.com.au/ | Custom platform, server-rendered HTML, clean category pages (`/product/cpu/...`, `/product/graphics-cards/...`) |
-| PC Case Gear | https://www.pccasegear.com/ | Algolia InstantSearch (JS-rendered), requires Playwright with stealth |
+| PC Case Gear | https://www.pccasegear.com/ | Algolia InstantSearch (JS-rendered) — query the embedded Algolia search API directly, no browser needed |
 | ~~Mwave~~ | ~~https://www.mwave.com.au/~~ | ~~Removed — CloudFront bot protection blocks all automated requests~~ |
 
 **Confirmed during planning:** none of the retailers expose a public product/pricing API. All data will be sourced via scraping their public category/listing pages.
 
 **Verified during Phase 1 (2026-08-09):**
 - **Scorptec** — server-rendered HTML, plain HTTP fetch + BeautifulSoup works perfectly
-- **PC Case Gear** — Algolia InstantSearch (fully JS-rendered), requires Playwright with stealth plugins
+- **PC Case Gear** — Algolia InstantSearch; the Algolia app ID + read-only search key embedded in page source let us query the search API directly (see DECISIONS.md) — no Playwright/JS rendering needed
 - **Mwave** — removed from scope due to CloudFront bot protection blocking all automated requests
 
 ## 3. Product scope
@@ -104,12 +104,12 @@ This rule is absolute and applies regardless of the reason data stopped updating
 
 ## 8. Scraping approach
 
-- Plain HTTP fetch (httpx) + HTML parse (BeautifulSoup) per retailer's category pages, paginating through results.
-- Playwright held in reserve only if a retailer turns out to need JS rendering for price/stock (not expected based on initial checks, but to be confirmed in Phase 1).
-- One scraper module per retailer (`scorptec.py`, `pccg.py`, `mwave.py`), each returning a common normalized record shape, so the ingestion pipeline and DB layer are retailer-agnostic.
+- Plain HTTP fetch (requests) + HTML parse (BeautifulSoup) per retailer's category pages, paginating through results. PCCG is fetched via its Algolia search API directly.
+- Playwright held in reserve only if a retailer turns out to need JS rendering for price/stock (not needed so far — Scorptec is server-rendered, PCCG uses Algolia).
+- One scraper module per retailer (`fetch_test.py` for Scorptec, `scraper/pccg.py` for PCCG), each returning a common normalized record shape, so the ingestion pipeline and DB layer are retailer-agnostic.
 - Daily cadence, run via cron or APScheduler inside the container. Reasonable delay between requests within a retailer; no need to hit any site more than once a day.
 - Identify the scraper honestly via a descriptive User-Agent string.
-- **Resilience requirement:** each scrape run should validate its own output (e.g. "did we get a plausible number of products for this category?") and log/alert if a retailer returns zero results or wildly different data than expected — a sign the page structure changed and the parser needs updating, not that all stock vanished.
+- **Resilience requirement:** each scrape run should validate its own output (e.g. "did we get a plausible number of products for this category?") and log/alert if a retailer returns zero results or wildly different data than expected — a sign the page structure changed and the parser needs updating, not that all stock vanished. Implemented in `health_checks.py` (match-count thresholds per retailer/category, freshness, anomaly detection).
 
 ## 9. Frontend features (initial scope)
 
@@ -130,15 +130,15 @@ Later/nice-to-have (not in initial build): watchlist-based alerts, cross-categor
 
 ## 11. Build phases
 
-**Phase 1 — Foundation**
+**Phase 1 — Foundation** *(complete)*
 - Finalize product watchlist scope (which CPUs/GPUs to track)
 - Design and create SQLite schema
 - Build Scorptec scraper end-to-end (cleanest HTML of the three) → validate daily snapshot loop works
 
-**Phase 2 — Full ingestion**
-- Add PC Case Gear and Mwave scrapers to the same pipeline
-- Build the (initially manual/semi-manual) cross-retailer product matching layer
-- Add scrape-health checks/alerting
+**Phase 2 — Full ingestion** *(complete)*
+- Add PC Case Gear scraper to the same pipeline (Mwave dropped — CloudFront bot protection)
+- Build the manual/semi-manual cross-retailer product matching layer (search-term based)
+- Add scrape-health checks/alerting (health_checks.py; variant-count anomaly detection)
 
 **Phase 3 — Frontend**
 - Product table + current pricing view
@@ -154,7 +154,7 @@ Later/nice-to-have (not in initial build): watchlist-based alerts, cross-categor
 
 | Layer | Choice |
 |---|---|
-| Scraper | Python (httpx + BeautifulSoup; Playwright in reserve) |
+| Scraper | Python (requests + BeautifulSoup; Playwright in reserve) |
 | Scheduling | Cron or APScheduler in-container |
 | Database | SQLite |
 | Frontend | SvelteKit + uPlot/Chart.js |

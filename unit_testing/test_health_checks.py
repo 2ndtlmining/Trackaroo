@@ -342,6 +342,51 @@ class TestCheckMatchCountAnomalies:
         errors = [r for r in results if r.status == CheckResult.ERROR]
         assert len(errors) == 1
 
+    def test_multiple_variants_not_counted_as_products(self, db_path):
+        """Multi-variant listings must be counted per listing, not per product.
+
+        Regression test: the anomaly check previously counted
+        COUNT(DISTINCT product_id), so a retailer with 2 products across
+        192 variant listings reported 2 and false-flagged a drop against
+        thresholds calibrated for variants.
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        # Two watchlist products
+        conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('gpu', 'NVIDIA', 'RTX 5070', 1)")
+        conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('gpu', 'NVIDIA', 'RTX 5080', 1)")
+        today = date.today().strftime("%Y-%m-%d")
+
+        # Many variant listings per product, all snapshotted today
+        listing_count = 0
+        for product_id in (1, 2):
+            for i in range(100):
+                listing_count += 1
+                conn.execute(
+                    "INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) "
+                    "VALUES (?, 'scorptec', ?, ?, 'active')",
+                    (product_id, f"Variant {i}", f"https://x.com/{listing_count}"),
+                )
+                lid = conn.execute(
+                    "SELECT id FROM retailer_listings WHERE listing_url = ?",
+                    (f"https://x.com/{listing_count}",),
+                ).fetchone()[0]
+                conn.execute(
+                    "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+                    "VALUES (?, ?, 100, 'in_stock')",
+                    (lid, today),
+                )
+        conn.commit()
+        conn.close()
+
+        results = check_match_count_anomalies(db_path)
+        # Variant count (200) is far above scorptec min_total=90, so OK
+        ok_results = [r for r in results if r.status == CheckResult.OK and "scorptec" in r.check_name]
+        assert len(ok_results) >= 1
+        # Must NOT report a drop based on the 2 distinct products
+        warnings = [r for r in results if r.status == CheckResult.WARNING and "scorptec" in r.check_name]
+        assert len(warnings) == 0
+
 
 # ── Price anomaly detection ─────────────────────────────────────────
 

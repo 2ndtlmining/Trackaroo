@@ -13,18 +13,27 @@ Usage:
     python run_daily.py --scrape-only  # Scrape but don't ingest (just save JSON)
     python run_daily.py --no-health  # Skip health checks
 """
+from __future__ import annotations
+
 import argparse
-import json
+import logging
 import subprocess
 import sys
 import time
 from datetime import date
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from health_checks import CheckResult, check_db_freshness, check_json_files, check_match_count_anomalies
+from ingest import init_db
+
+LOGGER = logging.getLogger(__name__)
 
 DATA_DIR = Path("data")
+SCRAPER_TIMEOUT_SECONDS = 300
 
 
-def today_filename():
+def today_filename() -> str:
     """Return today's date string for filenames, e.g. '10_August_2026'."""
     return date.today().strftime("%d_%B_%Y")
 
@@ -36,12 +45,11 @@ def run_scraper(name: str, module: str, label: str) -> bool:
         name: Display name (e.g. 'Scorptec')
         module: Python module path (e.g. 'fetch_test' or 'scraper.pccg')
         label: Short label for summary (e.g. 'scorptec')
+
     Returns:
         True if the scraper ran successfully, False otherwise.
     """
-    print(f"\n{'=' * 60}")
-    print(f"Scraping {name}...")
-    print(f"{'=' * 60}")
+    LOGGER.info("\n%s\nScraping %s...\n%s", "=" * 60, name, "=" * 60)
     start = time.time()
 
     try:
@@ -49,27 +57,36 @@ def run_scraper(name: str, module: str, label: str) -> bool:
             [sys.executable, "-m", module],
             capture_output=False,
             text=True,
-            timeout=300,  # 5 min timeout per scraper
+            timeout=SCRAPER_TIMEOUT_SECONDS,
         )
         elapsed = time.time() - start
         if result.returncode == 0:
-            print(f"\n{name} completed in {elapsed:.1f}s")
+            LOGGER.info("\n%s completed in %.1fs", name, elapsed)
             return True
-        else:
-            print(f"\n{name} failed (exit code {result.returncode}) after {elapsed:.1f}s")
-            return False
+        LOGGER.error(
+            "\n%s failed (exit code %s) after %.1fs",
+            name,
+            result.returncode,
+            elapsed,
+        )
+        return False
     except subprocess.TimeoutExpired:
-        print(f"\n{name} timed out after 300s")
+        LOGGER.error("\n%s timed out after %ds", name, SCRAPER_TIMEOUT_SECONDS)
         return False
-    except Exception as e:
-        print(f"\n{name} error: {e}")
+    except Exception as e:  # noqa: BLE001 - CLI wrapper reports any failure
+        LOGGER.error("\n%s error: %s", name, e)
         return False
 
 
-def ingest_today(conn, dry_run: bool = False) -> dict:
+def ingest_today(conn: Any, dry_run: bool = False) -> Dict[str, int]:
     """Ingest all JSON files for today's date.
 
-    Returns a stats dict with inserted/skipped/errors per retailer.
+    Args:
+        conn: Open SQLite connection.
+        dry_run: When True, only report what would happen without writing.
+
+    Returns:
+        Stats dict with inserted/skipped/errors counts.
     """
     from ingest import ingest_file
 
@@ -77,13 +94,13 @@ def ingest_today(conn, dry_run: bool = False) -> dict:
     files = sorted(DATA_DIR.glob(f"*_{today}.json"))
 
     if not files:
-        print(f"\nNo JSON files found for today ({today})")
+        LOGGER.info("\nNo JSON files found for today (%s)", today)
         return {}
 
     total_stats = {"inserted": 0, "skipped": 0, "errors": 0}
 
     for f in files:
-        print(f"\n  Ingesting: {f.name}")
+        LOGGER.info("\n  Ingesting: %s", f.name)
         stats = ingest_file(conn, f, dry_run=dry_run)
         total_stats["inserted"] += stats["inserted"]
         total_stats["skipped"] += stats["skipped"]
@@ -92,28 +109,52 @@ def ingest_today(conn, dry_run: bool = False) -> dict:
     return total_stats
 
 
-def main():
+def _report_results(results: List[CheckResult], label: str) -> None:
+    """Log health check results grouped by status.
+
+    Args:
+        results: List of CheckResult objects.
+        label: Human-readable label (e.g. 'JSON validation').
+    """
+    errors = [r for r in results if r.status == CheckResult.ERROR]
+    warnings = [r for r in results if r.status == CheckResult.WARNING]
+
+    if errors:
+        LOGGER.error("\n%s errors (%d):", label, len(errors))
+        for r in errors:
+            LOGGER.error("  %s", r)
+    if warnings:
+        LOGGER.warning("\n%s warnings (%d):", label, len(warnings))
+        for r in warnings:
+            LOGGER.warning("  %s", r)
+
+
+def main(argv: Optional[List[str]] = None) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     parser = argparse.ArgumentParser(description="Daily scrape-and-ingest runner")
     parser.add_argument("--scorptec", action="store_true", help="Only run Scorptec scraper")
     parser.add_argument("--pccg", action="store_true", help="Only run PCCG scraper")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     parser.add_argument("--scrape-only", action="store_true", help="Scrape but don't ingest")
     parser.add_argument("--no-health", action="store_true", help="Skip health checks")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Determine which scrapers to run
     run_scorptec = (not args.scorptec and not args.pccg) or args.scorptec
     run_pccg = (not args.scorptec and not args.pccg) or args.pccg
 
     if not run_scorptec and not run_pccg:
-        print("No scrapers selected. Use --scorptec, --pccg, or neither for both.")
+        LOGGER.error("No scrapers selected. Use --scorptec, --pccg, or neither for both.")
         sys.exit(1)
 
-    print(f"Trackaroo daily run — {today_filename()}")
-    print(f"Scorptec: {'Yes' if run_scorptec else 'No'}  |  PCCG: {'Yes' if run_pccg else 'No'}")
+    LOGGER.info("Trackaroo daily run — %s", today_filename())
+    LOGGER.info("Scorptec: %s  |  PCCG: %s", "Yes" if run_scorptec else "No", "Yes" if run_pccg else "No")
 
     # ── Scrape ──────────────────────────────────────────────
-    results = {}
+    results: Dict[str, bool] = {}
     if run_scorptec:
         results["scorptec"] = run_scraper("Scorptec", "fetch_test", "scorptec")
         time.sleep(2)  # Polite delay between scrapers
@@ -121,38 +162,25 @@ def main():
         results["pccg"] = run_scraper("PCCG", "scraper.pccg", "pccg")
 
     # Report scrape results
-    print(f"\n{'=' * 60}")
-    print("Scrape summary:")
+    LOGGER.info("\n%s\nScrape summary:\n%s", "=" * 60, "=" * 60)
     for name, ok in results.items():
         status = "OK" if ok else "FAIL"
-        print(f"  {status} {name}")
+        LOGGER.info("  %s %s", status, name)
 
     if not any(results.values()):
-        print("\nAll scrapers failed. Aborting.")
+        LOGGER.error("\nAll scrapers failed. Aborting.")
         sys.exit(1)
 
     # ── Health check: validate JSON before ingestion ───────
     if not args.no_health:
-        from health_checks import check_json_files, CheckResult
         json_results = check_json_files(today_filename())
-        json_errors = [r for r in json_results if r.status == CheckResult.ERROR]
-        json_warnings = [r for r in json_results if r.status == CheckResult.WARNING]
-        if json_errors:
-            print(f"\nJSON validation errors ({len(json_errors)}):")
-            for r in json_errors:
-                print(f"  {r}")
-        if json_warnings:
-            print(f"\nJSON validation warnings ({len(json_warnings)}):")
-            for r in json_warnings:
-                print(f"  {r}")
+        _report_results(json_results, "JSON validation")
 
     # ── Ingest ──────────────────────────────────────────────
     if args.scrape_only:
-        print("\nScrape-only mode — skipping ingestion.")
-        print(f"JSON files saved to data/")
+        LOGGER.info("\nScrape-only mode — skipping ingestion.")
+        LOGGER.info("JSON files saved to data/")
         return
-
-    from ingest import init_db
 
     conn = init_db(Path("db/trackaroo.db"))
     try:
@@ -160,14 +188,13 @@ def main():
 
         if stats:
             mode = "(DRY RUN)" if args.dry_run else ""
-            print(f"\n{'=' * 60}")
-            print(f"Ingestion summary {mode}:")
-            print(f"  Inserted: {stats['inserted']}")
-            print(f"  Skipped:  {stats['skipped']}")
-            print(f"  Errors:   {stats['errors']}")
-            print(f"{'=' * 60}")
+            LOGGER.info("\n%s\nIngestion summary %s:\n%s", "=" * 60, mode, "=" * 60)
+            LOGGER.info("  Inserted: %d", stats["inserted"])
+            LOGGER.info("  Skipped:  %d", stats["skipped"])
+            LOGGER.info("  Errors:   %d", stats["errors"])
+            LOGGER.info("%s", "=" * 60)
         else:
-            print("\nNo new data to ingest.")
+            LOGGER.info("\nNo new data to ingest.")
 
         if not args.dry_run:
             conn.commit()
@@ -176,27 +203,17 @@ def main():
 
     # ── Health check: validate DB state after ingestion ───
     if not args.no_health and not args.scrape_only:
-        from health_checks import check_db_freshness, check_match_count_anomalies, CheckResult
-
-        freshness_results = check_db_freshness(Path("db/trackaroo.db"))
-        match_results = check_match_count_anomalies(Path("db/trackaroo.db"))
-        db_results = freshness_results + match_results
-
-        db_errors = [r for r in db_results if r.status == CheckResult.ERROR]
-        db_warnings = [r for r in db_results if r.status == CheckResult.WARNING]
-
-        if db_errors:
-            print(f"\nDB validation errors ({len(db_errors)}):")
-            for r in db_errors:
-                print(f"  {r}")
-        if db_warnings:
-            print(f"\nDB validation warnings ({len(db_warnings)}):")
-            for r in db_warnings:
-                print(f"  {r}")
+        db_results = (
+            check_db_freshness(Path("db/trackaroo.db"))
+            + check_match_count_anomalies(Path("db/trackaroo.db"))
+        )
+        _report_results(db_results, "DB validation")
 
         ok_count = sum(1 for r in db_results if r.status == CheckResult.OK)
-        if not db_errors and not db_warnings:
-            print(f"\nDB health: all {ok_count} checks passed")
+        errors = [r for r in db_results if r.status == CheckResult.ERROR]
+        warnings = [r for r in db_results if r.status == CheckResult.WARNING]
+        if not errors and not warnings:
+            LOGGER.info("\nDB health: all %d checks passed", ok_count)
 
 
 if __name__ == "__main__":
