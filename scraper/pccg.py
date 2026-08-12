@@ -28,6 +28,11 @@ ALGOLIA_URL = f"https://{ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/*/queries"
 ALGOLIA_INDEX = "pccg_products"
 PCCG_BASE = "https://www.pccasegear.com"
 
+# Fields requested from the Algolia index. indicator.* carries the displayed
+# stock state ("In stock" / "Sold Out" / "ETA: ..." / "Stock at Supplier");
+# is_ETA_TBA is a secondary on-order signal used if the label is missing.
+STOCK_ATTRS = "products_name,products_price,products_model,Product_URL,manufacturers_name,indicator,is_ETA_TBA"
+
 HEADERS = {
     "X-Algolia-Application-Id": ALGOLIA_APP_ID,
     "X-Algolia-API-Key": ALGOLIA_API_KEY,
@@ -98,8 +103,36 @@ def _parse_price(price_text: Any) -> float | None:
     return None
 
 
+def _map_stock_label(label: str) -> str:
+    """Map a PCCG Algolia indicator label to the schema stock_status enum.
+
+    Vocabularies observed live (2026-08-13) on the GeForce RTX 5090 index:
+        "In stock"          -> in_stock
+        "Sold Out"          -> out_of_stock
+        "ETA: DD/MM/YY"     -> preorder   (on order, awaiting arrival)
+        "Stock at Supplier" -> preorder   (orderable, not on-hand)
+    Anything unrecognised or blank maps to 'unknown' rather than guessing.
+    """
+    if not label:
+        return "unknown"
+    lowered = str(label).strip().lower()
+    if lowered == "in stock":
+        return "in_stock"
+    if lowered == "sold out":
+        return "out_of_stock"
+    if "eta" in lowered or "preorder" in lowered or "stock at supplier" in lowered:
+        return "preorder"
+    return "unknown"
+
+
 def _extract_products(hits: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
-    """Extract product dicts from Algolia hits."""
+    """Extract product dicts from Algolia hits, including real stock status.
+
+    Stock status comes from the index's ``indicator.label`` (what the PCCG
+    product grid actually displays). ``is_ETA_TBA`` is a secondary signal used
+    only when the label is missing. Sold-out/orderable products are still
+    returned — their price history matters — with their true status attached.
+    """
     products: list[Dict[str, Any]] = []
     for hit in hits:
         name = hit.get("products_name", "")
@@ -114,11 +147,16 @@ def _extract_products(hits: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
             full_url = url_slug
         else:
             full_url = ""
+        label = ((hit.get("indicator") or {}).get("label") or "").strip()
+        stock_status = _map_stock_label(label)
+        if not label and str(hit.get("is_ETA_TBA", "")).strip() == "1":
+            stock_status = "preorder"
         products.append({
             "name": name,
             "price": price,
             "url": full_url,
             "brand": brand,
+            "stock_status": stock_status,
         })
     return products
 
@@ -141,7 +179,7 @@ def algolia_single_search(
         List of product dicts across all pages
     """
     filter_str = f'categories.lvl0:"{category_filter}"'
-    attrs = "products_name,products_price,products_model,Product_URL,manufacturers_name"
+    attrs = STOCK_ATTRS
 
     all_products: list[Dict[str, Any]] = []
     page = 0
@@ -217,7 +255,7 @@ def algolia_batch_search(
         List of lists of product dicts (one list per query)
     """
     filter_str = f'categories.lvl0:"{category_filter}"'
-    attrs = "products_name,products_price,products_model,Product_URL,manufacturers_name"
+    attrs = STOCK_ATTRS
 
     # Track accumulated products and remaining pages per query
     all_results: list[list[Dict[str, Any]]] = [[] for _ in queries]
@@ -360,7 +398,7 @@ def scrape_category(
                             "retailer": "pccg",
                             "scraped_name": prod["name"][:120],
                             "price_aud": price,
-                            "stock_status": "in_stock",
+                            "stock_status": prod.get("stock_status", "unknown"),
                             "url": prod["url"],
                         }
                         if global_idx not in all_matches:
@@ -377,18 +415,18 @@ def scrape_category(
             delay = BATCH_DELAY
         time.sleep(delay)
 
-    # Save ALL in-stock variants for each watchlist item
+    # Save ALL matched variants for each watchlist item — regardless of stock
+    # state. Sold-out and on-order cards keep their listings and price history.
     results = []
     matched_global = set()
     for global_idx, matches in all_matches.items():
         if not matches:
             continue
-        # All PCCG products are considered in_stock (Algolia only returns active products)
         results.extend(matches)
         matched_global.add(global_idx)
         if len(matches) > 1:
             wp_model = watchlist[global_idx]["model"]
-            LOGGER.info("  %s: %d in-stock variants saved", wp_model, len(matches))
+            LOGGER.info("  %s: %d variants saved", wp_model, len(matches))
 
     return results, matched_global
 

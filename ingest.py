@@ -44,6 +44,7 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     """
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode=WAL")
 
     cursor = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='products'"
@@ -272,7 +273,10 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.file:
         files: List[Path] = [args.file]
     else:
-        files = sorted(DATA_DIR.glob("*.json"))
+        files = sorted(
+            f for f in DATA_DIR.glob("*.json")
+            if ".backup" not in f.name  # Skip backup/archive files
+        )
 
     if not files:
         LOGGER.info("No JSON files found to ingest.")

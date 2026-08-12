@@ -479,6 +479,74 @@ class TestCheckPriceAnomalies:
         results = check_price_anomalies(tmp_path / "nonexistent.db")
         assert len(results) == 0
 
+    def test_appearing_disappearing_variants_no_false_positive(self, db_path):
+        """Stock changes (variant appears/disappears) must not false-positive.
+
+        Regression test for the scenario once real multi-day history exists:
+        - a genuine price jump on a long-lived variant   -> WARNING
+        - a variant that vanishes (no latest snapshot)    -> NO warning
+        - a variant that just appeared (insufficient history) -> NO warning
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            "INSERT INTO products (category, brand, model, tracked) VALUES ('gpu', 'NVIDIA', 'RTX 5070 Ti Multi', 1)"
+        )
+        product_id = conn.execute(
+            "SELECT id FROM products WHERE model = 'RTX 5070 Ti Multi'"
+        ).fetchone()[0]
+
+        listing_ids = {}
+        for variant in ["JUMPER", "VANISHER", "NEWCOMER"]:
+            conn.execute(
+                "INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) "
+                "VALUES (?, 'scorptec', ?, ?, 'active')",
+                (product_id, variant, f"https://x.com/{variant}"),
+            )
+            listing_ids[variant] = conn.execute(
+                "SELECT id FROM retailer_listings WHERE listing_url = ?",
+                (f"https://x.com/{variant}",),
+            ).fetchone()[0]
+
+        def _snap(lid, offset_days, price):
+            d = (date.today() - timedelta(days=offset_days)).strftime("%Y-%m-%d")
+            conn.execute(
+                "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+                "VALUES (?, ?, ?, 'in_stock')",
+                (lid, d, price),
+            )
+
+        # Stable ~$1000 history over 12 prior days for the settled variants.
+        # (A 1-in-N jump is only detectable once N >= ~10 prior points: max
+        # deviation of a jump is roughly sqrt(N) sigma. 12 days is comfortably
+        # past the 3-sigma PRICE_ANOMALY_STD_DEVS threshold.)
+        # NEWCOMER (just appeared) gets no prior history — below MIN_HISTORY_FOR_ANOMALY.
+        for variant in ["JUMPER", "VANISHER"]:
+            for off in range(12, 0, -1):
+                _snap(listing_ids[variant], off, 1000.0)
+
+        # Latest day (offset 0):
+        #  - JUMPER: genuine 4x jump -> must flag
+        #  - VANISHER: no snapshot today (delisted/disappeared) -> must NOT flag
+        #  - NEWCOMER: a single fresh price today (below MIN_HISTORY_FOR_ANOMALY) -> must NOT flag
+        _snap(listing_ids["JUMPER"], 0, 4000.0)
+        _snap(listing_ids["NEWCOMER"], 0, 1050.0)
+        conn.commit()
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        warnings = [r for r in results if r.status == CheckResult.WARNING]
+
+        # Exactly one anomaly: the real price jump.
+        assert len(warnings) == 1, warnings
+        assert "4000" in warnings[0].message or "5070 Ti Multi" in warnings[0].message
+
+        # The stock-only changes must not be flagged, and the check must not crash.
+        assert not any(
+            "VANISHER" in r.message or "NEWCOMER" in r.message for r in results
+        )
+        assert not any(r.status == CheckResult.ERROR for r in results)
+
 
 # ── CheckResult class ────────────────────────────────────────────────
 

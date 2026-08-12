@@ -193,6 +193,118 @@ class TestScorptecDataQuality:
                 assert p.get("url"), f"Empty URL for {p['watchlist_model']} in {fpath}"
 
 
+# ── Stock label mapping tests ──────────────────────────────────────
+
+
+def test_map_stock_label_in_stock():
+    from scraper.pccg import _map_stock_label
+    assert _map_stock_label("In stock") == "in_stock"
+
+
+def test_map_stock_label_sold_out():
+    from scraper.pccg import _map_stock_label
+    assert _map_stock_label("Sold Out") == "out_of_stock"
+
+
+def test_map_stock_label_eta():
+    from scraper.pccg import _map_stock_label
+    assert _map_stock_label("ETA: 01/01/26") == "preorder"
+
+
+def test_map_stock_label_preorder():
+    from scraper.pccg import _map_stock_label
+    assert _map_stock_label("Stock at Supplier") == "preorder"
+
+
+def test_map_stock_label_unknown():
+    from scraper.pccg import _map_stock_label
+    assert _map_stock_label("") == "unknown"
+    assert _map_stock_label("Discontinued") == "unknown"
+
+
+# ── _extract_products sold-out retention & is_ETA_TBA guard ─────
+
+
+def test_extract_products_retains_sold_out():
+    """Sold-out products are kept — their price history still matters."""
+    from scraper.pccg import _extract_products
+    hits = [
+        {
+            "products_name": "RTX 5090 Founders Edition",
+            "products_price": 2499,
+            "Product_URL": "/products/geforce-rtx-5090/123456",
+            "manufacturers_name": "NVIDIA",
+            "indicator": {"label": "Sold Out"},
+        },
+    ]
+    products = _extract_products(hits)
+    assert len(products) == 1
+    assert products[0]["stock_status"] == "out_of_stock"
+    assert products[0]["price"] == 2499
+
+
+def test_extract_products_uses_is_eta_tba_fallback():
+    """When indicator.label is missing, is_ETA_TBA = '1' maps to preorder."""
+    from scraper.pccg import _extract_products
+    hits = [
+        {
+            "products_name": "RTX 5080 Model",
+            "products_price": 1299,
+            "Product_URL": "/products/rtx-5080/789012",
+            "manufacturers_name": "MSI",
+            "indicator": None,
+            "is_ETA_TBA": "1",
+        },
+    ]
+    products = _extract_products(hits)
+    assert len(products) == 1
+    assert products[0]["stock_status"] == "preorder"
+
+
+def test_extract_products_indicator_wins_over_is_eta_tba():
+    """If indicator.label is present it takes precedence over is_ETA_TBA."""
+    from scraper.pccg import _extract_products
+    hits = [
+        {
+            "products_name": "RTX 5070 Model",
+            "products_price": 899,
+            "Product_URL": "/products/rtx-5070/345678",
+            "manufacturers_name": "ASRock",
+            "indicator": {"label": "In stock"},
+            "is_ETA_TBA": "1",
+        },
+    ]
+    products = _extract_products(hits)
+    assert len(products) == 1
+    assert products[0]["stock_status"] == "in_stock"
+
+
+def test_extract_products_unknown_when_no_signals():
+    """Both indicator and is_ETA_TBA absent → unknown."""
+    from scraper.pccg import _extract_products
+    hits = [
+        {
+            "products_name": "RTX 5060 Model",
+            "products_price": 499,
+            "Product_URL": "/products/rtx-5060/901234",
+            "manufacturers_name": "Gigabyte",
+        },
+    ]
+    products = _extract_products(hits)
+    assert len(products) == 1
+    assert products[0]["stock_status"] == "unknown"
+
+
+# ── STOCK_ATTRS guard ──────────────────────────────────────────────
+
+
+def test_stock_attrs_includes_indicator_and_is_eta_tba():
+    """STOCK_ATTRS must request indicator and is_ETA_TBA so status parsing works."""
+    from scraper.pccg import STOCK_ATTRS
+    assert "indicator" in STOCK_ATTRS
+    assert "is_ETA_TBA" in STOCK_ATTRS
+
+
 # ── Pagination tests ───────────────────────────────────────────────
 
 HTML_WITH_NEXT_PAGE = """

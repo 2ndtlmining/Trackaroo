@@ -48,3 +48,43 @@ The watchlist CSV parsing + spec parsing logic (`parse_spec`, `load_watchlist`) 
 
 ### Algolia credentials via environment variables (2026-08-12)
 The PCCG scraper embeds the Algolia app ID and read-only search key found in PCCG's page source. Hardcoded in the repo, they risk being committed/forgotten alongside unrelated changes. Now read from `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` env vars with the known-good values as defaults (they are read-only public search keys, so the defaults keep zero-config local use working).
+
+### WAL journal mode enabled for frontend-safe concurrent access (2026-08-13)
+The DB previously ran with the default rollback-journal (`journal_mode=delete`). Now that a frontend will read the DB while `run_daily.py` writes on a cron schedule, WAL (`PRAGMA journal_mode=WAL`) is the mechanism that makes concurrent reads safe. Set by the writer/init paths (`ingest.init_db`, `seed.init_db`, `migrate`) — the mode persists in the DB file header, so every later connection runs in WAL automatically. The real DB was flipped on 13-Aug-2026.
+
+**Lesson learned (proved by the concurrency test):** readers must NEVER toggle journal mode at connection time. `query.get_connection` originally ran `PRAGMA journal_mode=WAL` on open; while a writer held its lock, the mode *change* needed an exclusive lock and raised `database is locked`. Reassigning journal mode is a write-side operation — readers just open and inherit. This is why `query.py` now sets only `busy_timeout` (covering the brief WAL checkpoint write-lock window) and lets the file header handle the rest. The future better-sqlite3 frontend should follow the same rule: read, don't reconfigure.
+
+### Frontend DB access: direct SQLite via better-sqlite3 (2026-08-13)
+Decision for Phase 3: SvelteKit server routes read `db/trackaroo.db` directly with better-sqlite3, rather than standing up a thin read API. Rationale: single-user, self-hosted, one database file, and the dashboard's queries are already proven fast (see perf numbers below). An API layer would add a service to deploy for no benefit at this scale. WAL makes the direct read safe against the cron writer. (Node's built-in `node:sqlite` is a viable fallback if a native build of better-sqlite3 becomes a nuisance.)
+
+### Frontend location: `web/` subdirectory in this repo (2026-08-13)
+SvelteKit scaffolds under `web/`, sharing the same clone, `db/` file, and Docker build as the Python pipeline. Chosen over a separate repo so the daily runner and the dashboard deploy together and always agree on the DB file they read.
+
+### No new indexes needed — measured, not assumed (2026-08-13)
+The proposed `price_snapshots (product_id, snapshot_date)` index doesn't map to the schema — `price_snapshots` references `retailer_listing_id`, not `product_id`. `EXPLAIN QUERY PLAN` confirms the per-product price-history path already uses `idx_retailer_listings_product` (covering) + `idx_snapshots_listing_date` with no full scan. Measured on a synthetic 333-listing × 30-day DB (~10k snapshots): `show_latest_prices` = 60 ms, `show_biggest_movers` = 7 ms. Adding a covering `(retailer_listing_id, snapshot_date, price_aud, stock_status)` index would shave the `price_aud` table-lookup off the history query, but at this scale it's ~nothing; revisit if snapshots grow past ~50k rows or the dashboard's history query shows up hot in profiling.
+
+### Price-anomaly sensitivity is history-dependent (2026-08-13)
+With N stable price points plus one jump, the jump's max detectable deviation is about √N standard deviations. A 3× spike over only 5–6 days computes to ~2.2σ and does NOT trip the 3σ threshold; it needs ~10+ history points to be flagged. On 13-Aug real data, 226 of 333 listings sit at exactly 3 points, so the anomaly check currently misses most single-day jumps — by design (the threshold avoids false positives on thin data). Worth revisiting `PRICE_ANOMALY_STD_DEVS` or adding history-depth awareness once listings accumulate more days. Test `test_appearing_disappearing_variants_no_false_positive` locks in the intended behavior: a genuine jump on a mature listing flags; a vanished or freshly-appeared variant does not.
+
+### PCCG stock status fix: _map_stock_label() retains sold-out/preorder variants (2026-08-13)
+The PCCG scraper originally marked every product `in_stock` regardless of actual stock state. The Algolia index carries an `indicator.label` field with values like "In stock", "Sold Out", "ETA: DD/MM/YY", and "Stock at Supplier". The fix introduced `_map_stock_label()` in `scraper/pccg.py` which maps these labels to the schema enum (`in_stock`, `out_of_stock`, `preorder`, `unknown`).
+
+**Why retain sold-out products?** Their price still matters for history — a sold-out product's last price is the reference point for when it restocks. Dropping them would create gaps in the price timeline.
+
+**Impact:** On 13-Aug PCCG GPU data, 32 of 102 variants were `out_of_stock` and 2 were `preorder`. The DB had all 123 PCCG rows marked `in_stock` from the buggy ingest. A new `resync_stock_status.py` script was created to compare buggy vs. fixed JSON and update the affected 37 rows (3 CPU + 34 GPU). The script supports `--dry-run` and is idempotent.
+
+**Lesson:** When a scraper bug corrupts data that's already been ingested, a targeted resync script is better than re-ingesting everything. It's scoped to the affected date and retailer, supports dry-run, and leaves unrelated data untouched.
+
+### Backup files are excluded from ingestion (2026-08-13)
+The `data/` directory contains `.backup_buggy.json` files preserving the original buggy scrape output for audit purposes. The ingest pipeline and E2E tests now filter out any file containing `.backup` in the filename, preventing these archive files from being re-ingested or causing parse errors. This keeps the raw audit trail intact while preventing accidental double-processing.
+
+### Resync script for stock_status corrections (2026-08-13)
+`resync_stock_status.py` is a standalone tool that:
+- Compares buggy vs. fixed JSON pairs for a given date
+- Identifies rows where `stock_status` was incorrect in the DB
+- Supports `--dry-run` (preview only) and apply mode
+- Is idempotent — safe to re-run
+- Only affects PCCG rows for the specified date
+- Does NOT touch Scorptec data or other dates
+
+9 new regression tests cover: dry-run behavior, apply mode, idempotency, backup file filtering, and helper function correctness.

@@ -32,8 +32,9 @@ Daily price and stock tracking for desktop CPUs and GPUs across Australian retai
 | **Ingestion** | ✅ Complete | Reads JSON → writes DB, idempotent, supports dry-run |
 | **Query tool** | ✅ Complete | Latest prices, trends, biggest movers |
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
-| **Regression tests** | ✅ Complete | 188 tests across 9 modules (~0.8s) |
+| **Regression tests** | ✅ Complete | 207 tests across 13 modules (~6s) |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
+| **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ⏳ Planned | SvelteKit dashboard (Phase 3) |
 | **Deployment** | ⏳ Planned | Docker + cron on Proxmox (Phase 4) |
 
@@ -84,7 +85,7 @@ products ────── retailer_listings ────── price_snapshots
 - **retailer_listings** — a specific retailer's page for a product variant (e.g., GIGABYTE, ASUS, Zotac 5090 each get their own listing with `variant_name`)
 - **price_snapshots** — one row per listing per day. Never updated or deleted.
 
-Rows are never deleted. Products that roll out of scope are marked `tracked=0`. See [SPEC.md §7a](SPEC.md#7a-data-retention-policy) for the full retention policy.
+The DB runs in `WAL` mode (set by the ingestion writers), so the frontend can read it while the daily cron job writes — no lock errors. Rows are never deleted. Products that roll out of scope are marked `tracked=0`. See [SPEC.md §7a](SPEC.md#7a-data-retention-policy) for the full retention policy.
 
 ## Product scope
 
@@ -143,6 +144,9 @@ Trackaroo/
     ├── test_run_daily.py       # daily runner + health check integration tests
     ├── test_health_checks.py   # health check validation tests
     ├── test_query.py           # query tool tests
+    ├── test_concurrency.py     # WAL + concurrent read/write tests
+    ├── test_e2e.py             # scrape → ingest → query → health-check pipeline
+    ├── test_performance.py     # query performance + index-usage tests
     └── test_cli.py             # CLI entry-point smoke tests
 ```
 

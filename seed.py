@@ -39,6 +39,7 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     """
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode=WAL")
 
     # Check if tables already exist
     cursor = conn.execute(

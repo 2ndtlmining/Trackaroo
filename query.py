@@ -41,6 +41,11 @@ def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
 
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
+    # Readers never toggle journal mode — WAL is established by the writers
+    # (ingest/seed/migrate init_db) and persists in the DB file header. A read
+    # connection only needs a busy timeout for the brief window when a WAL
+    # checkpoint holds the write lock.
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.row_factory = sqlite3.Row
     return conn
 
