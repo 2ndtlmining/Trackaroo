@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-13 (stock status hardening complete; 5th day of data scraped)
+**Last updated:** 2026-08-14 (Phase 3 frontend build plan finalized in `PHASE3_PLAN.md`; implementation not yet started)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Backend complete and frontend-ready — all tests passing, Phase 3 (frontend) is next
 
@@ -77,6 +77,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - RAM tracking scope (`RAM_SCOPE.md`) — plan for adding DDR4/DDR5 RAM price tracking
 - Historical data: Scorptec + PCCG snapshots for 09-Aug through 13-Aug
 - `.env.example` — committed template documenting Algolia env vars (and `.gitignore` negation)
+- `PHASE3_PLAN.md` — executable Phase 3 frontend handoff plan (locked decisions, data model facts, M0–M5 steps)
 
 ## What's verified
 
@@ -101,7 +102,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 
 ## Next concrete steps
 
-1. **Move to Phase 3 (frontend)** — SvelteKit dashboard in `web/` reading `db/trackaroo.db` directly via better-sqlite3 (WAL already active); scaffold and build
+1. **Move to Phase 3 (frontend)** — SvelteKit dashboard in `web/` reading `db/trackaroo.db` directly via better-sqlite3 (WAL already active); scaffold and build per `PHASE3_PLAN.md`
 2. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 5 days; anomaly detection sensitivity improves with each new ≥10-point listing)
 3. **Hardening (Phase 4)** — Docker deployment, cron scheduling, backups
 
