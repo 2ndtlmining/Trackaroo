@@ -1,4 +1,4 @@
-import type { Category, GenerationTier, ListingFilters, Retailer } from './types';
+import type { Category, GenerationTier, ListingFilters, ListingSort, Retailer } from './types';
 
 export const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
 	{ value: 'cpu', label: 'CPU' },
@@ -31,8 +31,21 @@ export function parseFilters(searchParams: URLSearchParams): ListingFilters {
 	if (brand) filters.brand = brand;
 	const tier = searchParams.get('tier');
 	if (tier && TIERS.includes(tier)) filters.generation_tier = tier as GenerationTier;
+	const query = searchParams.get('q');
+	if (query) filters.query = query;
+	const sort = searchParams.get('sort');
+	if (sort === 'price-asc' || sort === 'price-desc') filters.sort = sort;
 	return filters;
 }
+
+const URL_KEY: Record<keyof ListingFilters, string> = {
+	category: 'category',
+	retailer: 'retailer',
+	brand: 'brand',
+	generation_tier: 'tier',
+	query: 'q',
+	sort: 'sort'
+};
 
 export function updateFilter(
 	searchParams: URLSearchParams,
@@ -40,14 +53,26 @@ export function updateFilter(
 	value: string | null
 ): URLSearchParams {
 	const next = new URLSearchParams(searchParams);
-	const urlKey = key === 'generation_tier' ? 'tier' : key;
+	const urlKey = URL_KEY[key];
 	if (value) next.set(urlKey, value);
 	else next.delete(urlKey);
 	return next;
 }
 
+export const SORT_OPTIONS: { value: ListingSort; label: string }[] = [
+	{ value: 'price-asc', label: 'Price: low to high' },
+	{ value: 'price-desc', label: 'Price: high to low' }
+];
+
 export function hasActiveFilters(filters: ListingFilters): boolean {
-	return Boolean(filters.category || filters.retailer || filters.brand || filters.generation_tier);
+	return Boolean(
+		filters.category ||
+			filters.retailer ||
+			filters.brand ||
+			filters.generation_tier ||
+			filters.query ||
+			filters.sort
+	);
 }
 
 export function labelFor(options: readonly { value: string; label: string }[], value: string | undefined): string {

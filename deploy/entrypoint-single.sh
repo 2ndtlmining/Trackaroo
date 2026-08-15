@@ -34,6 +34,9 @@ run_pipeline() {
 # ── 1. Ensure the DB exists (init empty DB + seed watchlist) ──────────────
 python seed.py
 
+# ── 1b. Bootstrap: hydrate a fresh DB with baked-in snapshot history ──────
+trackaroo-bootstrap-data
+
 # ── 2. Start the dashboard in the background ──────────────────────────────
 log "Starting dashboard on :${PORT}"
 node web/build/index.js &

@@ -22,9 +22,15 @@ test.describe('navigation & layout', () => {
 		await expect(page).toHaveTitle('Trackaroo — Dashboard');
 	});
 
-	test('footer shows the product tagline on every page', async ({ page }) => {
+test('footer shows the product tagline on every page', async ({ page }) => {
 		await goto(page, '/products');
 		await expect(page.getByText('Trackaroo — AU CPU & GPU price tracker')).toBeVisible();
+	});
+
+	test('header shows snapshot stats and lends context', async ({ page }) => {
+		await goto(page, '/');
+		await expect(page.getByText(/Last snapshot: \d{4}-\d{2}-\d{2}/)).toBeVisible();
+		await expect(page.getByText(/^\d+ snapshots$/)).toBeVisible();
 	});
 });
 
@@ -64,6 +70,24 @@ test('respects a stored light theme on load', async ({ page }) => {
 });
 
 test.describe('dashboard', () => {
+	test('renders the cheapest-deals carousel with a GPU/CPU toggle', async ({ page }) => {
+		await goto(page, '/');
+		await expect(page.getByText('Cheapest deals')).toBeVisible();
+
+		const gpuTab = page.getByRole('tab', { name: 'GPU' });
+		await expect(gpuTab).toBeVisible();
+		await expect(gpuTab).toHaveAttribute('aria-selected', 'true');
+
+		const firstCard = page.getByRole('listitem').first();
+		await expect(firstCard).toBeVisible();
+		await expect(firstCard).toContainText('$');
+
+		await page.getByRole('tab', { name: 'CPU' }).click();
+		await expect(page.getByRole('tab', { name: 'CPU' })).toHaveAttribute('aria-selected', 'true');
+		await expect(page.getByRole('tab', { name: 'GPU' })).toHaveAttribute('aria-selected', 'false');
+		await expect(page.getByRole('listitem').first()).toBeVisible();
+	});
+
 	test('renders the four stat tiles from the seeded data', async ({ page }) => {
 		await goto(page, '/');
 		await expect(page.getByText('Tracked products')).toBeVisible();
@@ -114,6 +138,32 @@ test.describe('dashboard', () => {
 		await tierSelect.selectOption('current-2');
 		await expect(page).toHaveURL(/\/\?tier=current-2/);
 		await expect(page.locator('tbody tr').first()).toBeVisible();
+	});
+
+	test('search narrows the table to matching models', async ({ page }) => {
+		await goto(page, '/');
+		const searchBox = page.getByLabel('Search by model');
+		await searchBox.fill('5600');
+		await expect(page).toHaveURL(/\/\?q=5600/);
+		const rows = page.locator('tbody tr');
+		await expect(rows.first()).toBeVisible();
+		const count = await rows.count();
+		expect(count).toBeGreaterThan(0);
+		const text = await rows.first().textContent();
+		expect(text).toContain('5600');
+	});
+
+	test('sort by price ascending orders cheapest first', async ({ page }) => {
+		await goto(page, '/?category=gpu');
+		const sortSelect = page.getByLabel('Sort by price');
+		await sortSelect.selectOption('price-asc');
+		await expect(page).toHaveURL(/\/\?category=gpu&sort=price-asc/);
+		const firstCell = page.locator('tbody tr td').nth(4).first();
+		await expect(firstCell).toBeVisible();
+		const first = await firstCell.textContent();
+		await sortSelect.selectOption('price-desc');
+		await expect(page).toHaveURL(/\/\?category=gpu&sort=price-desc/);
+		await expect(firstCell).not.toHaveText(first ?? '');
 	});
 
 	test('clear filters removes the query string', async ({ page }) => {

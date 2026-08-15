@@ -2,11 +2,11 @@
 	import '../app.css';
 	import Header from '$lib/components/Header.svelte';
 
-	let { children } = $props();
+	let { data, children } = $props();
 </script>
 
 <div class="flex min-h-screen flex-col">
-	<Header />
+	<Header stats={data.stats} />
 	<main class="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
 		{@render children()}
 	</main>

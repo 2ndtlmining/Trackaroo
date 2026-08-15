@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DB } from '../src/lib/server/db';
 import {
 	MIN_HISTORY_POINTS,
+	getCheapestPerModel,
 	getLatestListings,
 	getMovers,
 	getProductHistory,
@@ -36,6 +37,13 @@ describe('getSummary', () => {
 			expect(summary.biggestMover.pctChange).not.toBeNull();
 			expect(summary.biggestMover.notEnoughHistory).toBe(false);
 		}
+	});
+
+	it('reports snapshot count, distinct days and db size', () => {
+		const summary = getSummary(db);
+		expect(summary.snapshotCount).toBeGreaterThan(0);
+		expect(summary.snapshotDays).toBeGreaterThan(0);
+		expect(summary.dbSizeBytes).toBeGreaterThan(0);
 	});
 });
 
@@ -72,6 +80,34 @@ describe('getLatestListings', () => {
 		expect(nvidia.every((r) => r.brand === 'NVIDIA')).toBe(true);
 	});
 
+	it('filters by a case-insensitive model search', () => {
+		const sample = getLatestListings(db)[0];
+		const needle = sample.model.toLowerCase().slice(0, 6);
+		const results = getLatestListings(db, { query: needle });
+		expect(results.length).toBeGreaterThan(0);
+		for (const row of results) {
+			const haystack = `${row.brand} ${row.model} ${row.productVariant ?? ''} ${row.variantName ?? ''}`.toLowerCase();
+			expect(haystack).toContain(needle);
+		}
+	});
+
+	it('returns no results for a nonsense search', () => {
+		expect(getLatestListings(db, { query: 'zzz-zzz-nonsense' })).toEqual([]);
+	});
+
+	it('sorts by price ascending and descending', () => {
+		const asc = getLatestListings(db, { sort: 'price-asc' });
+		const desc = getLatestListings(db, { sort: 'price-desc' });
+		expect(asc.length).toBeGreaterThan(0);
+		expect(desc.length).toBe(asc.length);
+		const ascPrices = asc.map((r) => r.latestPrice);
+		const descPrices = desc.map((r) => r.latestPrice);
+		for (let i = 1; i < ascPrices.length; i += 1) {
+			expect(ascPrices[i]).toBeGreaterThanOrEqual(ascPrices[i - 1]);
+			expect(descPrices[i]).toBeLessThanOrEqual(descPrices[i - 1]);
+		}
+	});
+
 	it('filters by generation tier', () => {
 		const current = getLatestListings(db, { generation_tier: 'current' });
 		expect(current.length).toBeGreaterThan(0);
@@ -97,6 +133,46 @@ describe('getLatestListings', () => {
 		for (const row of rows) {
 			expect(row.lastSnapshotAt).toBeTruthy();
 			expect(new Date(row.lastSnapshotAt!).getTime()).not.toBeNaN();
+		}
+	});
+});
+
+describe('getCheapestPerModel', () => {
+	it('returns at most one in-stock listing per model for the latest date', () => {
+		const gpu = getCheapestPerModel(db, 'gpu');
+		const cpu = getCheapestPerModel(db, 'cpu');
+		expect(gpu.length + cpu.length).toBeGreaterThan(0);
+
+		const latest = db
+			.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
+			.get() as { d: string };
+		for (const rows of [gpu, cpu]) {
+			const models = new Set(rows.map((r) => r.model));
+			expect(models.size).toBe(rows.length);
+			for (const row of rows) {
+				expect(row.snapshotDate).toBe(latest.d);
+				expect(row.price).toBeGreaterThan(0);
+				expect(row.retailer).toMatch(/^(scorptec|pccg)$/);
+			}
+		}
+	});
+
+	it('chooses the cheapest price among in-stock listings for each model', () => {
+		const rows = getCheapestPerModel(db, 'gpu');
+		for (const row of rows) {
+			const minForProduct = db
+				.prepare(
+					`SELECT MIN(ps2.price_aud) AS m
+					 FROM price_snapshots ps2
+					 JOIN retailer_listings l2 ON l2.id = ps2.retailer_listing_id
+					 WHERE l2.product_id = ?
+					   AND ps2.snapshot_date = ?
+					   AND ps2.stock_status = 'in_stock'
+					   AND l2.status = 'active'`
+				)
+				.get(row.productId, row.snapshotDate) as { m: number | null };
+			expect(minForProduct.m).not.toBeNull();
+			expect(row.price).toBeCloseTo(minForProduct.m as number, 2);
 		}
 	});
 });

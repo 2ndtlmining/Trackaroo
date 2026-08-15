@@ -15,4 +15,8 @@ export interface ListingFilters {
 	retailer?: Retailer;
 	brand?: string;
 	generation_tier?: GenerationTier;
+	query?: string;
+	sort?: ListingSort;
 }
+
+export type ListingSort = 'price-asc' | 'price-desc';

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	formatAud,
 	formatAxisLabel,
+	formatBytes,
 	formatDate,
 	formatPct,
 	formatRelative,
@@ -139,5 +140,14 @@ describe('stockLabel', () => {
 
 	it('falls back to unknown', () => {
 		expect(stockLabel('anything')).toBe('Unknown');
+	});
+});
+
+describe('formatBytes', () => {
+	it('formats zero and common magnitudes', () => {
+		expect(formatBytes(0)).toBe('0 B');
+		expect(formatBytes(500)).toBe('500 B');
+		expect(formatBytes(1536)).toBe('1.5 KB');
+		expect(formatBytes(1048576)).toBe('1.0 MB');
 	});
 });

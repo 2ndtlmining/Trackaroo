@@ -11,8 +11,10 @@ env/
 .coverage
 htmlcov/
 
-# Data — volumes are mounted in at runtime
-data/
+# Data — live scraped output is volume-mounted at runtime, but the snapshot
+# history (data/*.json) is baked into the image to hydrate a fresh DB on boot.
+data/*.backup*
+data/.backup*/
 db/backups/
 db/*.db
 db/*.db-wal

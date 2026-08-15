@@ -16,6 +16,11 @@ log() {
     echo "[trackaroo-cron] $(date '+%Y-%m-%d %H:%M:%S') $1"
 }
 
+# Ensure the DB exists and hydrate a fresh one from baked-in history
+# (idempotent — skips when products/snapshots already exist).
+python seed.py
+trackaroo-bootstrap-data
+
 run_pipeline() {
     log "Starting daily pipeline..."
     python run_daily.py --backup "${BACKUP_KEEP}"

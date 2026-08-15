@@ -4,6 +4,7 @@
 	import {
 		CATEGORY_OPTIONS,
 		RETAILER_OPTIONS,
+		SORT_OPTIONS,
 		TIER_OPTIONS,
 		hasActiveFilters,
 		parseFilters,
@@ -20,6 +21,14 @@
 		const next = updateFilter(page.url.searchParams, key, value || null);
 		const qs = next.toString();
 		await goto(qs ? `?${qs}` : page.url.pathname);
+	}
+
+	let queryTimer: ReturnType<typeof setTimeout> | undefined;
+	function setQuery(value: string) {
+		clearTimeout(queryTimer);
+		queryTimer = setTimeout(() => {
+			set('query', value);
+		}, 250);
 	}
 
 	async function clear() {
@@ -72,6 +81,27 @@
 	>
 		<option value="">All generations</option>
 		{#each TIER_OPTIONS as opt}
+			<option value={opt.value}>{opt.label}</option>
+		{/each}
+	</select>
+
+	<input
+		type="search"
+		value={filters.query ?? ''}
+		aria-label="Search by model"
+		placeholder="Search model…"
+		oninput={(e) => setQuery((e.target as HTMLInputElement).value)}
+		class="h-8 w-40 rounded-md border border-border bg-surface px-2 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
+	/>
+
+	<select
+		class="h-8 rounded-md border border-border bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none"
+		value={filters.sort ?? ''}
+		aria-label="Sort by price"
+		onchange={(e) => set('sort', (e.target as HTMLSelectElement).value)}
+	>
+		<option value="">Sort: default</option>
+		{#each SORT_OPTIONS as opt}
 			<option value={opt.value}>{opt.label}</option>
 		{/each}
 	</select>

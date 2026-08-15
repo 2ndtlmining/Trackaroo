@@ -24,6 +24,17 @@ describe('parseFilters', () => {
 		});
 	});
 
+	it('parses a search query param', () => {
+		const params = new URLSearchParams('q=rtx+5090');
+		expect(parseFilters(params)).toEqual({ query: 'rtx 5090' });
+	});
+
+	it('parses a sort param', () => {
+		expect(parseFilters(new URLSearchParams('sort=price-asc')).sort).toBe('price-asc');
+		expect(parseFilters(new URLSearchParams('sort=price-desc')).sort).toBe('price-desc');
+		expect(parseFilters(new URLSearchParams('sort=bogus')).sort).toBeUndefined();
+	});
+
 	it('ignores invalid enum values', () => {
 		const params = new URLSearchParams('category=ram&retailer=ebay&tier=ancient');
 		expect(parseFilters(params)).toEqual({});
@@ -62,6 +73,17 @@ describe('updateFilter', () => {
 		expect(next.get('generation_tier')).toBeNull();
 	});
 
+	it('maps query to the q URL key', () => {
+		const next = updateFilter(new URLSearchParams(), 'query', 'rtx 5090');
+		expect(next.get('q')).toBe('rtx 5090');
+		expect(next.get('query')).toBeNull();
+	});
+
+	it('maps sort to the sort URL key', () => {
+		const next = updateFilter(new URLSearchParams(), 'sort', 'price-asc');
+		expect(next.get('sort')).toBe('price-asc');
+	});
+
 	it('removes the key when value is null', () => {
 		const params = new URLSearchParams('brand=AMD');
 		const next = updateFilter(params, 'brand', null);
@@ -83,6 +105,8 @@ describe('hasActiveFilters', () => {
 	it('is true when any filter is set', () => {
 		expect(hasActiveFilters({ brand: 'AMD' })).toBe(true);
 		expect(hasActiveFilters({ generation_tier: 'current' })).toBe(true);
+		expect(hasActiveFilters({ query: '5090' })).toBe(true);
+		expect(hasActiveFilters({ sort: 'price-asc' })).toBe(true);
 	});
 });
 

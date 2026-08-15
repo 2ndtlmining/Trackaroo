@@ -57,8 +57,11 @@ RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 COPY *.py ./
 COPY scraper/ scraper/
 COPY db/ db/
+# Snapshot history so a fresh DB isn't empty on first boot.
+COPY data/ ./seed-data/
 COPY deploy/entrypoint.sh /usr/local/bin/trackaroo-entrypoint-pipeline
 COPY deploy/entrypoint-single.sh /usr/local/bin/trackaroo-entrypoint
+COPY deploy/bootstrap-data.sh /usr/local/bin/trackaroo-bootstrap-data
 
 # Web frontend runtime bits built in stage 1.
 COPY --from=web /app/web/node_modules ./web/node_modules

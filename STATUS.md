@@ -1,10 +1,34 @@
 # Project Status
 
-**Last updated:** 2026-08-15 (Phase 4 Docker complete: single all-in-one image; regression suite green — 251 backend, 90 frontend, 19 e2e)
+**Last updated:** 2026-08-15 (Phase 4 Docker complete; Frontend & UX Improvement Program started)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
-**Current phase:** Phase 3/4 (frontend + deployment) — all views live, Docker single-image deployment verified end-to-end
+**Current phase:** Phase 5 — frontend/UX improvements program (see Active Issues below). Code is committed & pushed to `origin/main` (`afe8ccc`).
 
 ## Active Issues
+
+### 🔄 IN PROGRESS: Frontend & UX Improvement Program (15 Aug-2026)
+
+Goal: make the dashboard actually help the user *find deals*, plus polish. Driven by user feedback + `FRONTEND_IMPROVEMENTS.md` (implementation brief in repo root).
+
+**Progress tracker** (check off as each lands; update "What's verified" + regression numbers when done):
+
+| # | Item | Status |
+|---|------|--------|
+| F1 | Docker: preload `data/*.json` history so a fresh container isn't empty | ✅ done — 1726 snapshots / 341 listings hydrated on first boot |
+| F2 | Header: show last snapshot date, snapshot count, DB size | ✅ done — header shows `Last snapshot: YYYY-MM-DD`, `N snapshots`, `Size` (hidden on tiny screens) |
+| F3 | Product search/filter by model name (CPU & GPU) | ✅ done — `Search by model` input (debounced, `?q=`) matches model/brand/variant |
+| F4 | Sort/view cheapest product per category/model (e.g. all 5090s, cheapest first) | ✅ done — `Sort by price` (low→high / high→low, `?sort=`) on table views; pairs with search |
+| F5 | Website icon / favicon | ✅ done — `static/favicon.svg` (accent-blue chart mark), linked in `app.html` |
+| F6 | Additional visual improvements (after walk-through) | ⬜ planned |
+| FI3 | Products page: card grid (grouped by model, expandable variants); keep dense table on Movers | ⬜ _next priority_ |
+| FI1 | Deal score (`deal_score`, `pct_below_30d_avg`, `is_all_time_low`) gated behind ≥7 snapshot days; build SQL/logic now, "Gathering price history" until ready | ⬜ planned |
+| FI5 | Inline uPlot sparklines (7–30d) in rows/cards instead of "New listing" text; depends on accumulated history | ⬜ planned |
+| ~~FI2~~ | ~~Product images (`image_url` column, hotlink retailer img, placeholder)~~ | ❌ declined — user doesn't want product images; scrapped from plan |
+
+Notes:
+- Git + GitHub: commits for this batch (F1–F5 + FI4 carousel) made after this entry; check `git status` is clean before ending sessions.
+- No image attached to review; visual feedback taken from the live pages.
+- FRONTEND_IMPROVEMENTS.md priority order (v2): FI2 (images — **declined**) → FI3 (cards) → FI4 (carousel ✅) → FI1 (deal score) → FI5 (sparklines). Carousel ships with the GPU/CPU toggle (resolved the GPU-only vs +CPU question).
 
 ### ✅ COMPLETE: Phase 4 Deployment — single Docker image (15 Aug-2026)
 - **All-in-one Dockerfile** at the repo root: Python pipeline **and** SvelteKit dashboard in one container. `docker build -t trackaroo .` then `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`. No docker-compose required.

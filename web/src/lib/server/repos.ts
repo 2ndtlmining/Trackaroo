@@ -1,8 +1,10 @@
+import { statSync } from 'node:fs';
 import type { DB, ListingRow, ProductRow, SnapshotRow } from './db';
 import type {
 	Category,
 	GenerationTier,
 	ListingFilters,
+	ListingSort,
 	ListingStatus,
 	Retailer,
 	StockStatus
@@ -16,6 +18,9 @@ export interface Summary {
 	listingsToday: number;
 	retailerCount: number;
 	latestSnapshotDate: string | null;
+	snapshotCount: number;
+	snapshotDays: number;
+	dbSizeBytes: number;
 	biggestMover: Mover | null;
 }
 
@@ -155,7 +160,22 @@ function filtersToParams(filters: ListingFilters): { clause: string; params: Rec
 		clauses.push('p.generation_tier = @tier');
 		params.tier = filters.generation_tier;
 	}
+	if (filters.query) {
+		clauses.push('(p.model LIKE @q OR p.brand LIKE @q OR p.variant LIKE @q OR l.variant_name LIKE @q)');
+		params.q = `%${filters.query}%`;
+	}
 	return { clause: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', params };
+}
+
+function sortClause(sort: ListingSort | undefined): string {
+	switch (sort) {
+		case 'price-asc':
+			return 'ORDER BY lat.price_aud ASC, p.category, p.model, l.retailer';
+		case 'price-desc':
+			return 'ORDER BY lat.price_aud DESC, p.category, p.model, l.retailer';
+		default:
+			return 'ORDER BY p.category, p.model, l.retailer, lat.price_aud';
+	}
 }
 
 export function getBrands(db: DB): string[] {
@@ -163,6 +183,45 @@ export function getBrands(db: DB): string[] {
 		.prepare('SELECT DISTINCT brand FROM products WHERE tracked = 1 ORDER BY brand ASC')
 		.all() as Array<{ brand: string }>;
 	return rows.map((r) => r.brand);
+}
+
+export interface HeaderStats {
+	latestSnapshotDate: string | null;
+	snapshotCount: number;
+	snapshotDays: number;
+	dbSizeBytes: number;
+}
+
+function dbFileSize(db: DB): number {
+	try {
+		const list = db.pragma('database_list', { simple: false }) as Array<{
+			seq: number;
+			name: string;
+			file: string;
+		}>;
+		const main = list.find((d) => d.name === 'main');
+		if (main?.file) return statSync(main.file).size;
+	} catch {
+		// Non-fatal — in-memory DBs have no backing file.
+	}
+	return 0;
+}
+
+export function getHeaderStats(db: DB): HeaderStats {
+	const latestDateRow = db
+		.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
+		.get() as { d: string | null };
+	const snaps = db.prepare('SELECT COUNT(*) AS n FROM price_snapshots').get() as { n: number };
+	const snapDays = db
+		.prepare('SELECT COUNT(DISTINCT snapshot_date) AS n FROM price_snapshots')
+		.get() as { n: number };
+
+	return {
+		latestSnapshotDate: latestDateRow.d,
+		snapshotCount: snaps.n,
+		snapshotDays: snapDays.n,
+		dbSizeBytes: dbFileSize(db)
+	};
 }
 
 export function getSummary(db: DB): Summary {
@@ -190,13 +249,18 @@ export function getSummary(db: DB): Summary {
 		)
 		.get() as { n: number };
 
+	const header = getHeaderStats(db);
+
 	const best = getMovers(db, 1).find((m) => !m.notEnoughHistory && m.pctChange !== null) ?? null;
 
 	return {
 		trackedProducts: tracked.n,
 		listingsToday,
 		retailerCount: retailers.n,
-		latestSnapshotDate: latestDateRow.d,
+		latestSnapshotDate: header.latestSnapshotDate,
+		snapshotCount: header.snapshotCount,
+		snapshotDays: header.snapshotDays,
+		dbSizeBytes: header.dbSizeBytes,
 		biggestMover: best
 	};
 }
@@ -233,7 +297,7 @@ ${LATEST_CTE}
 		JOIN retailer_listings l ON l.id = lat.retailer_listing_id
 		JOIN products p ON p.id = l.product_id
 		WHERE l.status = 'active' AND p.tracked = 1${clause}
-		ORDER BY p.category, p.model, l.retailer, lat.price_aud
+		${sortClause(filters.sort)}
 	`;
 
 	const rows = db.prepare(sql).all({ window: `-${windowDays} days`, ...params }) as LatestRow[];
@@ -334,6 +398,68 @@ export function getProductHistory(db: DB, productId: number): ProductHistory | n
 		product,
 		series: [...listings.values()].map(({ listing, points }) => ({ listing, points }))
 	};
+}
+
+export interface CheapestListing {
+	productId: number;
+	model: string;
+	brand: string;
+	variantName: string | null;
+	retailer: Retailer;
+	price: number;
+	snapshotDate: string;
+}
+
+export function getCheapestPerModel(db: DB, category: Category): CheapestListing[] {
+	const rows = db
+		.prepare(
+			`SELECT
+				p.id AS product_id,
+				p.model,
+				p.brand,
+				l.variant_name,
+				l.retailer,
+				ps.price_aud AS price,
+				ps.snapshot_date
+			FROM products p
+			JOIN retailer_listings l ON l.product_id = p.id AND l.status = 'active'
+			JOIN price_snapshots ps
+			  ON ps.retailer_listing_id = l.id
+			  AND ps.snapshot_date = (SELECT MAX(snapshot_date) FROM price_snapshots)
+			  AND ps.stock_status = 'in_stock'
+			WHERE p.category = @category
+			  AND p.tracked = 1
+			  AND ps.price_aud = (
+				SELECT MIN(ps2.price_aud)
+				FROM price_snapshots ps2
+				JOIN retailer_listings l2 ON l2.id = ps2.retailer_listing_id
+				WHERE l2.product_id = p.id
+				  AND l2.status = 'active'
+				  AND ps2.snapshot_date = ps.snapshot_date
+				  AND ps2.stock_status = 'in_stock'
+			  )
+			GROUP BY p.id
+			ORDER BY p.model COLLATE NOCASE ASC`
+		)
+		.all({ category }) as Array<{
+		product_id: number;
+		model: string;
+		brand: string;
+		variant_name: string | null;
+		retailer: Retailer;
+		price: number;
+		snapshot_date: string;
+	}>;
+
+	return rows.map((r) => ({
+		productId: r.product_id,
+		model: r.model,
+		brand: r.brand,
+		variantName: r.variant_name,
+		retailer: r.retailer,
+		price: r.price,
+		snapshotDate: r.snapshot_date
+	}));
 }
 
 export function getMovers(db: DB, windowDays: number): Mover[] {

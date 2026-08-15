@@ -164,6 +164,8 @@ Trackaroo/
 ├── SPEC.md             # full specification and architecture
 ├── SCOPE_RULES.md      # product watchlist rules
 ├── DECISIONS.md        # rationale for key choices
+├── FRONTEND_IMPROVEMENTS.md  # frontend/UX improvement implementation brief
+├── CODE_IMPROVEMENT_PLAN.md  # backend/code improvement plan
 │
 ├── run_daily.py        # one-command daily scraper + ingest runner (with health checks)
 ├── health_checks.py    # validate JSON output + DB state after each run

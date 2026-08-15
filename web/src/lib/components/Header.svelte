@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import ThemeToggle from './ThemeToggle.svelte';
+	import { formatBytes } from '$lib/formats';
+
+	let { stats } = $props<{ stats: import('$lib/server/repos').HeaderStats }>();
 
 	const links = [
 		{ href: '/', label: 'Dashboard' },
@@ -29,6 +32,19 @@
 				</a>
 			{/each}
 		</nav>
-		<ThemeToggle />
+		<div class="flex items-center gap-4">
+			<p class="hidden items-center gap-3 text-xs text-text-muted sm:flex">
+				{#if stats.latestSnapshotDate}
+					<span title="Date of latest snapshot">Last snapshot: {stats.latestSnapshotDate}</span>
+				{/if}
+				{#if stats.snapshotCount > 0}
+					<span title="Price snapshots in database">{stats.snapshotCount} snapshots</span>
+				{/if}
+				{#if stats.dbSizeBytes > 0}
+					<span title="SQLite database size">{formatBytes(stats.dbSizeBytes)}</span>
+				{/if}
+			</p>
+			<ThemeToggle />
+		</div>
 	</div>
 </header>
