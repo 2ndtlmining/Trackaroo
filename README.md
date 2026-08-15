@@ -32,11 +32,12 @@ Daily price and stock tracking for desktop CPUs and GPUs across Australian retai
 | **Ingestion** | ✅ Complete | Reads JSON → writes DB, idempotent, supports dry-run |
 | **Query tool** | ✅ Complete | Latest prices, trends, biggest movers |
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
-| **Regression tests** | ✅ Complete | 207 tests across 13 modules (~6s) |
+| **Regression tests** | ✅ Complete | 251 tests across 15 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
-| **Frontend** | ⏳ Planned | SvelteKit dashboard (Phase 3) |
-| **Deployment** | ⏳ Planned | Docker + cron on Proxmox (Phase 4) |
+| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products, movers, price-history charts; reads the DB directly via better-sqlite3 |
+| **Frontend tests** | ✅ Complete | 90 vitest + 19 Playwright e2e (with a `goto()` hydration helper) |
+| **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
 
@@ -73,6 +74,60 @@ python query.py --trends --category gpu
 # Run regression tests
 python -m pytest unit_testing/ -v
 ```
+
+## Docker (single all-in-one container)
+
+One image runs the whole system — the dashboard **and** the daily
+scrape → ingest → health-check → backup pipeline. No docker-compose required.
+
+```bash
+# Build (context = repo root)
+docker build -t trackaroo .
+
+# Run: dashboard on :3000, pipeline every 24h, data persisted in a volume
+docker run -d --name trackaroo \
+  -p 3000:3000 \
+  -v trackaroo-data:/data \
+  trackaroo
+
+# Follow logs
+docker logs -f trackaroo
+
+# One-shot pipeline (run manually, e.g. from a host crontab)
+docker run --rm -v trackaroo-data:/data -e RUN_ONCE=1 trackaroo
+```
+
+On boot the container seeds the DB from the watchlist, serves the dashboard on
+:3000, and runs the pipeline immediately, then every `RUN_INTERVAL_HOURS`
+(default 24h). Knobs: `RUN_INTERVAL_HOURS`, `BACKUP_KEEP` (default 14),
+`-p 8080:3000` to change the host port. A docker-compose two-service split is
+also kept for those who prefer it — see [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Frontend (`web/`)
+
+SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard, `/products` (filterable table), `/movers` (24h/7d/30d, sortable), `/product/[id]` (meta + uPlot history chart).
+
+```bash
+cd web
+npm install
+
+# Dev server (open http://localhost:5173)
+npm run dev
+
+# Lint/type check
+npm run check
+
+# Production build (adapter-node)
+npm run build
+
+# Run frontend unit tests (90 vitest)
+npm test
+
+# Run browser e2e regression tests (19 Playwright, against a seeded dev server)
+npm run test:e2e
+```
+
+Point it at a different DB file with `TRACKAROO_DB=/path/to/trackaroo.db`. The default path resolves to `<repo>/db/trackaroo.db` relative to the server module.
 
 ## Data model
 
@@ -115,9 +170,16 @@ Trackaroo/
 ├── seed.py             # populate products table from watchlist.csv
 ├── ingest.py           # read JSON snapshots → write to DB
 ├── query.py            # query tool (latest prices, trends, movers)
+├── backup_db.py        # standalone DB backup with retention pruning
 ├── fetch_test.py       # Scorptec scraper
 ├── migrate.py          # schema migration script
 ├── requirements.txt    # pinned dependencies
+│
+├── Dockerfile          # all-in-one image: Python pipeline + dashboard (see DEPLOYMENT.md)
+├── docker-compose.yml  # optional two-service split of that image
+├── deploy/
+│   ├── entrypoint.sh          # pipeline-only scheduler loop (used by compose `cron`)
+│   └── entrypoint-single.sh   # all-in-one: seed → dashboard → pipeline scheduler
 │
 ├── scraper/
 │   └── pccg.py         # PCCG scraper (Algolia API)
@@ -134,20 +196,32 @@ Trackaroo/
 │   ├── cpu_pccg_10_August_2026.json
 │   └── gpu_pccg_10_August_2026.json
 │
-└── unit_testing/
-    ├── conftest.py             # shared pytest fixtures (in-memory DB)
-    ├── test_seed.py            # seed + schema tests
-    ├── test_matching.py        # product matching tests
-    ├── test_schema.py          # SQLite schema tests
-    ├── test_ingest.py          # ingestion + pipeline tests
-    ├── test_scraper.py         # scraper data quality tests
-    ├── test_run_daily.py       # daily runner + health check integration tests
-    ├── test_health_checks.py   # health check validation tests
-    ├── test_query.py           # query tool tests
-    ├── test_concurrency.py     # WAL + concurrent read/write tests
-    ├── test_e2e.py             # scrape → ingest → query → health-check pipeline
-    ├── test_performance.py     # query performance + index-usage tests
-    └── test_cli.py             # CLI entry-point smoke tests
+├── unit_testing/       # Python regression tests (251 via pytest)
+│   ├── conftest.py             # shared pytest fixtures (in-memory DB)
+│   ├── test_seed.py            # seed + schema tests
+│   ├── test_matching.py        # product matching tests
+│   ├── test_schema.py          # SQLite schema tests
+│   ├── test_ingest.py          # ingestion + pipeline tests
+│   ├── test_scraper.py         # scraper data quality tests
+│   ├── test_run_daily.py       # daily runner + health check integration tests
+│   ├── test_health_checks.py   # health check validation tests
+│   ├── test_query.py           # query tool tests
+│   ├── test_concurrency.py     # WAL + concurrent read/write tests
+│   ├── test_e2e.py             # scrape → ingest → query → health-check pipeline
+│   ├── test_performance.py     # query performance + index-usage tests
+│   ├── test_cli.py             # CLI entry-point smoke tests
+│   ├── test_resync.py          # resync_stock_status.py tests
+│   ├── test_backup.py          # backup_db.py retention tests
+│   └── test_config.py          # config.py env-override tests
+│
+└── web/                # Phase 3 frontend (SvelteKit, adapter-node)
+    ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot), …
+    ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
+    ├── src/routes/             # /, /products, /movers, /product/[id]
+    ├── test/                   # 90 vitest regression tests (6 suites)
+    ├── e2e/                    # 19 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
+    └── package.json
 ```
 
 ## Documentation reading order
@@ -156,6 +230,7 @@ Trackaroo/
 2. **[SPEC.md](SPEC.md)** — full specification, architecture, data model
 3. **[SCOPE_RULES.md](SCOPE_RULES.md)** — which products are tracked and why
 4. **[DECISIONS.md](DECISIONS.md)** — rationale behind key choices
+5. **[DEPLOYMENT.md](DEPLOYMENT.md)** — Docker (single image), compose, host cron
 
 ## Ground rules
 

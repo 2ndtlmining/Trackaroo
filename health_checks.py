@@ -27,34 +27,19 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
 
+from config import (
+    DATA_DIR,
+    DB_PATH,
+    DEFAULT_MIN_PER_CATEGORY,
+    DEFAULT_MIN_TOTAL,
+    FILE_DATE_FORMAT,
+    MATCH_THRESHOLDS,
+    MIN_HISTORY_FOR_ANOMALY,
+    PRICE_ANOMALY_STD_DEVS,
+    STALE_THRESHOLD_DAYS,
+)
+
 LOGGER = logging.getLogger(__name__)
-
-DATA_DIR = Path("data")
-DB_PATH = Path("db/trackaroo.db")
-
-# ── Baseline thresholds ──────────────────────────────────────────────
-# Updated 11-Aug-2026 for multi-variant tracking:
-#   Scorptec: ~194 matched per scrape (multi-variant; was ~56 single-variant)
-#   PCCG:     ~41 matched per scrape (single-variant; multi-variant untested due to Algolia rate limit)
-# These are the expected match counts per retailer per scrape.
-# We use a low threshold (50% of baseline) to avoid false alarms from
-# normal variation in stock levels.
-
-MATCH_THRESHOLDS = {
-    "scorptec": {"min_total": 90, "min_per_category": 30},
-    "pccg":     {"min_total": 20, "min_per_category": 5},
-}
-
-# How many days without a snapshot before flagging as stale
-STALE_THRESHOLD_DAYS = 3
-
-# Price anomaly: flag if a price deviates more than this many standard
-# deviations from the historical mean for that product+retailer combo
-PRICE_ANOMALY_STD_DEVS = 3.0
-
-# Minimum number of historical data points needed before anomaly detection
-# is meaningful (with fewer points, std dev is unreliable)
-MIN_HISTORY_FOR_ANOMALY = 3
 
 
 # ── Result types ─────────────────────────────────────────────────────
@@ -95,7 +80,7 @@ def check_json_files(target_date: Optional[str] = None) -> list[CheckResult]:
     results: list[CheckResult] = []
 
     if target_date is None:
-        target_date = date.today().strftime("%d_%B_%Y")
+        target_date = date.today().strftime(FILE_DATE_FORMAT)
 
     expected_retailers = ["scorptec", "pccg"]
     expected_categories = ["cpu", "gpu"]
@@ -127,7 +112,7 @@ def check_json_files(target_date: Optional[str] = None) -> list[CheckResult]:
 
             # Check match count
             matched = data.get("matched", 0)
-            threshold = MATCH_THRESHOLDS.get(retailer, {}).get("min_per_category", 5)
+            threshold = MATCH_THRESHOLDS.get(retailer, {}).get("min_per_category", DEFAULT_MIN_PER_CATEGORY)
             if matched < threshold:
                 results.append(CheckResult(
                     f"json_match_count_{retailer}_{category}",
@@ -357,7 +342,7 @@ def check_match_count_anomalies(db_path: Optional[Path] = None) -> list[CheckRes
                 continue
 
             latest_date, latest_count = history[0]
-            threshold = MATCH_THRESHOLDS.get(retailer, {}).get("min_total", 10)
+            threshold = MATCH_THRESHOLDS.get(retailer, {}).get("min_total", DEFAULT_MIN_TOTAL)
 
             if latest_count < threshold:
                 avg_count = sum(c for _, c in history) / len(history)

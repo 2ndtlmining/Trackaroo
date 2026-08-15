@@ -30,15 +30,13 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from config import DATA_DIR, DB_DATE_FORMAT, DB_PATH, FILE_DATE_FORMAT
+
+# Backwards-compatible aliases (module-level names kept for tests/scripts)
+DATE_FILE_FORMAT = FILE_DATE_FORMAT
+DATE_DB_FORMAT = DB_DATE_FORMAT
+
 LOGGER = logging.getLogger(__name__)
-
-DATA_DIR = Path("data")
-DB_PATH = Path("db/trackaroo.db")
-
-# Date format in filenames: "13_August_2026"
-DATE_FILE_FORMAT = "%d_%B_%Y"
-# Date format in DB: "2026-08-13"
-DATE_DB_FORMAT = "%Y-%m-%d"
 
 
 def _date_components(target_date: str) -> tuple[str, str]:

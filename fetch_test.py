@@ -9,12 +9,12 @@ import json
 import logging
 import time
 from datetime import date
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import requests
 from bs4 import BeautifulSoup
 
+from config import DATA_DIR, FILE_DATE_FORMAT
 from db.watchlist import load_watchlist, WatchlistProduct
 
 logger = logging.getLogger(__name__)
@@ -408,8 +408,8 @@ def main() -> None:
     unmatched_models = [wp["model"] for i, wp in enumerate(watchlist) if i not in matched_ids]
 
     # Save to separate CPU and GPU JSON files
-    today = date.today().strftime("%d_%B_%Y")
-    Path("data").mkdir(exist_ok=True)
+    today = date.today().strftime(FILE_DATE_FORMAT)
+    DATA_DIR.mkdir(exist_ok=True)
 
     cpu_results = [p for p in results if p["watchlist_category"] == "cpu"]
     gpu_results = [p for p in results if p["watchlist_category"] == "gpu"]
@@ -424,7 +424,7 @@ def main() -> None:
         ("cpu", cpu_results, cpu_unmatched),
         ("gpu", gpu_results, gpu_unmatched),
     ]:
-        output_file = f"data/{category}_scorptec_{today}.json"
+        output_file = DATA_DIR / f"{category}_scorptec_{today}.json"
         output_data = {
             "retailer": "scorptec",
             "scrape_date": today,

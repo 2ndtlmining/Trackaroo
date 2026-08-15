@@ -26,6 +26,7 @@ Thumbs.db
 db/*.db
 db/*.db-shm
 db/*.db-wal
+db/backups/
 
 # Scraped data (large, regenerable)
 data/
@@ -48,3 +49,13 @@ Desktop.ini
 # Logs
 *.log
 logs/
+
+# SvelteKit frontend
+web/node_modules/
+web/.svelte-kit/
+web/build/
+
+# Playwright E2E artifacts (seeded DB + reports regenerated on run)
+web/e2e/e2e.db
+web/test-results/
+web/playwright-report/

@@ -21,21 +21,18 @@ import subprocess
 import sys
 import time
 from datetime import date
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from config import DATA_DIR, DB_PATH, FILE_DATE_FORMAT, SCRAPER_TIMEOUT_SECONDS
 from health_checks import CheckResult, check_db_freshness, check_json_files, check_match_count_anomalies
 from ingest import init_db
 
 LOGGER = logging.getLogger(__name__)
 
-DATA_DIR = Path("data")
-SCRAPER_TIMEOUT_SECONDS = 300
-
 
 def today_filename() -> str:
     """Return today's date string for filenames, e.g. '10_August_2026'."""
-    return date.today().strftime("%d_%B_%Y")
+    return date.today().strftime(FILE_DATE_FORMAT)
 
 
 def run_scraper(name: str, module: str, label: str) -> bool:
@@ -140,6 +137,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     parser.add_argument("--scrape-only", action="store_true", help="Scrape but don't ingest")
     parser.add_argument("--no-health", action="store_true", help="Skip health checks")
+    parser.add_argument("--backup", type=int, metavar="KEEP", nargs="?", const=14,
+                        help="Back up the DB after ingestion (optionally: how many backups to keep)")
     args = parser.parse_args(argv)
 
     # Determine which scrapers to run
@@ -182,7 +181,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         LOGGER.info("JSON files saved to data/")
         return
 
-    conn = init_db(Path("db/trackaroo.db"))
+    conn = init_db(DB_PATH)
     try:
         stats = ingest_today(conn, dry_run=args.dry_run)
 
@@ -204,8 +203,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     # ── Health check: validate DB state after ingestion ───
     if not args.no_health and not args.scrape_only:
         db_results = (
-            check_db_freshness(Path("db/trackaroo.db"))
-            + check_match_count_anomalies(Path("db/trackaroo.db"))
+            check_db_freshness(DB_PATH)
+            + check_match_count_anomalies(DB_PATH)
         )
         _report_results(db_results, "DB validation")
 
@@ -214,6 +213,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         warnings = [r for r in db_results if r.status == CheckResult.WARNING]
         if not errors and not warnings:
             LOGGER.info("\nDB health: all %d checks passed", ok_count)
+
+    # ── Backup (optional) ───────────────────────────────────────────
+    if args.backup and not args.dry_run and not args.scrape_only:
+        from backup_db import backup_database
+        LOGGER.info("\n%s\nBacking up database:\n%s", "=" * 60, "=" * 60)
+        backup_database(keep=args.backup)
 
 
 if __name__ == "__main__":

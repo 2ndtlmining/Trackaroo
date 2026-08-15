@@ -17,13 +17,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from config import DB_PATH, SCHEMA_PATH, WATCHLIST_PATH
 from db.watchlist import load_watchlist_products, parse_spec
 
 LOGGER = logging.getLogger(__name__)
-
-DB_PATH = Path("db/trackaroo.db")
-SCHEMA_PATH = Path("db/schema.sql")
-WATCHLIST_PATH = Path("db/watchlist.csv")
 
 Product = Dict[str, Any]
 

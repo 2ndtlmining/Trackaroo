@@ -1,10 +1,38 @@
 # Project Status
 
-**Last updated:** 2026-08-14 (Phase 3 frontend build plan finalized in `PHASE3_PLAN.md`; implementation not yet started)
+**Last updated:** 2026-08-15 (Phase 4 Docker complete: single all-in-one image; regression suite green — 251 backend, 90 frontend, 19 e2e)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
-**Current phase:** Backend complete and frontend-ready — all tests passing, Phase 3 (frontend) is next
+**Current phase:** Phase 3/4 (frontend + deployment) — all views live, Docker single-image deployment verified end-to-end
 
 ## Active Issues
+
+### ✅ COMPLETE: Phase 4 Deployment — single Docker image (15 Aug-2026)
+- **All-in-one Dockerfile** at the repo root: Python pipeline **and** SvelteKit dashboard in one container. `docker build -t trackaroo .` then `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`. No docker-compose required.
+- **`deploy/entrypoint-single.sh`**: seeds the DB, starts the dashboard on :3000, runs the pipeline immediately then every `RUN_INTERVAL_HOURS` (default 24). `RUN_ONCE=1` runs one pipeline then exits (host crontab compatible).
+- **Runtime gotcha fixed:** the scrapers use Python 3.12 PEP 701 f-strings (`f"{wp["vram_gb"]}gb"`), which are compile errors on 3.11 — so the runtime stage is `python:3.12-slim` with the Node binary copied from the Node build stage (bookworm apt `python3` is 3.11 and would crash).
+- **`docker-compose.yml`** kept as an optional two-service split of the same image (`cron` pins the pipeline-only entrypoint, `web` runs the server). `web/Dockerfile` removed (orphaned).
+- **Verified live in Docker:** image built, container booted — DB seeded (100 products), both scrapers ran OK, 315 listings ingested, backup created, dashboard served HTTP 200 with live data (315 listings today / 2 retailers).
+- **Playwright e2e suite added** (19 tests in `e2e/app.spec.ts`): navigation, theme toggle/persistence/reload, dashboard stat tiles + table, category/retailer/tier URL filters, clear-filters, products empty-state, movers windows + link-through, product detail + 404. Includes a `goto()` helper that waits for Svelte hydration (`networkidle`) — clicks/selects before hydration silently did nothing.
+- **Regression counts now:** 251 backend (15 modules via pytest), 90 frontend (vitest), 19 e2e (Playwright).
+- **Docs updated:** README (quick-start Docker + frontend e2e + repo layout), DEPLOYMENT.md (single-image Option C primary), AGENTS.md (commands + Docker + E2E conventions).
+
+### ✅ COMPLETE: Frontend M4–M5 (15 Aug-2026)
+- **M4 polish & verify:**
+  - §7a freshness wording — `LatestListingTable` now shows stale listings as `last seen {Nd} ago` in the freshness column, mutes the stale price cell, and drops hover on stale rows (never present stale data as current)
+  - Dashboard "Listings today" stat carries the latest snapshot date as context subtext
+  - Dark/light parity + chart tooltip token styling confirmed; `.num` mono/tabular-nums applied consistently; `meta name="description"` added to the dashboard
+  - Full verification: `svelte-check` 0 errors, `npm run build` green, production `adapter-node` server smoke-tested against the real DB — `/`, `/products`, `/movers` for 24h/7d/30d (invalid window falls back to 7d), `/product/1` all 200; `/product/999999` 404
+- **M5 tests & docs (partial):** added `test/components.test.ts` (13 tests) — presentational components (`Badge`, `StatTile`, `PriceChange`, `StockBadge`, `Chip`, `LatestListingTable`) mounted in jsdom, covering tone mapping, empty state, variant truncation, new-listing vs stale labelling, and "last seen" wording. Added vitest-only `svelte` → client-runtime alias in `vite.config.js` so client component tests can `mount()` (see DECISIONS.md).
+- **Frontend tests now 90** (formats 27, change 11, filters 14, theme 7, repos 18, components 13) — all passing.
+- **Docs updated:** DECISIONS.md (uPlot choice, theme strategy, DB path, `data` prop lesson, component-test alias), STATUS.md regression counts.
+
+### ✅ COMPLETE: Frontend M0–M3 (14–15 Aug-2026)
+- **Scaffold (M0):** SvelteKit + TypeScript + Tailwind v4 + `adapter-node` in `web/`; better-sqlite3 native build verified; `.gitignore` updated.
+- **Design foundations (M1):** token-driven `app.css` with `data-theme` dark-default/light; `theme.ts` toggle persisted in `localStorage`; primitives `Badge`, `StatTile`, `PriceChange`, `Chip`, `Filters`, `Header` + `+layout.svelte`; `.num` mono/tabular-nums utility.
+- **Server data layer (M2):** `src/lib/server/db.ts` (read-only singleton, `busy_timeout=5000`, never toggles journal mode, path `TRACKAROO_DB` → default `../../../../db/trackaroo.db`), `repos.ts` (`getSummary`, `getLatestListings`, `getProductHistory`, `getMovers`, `getBrands`), `formats.ts` + `change.ts`. Vitest suites: formats 27, change 11, repos 18 (temp DB seeded from `data/*.json`).
+- **Views (M3):** Dashboard `/` (stat row + filterable latest-prices table), Products `/products` (full filterable table), Movers `/movers` (24h/7d/30d windows, abs/pct/price sort, up/down/all filter, not-enough-history state), Product `/product/[id]` (meta chips + uPlot `PriceChart.svelte` with one series per retailer listing, single accent hue + solid/dashed/dotted line styles + hand-rolled token-styled tooltip + retailer listings panel), filters via `searchParams`.
+- **Verified:** `svelte-check` 0 errors, `vitest` 77 passing, `npm run build` green, and a live smoke test of the production `adapter-node` server against the real DB: `/`, `/products`, `/movers?window=24h` (invalid `window` falls back to 7d), `/product/1` all 200; `/product/999999` correctly 404; expected UI markers present (stat tiles, chips, chart container, retailer listings).
+- **Bug caught by smoke test:** pages were destructuring load results as top-level props instead of SvelteKit's single `data` prop — fixed across all four pages (Svelte 5 `$props()`). Also fixed a mis-written file path for the product `+page.server.ts` (stray duplicate directory segment) that silently excluded the product load from the build.
 
 ### ✅ COMPLETE: PCCG Stock Status Hardening (13-Aug-2026)
 - **What broke:** PCCG scraper marked every product `in_stock` regardless of actual state ("Sold Out", "ETA: ...", "Stock at Supplier" were ignored)
@@ -72,16 +100,28 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - `health_checks.py` — validates scraped JSON output and DB state (multi-variant thresholds; variant-count anomaly detection)
 - `run_daily.py` — one-command daily runner: scrapes both retailers → validates → ingests → validates DB
 - `resync_stock_status.py` — corrects stock_status after scraper fixes; dry-run + apply mode, idempotent
+- `backup_db.py` — standalone DB backup with retention pruning
 - `requirements.txt` — pinned dependencies
-- `unit_testing/` — **226 regression tests** across 14 modules (seed, matching, schema, ingestion, scraper, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, resync)
+- `Dockerfile` — **single all-in-one image** (Python pipeline + dashboard); `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`
+- `docker-compose.yml` — optional two-service split of the same image
+- `deploy/entrypoint-single.sh` — all-in-one entrypoint (seed → dashboard → pipeline scheduler); `entrypoint.sh` for pipeline-only
+- `.dockerignore` — excludes regenerable artifacts and the web build context
+- `unit_testing/` — **251 regression tests** across 15 modules (seed, matching, schema, ingestion, scraper, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, resync, backup, config)
 - RAM tracking scope (`RAM_SCOPE.md`) — plan for adding DDR4/DDR5 RAM price tracking
-- Historical data: Scorptec + PCCG snapshots for 09-Aug through 13-Aug
+- Historical data: Scorptec + PCCG snapshots for 09-Aug through 13-Aug (15-Aug in Docker test runs)
 - `.env.example` — committed template documenting Algolia env vars (and `.gitignore` negation)
 - `PHASE3_PLAN.md` — executable Phase 3 frontend handoff plan (locked decisions, data model facts, M0–M5 steps)
+- `web/` — Phase 3 frontend (SvelteKit + TS + Tailwind v4 + adapter-node):
+  - `src/app.css` + `src/lib/theme.ts` — token system, dark/light, theme toggle
+  - `src/lib/components/` — `Badge`, `StatTile`, `PriceChange`, `Chip`, `Filters`, `Header`, `LatestListingTable`, `PriceChart` (uPlot), `+layout.svelte`
+  - `src/lib/server/` — `db.ts` (better-sqlite3 read-only singleton), `repos.ts`, plus `formats.ts`/`change.ts`
+  - Routes — `/` dashboard, `/products`, `/movers`, `/product/[id]` with URL-driven filters
+  - `test/` — vitest: formats (27), change (11), filters (14), theme (7), repos (18), components (13) — **90 tests**
+  - `e2e/` — Playwright: 19 tests (app.spec.ts + seed.mjs deterministic DB) — **19 tests**
 
 ## What's verified
 
-- **Backend:** 226 tests pass in ~6s — seed, matching, schema/triggers, ingestion, scrapers, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, resync
+- **Backend:** 251 tests pass — seed, matching, schema/triggers, ingestion, scrapers, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, resync, backup, config
 - **Stock status:** PCCG 13-Aug corrected from 123 all-in_stock to 86 in_stock + 35 out_of_stock + 2 preorder; resync verified idempotent
 - **Concurrency:** test proving readers hit no lock errors while a writer commits under WAL (stable 10/10)
 - **Performance:** `show_latest_prices` 60ms / `show_biggest_movers` 7ms on ~10k synthetic snapshots; history query provably index-backed
@@ -90,25 +130,28 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - **Health checks:** 10/10 green on the real DB — JSON validation, freshness, match-count anomalies (variant-based), price anomalies (active; 310 of 333 listings now past the 3-point floor)
 - **Schema:** `variant_name` column present; `last_snapshot_at` auto-maintained by triggers; DB in WAL mode
 - **Code quality:** all modules type-hinted + logged; shared watchlist module deduplicates logic; secrets moved to env vars
-- **Regression:** 226 passing
+- **Frontend:** `svelte-check` 0 errors; vitest **90 passing**; Playwright e2e **19 passing**; production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
+- **Docker:** single all-in-one image built and booted — DB seeded, both scrapers OK, 315 listings ingested, backup created, dashboard HTTP 200 with live stats
+- **Regression:** backend 251 passing (pytest); frontend 90 passing (vitest) + 19 e2e (Playwright)
 
 ## What's NOT done yet
 
-1. **Hardcoded values review** — Scan for magic numbers, hardcoded thresholds, paths that should be config-driven (e.g., health check limits, BATCH_SIZE, timeouts). Lower priority; can be done as a separate pass before frontend.
-2. **Frontend (Phase 3)** — SvelteKit dashboard in `web/`, reading the DB directly via better-sqlite3: product table, price history charts, biggest movers
-3. **Hardening (Phase 4)** — Docker deployment, cron scheduling, backups
-4. **Price anomaly detection maturity** — a single-day jump only trips the 3σ check once a listing has ~10+ history points (max deviation ≈ √N); most listings still below that depth. See DECISIONS.md.
-5. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3
+1. **Hardcoded values review** — Scan for magic numbers, hardcoded thresholds, paths that should be config-driven (e.g., health check limits, BATCH_SIZE, timeouts). Lower priority; can be done as a separate pass.
+2. **Frontend (Phase 3) — complete.** M0–M5 done: views, polish/verify, units + e2e. Remaining: final visual QA eyeball (any new filters/hardening belong to Phase 4).
+3. **Detailed deployment** — done: single Docker image + compose split verified. Optional extras for later: reverse proxy (Caddy/nginx/Traefik) for TLS, host-cron option docs already in DEPLOYMENT.md.
+4. **Hardening (Phase 4, remaining)** — reverse proxy/TLS, Prometheus-style monitoring, alerting on pipeline failure (current: exit codes + logs).
+5. **Price anomaly detection maturity** — a single-day jump only trips the 3σ check once a listing has ~10+ history points (max deviation ≈ √N); most listings still below that depth. See DECISIONS.md.
+6. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3/4
 
 ## Next concrete steps
 
-1. **Move to Phase 3 (frontend)** — SvelteKit dashboard in `web/` reading `db/trackaroo.db` directly via better-sqlite3 (WAL already active); scaffold and build per `PHASE3_PLAN.md`
-2. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 5 days; anomaly detection sensitivity improves with each new ≥10-point listing)
-3. **Hardening (Phase 4)** — Docker deployment, cron scheduling, backups
+1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 7 days; anomaly detection sensitivity improves with each new ≥10-point listing)
+2. **Reverse proxy + TLS** — put the dashboard behind Caddy/nginx/Traefik if internet-facing (docs in DEPLOYMENT.md)
+3. **Monitoring/alerting** — watch pipeline success via exit codes / logs (health checks already log "DB health: all N checks passed")
 
 ## Regression test count
 
-- **226 tests** across 14 test modules — all passing in ~6s
+- **251 tests** across 15 test modules via pytest
   - `test_seed.py` — seed, watchlist loading, schema creation
   - `test_matching.py` — product matching logic
   - `test_schema.py` — schema validation, triggers, constraints
@@ -122,6 +165,10 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
   - `test_performance.py` — query wall-clock bounds + index usage over ~10k synthetic snapshots
   - `test_cli.py` — CLI entry-point smoke tests
   - `test_resync.py` — resync_stock_status.py: dry-run, apply, idempotency, backup filtering
+  - `test_backup.py` — backup_db.py retention
+  - `test_config.py` — config.py env-override
+- **Frontend unit (vitest, `web/`) — 90 tests** across 6 suites (formats 27, change 11, filters 14, theme 7, repos 18, components 13) — against temp DBs seeded from `data/*.json`
+- **Frontend e2e (Playwright, `web/e2e/`) — 19 tests** — navigation, theme, dashboard filters, movers, product detail; runs via `npm run test:e2e` against a seeded dev server
 
 ## How to update this file
 

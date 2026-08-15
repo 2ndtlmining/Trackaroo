@@ -10,12 +10,21 @@ import os
 import re
 import time
 from datetime import date
-from pathlib import Path
 from typing import Any, Dict, Tuple
 from urllib.parse import urlencode
 
 import requests
 
+from config import (
+    ALGOLIA_BACKOFF_MAX_SECONDS,
+    ALGOLIA_MAX_RETRIES,
+    ALGOLIA_RATE_LIMIT_WAIT_SECONDS,
+    ALGOLIA_TIMEOUT_SECONDS,
+    BATCH_DELAY,
+    BATCH_SIZE,
+    DATA_DIR,
+    FILE_DATE_FORMAT,
+)
 from db.watchlist import load_watchlist, WatchlistProduct
 
 LOGGER = logging.getLogger(__name__)
@@ -39,9 +48,7 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-# Batch size for multi-query requests
-BATCH_SIZE = 16  # Larger batches = fewer iteration rounds; Algolia handles 16+ queries per call
-BATCH_DELAY = 1.0  # Seconds between successful batches — Algolia rate limits are strict
+# Batch size for multi-query requests (config-driven — see TRACKAROO_BATCH_SIZE)
 
 
 def match_product(scraped_name: str, watchlist_product: WatchlistProduct) -> bool:
@@ -195,12 +202,12 @@ def algolia_single_search(
         params_str = urlencode(params_dict)
         payload = {"requests": [{"indexName": ALGOLIA_INDEX, "params": params_str}]}
 
-        for attempt in range(3):
+        for attempt in range(ALGOLIA_MAX_RETRIES):
             try:
-                r = requests.post(ALGOLIA_URL, json=payload, headers=HEADERS, timeout=15)
+                r = requests.post(ALGOLIA_URL, json=payload, headers=HEADERS, timeout=ALGOLIA_TIMEOUT_SECONDS)
                 if r.status_code == 429:
-                    wait = 5 * (attempt + 1)
-                    LOGGER.warning("Rate limited (attempt %d/3), waiting %ds...", attempt + 1, wait)
+                    wait = ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)
+                    LOGGER.warning("Rate limited (attempt %d/%d), waiting %ds...", attempt + 1, ALGOLIA_MAX_RETRIES, wait)
                     time.sleep(wait)
                     continue
                 if r.status_code != 200:
@@ -285,12 +292,12 @@ def algolia_batch_search(
 
         payload = {"requests": requests_list}
 
-        for attempt in range(3):
+        for attempt in range(ALGOLIA_MAX_RETRIES):
             try:
-                r = requests.post(ALGOLIA_URL, json=payload, headers=HEADERS, timeout=15)
+                r = requests.post(ALGOLIA_URL, json=payload, headers=HEADERS, timeout=ALGOLIA_TIMEOUT_SECONDS)
                 if r.status_code == 429:
-                    wait = 5 * (attempt + 1)
-                    LOGGER.warning("Rate limited (attempt %d/3), waiting %ds...", attempt + 1, wait)
+                    wait = ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)
+                    LOGGER.warning("Rate limited (attempt %d/%d), waiting %ds...", attempt + 1, ALGOLIA_MAX_RETRIES, wait)
                     time.sleep(wait)
                     continue
                 if r.status_code != 200:
@@ -409,7 +416,7 @@ def scrape_category(
         # Use exponential backoff for consecutive failed batches
         if batch_failed:
             consecutive_failures += 1
-            delay = min(BATCH_DELAY * (2 ** consecutive_failures), 20)
+            delay = min(BATCH_DELAY * (2 ** consecutive_failures), ALGOLIA_BACKOFF_MAX_SECONDS)
         else:
             consecutive_failures = 0
             delay = BATCH_DELAY
@@ -460,8 +467,8 @@ def main() -> None:
             LOGGER.info("  - %s", m)
 
     # Save to separate JSON files
-    today = date.today().strftime("%d_%B_%Y")
-    Path("data").mkdir(exist_ok=True)
+    today = date.today().strftime(FILE_DATE_FORMAT)
+    DATA_DIR.mkdir(exist_ok=True)
 
     for category in ["cpu", "gpu"]:
         cat_results = [p for p in all_results if p["watchlist_category"] == category]
@@ -469,7 +476,7 @@ def main() -> None:
             m for m in unmatched
             if any(wp["model"] == m and wp["category"] == category for wp in watchlist)
         ]
-        output_file = f"data/{category}_pccg_{today}.json"
+        output_file = DATA_DIR / f"{category}_pccg_{today}.json"
         output_data = {
             "retailer": "pccg",
             "scrape_date": today,

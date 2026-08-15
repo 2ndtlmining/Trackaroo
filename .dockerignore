@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data — volumes are mounted in at runtime
+data/
+db/backups/
+db/*.db
+db/*.db-wal
+db/*.db-shm
+
+# SvelteKit / web (built inside its own image stage)
+web/node_modules/
+web/.svelte-kit/
+web/build/
+web/e2e/e2e.db
+web/test-results/
+web/playwright-report/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db

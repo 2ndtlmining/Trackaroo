@@ -7,12 +7,13 @@ avoids three copies of the same CSV-parsing + spec-parsing logic.
 from __future__ import annotations
 
 import csv
-from pathlib import Path
 from typing import Any, Dict, List
+
+from config import WATCHLIST_PATH
 
 WatchlistProduct = Dict[str, Any]
 
-DEFAULT_WATCHLIST_PATH = "db/watchlist.csv"
+DEFAULT_WATCHLIST_PATH = str(WATCHLIST_PATH)
 
 
 def parse_spec(spec: str, category: str) -> Dict[str, Any]:
@@ -102,4 +103,5 @@ def load_watchlist_products(path: str = DEFAULT_WATCHLIST_PATH) -> List[Watchlis
 
 def watchlist_exists(path: str = DEFAULT_WATCHLIST_PATH) -> bool:
     """Return True if the watchlist CSV exists at the given path."""
+    from pathlib import Path
     return Path(path).exists()

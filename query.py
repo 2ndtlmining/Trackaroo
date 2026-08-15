@@ -18,9 +18,9 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
-LOGGER = logging.getLogger(__name__)
+from config import DB_PATH, BUSY_TIMEOUT_MS
 
-DB_PATH = Path("db/trackaroo.db")
+LOGGER = logging.getLogger(__name__)
 
 
 def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -45,7 +45,7 @@ def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
     # (ingest/seed/migrate init_db) and persists in the DB file header. A read
     # connection only needs a busy timeout for the brief window when a WAL
     # checkpoint holds the write lock.
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     conn.row_factory = sqlite3.Row
     return conn
 

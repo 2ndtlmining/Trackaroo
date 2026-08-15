@@ -1,0 +1,61 @@
+# Trackaroo — self-hosted deployment stack.
+#
+# NOTE: a single Docker image (repo-root Dockerfile) already runs BOTH the
+# pipeline and the dashboard in one container — see DEPLOYMENT.md "Option C".
+# This compose file is kept for the two-service split; the `cron` service
+# pins the pipeline-only entrypoint from that same image.
+#
+# Services:
+#   cron  — runs the daily scrape → ingest → health-check → backup pipeline
+#           on a fixed interval (RUN_INTERVAL_HOURS, default 24h).
+#   web   — SvelteKit frontend serving the dashboard on :3000.
+#
+# Both share one volume (`trackaroo-data`) containing the SQLite DB
+# (`/data/trackaroo.db`), the scraped JSON snapshots (`/data/`), and DB
+# backups (`/data/backups/`). WAL mode + better-sqlite3 make the concurrent
+# read (web) / write (cron) safe.
+#
+# Usage:
+#   docker compose up -d --build      # start both services
+#   docker compose ps                 # status
+#   docker compose logs -f cron web   # follow logs
+#
+# Optional overrides:
+#   RUN_INTERVAL_HOURS=6              # cron cadence
+#   PORT_TRACKAROO=8080               # host port for the dashboard
+
+services:
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/bin/tini", "--", "/usr/local/bin/trackaroo-entrypoint-pipeline"]
+    restart: unless-stopped
+    environment:
+      - RUN_INTERVAL_HOURS=${RUN_INTERVAL_HOURS:-24}
+      - BACKUP_KEEP=${BACKUP_KEEP:-14}
+      - ALGOLIA_APP_ID=${ALGOLIA_APP_ID:-HPD3DBJ2IO}
+      - ALGOLIA_API_KEY=${ALGOLIA_API_KEY:-9559cf1a6c7521a30ba0832ec6c38499}
+    volumes:
+      - trackaroo-data:/data
+    depends_on: []
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/bin/tini", "--", "node", "web/build/index.js"]
+    restart: unless-stopped
+    ports:
+      - "${PORT_TRACKAROO:-3000}:3000"
+    environment:
+      - TRACKAROO_DB=/data/trackaroo.db
+      - HOST=0.0.0.0
+      - PORT=3000
+    volumes:
+      - trackaroo-data:/data
+    depends_on:
+      - cron
+
+volumes:
+  trackaroo-data:

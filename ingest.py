@@ -24,11 +24,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-LOGGER = logging.getLogger(__name__)
+from config import DATA_DIR, DB_PATH, DB_DATE_FORMAT, FILE_DATE_FORMAT, SCHEMA_PATH
 
-DB_PATH = Path("db/trackaroo.db")
-SCHEMA_PATH = Path("db/schema.sql")
-DATA_DIR = Path("data")
+LOGGER = logging.getLogger(__name__)
 
 Stats = Dict[str, int]
 
@@ -71,8 +69,8 @@ def parse_date_from_filename(filename: str) -> str:
     if len(parts) >= 3:
         date_str = "_".join(parts[-3:])  # "10_August_2026"
         try:
-            dt = datetime.strptime(date_str, "%d_%B_%Y")
-            return dt.strftime("%Y-%m-%d")
+            dt = datetime.strptime(date_str, FILE_DATE_FORMAT)
+            return dt.strftime(DB_DATE_FORMAT)
         except ValueError:
             pass
     return ""

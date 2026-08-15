@@ -88,3 +88,18 @@ The `data/` directory contains `.backup_buggy.json` files preserving the origina
 - Does NOT touch Scorptec data or other dates
 
 9 new regression tests cover: dry-run behavior, apply mode, idempotency, backup file filtering, and helper function correctness.
+
+### Charts: uPlot, single accent hue + line styles (2026-08-15)
+Phase 3 dashboard charts settled on **uPlot** (~8kb, zero default theme) rather than a heavier charting lib (ECharts/Recharts) or D3 by hand. All price lines share the one accent token `--accent`; variant/retailer series are distinguished by line style (solid / dashed / dotted) instead of extra hues, keeping the plot within the design system's "one restrained accent" rule. Crosshair + tooltip are hand-rolled: cursor data comes through uPlot's `setCursor` hook reading `u.cursor.idx`, tooltip HTML is token-styled (`text-text`, `border-border`, `bg-surface`). On a theme toggle, the chart rebuilds (read `getComputedStyle` once at mount); ResizeObserver keeps it responsive.
+
+### Theme strategy: CSS variables + `data-theme`, dark default (2026-08-15)
+Design tokens live as CSS custom properties in `src/app.css` with a dark-default `:root` and a light override under `[data-theme='light']`; Tailwind v4 maps them via `@theme inline` (`bg-surface`, `text-muted`, etc.). The theme toggle (`src/lib/theme.ts`) persists to `localStorage` (`trackaroo-theme`), and `app.html` has an inline pre-hydration script applying the stored theme to `documentElement.dataset.theme` before paint to avoid FOUC. Default is dark.
+
+### Frontend DB path resolution (2026-08-15)
+The default DB path in `web/src/lib/server/db.ts` is resolved relative to the server module with `fileURLToPath(import.meta.url)` up to the repo root: `../../../../db/trackaroo.db` (from `src/lib/server/`, that lands on `<repo>/db/trackaroo.db`). `TRACKAROO_DB` env overrides it when deploying elsewhere. Read-only open, `busy_timeout=5000`, WAL inherited from file header — mirrors the Python reader rule (never toggle journal mode).
+
+### SvelteKit pages receive load results as a single `data` prop (2026-08-15)
+Under Svelte 5 runes, `+page.svelte` components must destructure the load result through the single `data` prop (`let { data } = $props()`), NOT as individual top-level props. Initially the views destructured `{ summary, listings }` etc. directly, which SSR-rendered with every page 500ing (`Cannot read properties of undefined`). A production smoke test caught it — svelte-check and vitest did not, because component compile succeeds either way. Lesson: always smoke-test SSR-rendered routes against the real DB, not just typecheck/unit tests.
+
+### Component smoke tests via client `mount()` (2026-08-15)
+Vitest runs modules under node conditions, so `import { render } from 'svelte/server'` fails against client-compiled components and `mount()` from the bare `svelte` main resolves to the server build (which throws `lifecycle_function_unavailable`). Fix: in `vite.config.js`, when `process.env.VITEST` is set, alias the bare `svelte` specifier to `node_modules/svelte/src/index-client.js` so arrays of integration-style component tests can `mount()` in jsdom. The alias is scoped to vitest only — the production build keeps its node/server condition resolution.

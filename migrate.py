@@ -17,9 +17,9 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-LOGGER = logging.getLogger(__name__)
+from config import DB_PATH
 
-DB_PATH = Path("db/trackaroo.db")
+LOGGER = logging.getLogger(__name__)
 
 
 def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
