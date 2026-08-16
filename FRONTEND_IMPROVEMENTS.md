@@ -2,11 +2,13 @@
 
 **Context for whoever implements this:** Trackaroo is a self-hosted AU CPU/GPU price tracker. Backend (scraper, SQLite schema, ingestion) is fully built — see `STATUS.md`, `SPEC.md`, `SCOPE_RULES.md`, `DECISIONS.md` in the repo root for full context; read those first if you haven't. This doc covers frontend/UX improvements only. The current dashboard (screenshot reviewed) is a plain data table — functional, but doesn't help the user *find deals*, which is the actual product goal per `SPEC.md` §4.
 
-**Read this whole doc before implementing anything** — items reference each other (e.g. the carousel depends on the deal-score calculation).
+**Read this whole doc before implementing anything** — items reference each other (e.g. the sparklines use the same price-history data the movers views already query).
 
 ---
 
-## 1. Deal Score — the foundation everything else builds on
+## 1. Deal Score
+
+> **STATUS: DECLINED (2026-08-17)** — the user decided not to build the deal score. This item is scrapped from the plan; nothing downstream depends on it (the carousel shipped without it, and the sparklines use raw price history directly).
 
 **Problem:** nothing in the current UI tells the user "this is a good deal" vs. "this is just a listing." Price and stock are shown, but there's no signal for *is this worth buying now*.
 
@@ -37,12 +39,12 @@ Also compute, per listing, alongside deal_score:
 
 ## 3. Switch the Products view from table rows to cards
 
-> **STATUS: DONE (2026-08-16)** — shipped as the `ProductCard` grid on `/products` (grouped by product, expandable variant listings, `LatestListingTable` in compact mode). No product images (item 2 declined); the deal-score badge appears on cards once item 1 lands.
+> **STATUS: DONE (2026-08-16)** — shipped as the `ProductCard` grid on `/products` (grouped by product, expandable variant listings, `LatestListingTable` in compact mode). No product images (item 2 declined); no deal-score badge (item 1 declined).
 
 **Problem:** with 100+ products and growing, and especially once you're showing multiple AIB variants (8 RTX 3050 listings in the screenshot alone), a flat table gets overwhelming fast, and it's the wrong shape for deal-browsing anyway — people scan deal sites visually, not row-by-row.
 
 **Implementation:**
-- Card layout for the **Products** page: image, model name, retailer badge, price, stock badge, deal-score badge (once available per item 1)
+- Card layout for the **Products** page: model name, retailer badge, price, stock badge
 - Keep the **dense table** for the **Movers** page — that's a comparison/analysis view where density is actually useful, unlike Products which is a browsing view
 - Group multi-variant listings under one expandable product card where practical (e.g. "GeForce RTX 3050 — 8 listings from $269" expands to show each variant), rather than 8 separate top-level rows — reduces visual noise significantly as the watchlist grows
 
@@ -102,12 +104,12 @@ ORDER BY p.model; -- or by a defined tier/performance order if you want the caro
 
 ## 6. Priority order
 
-Item 1 (deal score) and item 5 (sparklines) need real price history to matter; the carousel (item 4, now shipped with a GPU/CPU toggle) has no such dependency. Product images (item 2) have been **declined** by the user and are dropped from the plan:
+Item 5 (sparklines) needs real price history to matter; the carousel (item 4, now shipped with a GPU/CPU toggle) has no such dependency. Product images (item 2) and the deal score (item 1) have been **declined** by the user and are dropped from the plan:
 
 1. ~~Product images (item 2)~~ — declined by the user
-2. ~~**Card layout for Products page** (item 3)~~ — **done** (one card per product, cheapest in-stock "from $X" + retailer, expandable per-variant listings; dense table kept on Movers/Dashboard)
-3. ~~Cheapest-per-model GPU carousel (item 4)~~ — **done** (single carousel, GPU/CPU toggle, cheapest in-stock per model at latest snapshot)
-4. **Deal score calculation** (item 1) — build the SQL/logic now even though it won't be meaningful for ~2 weeks; wire it up so it's ready the moment there's enough history
+2. ~~**Deal score** (item 1)~~ — **declined** (2026-08-17) — not building; the "is this a good deal" signal stays out of scope
+3. ~~**Card layout for Products page** (item 3)~~ — **done** (one card per product, cheapest in-stock "from $X" + retailer, expandable per-variant listings; dense table kept on Movers/Dashboard)
+4. ~~Cheapest-per-model GPU carousel (item 4)~~ — **done** (single carousel, GPU/CPU toggle, cheapest in-stock per model at latest snapshot)
 5. **Sparklines** (item 5) — depends on accumulated history, lowest urgency right now but highest payoff once data exists
 
 ## 7. Documentation note

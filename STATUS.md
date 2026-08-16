@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-16 (PCCG reliability fixes + real spec data + products card grid shipped)
+**Last updated:** 2026-08-17 (17-Aug daily run green — 308 snapshots; deal score FI1 declined + removed from plan)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 5 — frontend/UX improvements program + PCCG reliability (see Active Issues below).
 
@@ -48,14 +48,14 @@ Goal: make the dashboard actually help the user *find deals*, plus polish. Drive
 | F5 | Website icon / favicon | ✅ done — `static/favicon.svg` (accent-blue chart mark), linked in `app.html` |
 | F6 | Additional visual improvements (after walk-through) | ⬜ planned |
 | FI3 | Products page: card grid (grouped by model, expandable variants); keep dense table on Movers | ✅ done — one card per product (model, brand, category, cheapest in-stock "from $X" + retailer, listing count); expand reveals the variant table in compact mode; `sort=price-*` orders cards by cheapest in-stock price |
-| FI1 | Deal score (`deal_score`, `pct_below_30d_avg`, `is_all_time_low`) gated behind ≥7 snapshot days; build SQL/logic now, "Gathering price history" until ready | ⬜ planned |
+| FI1 | ~~Deal score (`deal_score`, `pct_below_30d_avg`, `is_all_time_low`) gated behind ≥7 snapshot days~~ | ❌ declined (17-Aug) — user doesn't want a deal score; removed from the plan |
 | FI5 | Inline uPlot sparklines (7–30d) in rows/cards instead of "New listing" text; depends on accumulated history | ⬜ planned |
 | ~~FI2~~ | ~~Product images (`image_url` column, hotlink retailer img, placeholder)~~ | ❌ declined — user doesn't want product images; scrapped from plan |
 
 Notes:
 - Git + GitHub: commits for this batch (F1–F5 + FI4 carousel) made after this entry; check `git status` is clean before ending sessions.
 - No image attached to review; visual feedback taken from the live pages.
-- FRONTEND_IMPROVEMENTS.md priority order (v2): FI2 (images — **declined**) → FI3 (cards ✅) → FI4 (carousel ✅) → FI1 (deal score) → FI5 (sparklines). Carousel ships with the GPU/CPU toggle (resolved the GPU-only vs +CPU question).
+- FRONTEND_IMPROVEMENTS.md priority order (v2): FI2 (images — **declined**) → FI3 (cards ✅) → FI4 (carousel ✅) → FI1 (deal score — **declined 17-Aug**) → FI5 (sparklines). Carousel ships with the GPU/CPU toggle (resolved the GPU-only vs +CPU question).
 
 ### ✅ COMPLETE: Phase 4 Deployment — single Docker image (15 Aug-2026)
 - **All-in-one Dockerfile** at the repo root: Python pipeline **and** SvelteKit dashboard in one container. `docker build -t trackaroo .` then `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`. No docker-compose required.
@@ -161,7 +161,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - `.dockerignore` — excludes regenerable artifacts and the web build context
 - `unit_testing/` — **374 regression tests** across 19 modules (seed, matching, schema, ingestion, scraper, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, resync, backup, config, specs schema, specs matching, sync_specs)
 - RAM tracking scope (`RAM_SCOPE.md`) — plan for adding DDR4/DDR5 RAM price tracking
-- Historical data: Scorptec + PCCG snapshots for 09-Aug through 13-Aug (15-Aug in Docker test runs)
+- Historical data: Scorptec + PCCG snapshots for 09-Aug through 17-Aug (16-Aug PCCG missing — rate-limited; 17-Aug full: 185 Scorptec + 123 PCCG = 308 snapshots)
 - `.env.example` — committed template documenting Algolia env vars (and `.gitignore` negation)
 - `PHASE3_PLAN.md` — executable Phase 3 frontend handoff plan (locked decisions, data model facts, M0–M5 steps)
 - `web/` — Phase 3 frontend (SvelteKit + TS + Tailwind v4 + adapter-node):
@@ -200,7 +200,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 
 ## Next concrete steps
 
-1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 7 days; anomaly detection sensitivity improves with each new ≥10-point listing)
+1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 9 days, 09–17 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)
 2. **Reverse proxy + TLS** — put the dashboard behind Caddy/nginx/Traefik if internet-facing (docs in DEPLOYMENT.md)
 3. **Monitoring/alerting** — watch pipeline success via exit codes / logs (health checks already log "DB health: all N checks passed")
 4. **Weekly spec sync cadence** — `sync_specs.py` is built and has run once live; schedule it (e.g. Sunday 03:00, clear of the daily price run) when the deployment cron is finalised
