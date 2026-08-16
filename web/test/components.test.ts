@@ -9,7 +9,8 @@ import LatestListingTable from '../src/lib/components/LatestListingTable.svelte'
 import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
 import BrandGroupedListings from '../src/lib/components/BrandGroupedListings.svelte';
-import type { LatestListing, ProductGroup, Series } from '../src/lib/server/repos';
+import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
+import type { LatestListing, ProductGroup, Series, CheapestListing } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
 
 function renderComponent(Component: unknown, props: Record<string, unknown> = {}): string {
@@ -475,5 +476,40 @@ describe('BrandGroupedListings', () => {
 		(target.querySelectorAll('button[aria-pressed]')[0] as HTMLButtonElement).click();
 		expect(onToggleListing).toHaveBeenCalledWith(1);
 		unmount(comp);
+	});
+});
+
+function cheapestListing(overrides: Partial<CheapestListing> = {}): CheapestListing {
+	return {
+		productId: 1,
+		model: 'RTX 5060 Ti',
+		brand: 'NVIDIA',
+		variantName: 'Gigabyte GeForce RTX 5060 Ti Windforce OC 16GB',
+		retailer: 'scorptec',
+		price: 849,
+		snapshotDate: '2026-08-17',
+		ninetyDayLow: 799,
+		ninetyDayHigh: 899,
+		...overrides
+	};
+}
+
+describe('CheapestCarousel', () => {
+	it('shows the 90d low badge when the price matches the 90-day low', () => {
+		const listing = cheapestListing({ price: 799 });
+		const body = renderComponent(CheapestCarousel, { gpu: [listing], cpu: [] });
+		expect(body).toContain('90d low');
+		expect(body).toContain('$799');
+	});
+
+	it('omits the 90d low badge when the price is above the 90-day low', () => {
+		const body = renderComponent(CheapestCarousel, { gpu: [cheapestListing()], cpu: [] });
+		expect(body).not.toContain('90d low');
+		expect(body).toContain('$849');
+	});
+
+	it('shows a tooltip title with the full variant name on the card', () => {
+		const body = renderComponent(CheapestCarousel, { gpu: [cheapestListing()], cpu: [] });
+		expect(body).toContain('title="Gigabyte GeForce RTX 5060 Ti Windforce OC 16GB"');
 	});
 });

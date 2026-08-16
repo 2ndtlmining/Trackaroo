@@ -90,6 +90,17 @@ test.describe('dashboard', () => {
 		await expect(page.getByRole('listitem').first()).toBeVisible();
 	});
 
+	test('flags deal cards at their 90-day low', async ({ page }) => {
+		await goto(page, '/');
+		// The seeded data has several models whose current price equals the
+		// lowest in-stock price over the available history.
+		await expect(page.getByText('90d low').first()).toBeVisible();
+		await expect(page.getByText('90d low').first()).toHaveAttribute(
+			'title',
+			'Lowest price in the last 90 days'
+		);
+	});
+
 	test('renders the four stat tiles from the seeded data', async ({ page }) => {
 		await goto(page, '/');
 		await expect(page.getByText('Tracked products')).toBeVisible();
@@ -314,6 +325,12 @@ await goto(page, '/product/1');
 		await expect(page.getByText('History span', { exact: true })).toBeVisible();
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'Retailer listings' })).toBeVisible();
+	});
+
+	test('shows 90-day low/high chips on the product page', async ({ page }) => {
+		await goto(page, '/product/1');
+		await expect(page.getByText('90d low', { exact: true })).toBeVisible();
+		await expect(page.getByText('90d high', { exact: true })).toBeVisible();
 	});
 
 	test('404 for an unknown product id', async ({ page }) => {

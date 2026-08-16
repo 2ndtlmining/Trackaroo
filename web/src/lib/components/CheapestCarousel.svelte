@@ -128,7 +128,17 @@
 							{listing.retailer}
 						</span>
 					</div>
-					<div class="mt-2 text-lg font-semibold text-text">{formatAud(listing.price)}</div>
+					<div class="mt-2 flex items-baseline gap-2">
+						<span class="text-lg font-semibold text-text">{formatAud(listing.price)}</span>
+						{#if listing.ninetyDayLow !== null && listing.price === listing.ninetyDayLow}
+							<span
+								class="shrink-0 rounded-full border border-down/30 bg-down/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-down"
+								title="Lowest price in the last 90 days"
+							>
+								90d low
+							</span>
+						{/if}
+					</div>
 					<div class="mt-1 line-clamp-2 text-xs text-text-muted" title={listing.variantName ?? undefined}>
 						{listing.variantName ?? listing.model}
 					</div>

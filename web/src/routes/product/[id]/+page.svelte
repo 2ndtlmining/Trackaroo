@@ -61,6 +61,11 @@
 			: 'No data'
 	);
 	const totalPoints = $derived(series.reduce((acc, s) => acc + s.points.length, 0));
+
+	const bandLows = $derived(band ? band.low.filter((v): v is number => v !== null) : []);
+	const bandHighs = $derived(band ? band.high.filter((v): v is number => v !== null) : []);
+	const ninetyDayLow = $derived(bandLows.length ? Math.min(...bandLows) : null);
+	const ninetyDayHigh = $derived(bandHighs.length ? Math.max(...bandHighs) : null);
 </script>
 
 <svelte:head>
@@ -80,6 +85,12 @@
 			{/if}
 			{#if product.generation_tier}
 				<Chip label="Generation" value={product.generation_tier} />
+			{/if}
+			{#if ninetyDayLow !== null}
+				<Chip label="90d low" value={formatAud(ninetyDayLow)} />
+			{/if}
+			{#if ninetyDayHigh !== null}
+				<Chip label="90d high" value={formatAud(ninetyDayHigh)} />
 			{/if}
 			<Chip label="Listings" value={String(series.length)} />
 			<Chip label="History span" value={span} />

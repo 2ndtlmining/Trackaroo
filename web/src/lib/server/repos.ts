@@ -545,6 +545,32 @@ export interface CheapestListing {
 	retailer: Retailer;
 	price: number;
 	snapshotDate: string;
+	ninetyDayLow: number | null;
+	ninetyDayHigh: number | null;
+}
+
+// Lowest/highest in-stock price for a product over the trailing window,
+// anchored to the latest snapshot day so results are deterministic regardless
+// of wall-clock. Excludes CPU+motherboard bundles like the band query.
+export function getPriceExtremes(
+	db: DB,
+	productId: number,
+	days = 90
+): { low: number | null; high: number | null } {
+	const row = db
+		.prepare(
+			`SELECT
+				MIN(s.price_aud) AS low,
+				MAX(s.price_aud) AS high
+			FROM retailer_listings l
+			JOIN price_snapshots s ON s.retailer_listing_id = l.id
+			WHERE l.product_id = ?
+			  AND s.stock_status = 'in_stock'
+			  AND ${notBundle('l')}
+			  AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)`
+		)
+		.get(productId, `-${days} days`) as { low: number | null; high: number | null };
+	return { low: row.low, high: row.high };
 }
 
 export function getCheapestPerModel(db: DB, category: Category): CheapestListing[] {
@@ -557,7 +583,21 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 				l.variant_name,
 				l.retailer,
 				ps.price_aud AS price,
-				ps.snapshot_date
+				ps.snapshot_date,
+				(SELECT MIN(ps3.price_aud)
+				 FROM price_snapshots ps3
+				 JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+				 WHERE l3.product_id = p.id
+				   AND ps3.stock_status = 'in_stock'
+				   AND ${notBundle('l3')}
+				   AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-90 days')) AS low90,
+				(SELECT MAX(ps3.price_aud)
+				 FROM price_snapshots ps3
+				 JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+				 WHERE l3.product_id = p.id
+				   AND ps3.stock_status = 'in_stock'
+				   AND ${notBundle('l3')}
+				   AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-90 days')) AS high90
 			FROM products p
 			JOIN retailer_listings l ON l.product_id = p.id AND l.status = 'active'
 			JOIN price_snapshots ps
@@ -588,6 +628,8 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 		retailer: Retailer;
 		price: number;
 		snapshot_date: string;
+		low90: number | null;
+		high90: number | null;
 	}>;
 
 	return rows.map((r) => ({
@@ -597,7 +639,9 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 		variantName: r.variant_name,
 		retailer: r.retailer,
 		price: r.price,
-		snapshotDate: r.snapshot_date
+		snapshotDate: r.snapshot_date,
+		ninetyDayLow: r.low90,
+		ninetyDayHigh: r.high90
 	}));
 }
 

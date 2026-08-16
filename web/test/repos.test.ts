@@ -10,6 +10,7 @@ import {
 	getLatestListings,
 	getMovers,
 	getPriceBand,
+	getPriceExtremes,
 	getProductHistory,
 	getSummary,
 	groupListingsByProduct
@@ -244,6 +245,65 @@ describe('getCheapestPerModel', () => {
 			expect(minForProduct.m).not.toBeNull();
 			expect(row.price).toBeCloseTo(minForProduct.m as number, 2);
 		}
+	});
+
+	it('carries 90-day low/high for each model', () => {
+		const rows = getCheapestPerModel(db, 'gpu');
+		expect(rows.length).toBeGreaterThan(0);
+		for (const row of rows) {
+			expect(row.ninetyDayLow).not.toBeNull();
+			expect(row.ninetyDayHigh).not.toBeNull();
+			expect(row.ninetyDayLow as number).toBeLessThanOrEqual(row.price);
+			expect(row.ninetyDayHigh as number).toBeGreaterThanOrEqual(row.price);
+		}
+	});
+});
+
+describe('getPriceExtremes', () => {
+	it('returns low/high within the trailing window, excluding bundles', () => {
+		const product = db.prepare("SELECT id FROM products WHERE category = 'cpu' LIMIT 1").get() as {
+			id: number;
+		};
+		const { low, high } = getPriceExtremes(db, product.id, 90);
+		expect(low).not.toBeNull();
+		expect(high).not.toBeNull();
+		expect(low as number).toBeLessThanOrEqual(high as number);
+
+		const day = db
+			.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
+			.get() as { d: string };
+		const agg = db
+			.prepare(
+				`SELECT MIN(s.price_aud) AS mn, MAX(s.price_aud) AS mx
+				 FROM retailer_listings l
+				 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				 WHERE l.product_id = ?
+				   AND s.snapshot_date >= date(?, '-90 days')
+				   AND s.stock_status = 'in_stock'
+				   AND lower(l.variant_name) NOT LIKE '%bundle%'
+				   AND lower(l.variant_name) NOT LIKE '%combo%'
+				   AND lower(l.listing_url) NOT LIKE '%bundle%'
+				   AND lower(l.listing_url) NOT LIKE '%bdl-%'`
+			)
+			.get(product.id, day.d) as { mn: number | null; mx: number | null };
+		expect(low).toBeCloseTo(agg.mn as number, 2);
+		expect(high).toBeCloseTo(agg.mx as number, 2);
+	});
+
+	it('honours the window length for a zero-day window', () => {
+		const product = db.prepare("SELECT id FROM products WHERE category = 'cpu' LIMIT 1").get() as {
+			id: number;
+		};
+		const { low, high } = getPriceExtremes(db, product.id, 0);
+		const day = db
+			.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
+			.get() as { d: string };
+		const band = getPriceBand(db, product.id);
+		const last = band[band.length - 1];
+		expect(last.date).toBe(day.d);
+		// Zero-day window anchors to the latest day only
+		expect(low).toBe(last.low);
+		expect(high).toBe(last.high);
 	});
 });
 
