@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-17 (17-Aug daily run green — 308 snapshots; deal score FI1 declined + removed from plan)
+**Last updated:** 2026-08-17 (feature-suggestions §2–§4 shipped: band-chart product page + brand-grouped listings, compare route, 90-day low/high badges; repo cleanup §6 done — `resync_stock_status.py` removed, `fetch_test.py` → `scraper/scorptec.py`)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 5 — frontend/UX improvements program + PCCG reliability (see Active Issues below).
 
@@ -32,6 +32,17 @@
 - **Tests:** +89 backend (`test_specs_schema.py`, `test_specs_matching.py`, `test_sync_specs.py` → **366 backend tests**), +8 vitest (3 repos + 5 SpecPanel → **109**), +4 Playwright e2e (panel-below-chart layout, expand/collapse, no-panel negative, GPU fields → **27**).
 - **First live sync run (16-Aug):** `python sync_specs.py` populated the production `specs` table — **95 rows** (46 GPU + 25 Intel + 24 AMD). This surfaced a real matching bug: `match_gpu`'s VRAM-variant guard filtered on `memorySize`, but `sync_specs.parse_gpu_records` emits normalized records whose VRAM key is `vram_gb` — so every VRAM-variant GPU (RTX 3050/3060/4060 Ti/5060 Ti, RX 9060 XT) came back unmatched. Fixed by reading VRAM from either key (`_record_vram`) + 3 regression tests locking the normalized-record shape (`TestMatchGpuNormalizedRecords`). Re-ran GPU sync → all 5 now match to the correct variant; GPU coverage is genuinely **46/47** (RX 9070 XTX is absent from the dataset). Second bug found by the same live run: `data/spec_sync_report.json` was picked up by the ingest glob and failed as a "snapshot". Fixed with an `is_snapshot_file()` convention predicate in `ingest.py` (used by `ingest.main()` and the e2e test) + 5 tests (`TestIsSnapshotFile`).
 - **Watchlist correction (16-Aug, signed off):** `db/watchlist.csv` line 118 listed the Arc B570 as 12GB; the GPU dataset and Intel's official spec say 10GB — corrected to 10GB (separate commit `fix: Arc B570 watchlist VRAM 12GB -> 10GB`).
+
+### ✅ COMPLETE: Feature suggestions §2–§4 + repo cleanup §6 (17-Aug-2026)
+- **§2 Product detail redesign — band chart + brand-grouped listings:**
+  - `getPriceBand` in `repos.ts`: per-day `MIN`/`MAX` in-stock price over non-bundle listings + cheapest-in-stock at the latest day; `getProductHistory` returns it as `band`
+  - `PriceChart.svelte` rewritten: default view is a shaded low→high band (`uPlot` `bands` option) with a green "Cheapest in stock" marker; individual listing lines are hidden until toggled on
+  - New `BrandGroupedListings.svelte` + pure `listingsPanel.ts` (`deriveListingBrand` via `web/src/lib/branding.ts` — AIB first-token map, fallback to product brand; no schema change): collapsible brand groups (`MSI · $619–$635 · 2 listings · 1 in stock`), free-text search against variant name, "In stock only" filter, cheapest-first sort, per-listing "Show on chart"/"On chart" toggle
+- **§3 Compare feature:** new `/compare?ids=1,2` route (2–4 products, same category enforced server-side; shareable/bookmarkable) + `getComparisonData` joining products + specs + latest-day per-retailer in-stock prices; products page has per-card "Compare" checkboxes, category lock (different category disabled), and a floating "Compare (N) →" bar at ≥2
+- **§4 Quick wins:** §4.1 "Lowest in 90 days" — `getPriceExtremes` (in-stock low/high, anchored to latest snapshot day) drives a green `90d low` badge on dashboard deal cards and `90d low`/`90d high` chips on the product page; §4.2 carousel `title=` tooltip and §4.3 insufficient-history state were already shipped earlier
+- **§6 Repo cleanup:** `resync_stock_status.py` + `unit_testing/test_resync.py` deleted (one-off; bug fixed at source); `fetch_test.py` → `scraper/scorptec.py` via `git mv` (references updated in `run_daily.py`, `test_scraper.py`, `test_matching.py`, `db/watchlist.py`, README, SPEC.md, RAM_SCOPE.md); `migrate.py` docstring now says it's a historical-upgrade tool only
+- **Regression after each milestone (all green):** pytest 365 / svelte-check 0 errors / vitest 154 / e2e 38
+- **New tests:** +4 repos (getPriceBand, getComparisonData, getPriceExtremes), +10 `listingsPanel.test.ts` (new suite), +6 components (BrandGroupedListings interactions, ProductCard compare, CheapestCarousel badge/tooltip), +10 e2e (band chart + grouped listings panel, compare flow/validation, 90-day chips + carousel badge)
 
 ### 🔄 IN PROGRESS: Frontend & UX Improvement Program (15 Aug-2026)
 
@@ -142,9 +153,9 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - SQLite schema (`db/schema.sql`) — `products` / `retailer_listings` (with `variant_name`) / `price_snapshots` with triggers
 - Watchlist (`db/watchlist.csv`) — 100 products (53 CPUs, 47 GPUs) across 3 generations per SCOPE_RULES.md
 - Shared watchlist loader (`db/watchlist.py`) — parse_spec + load_watchlist + load_watchlist_products
-- Scorptec scraper (`fetch_test.py`) — working, multi-variant, outputs separate CPU/GPU JSON files
+- Scorptec scraper (`scraper/scorptec.py`) — working, multi-variant, outputs separate CPU/GPU JSON files (renamed from `fetch_test.py` 17-Aug per feature-suggestions §6.3)
 - PCCG scraper (`scraper/pccg.py`) — working, multi-variant, verified live (Algolia API, no Playwright)
-- `migrate.py` — schema migration script (adds `variant_name` column)
+- `migrate.py` — schema migration tool for historical upgrades only (adds `variant_name` column + WAL to pre-12-Aug DBs)
 - `seed.py` — populates SQLite `products` table from `db/watchlist.csv`
 - `ingest.py` — reads scraped JSON files and writes `retailer_listings` + `price_snapshots` into the DB
 - `query.py` — query tool with three modes: latest prices, trends, biggest movers (shows variant names)
@@ -152,30 +163,30 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - `run_daily.py` — one-command daily runner: scrapes both retailers → validates → ingests → validates DB
 - `sync_specs.py` — weekly spec sync: fetches GPU/Intel/AMD spec datasets → matches to `products` → upserts `specs` rows; `--category` / `--dry-run` / `--report-only`; report to `data/spec_sync_report.json`
 - `spec_matching.py` — name normalization + product→spec-dataset matching (exact normalized match, no guessing)
-- `resync_stock_status.py` — corrects stock_status after scraper fixes; dry-run + apply mode, idempotent
 - `backup_db.py` — standalone DB backup with retention pruning
 - `requirements.txt` — pinned dependencies
 - `Dockerfile` — **single all-in-one image** (Python pipeline + dashboard); `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`
 - `docker-compose.yml` — optional two-service split of the same image
 - `deploy/entrypoint-single.sh` — all-in-one entrypoint (seed → dashboard → pipeline scheduler); `entrypoint.sh` for pipeline-only
 - `.dockerignore` — excludes regenerable artifacts and the web build context
-- `unit_testing/` — **374 regression tests** across 19 modules (seed, matching, schema, ingestion, scraper, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, resync, backup, config, specs schema, specs matching, sync_specs)
+- `unit_testing/` — **365 regression tests** across 18 modules (seed, matching, schema, ingestion, scraper, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, backup, config, specs schema, specs matching, sync_specs; `test_resync.py` removed 17-Aug with its one-off script)
 - RAM tracking scope (`RAM_SCOPE.md`) — plan for adding DDR4/DDR5 RAM price tracking
 - Historical data: Scorptec + PCCG snapshots for 09-Aug through 17-Aug (16-Aug PCCG missing — rate-limited; 17-Aug full: 185 Scorptec + 123 PCCG = 308 snapshots)
 - `.env.example` — committed template documenting Algolia env vars (and `.gitignore` negation)
 - `PHASE3_PLAN.md` — executable Phase 3 frontend handoff plan (locked decisions, data model facts, M0–M5 steps)
 - `web/` — Phase 3 frontend (SvelteKit + TS + Tailwind v4 + adapter-node):
   - `src/app.css` + `src/lib/theme.ts` — token system, dark/light, theme toggle
-  - `src/lib/components/` — `Badge`, `StatTile`, `PriceChange`, `Chip`, `Filters`, `Header`, `LatestListingTable` (also renders `compact` inside product cards), `PriceChart` (uPlot), `SpecPanel` (product-page spec panel), `CheapestCarousel` (dashboard cheapest-deals, GPU/CPU toggle), `ProductCard` (products-page card grid), `+layout.svelte`
-  - `src/lib/server/` — `db.ts` (better-sqlite3 read-only singleton), `repos.ts` (incl. `groupListingsByProduct` for the card grid), plus `formats.ts`/`change.ts`
-  - Routes — `/` dashboard (table), `/products` (card grid, expandable variant listings), `/movers` (dense table), `/product/[id]` with URL-driven filters
-  - `test/` — vitest: formats (28), change (11), filters (18), theme (7), repos (30), components (23) — **117 tests**
-  - `e2e/` — Playwright: 28 tests (app.spec.ts + seed.mjs deterministic DB, incl. 4 spec-panel tests + products card-grid/expand tests) — **28 tests**
+  - `src/lib/components/` — `Badge`, `StatTile`, `PriceChange`, `Chip`, `Filters`, `Header`, `LatestListingTable` (also renders `compact` inside product cards), `PriceChart` (uPlot; low/high band + cheapest-in-stock + toggleable listing overlays), `SpecPanel` (product-page spec panel), `CheapestCarousel` (dashboard cheapest-deals, GPU/CPU toggle, 90d-low badge), `ProductCard` (products-page card grid, compare checkbox), `BrandGroupedListings` (product-page grouped listings panel), `+layout.svelte`
+  - `src/lib/` — `branding.ts` (client-safe AIB brand derivation), `listingsPanel.ts` (pure grouped-listings logic), `formats.ts`/`change.ts`
+  - `src/lib/server/` — `db.ts` (better-sqlite3 read-only singleton), `repos.ts` (incl. `groupListingsByProduct`, `getPriceBand`, `getComparisonData`, `getPriceExtremes`)
+  - Routes — `/` dashboard (table), `/products` (card grid, expandable variant listings, compare selection), `/compare` (side-by-side specs + prices), `/movers` (dense table), `/product/[id]` with URL-driven filters
+  - `test/` — vitest: formats (28), change (11), filters (18), theme (7), repos (44), components (36), listingsPanel (10) — **154 tests**
+  - `e2e/` — Playwright: 38 tests (app.spec.ts + seed.mjs deterministic DB, incl. spec-panel, grouped-listings panel, compare flow/validation, 90d-low badges + chips) — **38 tests**
 
 ## What's verified
 
-- **Backend:** 374 tests pass — seed, matching, schema/triggers, ingestion, scrapers, PCCG reliability, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, resync, backup, config, specs schema/matching/sync
-- **Stock status:** PCCG 13-Aug corrected from 123 all-in_stock to 86 in_stock + 35 out_of_stock + 2 preorder; resync verified idempotent
+- **Backend:** 365 tests pass — seed, matching, schema/triggers, ingestion, scrapers, PCCG reliability, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, backup, config, specs schema/matching/sync
+- **Stock status:** PCCG 13-Aug corrected from 123 all-in_stock to 86 in_stock + 35 out_of_stock + 2 preorder; resync verified idempotent (one-off `resync_stock_status.py` tool since removed — bug fixed at the source)
 - **Concurrency:** test proving readers hit no lock errors while a writer commits under WAL (stable 10/10)
 - **Performance:** `show_latest_prices` 60ms / `show_biggest_movers` 7ms on ~10k synthetic snapshots; history query provably index-backed
 - **Scorptec:** 192 variants matched on 13-Aug (multi-variant)
@@ -185,9 +196,10 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - **Code quality:** all modules type-hinted + logged; shared watchlist module deduplicates logic; secrets moved to env vars
 - **Spec sync:** live-fetch coverage verified against the real watchlist — Intel 25/25, AMD 24/28 (4 OEM-only SKUs have no public page), GPU 46/47 (RX 9070 XTX absent from the dataset); upsert conflict/unmatched/vanished-row behaviour locked in by tests; price pipeline untouched (§2 priority rule)
 - **Spec panel:** renders below the price chart on `/product/[id]` (E2E bounding-box assertion), hidden when a product has no spec row; fetched via one extra `SELECT` in the detail load only — never joined into list/index queries
-- **Frontend:** `svelte-check` 0 errors; vitest **117 passing**; Playwright e2e **28 passing**; production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
+- **Frontend:** `svelte-check` 0 errors; vitest **154 passing**; Playwright e2e **38 passing**; production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
 - **Docker:** single all-in-one image built and booted — DB seeded, both scrapers OK, 315 listings ingested, backup created, dashboard HTTP 200 with live stats
-- **Regression:** backend 374 passing (pytest); frontend 117 passing (vitest) + 28 e2e (Playwright)
+- **Feature suggestions §2–§4:** band chart + brand-grouped listings on `/product/[id]`, `/compare?ids=` (2–4 same-category products), `90d low`/`90d high` on product page + dashboard cards — regression green after each milestone
+- **Regression:** backend 365 passing (pytest); frontend 154 passing (vitest) + 38 e2e (Playwright)
 
 ## What's NOT done yet
 
@@ -207,7 +219,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 
 ## Regression test count
 
-- **374 tests (was 277)** across 19 test modules via pytest
+- **365 tests (was 374; −9 = one-off `resync_stock_status.py` + its `test_resync.py` removed 17-Aug)** across 18 test modules via pytest
   - `test_seed.py` — seed, watchlist loading, schema creation
   - `test_matching.py` — product matching logic
   - `test_schema.py` — schema validation, triggers, constraints
@@ -221,14 +233,13 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
   - `test_e2e.py` — full pipeline: scrape-shaped JSON → ingest → query → health checks
   - `test_performance.py` — query wall-clock bounds + index usage over ~10k synthetic snapshots
   - `test_cli.py` — CLI entry-point smoke tests
-  - `test_resync.py` — resync_stock_status.py: dry-run, apply, idempotency, backup filtering
   - `test_backup.py` — backup_db.py retention
   - `test_config.py` — config.py env-override
   - `test_specs_schema.py` — **new:** specs table DDL + idempotent migration
   - `test_specs_matching.py` — **new:** name normalization + product→dataset matching
   - `test_sync_specs.py` — **new:** fetch/parse/upsert, conflict no-overwrite, report, CLI flags
-- **Frontend unit (vitest, `web/`) — 117 tests** across 6 suites (formats 28, change 11, filters 18, theme 7, repos 30, components 23) — against temp DBs seeded from `data/*.json`
-- **Frontend e2e (Playwright, `web/e2e/`) — 28 tests** — navigation, theme, dashboard filters, **products card grid (3: heading+cards, empty state, card expand/collapse)**, movers, product detail, **spec panel (4: below-chart layout, expand/collapse, no-panel negative, GPU fields)**; runs via `npm run test:e2e` against a seeded dev server
+- **Frontend unit (vitest, `web/`) — 154 tests** across 7 suites (formats 28, change 11, filters 18, theme 7, repos 44, components 36, listingsPanel 10) — against temp DBs seeded from `data/*.json`
+- **Frontend e2e (Playwright, `web/e2e/`) — 38 tests** — navigation, theme, dashboard filters, **products card grid (3: heading+cards, empty state, card expand/collapse)**, **compare (4: flow to /compare, category lock, clear bar, invalid URLs)**, movers, product detail, **grouped listings (4: brand groups, expand+toggle, search, in-stock filter)**, **spec panel (4: below-chart layout, expand/collapse, no-panel negative, GPU fields)**, **90d chips + carousel badge (2)**; runs via `npm run test:e2e` against a seeded dev server
 
 ## How to update this file
 

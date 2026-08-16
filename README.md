@@ -46,11 +46,11 @@ never joined into the price pipeline:
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 374 tests across 19 modules via pytest |
+| **Regression tests** | ✅ Complete | 365 tests across 18 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
-| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid, expandable per-variant listings), movers, price-history charts; reads the DB directly via better-sqlite3 |
-| **Frontend tests** | ✅ Complete | 117 vitest + 28 Playwright e2e (with a `goto()` hydration helper) |
+| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid, expandable per-variant listings, compare selection), compare (`/compare?ids=` side-by-side specs + prices), movers, price-history charts (low/high band + togglable listing lines + brand-grouped listings panel); reads the DB directly via better-sqlite3 |
+| **Frontend tests** | ✅ Complete | 154 vitest + 38 Playwright e2e (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
@@ -125,7 +125,7 @@ also kept for those who prefer it — see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Frontend (`web/`)
 
-SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard, `/products` (card grid grouped by product, expandable variant listings), `/movers` (24h/7d/30d, sortable), `/product/[id]` (meta + uPlot history chart + spec panel).
+SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard, `/products` (card grid grouped by product, expandable variant listings, compare checkboxes), `/compare?ids=` (side-by-side specs + per-retailer best prices for 2–4 same-category products), `/movers` (24h/7d/30d, sortable), `/product/[id]` (meta + uPlot history chart with low/high band and 90-day chips + brand-grouped listings panel + spec panel).
 
 ```bash
 cd web
@@ -140,10 +140,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (117 vitest)
+# Run frontend unit tests (154 vitest)
 npm test
 
-# Run browser e2e regression tests (28 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (38 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -195,10 +195,9 @@ Trackaroo/
 ├── ingest.py           # read JSON snapshots → write to DB
 ├── query.py            # query tool (latest prices, trends, movers)
 ├── backup_db.py        # standalone DB backup with retention pruning
-├── fetch_test.py       # Scorptec scraper
 ├── sync_specs.py       # weekly spec sync (fetch + match + upsert; never calls run_daily.py)
 ├── spec_matching.py    # name normalization + product→spec-dataset matching
-├── migrate.py          # schema migration script
+├── migrate.py          # schema migration tool (historical upgrades only)
 ├── requirements.txt    # pinned dependencies
 │
 ├── Dockerfile          # all-in-one image: Python pipeline + dashboard (see DEPLOYMENT.md)
@@ -208,6 +207,7 @@ Trackaroo/
 │   └── entrypoint-single.sh   # all-in-one: seed → dashboard → pipeline scheduler
 │
 ├── scraper/
+│   ├── scorptec.py     # Scorptec scraper (server-rendered HTML)
 │   └── pccg.py         # PCCG scraper (Algolia API)
 │
 ├── db/
@@ -222,7 +222,7 @@ Trackaroo/
 │   ├── cpu_pccg_10_August_2026.json
 │   └── gpu_pccg_10_August_2026.json
 │
-├── unit_testing/       # Python regression tests (374 via pytest)
+├── unit_testing/       # Python regression tests (365 via pytest)
 │   ├── conftest.py             # shared pytest fixtures (in-memory DB)
 │   ├── test_seed.py            # seed + schema tests
 │   ├── test_matching.py        # product matching tests
@@ -237,7 +237,6 @@ Trackaroo/
 │   ├── test_e2e.py             # scrape → ingest → query → health-check pipeline
 │   ├── test_performance.py     # query performance + index-usage tests
 │   ├── test_cli.py             # CLI entry-point smoke tests
-│   ├── test_resync.py          # resync_stock_status.py tests
 │   ├── test_backup.py          # backup_db.py retention tests
 │   ├── test_config.py          # config.py env-override tests
 │   ├── test_specs_schema.py    # specs table DDL + migration tests
@@ -245,11 +244,13 @@ Trackaroo/
 │   └── test_sync_specs.py      # sync_specs.py fetch/parse/upsert tests
 │
 └── web/                # Phase 3 frontend (SvelteKit, adapter-node)
-    ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot), SpecPanel, …
+    ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot band chart), SpecPanel, CheapestCarousel, ProductCard, BrandGroupedListings, …
+    ├── src/lib/branding.ts     # client-safe AIB brand derivation (grouped listings)
+    ├── src/lib/listingsPanel.ts # pure grouped-listings logic (search, filters, sort)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
-    ├── src/routes/             # /, /products, /movers, /product/[id]
-    ├── test/                   # 117 vitest regression tests (6 suites)
-    ├── e2e/                    # 28 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
+    ├── test/                   # 154 vitest regression tests (7 suites)
+    ├── e2e/                    # 38 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```
