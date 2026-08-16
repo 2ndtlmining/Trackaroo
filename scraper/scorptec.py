@@ -1,7 +1,7 @@
 """
 Scrape Scorptec for watchlist products and save results to JSON.
 
-Usage: python fetch_test.py
+Usage: python -m scraper.scorptec
 """
 from __future__ import annotations
 
