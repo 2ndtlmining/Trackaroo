@@ -49,7 +49,7 @@ describe('parseFilters', () => {
 		for (const opt of [...CATEGORY_OPTIONS, ...RETAILER_OPTIONS, ...TIER_OPTIONS]) {
 			const params = new URLSearchParams();
 			if (opt.value === 'cpu' || opt.value === 'gpu') params.set('category', opt.value);
-			else if (opt.value === 'scorptec' || opt.value === 'pccg' || opt.value === 'mwave')
+			else if (opt.value === 'scorptec' || opt.value === 'pccg')
 				params.set('retailer', opt.value);
 			else params.set('tier', opt.value);
 			const parsed = parseFilters(params);

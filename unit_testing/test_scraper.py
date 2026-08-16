@@ -6,10 +6,13 @@ Tests:
 - Product grid parsing with data attributes
 - Category URL path mapping
 - Pagination detection (get_next_page_url)
+- fetch_page retry behaviour (200, non-200, exceptions)
 - Full pagination loop (scrape_all_pages)
 """
+import unittest.mock
 from pathlib import Path
 
+import requests
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scraper.scorptec import parse_product_grid, CATEGORY_URL_PATHS, BASE
@@ -368,18 +371,110 @@ class TestGetNextPageUrl:
         assert url == "https://www.scorptec.com.au/product/graphics-cards/nvidia?paged=2"
 
 
-class TestScrapeAllPages:
-    """Test the pagination loop logic."""
+class TestFetchPage:
+    """Functional tests for fetch_page retry behaviour (network mocked)."""
 
-    def test_collects_products_from_multiple_pages(self):
-        from scraper.scorptec import scrape_all_pages, fetch_page, parse_product_grid
-        # We can't test actual network calls, but we can verify the function
-        # is callable and has the right signature
-        import inspect
-        sig = inspect.signature(scrape_all_pages)
-        assert "url" in sig.parameters
-        assert "category_path" in sig.parameters
-        assert "max_pages" in sig.parameters
+    @staticmethod
+    def _resp(status_code, text=""):
+        resp = unittest.mock.Mock()
+        resp.status_code = status_code
+        resp.text = text
+        return resp
+
+    def test_200_returns_text(self, monkeypatch):
+        from scraper.scorptec import fetch_page
+        calls = []
+
+        def _get(url, headers=None, timeout=None):
+            calls.append(url)
+            return self._resp(200, "<html>ok</html>")
+
+        monkeypatch.setattr("scraper.scorptec.requests.get", _get)
+        assert fetch_page("https://example.com") == "<html>ok</html>"
+        assert len(calls) == 1  # No retry on first success
+
+    def test_non_200_then_200_retries(self, monkeypatch):
+        from scraper.scorptec import fetch_page
+        responses = [self._resp(503), self._resp(200, "recovered")]
+
+        def _get(url, headers=None, timeout=None):
+            return responses.pop(0)
+
+        monkeypatch.setattr("scraper.scorptec.requests.get", _get)
+        monkeypatch.setattr("scraper.scorptec.time.sleep", lambda s: None)
+        assert fetch_page("https://example.com") == "recovered"
+
+    def test_all_attempts_fail_returns_none(self, monkeypatch):
+        from scraper.scorptec import fetch_page
+
+        def _get(url, headers=None, timeout=None):
+            return self._resp(500)
+
+        monkeypatch.setattr("scraper.scorptec.requests.get", _get)
+        monkeypatch.setattr("scraper.scorptec.time.sleep", lambda s: None)
+        assert fetch_page("https://example.com", retries=1) is None
+
+    def test_exception_returns_none(self, monkeypatch):
+        from scraper.scorptec import fetch_page
+
+        def _get(url, headers=None, timeout=None):
+            raise requests.RequestException("boom")
+
+        monkeypatch.setattr("scraper.scorptec.requests.get", _get)
+        monkeypatch.setattr("scraper.scorptec.time.sleep", lambda s: None)
+        assert fetch_page("https://example.com", retries=1) is None
+
+
+class TestScrapeAllPages:
+    """Functional tests for the pagination loop (fetch -> parse -> follow next)."""
+
+    START_URL = "https://www.scorptec.com.au/product/graphics-cards/nvidia"
+
+    def test_collects_products_from_multiple_pages(self, monkeypatch):
+        from scraper.scorptec import scrape_all_pages
+
+        def _fetch(url, retries=2):
+            if "paged=2" in url:
+                return HTML_NO_NEXT_PAGE
+            return HTML_WITH_NEXT_PAGE
+
+        monkeypatch.setattr("scraper.scorptec.fetch_page", _fetch)
+        monkeypatch.setattr("scraper.scorptec.time.sleep", lambda s: None)
+
+        products = scrape_all_pages(self.START_URL, category_path="graphics-cards/nvidia")
+        assert len(products) == 2
+        assert {p["name"] for p in products} == {"test gpu", "last gpu"}
+
+    def test_stops_at_max_pages(self, monkeypatch):
+        from scraper.scorptec import scrape_all_pages
+        calls = []
+
+        def _fetch(url, retries=2):
+            calls.append(url)
+            return HTML_WITH_NEXT_PAGE  # Every page claims there is a next one.
+
+        monkeypatch.setattr("scraper.scorptec.fetch_page", _fetch)
+        monkeypatch.setattr("scraper.scorptec.time.sleep", lambda s: None)
+
+        products = scrape_all_pages(self.START_URL, category_path="graphics-cards/nvidia", max_pages=3)
+        assert len(calls) == 3  # max_pages caps the loop
+        assert len(products) == 3
+
+    def test_stops_on_fetch_failure(self, monkeypatch):
+        """A failed fetch mid-pagination stops the loop and keeps prior pages."""
+        from scraper.scorptec import scrape_all_pages
+
+        def _fetch(url, retries=2):
+            if "paged=2" in url:
+                return None
+            return HTML_WITH_NEXT_PAGE
+
+        monkeypatch.setattr("scraper.scorptec.fetch_page", _fetch)
+        monkeypatch.setattr("scraper.scorptec.time.sleep", lambda s: None)
+
+        products = scrape_all_pages(self.START_URL, category_path="graphics-cards/nvidia")
+        assert len(products) == 1
+        assert products[0]["name"] == "test gpu"
 
     def test_max_pages_default_is_20(self):
         from scraper.scorptec import scrape_all_pages

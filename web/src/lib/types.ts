@@ -1,6 +1,6 @@
 export type Category = 'cpu' | 'gpu';
 
-export type Retailer = 'scorptec' | 'pccg' | 'mwave';
+export type Retailer = 'scorptec' | 'pccg';
 
 export type GenerationTier = 'current' | 'current-1' | 'current-2';
 

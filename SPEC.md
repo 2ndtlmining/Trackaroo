@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Track daily pricing and stock status for **CPUs and GPUs** across three Australian retailers, store the history, and surface trends — biggest price movers, potential good deals, and long-term price charts per product.
+Track daily pricing and stock status for **CPUs and GPUs** across two Australian retailers (Scorptec, PC Case Gear — Mwave was removed 10-Aug over bot protection), store the history, and surface trends — biggest price movers, potential good deals, and long-term price charts per product.
 
 This is a personal-use, self-hosted project. It is not a public-facing price comparison service.
 
@@ -61,7 +61,7 @@ Three components, consistent with prior projects (FluxTracker/FluxFlow pattern):
 
 - **Scraper/ingestion (Python):** fetches category pages per retailer, parses product name/price/stock/URL, normalizes, writes a snapshot row per product per retailer per day.
 - **Database (SQLite):** single-file, zero-ops, easy to back up on TrueNAS. Chosen over Convex/Supabase for this project because the core analytics need (price-change queries across hundreds of SKUs over time windows) is a natural fit for SQL, and this keeps the stack simple.
-- **Frontend (SvelteKit):** matches the FluxTracker stack already running on your infrastructure. Charts via a lightweight library (uPlot or Chart.js — leaning uPlot for dense time-series performance).
+- **Frontend (SvelteKit):** matches the FluxTracker stack already running on your infrastructure. Charts via uPlot (chosen for dense time-series performance — see DECISIONS.md).
 - **Deployment:** Docker container(s) on the existing Proxmox cluster, following the same pattern as FluxTracker.
 
 ## 7. Data model (draft)
@@ -153,10 +153,11 @@ Later/nice-to-have (not in initial build): watchlist-based alerts, cross-categor
 - Price history charts per product
 - Biggest movers + deal-signal views
 
-**Phase 4 — Hardening**
-- Deploy to Proxmox/Docker on the daily schedule
-- Backups of the SQLite file
+**Phase 4 — Hardening** *(partially complete)*
+- Deploy to Proxmox/Docker on the daily schedule — **complete** (single all-in-one Docker image + optional compose split, verified live 15-Aug; see DEPLOYMENT.md)
+- Backups of the SQLite file — **complete** (`backup_db.py` with retention pruning, wired into the daily pipeline and container entrypoints)
 - Revisit matching automation and watchlist scope based on real data collected
+- Remaining: reverse proxy/TLS for internet-facing use, monitoring/alerting on pipeline failure (tracked in STATUS.md)
 
 ## 12. Stack summary
 
@@ -165,5 +166,5 @@ Later/nice-to-have (not in initial build): watchlist-based alerts, cross-categor
 | Scraper | Python (requests + BeautifulSoup; Playwright in reserve) |
 | Scheduling | Cron or APScheduler in-container |
 | Database | SQLite |
-| Frontend | SvelteKit + uPlot/Chart.js |
+| Frontend | SvelteKit + uPlot |
 | Deployment | Docker on existing Proxmox cluster |

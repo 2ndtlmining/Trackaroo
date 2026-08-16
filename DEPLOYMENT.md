@@ -31,8 +31,11 @@ docker run -d --name trackaroo \
 
 On boot the container:
 1. Creates + seeds the SQLite DB (`python seed.py`) if missing.
-2. Starts the SvelteKit dashboard on :3000.
-3. Runs the daily pipeline immediately, then every `RUN_INTERVAL_HOURS`.
+2. Hydrates a fresh DB from the snapshot history baked into the image
+   (`deploy/bootstrap-data.sh`) so the dashboard isn't empty on first boot —
+   a no-op when the volume already has snapshots.
+3. Starts the SvelteKit dashboard on :3000.
+4. Runs the daily pipeline immediately, then every `RUN_INTERVAL_HOURS`.
 
 Logs: `docker logs -f trackaroo`
 

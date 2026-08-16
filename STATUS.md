@@ -1,10 +1,24 @@
 # Project Status
 
-**Last updated:** 2026-08-17 (feature-suggestions §2–§4 shipped: band-chart product page + brand-grouped listings, compare route, 90-day low/high badges; repo cleanup §6 done — `resync_stock_status.py` removed, `fetch_test.py` → `scraper/scorptec.py`)
+**Last updated:** 2026-08-17 (regression coverage pass: `migrate.py` — the only fully-untested backend module — now has a dedicated test module, and the Scorptec `fetch_page`/`scrape_all_pages` pagination loop went from signature-only checks to functional mocked-network tests; 365 → **383** pytest tests. Earlier same day: docs-hygiene pass — AGENTS.md vitest count corrected 117→154, stale Mwave filter option removed from the frontend, SPEC.md/README/DEPLOYMENT.md synced to shipped state; feature-suggestions §2–§4 shipped: band-chart product page + brand-grouped listings, compare route, 90-day low/high badges; repo cleanup §6 done — `resync_stock_status.py` removed, `fetch_test.py` → `scraper/scorptec.py`)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 5 — frontend/UX improvements program + PCCG reliability (see Active Issues below).
 
 ## Active Issues
+
+### ✅ COMPLETE: Regression coverage pass (17-Aug-2026)
+- **Coverage review:** audited the full regression suite (365 pytest / 154 vitest / 38 e2e) against the code surface. Verdict: adequate — strong contract e2e (`test_e2e.py`), PCCG reliability lock-ins, full frontend query-layer + browser coverage. Two real gaps found and closed:
+- **Gap 1 — `migrate.py` had zero tests** (the only fully-untested backend module). New `unit_testing/test_migrate.py` (12 tests): introspection helpers, `get_connection` (missing-file exit, WAL + FK pragmas), both migrations (apply / dry-run no-op / idempotent skip), and `main()` end-to-end on a synthetic pre-12-Aug legacy DB (dry-run vs full run). Note: `get_connection`'s default `db_path` is bound at import time, so the `main()` tests patch the function itself, not just `migrate.DB_PATH`.
+- **Gap 2 — Scorptec pagination was signature-only:** `TestScrapeAllPages` in `test_scraper.py` only asserted `inspect.signature` (PCCG's equivalent loop *is* functionally tested). Replaced with functional tests (mocked `fetch_page`, real `parse_product_grid`/`get_next_page_url` on HTML fixtures): multi-page collection, `max_pages` cap, stop-on-fetch-failure — plus a new `TestFetchPage` (4 tests: 200, non-200→retry, all-fail→None, exception→None).
+- **Regression (all green):** pytest **383** (was 365; +18) / svelte-check 0 errors / vitest 154 / e2e 38 (33.9s).
+
+### ✅ COMPLETE: Docs-hygiene pass (17-Aug-2026)
+- **AGENTS.md:** vitest count corrected 117 → **154** (verified by counting the actual test files).
+- **Stale Mwave remnants removed from the frontend:** Mwave was dropped from scope on 10-Aug (CloudFront bot protection), but the UI filter dropdown still offered it — filtering by it matched nothing. Removed the `Mwave` entry from `RETAILER_OPTIONS` (`web/src/lib/filters.ts`), the `'mwave'` member of the `Retailer` type (`web/src/lib/types.ts`), and its branch in `web/test/filters.test.ts`. The `mwave` value in the `retailer` CHECK constraint in `db/schema.sql` was deliberately **kept** — removing it would require a table rebuild for no benefit (no mwave rows exist).
+- **SPEC.md:** §1 "three Australian retailers" → two (with the Mwave-removal note); Phase 4 marked partially complete (Docker deployment + backups done 15-Aug; remaining hardening — reverse proxy/TLS, monitoring — listed); chart lib finalised to uPlot in §6/§12 (the planning-era "uPlot or Chart.js" wording is gone).
+- **README.md:** repo layout now lists `deploy/bootstrap-data.sh` (bakes snapshot history into the image to hydrate a fresh DB on first boot).
+- **DEPLOYMENT.md:** Option C boot sequence now documents the fresh-DB hydration step.
+- **Regression (all green after the pass):** svelte-check 0 errors / vitest 154 / Playwright e2e 38 (33.7s) / pytest 365.
 
 ### ✅ COMPLETE: PCCG reliability — recurring 429 hard-rate-limit fixed (16-Aug-2026)
 - **Root cause (confirmed by reading `scraper/pccg.py`):** both `algolia_single_search()` and `algolia_batch_search()` had an infinite loop — when every retry hit 429, the inner `for` exhausted, `page` never incremented, and the outer `while page < max_pages` rebuilt and retried the same request forever until the 300s subprocess timeout. Plus a second loop: in `algolia_single_search` reaching the last page `break`-ed only the inner loop, spinning on the final page even when not rate-limited. (Plan §10/11.1, `IMPROVEMENT_16_Aug_V1.md`.)
@@ -169,7 +183,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - `docker-compose.yml` — optional two-service split of the same image
 - `deploy/entrypoint-single.sh` — all-in-one entrypoint (seed → dashboard → pipeline scheduler); `entrypoint.sh` for pipeline-only
 - `.dockerignore` — excludes regenerable artifacts and the web build context
-- `unit_testing/` — **365 regression tests** across 18 modules (seed, matching, schema, ingestion, scraper, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, backup, config, specs schema, specs matching, sync_specs; `test_resync.py` removed 17-Aug with its one-off script)
+- `unit_testing/` — **383 regression tests** across 19 modules (seed, matching, schema, ingestion, scraper, migrate, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, backup, config, specs schema, specs matching, sync_specs; `test_resync.py` removed 17-Aug with its one-off script)
 - RAM tracking scope (`RAM_SCOPE.md`) — plan for adding DDR4/DDR5 RAM price tracking
 - Historical data: Scorptec + PCCG snapshots for 09-Aug through 17-Aug (16-Aug PCCG missing — rate-limited; 17-Aug full: 185 Scorptec + 123 PCCG = 308 snapshots)
 - `.env.example` — committed template documenting Algolia env vars (and `.gitignore` negation)
@@ -185,7 +199,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 
 ## What's verified
 
-- **Backend:** 365 tests pass — seed, matching, schema/triggers, ingestion, scrapers, PCCG reliability, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, backup, config, specs schema/matching/sync
+- **Backend:** 383 tests pass — seed, matching, schema/triggers, ingestion, scrapers, DB migration, PCCG reliability, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, backup, config, specs schema/matching/sync
 - **Stock status:** PCCG 13-Aug corrected from 123 all-in_stock to 86 in_stock + 35 out_of_stock + 2 preorder; resync verified idempotent (one-off `resync_stock_status.py` tool since removed — bug fixed at the source)
 - **Concurrency:** test proving readers hit no lock errors while a writer commits under WAL (stable 10/10)
 - **Performance:** `show_latest_prices` 60ms / `show_biggest_movers` 7ms on ~10k synthetic snapshots; history query provably index-backed
@@ -199,7 +213,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - **Frontend:** `svelte-check` 0 errors; vitest **154 passing**; Playwright e2e **38 passing**; production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
 - **Docker:** single all-in-one image built and booted — DB seeded, both scrapers OK, 315 listings ingested, backup created, dashboard HTTP 200 with live stats
 - **Feature suggestions §2–§4:** band chart + brand-grouped listings on `/product/[id]`, `/compare?ids=` (2–4 same-category products), `90d low`/`90d high` on product page + dashboard cards — regression green after each milestone
-- **Regression:** backend 365 passing (pytest); frontend 154 passing (vitest) + 38 e2e (Playwright)
+- **Regression:** backend 383 passing (pytest); frontend 154 passing (vitest) + 38 e2e (Playwright)
 
 ## What's NOT done yet
 
@@ -219,12 +233,13 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 
 ## Regression test count
 
-- **365 tests (was 374; −9 = one-off `resync_stock_status.py` + its `test_resync.py` removed 17-Aug)** across 18 test modules via pytest
+- **383 tests (was 365; +18 = 12 new `test_migrate.py` + 6 functional Scorptec fetch/pagination tests replacing 2 signature-only checks)** across 19 test modules via pytest
   - `test_seed.py` — seed, watchlist loading, schema creation
   - `test_matching.py` — product matching logic
   - `test_schema.py` — schema validation, triggers, constraints
   - `test_ingest.py` — ingestion pipeline + TestVariantTracking
-  - `test_scraper.py` — scraper URL fallback, category mapping
+  - `test_scraper.py` — scraper URL fallback, category mapping, `fetch_page` retry behaviour (4), functional pagination loop (3: multi-page, max-pages cap, stop-on-failure)
+  - `test_migrate.py` — **new:** legacy-DB introspection, `get_connection` pragmas, variant_name + specs migrations (apply/dry-run/idempotent), `main()` end-to-end (12)
   - `test_pccg_reliability.py` — **new:** 429-termination, last-page exit, Retry-After, WAF-page guard, 403 logging, circuit breaker, cooldown (14)
   - `test_run_daily.py` — daily runner integration
   - `test_health_checks.py` — JSON validation, DB freshness, match/price anomalies + **today-coverage (3 new)** + variant appear/disappear regression
