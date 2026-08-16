@@ -37,6 +37,8 @@ Also compute, per listing, alongside deal_score:
 
 ## 3. Switch the Products view from table rows to cards
 
+> **STATUS: DONE (2026-08-16)** — shipped as the `ProductCard` grid on `/products` (grouped by product, expandable variant listings, `LatestListingTable` in compact mode). No product images (item 2 declined); the deal-score badge appears on cards once item 1 lands.
+
 **Problem:** with 100+ products and growing, and especially once you're showing multiple AIB variants (8 RTX 3050 listings in the screenshot alone), a flat table gets overwhelming fast, and it's the wrong shape for deal-browsing anyway — people scan deal sites visually, not row-by-row.
 
 **Implementation:**
@@ -103,7 +105,7 @@ ORDER BY p.model; -- or by a defined tier/performance order if you want the caro
 Item 1 (deal score) and item 5 (sparklines) need real price history to matter; the carousel (item 4, now shipped with a GPU/CPU toggle) has no such dependency. Product images (item 2) have been **declined** by the user and are dropped from the plan:
 
 1. ~~Product images (item 2)~~ — declined by the user
-2. **Card layout for Products page** (item 3) — no data dependency, pairs naturally with any remaining card-style work
+2. ~~**Card layout for Products page** (item 3)~~ — **done** (one card per product, cheapest in-stock "from $X" + retailer, expandable per-variant listings; dense table kept on Movers/Dashboard)
 3. ~~Cheapest-per-model GPU carousel (item 4)~~ — **done** (single carousel, GPU/CPU toggle, cheapest in-stock per model at latest snapshot)
 4. **Deal score calculation** (item 1) — build the SQL/logic now even though it won't be meaningful for ~2 weeks; wire it up so it's ready the moment there's enough history
 5. **Sparklines** (item 5) — depends on accumulated history, lowest urgency right now but highest payoff once data exists

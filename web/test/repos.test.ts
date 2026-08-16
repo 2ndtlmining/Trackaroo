@@ -8,7 +8,8 @@ import {
 	getLatestListings,
 	getMovers,
 	getProductHistory,
-	getSummary
+	getSummary,
+	groupListingsByProduct
 } from '../src/lib/server/repos';
 import { createSeededDb, DATA_DIR, parseDateFromFilename, type SeededDb } from './helpers/seed';
 
@@ -142,6 +143,63 @@ describe('getLatestListings', () => {
 		for (const row of rows) {
 			expect(row.lastSnapshotAt).toBeTruthy();
 			expect(new Date(row.lastSnapshotAt!).getTime()).not.toBeNaN();
+		}
+	});
+});
+
+describe('groupListingsByProduct', () => {
+	it('groups all rows into one entry per product', () => {
+		const rows = getLatestListings(db);
+		const groups = groupListingsByProduct(rows);
+		expect(groups.length).toBeGreaterThan(0);
+		expect(groups.reduce((n, g) => n + g.listings.length, 0)).toBe(rows.length);
+		const ids = groups.map((g) => g.productId);
+		expect(new Set(ids).size).toBe(ids.length);
+		for (const g of groups) {
+			expect(g.listings.every((r) => r.productId === g.productId)).toBe(true);
+		}
+	});
+
+	it('computes the cheapest in-stock price and count per product', () => {
+		const groups = groupListingsByProduct(getLatestListings(db));
+		for (const g of groups) {
+			const inStock = g.listings.filter((r) => r.latestStock === 'in_stock');
+			if (inStock.length === 0) {
+				expect(g.cheapestInStockPrice).toBeNull();
+				expect(g.cheapestInStockRetailer).toBeNull();
+				expect(g.inStockCount).toBe(0);
+			} else {
+				const min = Math.min(...inStock.map((r) => r.latestPrice));
+				expect(g.cheapestInStockPrice).toBeCloseTo(min, 2);
+				expect(g.inStockCount).toBe(inStock.length);
+				const cheapest = inStock.filter((r) => r.latestPrice === min);
+				expect(cheapest.some((r) => r.retailer === g.cheapestInStockRetailer)).toBe(true);
+			}
+		}
+	});
+
+	it('keeps category/model order by default and sorts by price on request', () => {
+		const rows = getLatestListings(db);
+		const asc = groupListingsByProduct(rows, 'price-asc');
+		const desc = groupListingsByProduct(rows, 'price-desc');
+
+		const priced = (gs: typeof asc) =>
+			gs.filter((g) => g.cheapestInStockPrice !== null).map((g) => g.cheapestInStockPrice!);
+		for (let i = 1; i < priced(asc).length; i += 1) {
+			expect(priced(asc)[i]).toBeGreaterThanOrEqual(priced(asc)[i - 1]);
+		}
+		for (let i = 1; i < priced(desc).length; i += 1) {
+			expect(priced(desc)[i]).toBeLessThanOrEqual(priced(desc)[i - 1]);
+		}
+
+		// Products with nothing in stock sink to the end for both price sorts.
+		for (const gs of [asc, desc]) {
+			const firstUnpriced = gs.findIndex((g) => g.cheapestInStockPrice === null);
+			if (firstUnpriced !== -1) {
+				for (let i = firstUnpriced; i < gs.length; i += 1) {
+					expect(gs[i].cheapestInStockPrice).toBeNull();
+				}
+			}
 		}
 	});
 });

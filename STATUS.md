@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-16 (PCCG reliability fixes + real spec data shipped)
+**Last updated:** 2026-08-16 (PCCG reliability fixes + real spec data + products card grid shipped)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 5 — frontend/UX improvements program + PCCG reliability (see Active Issues below).
 
@@ -31,7 +31,7 @@
 - **Spec panel (§7):** `SpecPanel.svelte` renders below the price chart on `/product/[id]` (GPU: generation/architecture, VRAM, MSRP-if-present, shaders, TDP; CPU: generation, cores/threads, clocks, TDP; collapsed "Show full specs" details). Fetched via one extra `SELECT` inside `getProductHistory` — never joined into list/index queries (§7.3). No panel at all when a product has no spec row (§7.4).
 - **Tests:** +89 backend (`test_specs_schema.py`, `test_specs_matching.py`, `test_sync_specs.py` → **366 backend tests**), +8 vitest (3 repos + 5 SpecPanel → **109**), +4 Playwright e2e (panel-below-chart layout, expand/collapse, no-panel negative, GPU fields → **27**).
 - **First live sync run (16-Aug):** `python sync_specs.py` populated the production `specs` table — **95 rows** (46 GPU + 25 Intel + 24 AMD). This surfaced a real matching bug: `match_gpu`'s VRAM-variant guard filtered on `memorySize`, but `sync_specs.parse_gpu_records` emits normalized records whose VRAM key is `vram_gb` — so every VRAM-variant GPU (RTX 3050/3060/4060 Ti/5060 Ti, RX 9060 XT) came back unmatched. Fixed by reading VRAM from either key (`_record_vram`) + 3 regression tests locking the normalized-record shape (`TestMatchGpuNormalizedRecords`). Re-ran GPU sync → all 5 now match to the correct variant; GPU coverage is genuinely **46/47** (RX 9070 XTX is absent from the dataset). Second bug found by the same live run: `data/spec_sync_report.json` was picked up by the ingest glob and failed as a "snapshot". Fixed with an `is_snapshot_file()` convention predicate in `ingest.py` (used by `ingest.main()` and the e2e test) + 5 tests (`TestIsSnapshotFile`).
-- **Open item (user decision pending):** `db/watchlist.csv` line 118 lists the Arc B570 as 12GB, but the dataset and AMD's official spec say 10GB. Watchlist left unchanged without sign-off.
+- **Watchlist correction (16-Aug, signed off):** `db/watchlist.csv` line 118 listed the Arc B570 as 12GB; the GPU dataset and Intel's official spec say 10GB — corrected to 10GB (separate commit `fix: Arc B570 watchlist VRAM 12GB -> 10GB`).
 
 ### 🔄 IN PROGRESS: Frontend & UX Improvement Program (15 Aug-2026)
 
@@ -47,7 +47,7 @@ Goal: make the dashboard actually help the user *find deals*, plus polish. Drive
 | F4 | Sort/view cheapest product per category/model (e.g. all 5090s, cheapest first) | ✅ done — `Sort by price` (low→high / high→low, `?sort=`) on table views; pairs with search |
 | F5 | Website icon / favicon | ✅ done — `static/favicon.svg` (accent-blue chart mark), linked in `app.html` |
 | F6 | Additional visual improvements (after walk-through) | ⬜ planned |
-| FI3 | Products page: card grid (grouped by model, expandable variants); keep dense table on Movers | ⬜ _next priority_ |
+| FI3 | Products page: card grid (grouped by model, expandable variants); keep dense table on Movers | ✅ done — one card per product (model, brand, category, cheapest in-stock "from $X" + retailer, listing count); expand reveals the variant table in compact mode; `sort=price-*` orders cards by cheapest in-stock price |
 | FI1 | Deal score (`deal_score`, `pct_below_30d_avg`, `is_all_time_low`) gated behind ≥7 snapshot days; build SQL/logic now, "Gathering price history" until ready | ⬜ planned |
 | FI5 | Inline uPlot sparklines (7–30d) in rows/cards instead of "New listing" text; depends on accumulated history | ⬜ planned |
 | ~~FI2~~ | ~~Product images (`image_url` column, hotlink retailer img, placeholder)~~ | ❌ declined — user doesn't want product images; scrapped from plan |
@@ -55,7 +55,7 @@ Goal: make the dashboard actually help the user *find deals*, plus polish. Drive
 Notes:
 - Git + GitHub: commits for this batch (F1–F5 + FI4 carousel) made after this entry; check `git status` is clean before ending sessions.
 - No image attached to review; visual feedback taken from the live pages.
-- FRONTEND_IMPROVEMENTS.md priority order (v2): FI2 (images — **declined**) → FI3 (cards) → FI4 (carousel ✅) → FI1 (deal score) → FI5 (sparklines). Carousel ships with the GPU/CPU toggle (resolved the GPU-only vs +CPU question).
+- FRONTEND_IMPROVEMENTS.md priority order (v2): FI2 (images — **declined**) → FI3 (cards ✅) → FI4 (carousel ✅) → FI1 (deal score) → FI5 (sparklines). Carousel ships with the GPU/CPU toggle (resolved the GPU-only vs +CPU question).
 
 ### ✅ COMPLETE: Phase 4 Deployment — single Docker image (15 Aug-2026)
 - **All-in-one Dockerfile** at the repo root: Python pipeline **and** SvelteKit dashboard in one container. `docker build -t trackaroo .` then `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`. No docker-compose required.
@@ -166,11 +166,11 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - `PHASE3_PLAN.md` — executable Phase 3 frontend handoff plan (locked decisions, data model facts, M0–M5 steps)
 - `web/` — Phase 3 frontend (SvelteKit + TS + Tailwind v4 + adapter-node):
   - `src/app.css` + `src/lib/theme.ts` — token system, dark/light, theme toggle
-  - `src/lib/components/` — `Badge`, `StatTile`, `PriceChange`, `Chip`, `Filters`, `Header`, `LatestListingTable`, `PriceChart` (uPlot), `SpecPanel` (product-page spec panel), `+layout.svelte`
-  - `src/lib/server/` — `db.ts` (better-sqlite3 read-only singleton), `repos.ts`, plus `formats.ts`/`change.ts`
-  - Routes — `/` dashboard, `/products`, `/movers`, `/product/[id]` with URL-driven filters
-  - `test/` — vitest: formats (28), change (11), filters (18), theme (7), repos (27), components (18) — **109 tests**
-  - `e2e/` — Playwright: 27 tests (app.spec.ts + seed.mjs deterministic DB, incl. 4 spec-panel tests) — **27 tests**
+  - `src/lib/components/` — `Badge`, `StatTile`, `PriceChange`, `Chip`, `Filters`, `Header`, `LatestListingTable` (also renders `compact` inside product cards), `PriceChart` (uPlot), `SpecPanel` (product-page spec panel), `CheapestCarousel` (dashboard cheapest-deals, GPU/CPU toggle), `ProductCard` (products-page card grid), `+layout.svelte`
+  - `src/lib/server/` — `db.ts` (better-sqlite3 read-only singleton), `repos.ts` (incl. `groupListingsByProduct` for the card grid), plus `formats.ts`/`change.ts`
+  - Routes — `/` dashboard (table), `/products` (card grid, expandable variant listings), `/movers` (dense table), `/product/[id]` with URL-driven filters
+  - `test/` — vitest: formats (28), change (11), filters (18), theme (7), repos (30), components (23) — **117 tests**
+  - `e2e/` — Playwright: 28 tests (app.spec.ts + seed.mjs deterministic DB, incl. 4 spec-panel tests + products card-grid/expand tests) — **28 tests**
 
 ## What's verified
 
@@ -185,9 +185,9 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - **Code quality:** all modules type-hinted + logged; shared watchlist module deduplicates logic; secrets moved to env vars
 - **Spec sync:** live-fetch coverage verified against the real watchlist — Intel 25/25, AMD 24/28 (4 OEM-only SKUs have no public page), GPU 46/47 (RX 9070 XTX absent from the dataset); upsert conflict/unmatched/vanished-row behaviour locked in by tests; price pipeline untouched (§2 priority rule)
 - **Spec panel:** renders below the price chart on `/product/[id]` (E2E bounding-box assertion), hidden when a product has no spec row; fetched via one extra `SELECT` in the detail load only — never joined into list/index queries
-- **Frontend:** `svelte-check` 0 errors; vitest **109 passing**; Playwright e2e **27 passing**; production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
+- **Frontend:** `svelte-check` 0 errors; vitest **117 passing**; Playwright e2e **28 passing**; production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
 - **Docker:** single all-in-one image built and booted — DB seeded, both scrapers OK, 315 listings ingested, backup created, dashboard HTTP 200 with live stats
-- **Regression:** backend 374 passing (pytest); frontend 109 passing (vitest) + 27 e2e (Playwright)
+- **Regression:** backend 374 passing (pytest); frontend 117 passing (vitest) + 28 e2e (Playwright)
 
 ## What's NOT done yet
 
@@ -197,7 +197,6 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 4. **Hardening (Phase 4, remaining)** — reverse proxy/TLS, Prometheus-style monitoring, alerting on pipeline failure (current: exit codes + logs).
 5. **Price anomaly detection maturity** — a single-day jump only trips the 3σ check once a listing has ~10+ history points (max deviation ≈ √N); most listings still below that depth. See DECISIONS.md.
 6. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3/4
-7. **Arc B570 watchlist correction** — `db/watchlist.csv` line 118 says 12GB; the GPU dataset and AMD's official spec say 10GB. Awaiting user sign-off before touching the watchlist.
 
 ## Next concrete steps
 
@@ -228,8 +227,8 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
   - `test_specs_schema.py` — **new:** specs table DDL + idempotent migration
   - `test_specs_matching.py` — **new:** name normalization + product→dataset matching
   - `test_sync_specs.py` — **new:** fetch/parse/upsert, conflict no-overwrite, report, CLI flags
-- **Frontend unit (vitest, `web/`) — 109 tests** across 6 suites (formats 28, change 11, filters 18, theme 7, repos 27, components 18) — against temp DBs seeded from `data/*.json`
-- **Frontend e2e (Playwright, `web/e2e/`) — 27 tests** — navigation, theme, dashboard filters, movers, product detail, **spec panel (4: below-chart layout, expand/collapse, no-panel negative, GPU fields)**; runs via `npm run test:e2e` against a seeded dev server
+- **Frontend unit (vitest, `web/`) — 117 tests** across 6 suites (formats 28, change 11, filters 18, theme 7, repos 30, components 23) — against temp DBs seeded from `data/*.json`
+- **Frontend e2e (Playwright, `web/e2e/`) — 28 tests** — navigation, theme, dashboard filters, **products card grid (3: heading+cards, empty state, card expand/collapse)**, movers, product detail, **spec panel (4: below-chart layout, expand/collapse, no-panel negative, GPU fields)**; runs via `npm run test:e2e` against a seeded dev server
 
 ## How to update this file
 

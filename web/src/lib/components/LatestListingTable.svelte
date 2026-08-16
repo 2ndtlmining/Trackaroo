@@ -7,7 +7,9 @@
 	import type { LatestListing } from '$lib/server/repos';
 	import type { ChangeDirection } from '$lib/types';
 
-	let { rows }: { rows: LatestListing[] } = $props();
+	// compact: hide the Model/Category columns (used inside product cards,
+	// where the card header already shows them).
+	let { rows, compact = false }: { rows: LatestListing[]; compact?: boolean } = $props();
 
 	function changeInfo(row: LatestListing): { direction: ChangeDirection; label: string } {
 		const direction = classifyChange({
@@ -56,8 +58,10 @@
 		<table class="w-full border-collapse text-sm">
 			<thead>
 				<tr class="border-b border-border text-left text-xs text-text-muted">
-					<th class="px-3 py-2 font-medium">Model</th>
-					<th class="px-3 py-2 font-medium">Category</th>
+					{#if !compact}
+						<th class="px-3 py-2 font-medium">Model</th>
+						<th class="px-3 py-2 font-medium">Category</th>
+					{/if}
 					<th class="px-3 py-2 font-medium">Retailer</th>
 					<th class="px-3 py-2 font-medium">Variant</th>
 					<th class="px-3 py-2 text-right font-medium">Price</th>
@@ -71,16 +75,18 @@
 						<tr
 							class="border-b border-border last:border-b-0 {isStale(row) ? '' : 'hover:bg-surface-hover'}"
 						>
-							<td class="px-3 py-2">
-								<a
-									href="/product/{row.productId}"
-									class="no-underline hover:no-underline"
-								>{row.model}<span class="ml-1 text-xs text-text-muted">{row.brand}</span></a
-								>
-							</td>
-							<td class="px-3 py-2">
-								<Badge tone="neutral" label={row.category.toUpperCase()} />
-							</td>
+							{#if !compact}
+								<td class="px-3 py-2">
+									<a
+										href="/product/{row.productId}"
+										class="no-underline hover:no-underline"
+									>{row.model}<span class="ml-1 text-xs text-text-muted">{row.brand}</span></a
+									>
+								</td>
+								<td class="px-3 py-2">
+									<Badge tone="neutral" label={row.category.toUpperCase()} />
+								</td>
+							{/if}
 							<td class="px-3 py-2 text-text">{row.retailer}</td>
 							<td class="px-3 py-2 text-text-muted" title={row.variantName ?? undefined}>
 								{truncatedVariant(row.variantName)}

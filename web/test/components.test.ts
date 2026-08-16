@@ -6,8 +6,9 @@ import PriceChange from '../src/lib/components/PriceChange.svelte';
 import StockBadge from '../src/lib/components/StockBadge.svelte';
 import Chip from '../src/lib/components/Chip.svelte';
 import LatestListingTable from '../src/lib/components/LatestListingTable.svelte';
+import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
-import type { LatestListing } from '../src/lib/server/repos';
+import type { LatestListing, ProductGroup } from '../src/lib/server/repos';
 import type { SpecRow } from '../src/lib/server/db';
 
 function renderComponent(Component: unknown, props: Record<string, unknown> = {}): string {
@@ -142,6 +143,71 @@ describe('LatestListingTable', () => {
 		const body = renderComponent(LatestListingTable, { rows: [row] });
 		expect(body).toContain('Stale');
 		expect(body).toContain('last seen');
+	});
+
+	it('hides the model and category columns in compact mode', () => {
+		const body = renderComponent(LatestListingTable, { rows: [latestListing()], compact: true });
+		expect(body).not.toContain('>Model</th>');
+		expect(body).not.toContain('>Category</th>');
+		expect(body).toContain('>Retailer</th>');
+		expect(body).toContain('scorptec');
+	});
+});
+
+function productGroup(overrides: Partial<ProductGroup> = {}): ProductGroup {
+	return {
+		productId: 1,
+		category: 'cpu',
+		brand: 'AMD',
+		model: 'Ryzen 5 7600',
+		productVariant: null,
+		generationTier: 'current',
+		listings: [latestListing()],
+		cheapestInStockPrice: 299,
+		cheapestInStockRetailer: 'scorptec',
+		inStockCount: 1,
+		...overrides
+	};
+}
+
+describe('ProductCard', () => {
+	it('renders model, brand, category and the cheapest in-stock price', () => {
+		const body = renderComponent(ProductCard, { group: productGroup() });
+		expect(body).toContain('Ryzen 5 7600');
+		expect(body).toContain('AMD');
+		expect(body).toContain('CPU');
+		expect(body).toContain('from $299');
+		expect(body).toContain('scorptec');
+	});
+
+	it('shows a no-in-stock note when nothing is in stock', () => {
+		const body = renderComponent(ProductCard, {
+			group: productGroup({
+				cheapestInStockPrice: null,
+				cheapestInStockRetailer: null,
+				inStockCount: 0
+			})
+		});
+		expect(body).toContain('No in-stock listings');
+	});
+
+	it('keeps the variant listings collapsed by default', () => {
+		const body = renderComponent(ProductCard, { group: productGroup() });
+		expect(body).not.toContain('<table');
+		expect(body).toContain('Show 1 listing');
+	});
+
+	it('lists the total and in-stock listing counts', () => {
+		const body = renderComponent(ProductCard, {
+			group: productGroup({
+				listings: [latestListing(), latestListing({ listingId: 2, retailer: 'pccg' })],
+				cheapestInStockPrice: 289,
+				cheapestInStockRetailer: 'pccg',
+				inStockCount: 2
+			})
+		});
+		expect(body).toContain('2 listings');
+		expect(body).toContain('2 in stock');
 	});
 });
 

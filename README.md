@@ -49,8 +49,8 @@ never joined into the price pipeline:
 | **Regression tests** | ✅ Complete | 374 tests across 19 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
-| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products, movers, price-history charts; reads the DB directly via better-sqlite3 |
-| **Frontend tests** | ✅ Complete | 109 vitest + 27 Playwright e2e (with a `goto()` hydration helper) |
+| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid, expandable per-variant listings), movers, price-history charts; reads the DB directly via better-sqlite3 |
+| **Frontend tests** | ✅ Complete | 117 vitest + 28 Playwright e2e (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
@@ -249,7 +249,7 @@ Trackaroo/
     ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot), SpecPanel, …
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /movers, /product/[id]
-    ├── test/                   # 109 vitest regression tests (6 suites)
+    ├── test/                   # 117 vitest regression tests (6 suites)
     ├── e2e/                    # 27 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json

@@ -45,6 +45,70 @@ export interface LatestListing {
 	pointsInWindow: number;
 }
 
+export interface ProductGroup {
+	productId: number;
+	category: Category;
+	brand: string;
+	model: string;
+	productVariant: string | null;
+	generationTier: GenerationTier | null;
+	listings: LatestListing[];
+	cheapestInStockPrice: number | null;
+	cheapestInStockRetailer: Retailer | null;
+	inStockCount: number;
+}
+
+// Groups per-listing rows into one entry per product (for the Products card
+// grid). `sort` reorders the groups: price sorts order by cheapest in-stock
+// price (products with nothing in stock always sink to the end); the default
+// keeps the row order the SQL produced (category, model).
+export function groupListingsByProduct(
+	listings: LatestListing[],
+	sort: ListingSort | undefined = undefined
+): ProductGroup[] {
+	const byProduct = new Map<number, ProductGroup>();
+	for (const row of listings) {
+		let group = byProduct.get(row.productId);
+		if (!group) {
+			group = {
+				productId: row.productId,
+				category: row.category,
+				brand: row.brand,
+				model: row.model,
+				productVariant: row.productVariant,
+				generationTier: row.generationTier,
+				listings: [],
+				cheapestInStockPrice: null,
+				cheapestInStockRetailer: null,
+				inStockCount: 0
+			};
+			byProduct.set(row.productId, group);
+		}
+		group.listings.push(row);
+		if (row.latestStock === 'in_stock') {
+			group.inStockCount += 1;
+			if (group.cheapestInStockPrice === null || row.latestPrice < group.cheapestInStockPrice) {
+				group.cheapestInStockPrice = row.latestPrice;
+				group.cheapestInStockRetailer = row.retailer;
+			}
+		}
+	}
+
+	const groups = [...byProduct.values()];
+	if (sort === 'price-asc' || sort === 'price-desc') {
+		const dir = sort === 'price-asc' ? 1 : -1;
+		groups.sort((a, b) => {
+			if (a.cheapestInStockPrice === null && b.cheapestInStockPrice === null) {
+				return a.model.localeCompare(b.model);
+			}
+			if (a.cheapestInStockPrice === null) return 1;
+			if (b.cheapestInStockPrice === null) return -1;
+			return dir * (a.cheapestInStockPrice - b.cheapestInStockPrice) || a.model.localeCompare(b.model);
+		});
+	}
+	return groups;
+}
+
 export interface Mover {
 	listingId: number;
 	productId: number;

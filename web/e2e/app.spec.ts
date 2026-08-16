@@ -177,10 +177,13 @@ test.describe('dashboard', () => {
 });
 
 test.describe('products page', () => {
-	test('shows the products heading and a table', async ({ page }) => {
+	test('shows the products heading and a card grid', async ({ page }) => {
 		await goto(page, '/products');
 		await expect(page.getByRole('heading', { name: /Products/i })).toBeVisible();
-		await expect(page.locator('tbody tr').first()).toBeVisible();
+		const cards = page.locator('article');
+		expect(await cards.count()).toBeGreaterThan(0);
+		// Each card shows the model name and a "from $" price (or no-in-stock note)
+		await expect(cards.first()).toContainText(/from \$|No in-stock listings/);
 	});
 
 	test('shows an empty state when no filters match', async ({ page }) => {
@@ -188,6 +191,21 @@ test.describe('products page', () => {
 		await expect(
 			page.getByText('No listings match the current filters.')
 		).toBeVisible();
+	});
+
+	test('expands a product card to reveal its variant listings', async ({ page }) => {
+		await goto(page, '/products');
+		const card = page.locator('article').filter({ hasText: 'RTX 5060 Ti' }).first();
+		await expect(card).toBeVisible();
+		const toggle = card.getByRole('button', { name: /listing/i });
+		await expect(card.locator('table')).toHaveCount(0);
+
+		await toggle.click();
+		await expect(card.locator('table')).toBeVisible();
+		await expect(toggle).toHaveText(/Hide listings/);
+
+		await toggle.click();
+		await expect(card.locator('table')).toHaveCount(0);
 	});
 });
 
@@ -287,8 +305,8 @@ test.describe('product detail specs', () => {
 
 	test('renders the gpu spec fields', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		const row = page.locator('tbody tr').filter({ hasText: 'RTX 5060 Ti' }).first();
-		await row.locator('a').click();
+		const card = page.locator('article').filter({ hasText: 'RTX 5060 Ti' }).first();
+		await card.locator('a').first().click();
 
 		await expect(page.getByRole('heading', { name: 'Specs' })).toBeVisible();
 		await expect(page.getByText('RTX 50 — Blackwell')).toBeVisible();
