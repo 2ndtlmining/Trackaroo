@@ -148,7 +148,7 @@ Later/nice-to-have (not in initial build): watchlist-based alerts, cross-categor
 - Build the manual/semi-manual cross-retailer product matching layer (search-term based)
 - Add scrape-health checks/alerting (health_checks.py; variant-count anomaly detection)
 
-**Phase 3 — Frontend**
+**Phase 3 — Frontend** *(complete — SvelteKit dashboard shipped 15-Aug-2026: dashboard, products card grid, movers, uPlot price-history charts, spec panel; see STATUS.md)*
 - Product table + current pricing view
 - Price history charts per product
 - Biggest movers + deal-signal views

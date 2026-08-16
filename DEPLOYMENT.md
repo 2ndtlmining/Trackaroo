@@ -111,6 +111,27 @@ location), so this works from any working directory.
 30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --backup 14 >> /var/log/trackaroo_daily.log 2>&1
 ```
 
+### Weekly spec sync (separate, best-effort)
+
+`sync_specs.py` refreshes the `specs` table from the external GPU/Intel/AMD
+datasets. It is a wholly separate job — never called from or by `run_daily.py`
+— and is best-effort: a failed sync leaves the last-known-good spec data in
+place and the site keeps working. Schedule it well clear of the daily price
+run (e.g. Sunday 03:00):
+
+```cron
+0 3 * * 0 cd /opt/trackaroo && /usr/bin/env python3 sync_specs.py >> /var/log/trackaroo_specs.log 2>&1
+```
+
+A non-zero exit means a source fetch failed (nothing was written); the report
+from the last run is in `data/spec_sync_report.json` (`python sync_specs.py
+--report-only` reprints it).
+
+For the all-in-one Docker container (Option C), schedule
+`docker exec trackaroo python sync_specs.py` from a host crontab — the spec
+state lives in the shared volume, so the outcome is identical to a host-run
+sync.
+
 ### PCCG scheduled retry (automatic, safe to run unconditionally)
 
 PCCG rate-limits aggressively; when it does, the scraper now fails fast via a
@@ -147,6 +168,7 @@ entrypoint (`deploy/entrypoint.sh`). The cooldown file lives in the shared
 volume, so the scoring is identical either way.
 
 > **First run:** the pipeline scrapes live retailer sites, so the dashboard
+> populates over the first minutes.
 
 Environment: set `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` (and any
 `TRACKAROO_*` overrides) in the crontab's environment or a `.env` read by the

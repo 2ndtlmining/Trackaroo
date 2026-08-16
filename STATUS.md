@@ -174,7 +174,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 
 ## What's verified
 
-- **Backend:** 251 tests pass — seed, matching, schema/triggers, ingestion, scrapers, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, resync, backup, config
+- **Backend:** 374 tests pass — seed, matching, schema/triggers, ingestion, scrapers, PCCG reliability, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, resync, backup, config, specs schema/matching/sync
 - **Stock status:** PCCG 13-Aug corrected from 123 all-in_stock to 86 in_stock + 35 out_of_stock + 2 preorder; resync verified idempotent
 - **Concurrency:** test proving readers hit no lock errors while a writer commits under WAL (stable 10/10)
 - **Performance:** `show_latest_prices` 60ms / `show_biggest_movers` 7ms on ~10k synthetic snapshots; history query provably index-backed

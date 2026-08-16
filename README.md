@@ -125,7 +125,7 @@ also kept for those who prefer it — see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Frontend (`web/`)
 
-SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard, `/products` (filterable table), `/movers` (24h/7d/30d, sortable), `/product/[id]` (meta + uPlot history chart).
+SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard, `/products` (card grid grouped by product, expandable variant listings), `/movers` (24h/7d/30d, sortable), `/product/[id]` (meta + uPlot history chart + spec panel).
 
 ```bash
 cd web
@@ -140,10 +140,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (90 vitest)
+# Run frontend unit tests (117 vitest)
 npm test
 
-# Run browser e2e regression tests (19 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (28 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -250,7 +250,7 @@ Trackaroo/
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /movers, /product/[id]
     ├── test/                   # 117 vitest regression tests (6 suites)
-    ├── e2e/                    # 27 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── e2e/                    # 28 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```

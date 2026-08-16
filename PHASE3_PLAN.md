@@ -4,6 +4,8 @@ Single-file plan so any model can build the Trackaroo frontend without re-derivi
 
 **Status (2026-08-14):** Backend complete, 226 tests green. Frontend not started. Plan finalized with user; decisions below are locked.
 
+**Superseded (2026-08-15):** all of M0–M5 are done — the frontend is built, tested (117 vitest + 28 Playwright e2e) and shipped. This file is kept as the historical handoff record; see `STATUS.md` for the current state.
+
 ## Locked decisions
 
 - **Stack:** SvelteKit + TypeScript + Tailwind v4 in `web/`, `adapter-node` (matches Proxmox/FluxTracker deploy later).

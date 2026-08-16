@@ -1,8 +1,20 @@
 # IMPROVEMENT.md — Real Spec Data (CPU + GPU)
 
-**Status:** Proposed, not yet built
+**Status:** Implemented (16-Aug-2026) — all of §3–§9 (spec data + product-page panel) and §10 (PCCG reliability) are built, tested, and shipped. Deviations from this plan are recorded in the "Implementation outcome" section below.
 **Priority:** Additive only. Price tracking remains the site's primary function and nothing in this doc may slow down, block, or risk the daily price pipeline.
 **Audience:** This doc is written so a local model with no other context can implement it directly against the existing Trackaroo repo. It assumes familiarity with README.md, SPEC.md, SCOPE_RULES.md, and DECISIONS.md — read those first if not already loaded.
+
+## Implementation outcome (16-Aug-2026)
+
+All §11 open questions were resolved with the user before/during the build:
+
+- **CPU source:** the plan's Option A (`felixsteinke/cpu-spec-dataset`) was **rejected** — AGPL-3.0 license and missing current-generation parts. Final sources: Intel — `toUpperCase78/intel-processors` raw CSVs on GitHub; AMD — first-party `amd.com` product pages (polite fetch, browser user-agent, 1s delay). Rationale in DECISIONS.md.
+- **Matching:** exact normalized matching only — no fuzzy layer was needed. Coverage against the real watchlist: Intel 25/25, AMD 24/28 (4 OEM-only SKUs have no public page, by design), GPU 46/47 (RX 9070 XTX is absent from the dataset, by design).
+- **One `specs` row per canonical product** (chip level, not per AIB variant), as recommended in §11.3.
+- **Circuit breaker / cooldown:** 3 consecutive failed batches trips the breaker (`TRACKAROO_ALGOLIA_CIRCUIT_BREAKER`), 4-hour cooldown (`TRACKAROO_PCCG_COOLDOWN_HOURS`) — both env-tunable per §11.4.
+- **First live sync:** `python sync_specs.py` populated the production `specs` table with **95 rows** (46 GPU / 25 Intel / 24 AMD). The live run surfaced two real bugs — `match_gpu`'s VRAM-variant guard filtered on the wrong key, and the ingest glob picked up `data/spec_sync_report.json` as a "snapshot" — both fixed with regression tests.
+- **Tests:** backend grew 251 → 374 (pytest), +8 vitest, +4 Playwright e2e — all green.
+- **MSRP:** all current sources store NULL for MSRP, so the "current price vs MSRP" delta stays dormant (displays USD via `formatUsd` when a source ever provides it).
 
 ---
 
