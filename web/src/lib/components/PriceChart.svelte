@@ -10,11 +10,21 @@
 		points: { date: string; price: number }[];
 	}
 
+	export interface ChartBand {
+		dates: string[];
+		low: (number | null)[];
+		high: (number | null)[];
+	}
+
 	let {
 		series,
+		band = null,
+		cheapestInStock = null,
 		height = 300
 	}: {
 		series: ChartSeries[];
+		band?: ChartBand | null;
+		cheapestInStock?: { date: string; price: number } | null;
 		height?: number;
 	} = $props();
 
@@ -93,29 +103,83 @@
 	}
 
 	function buildSeries() {
-		return [
-			{ label: 'Date' },
-			...series.map((s, i) => ({
+		const accent = cssVar('--accent');
+		const muted = cssVar('--text-muted');
+		const good = cssVar('--down');
+
+		const result: Partial<uPlot.Series>[] = [{ label: 'Date' }];
+
+		if (band) {
+			result.push({
+				label: 'Lowest (in stock)',
+				stroke: muted,
+				width: 1,
+				points: { show: false },
+				value: (_self: uPlot, rawValue: number) =>
+					rawValue == null ? '—' : formatAud(rawValue)
+			});
+			result.push({
+				label: 'Highest (in stock)',
+				stroke: muted,
+				width: 1,
+				points: { show: false },
+				value: (_self: uPlot, rawValue: number) =>
+					rawValue == null ? '—' : formatAud(rawValue)
+			});
+		}
+
+		if (cheapestInStock) {
+			result.push({
+				label: 'Cheapest in stock',
+				stroke: good,
+				width: 2,
+				dash: [],
+				points: { show: true, size: 6 },
+				value: (_self: uPlot, rawValue: number) =>
+					rawValue == null ? '—' : formatAud(rawValue)
+			});
+		}
+
+		for (const s of series) {
+			result.push({
 				label: s.label,
-				stroke: cssVar('--accent'),
+				stroke: accent,
 				width: 1.75,
-				dash: LINE_STYLES[i % LINE_STYLES.length],
+				dash: LINE_STYLES[result.length % LINE_STYLES.length],
 				points: { show: true, size: 4 },
 				value: (_self: uPlot, rawValue: number) =>
 					rawValue == null ? '—' : formatAud(rawValue)
-			}))
-		];
+			});
+		}
+
+		return result;
 	}
 
 	function buildData(): uPlot.AlignedData {
 		const dates = new Set<string>();
+		if (band) {
+			for (const d of band.dates) dates.add(d);
+		}
 		for (const s of series) for (const p of s.points) dates.add(p.date);
+		if (cheapestInStock) dates.add(cheapestInStock.date);
 		const xAxis = [...dates].sort();
 		const xs = xAxis.map((d) => new Date(`${d}T00:00:00Z`).getTime());
-		const ys = series.map((s) => {
+
+		const ys: (number | null)[][] = [];
+		if (band) {
+			const lowByDate = new Map(band.dates.map((d, i) => [d, band.low[i]]));
+			const highByDate = new Map(band.dates.map((d, i) => [d, band.high[i]]));
+			ys.push(xAxis.map((d) => lowByDate.get(d) ?? null));
+			ys.push(xAxis.map((d) => highByDate.get(d) ?? null));
+		}
+		if (cheapestInStock) {
+			ys.push(xAxis.map((d) => (d === cheapestInStock.date ? cheapestInStock.price : null)));
+		}
+		for (const s of series) {
 			const byDate = new Map(s.points.map((p) => [p.date, p.price]));
-			return xAxis.map((d) => byDate.get(d) ?? null);
-		});
+			ys.push(xAxis.map((d) => byDate.get(d) ?? null));
+		}
+
 		return [xs, ...ys] as uPlot.AlignedData;
 	}
 
@@ -136,6 +200,9 @@
 				height,
 				padding: [12, 10, 4, 4],
 				legend: { show: false },
+				bands: band
+					? [{ series: [1, 2], fill: cssVar('--accent-soft') || `${cssVar('--accent')}26` }]
+					: undefined,
 				scales: {
 					x: { time: true },
 					y: { auto: true }

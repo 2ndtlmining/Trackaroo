@@ -134,11 +134,25 @@ export interface Series {
 	points: SnapshotRow[];
 }
 
+export interface PriceBandPoint {
+	date: string;
+	low: number | null; // MIN price among in-stock snapshots that day
+	high: number | null; // MAX price among in-stock snapshots that day
+	cheapestInStock: number | null; // cheapest in-stock price at the latest snapshot (single point)
+}
+
 export interface ProductHistory {
 	product: ProductRow;
 	series: Series[];
 	specs: SpecRow | null;
+	band: PriceBandPoint[];
 }
+
+// Canonical display names for AIB/GPU partner brands, keyed by the lowercase
+// first token of the retailer variant name (e.g. "Gigabyte GeForce RTX 5060
+// Windforce OC GDDR7 8GB" -> "Gigabyte"). Used to group the per-product
+// listings panel by brand. Unknown prefixes fall back to the product brand.
+export { AIB_BRAND_ALIASES, deriveListingBrand } from '$lib/branding';
 
 // Excludes CPU+motherboard bundle listings (e.g. Scorptec "... power bundle")
 // from product pricing. Bundles price the whole combo, not the component alone,
@@ -406,6 +420,40 @@ ${LATEST_CTE}
 	}));
 }
 
+export function getPriceBand(db: DB, productId: number): PriceBandPoint[] {
+	const rows = db
+		.prepare(
+			`SELECT
+				s.snapshot_date AS date,
+				MIN(CASE WHEN s.stock_status = 'in_stock' THEN s.price_aud END) AS low,
+				MAX(CASE WHEN s.stock_status = 'in_stock' THEN s.price_aud END) AS high
+			FROM retailer_listings l
+			JOIN price_snapshots s ON s.retailer_listing_id = l.id
+			WHERE l.product_id = ? AND ${notBundle('l')}
+			GROUP BY s.snapshot_date
+			ORDER BY s.snapshot_date`
+		)
+		.all(productId) as Array<{ date: string; low: number | null; high: number | null }>;
+
+	const latest = db
+		.prepare(
+			`SELECT s.snapshot_date AS date, MIN(s.price_aud) AS price
+			FROM retailer_listings l
+			JOIN price_snapshots s ON s.retailer_listing_id = l.id
+			WHERE l.product_id = ? AND s.stock_status = 'in_stock' AND ${notBundle('l')}
+			  AND s.snapshot_date = (SELECT MAX(snapshot_date) FROM price_snapshots)
+			GROUP BY s.snapshot_date`
+		)
+		.get(productId) as { date: string; price: number } | undefined;
+
+	return rows.map((r) => ({
+		date: r.date,
+		low: r.low,
+		high: r.high,
+		cheapestInStock: latest && latest.date === r.date ? latest.price : null
+	}));
+}
+
 export function getProductHistory(db: DB, productId: number): ProductHistory | null {
 	const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId) as
 		| ProductRow
@@ -484,7 +532,8 @@ export function getProductHistory(db: DB, productId: number): ProductHistory | n
 	return {
 		product,
 		series: [...listings.values()].map(({ listing, points }) => ({ listing, points })),
-		specs: spec ?? null
+		specs: spec ?? null,
+		band: getPriceBand(db, productId)
 	};
 }
 

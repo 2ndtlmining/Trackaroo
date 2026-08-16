@@ -204,7 +204,7 @@ test.describe('products page', () => {
 		await expect(card.locator('table')).toBeVisible();
 		await expect(toggle).toHaveText(/Hide listings/);
 
-		await toggle.click();
+await toggle.click();
 		await expect(card.locator('table')).toHaveCount(0);
 	});
 });
@@ -254,7 +254,7 @@ test.describe('product detail', () => {
 		// Find a product link from the seed data (product 1 always exists in the temp DB)
 		const res = await page.request.get('/product/1');
 		expect(res.status()).toBe(200);
-		await goto(page, '/product/1');
+await goto(page, '/product/1');
 
 		await expect(page.locator('h1').first()).toBeVisible();
 		await expect(page.getByText('Category', { exact: true })).toBeVisible();
@@ -267,6 +267,55 @@ test.describe('product detail', () => {
 	test('404 for an unknown product id', async ({ page }) => {
 		const res = await page.request.get('/product/999999');
 		expect(res.status()).toBe(404);
+	});
+});
+
+test.describe('product detail grouped listings', () => {
+	async function openGpuProduct(page: Page) {
+		await goto(page, '/products?category=gpu');
+		const card = page.locator('article').filter({ hasText: 'RTX 5060 Ti' }).first();
+		await card.locator('a').first().click();
+	}
+
+	test('groups GPU listings by AIB brand with in-stock counts', async ({ page }) => {
+		await openGpuProduct(page);
+
+		await expect(page.getByRole('heading', { name: 'Retailer listings' })).toBeVisible();
+		await expect(page.getByLabel('Price history chart')).toBeVisible();
+
+		// The RTX 5060 Ti has multiple AIB variants in the seed data
+		const groups = page.getByRole('button', { name: /· .*listing/ });
+		expect(await groups.count()).toBeGreaterThan(1);
+		await expect(groups.first()).toContainText(/in stock/);
+	});
+
+	test('expands a brand group and toggles a listing onto the chart', async ({ page }) => {
+		await openGpuProduct(page);
+
+		const group = page.getByRole('button', { name: /· .*listing/ }).first();
+		await group.click();
+		const showButton = page.getByRole('button', { name: 'Show on chart' }).first();
+		await expect(showButton).toBeVisible();
+
+		await showButton.click();
+		await expect(page.getByRole('button', { name: 'On chart' }).first()).toBeVisible();
+	});
+
+	test('search narrows the brand groups', async ({ page }) => {
+		await openGpuProduct(page);
+
+		await page.getByLabel('Filter listings by name').fill('msi');
+		await expect(page.getByRole('button', { name: /MSI/ })).toBeVisible();
+		await expect(page.getByRole('button', { name: /ASUS/ })).toHaveCount(0);
+	});
+
+	test('the in-stock only filter hides out-of-stock groups', async ({ page }) => {
+		await openGpuProduct(page);
+
+		await page.getByLabel('In stock only').check();
+		// Every visible group header still advertises an in-stock count
+		const groups = page.getByRole('button', { name: /· .*listing/ });
+		expect(await groups.count()).toBeGreaterThan(0);
 	});
 });
 

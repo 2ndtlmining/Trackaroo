@@ -4,9 +4,11 @@ import path from 'node:path';
 import type { DB } from '../src/lib/server/db';
 import {
 	MIN_HISTORY_POINTS,
+	deriveListingBrand,
 	getCheapestPerModel,
 	getLatestListings,
 	getMovers,
+	getPriceBand,
 	getProductHistory,
 	getSummary,
 	groupListingsByProduct
@@ -303,6 +305,126 @@ describe('getProductHistory', () => {
 			const dates = series.points.map((p) => p.snapshot_date);
 			expect([...dates].sort()).toEqual(dates);
 		}
+	});
+});
+
+describe('deriveListingBrand', () => {
+	it('maps known AIB first-tokens to canonical display names', () => {
+		expect(deriveListingBrand('Gigabyte GeForce RTX 5060 Windforce OC 8GB', 'NVIDIA')).toBe(
+			'Gigabyte'
+		);
+		expect(deriveListingBrand('msi geforce rtx 3050 ventus 2x e 6g oc', 'NVIDIA')).toBe('MSI');
+		expect(deriveListingBrand('ASUS Dual GeForce RTX 5060 Ti', 'NVIDIA')).toBe('ASUS');
+		expect(deriveListingBrand('zotac gaming geforce rtx 3050 6gb', 'NVIDIA')).toBe('ZOTAC');
+		expect(deriveListingBrand('inno3d geforce rtx 5060 low profile, 8gb', 'NVIDIA')).toBe(
+			'Inno3D'
+		);
+		expect(deriveListingBrand('palit geforce rtx 5060 infinity 2 oc, 8gb', 'NVIDIA')).toBe(
+			'Palit'
+		);
+		expect(deriveListingBrand('pny geforce rtx 5060 overclocked dual fan, 8gb', 'NVIDIA')).toBe(
+			'PNY'
+		);
+	});
+
+	it('maps silicon brand prefixes for CPU listings', () => {
+		expect(deriveListingBrand('AMD Ryzen 7 9800X3D Processor', 'AMD')).toBe('AMD');
+		expect(deriveListingBrand('intel core i5 14400 desktop processor', 'Intel')).toBe('Intel');
+	});
+
+	it('falls back to the product brand for unknown prefixes and null names', () => {
+		expect(deriveListingBrand('Ryzen 5 7600, Tray, 65W', 'AMD')).toBe('AMD');
+		expect(deriveListingBrand(null, 'NVIDIA')).toBe('NVIDIA');
+	});
+});
+
+describe('getPriceBand', () => {
+	it('returns one row per snapshot day, sorted ascending, with low <= high', () => {
+		const row = db.prepare('SELECT id FROM products LIMIT 1').get() as { id: number };
+		const band = getPriceBand(db, row.id);
+		expect(band.length).toBeGreaterThan(0);
+		const dates = band.map((p) => p.date);
+		expect([...dates].sort()).toEqual(dates);
+		for (const p of band) {
+			if (p.low !== null && p.high !== null) {
+				expect(p.low).toBeLessThanOrEqual(p.high);
+			}
+		}
+	});
+
+	it('computes the exact min/max in-stock price for a known day', () => {
+		const sample = db
+			.prepare(
+				`SELECT p.id AS pid, s.snapshot_date AS date
+				 FROM products p
+				 JOIN retailer_listings l ON l.product_id = p.id
+				 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				 WHERE s.stock_status = 'in_stock'
+				   AND lower(l.variant_name) NOT LIKE '%bundle%'
+				   AND lower(l.variant_name) NOT LIKE '%combo%'
+				   AND lower(l.listing_url) NOT LIKE '%bundle%'
+				   AND lower(l.listing_url) NOT LIKE '%bdl-%'
+				 LIMIT 1`
+			)
+			.get() as { pid: number; date: string };
+		expect(sample).toBeDefined();
+		const band = getPriceBand(db, sample.pid);
+		const point = band.find((p) => p.date === sample.date);
+		expect(point).toBeDefined();
+		const agg = db
+			.prepare(
+				`SELECT MIN(s.price_aud) AS mn, MAX(s.price_aud) AS mx
+				 FROM retailer_listings l
+				 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				 WHERE l.product_id = ? AND s.snapshot_date = ? AND s.stock_status = 'in_stock'
+				   AND lower(l.variant_name) NOT LIKE '%bundle%'
+				   AND lower(l.variant_name) NOT LIKE '%combo%'
+				   AND lower(l.listing_url) NOT LIKE '%bundle%'
+				   AND lower(l.listing_url) NOT LIKE '%bdl-%'`
+			)
+			.get(sample.pid, sample.date) as { mn: number | null; mx: number | null };
+		expect(point!.low).toBeCloseTo(agg.mn as number, 2);
+		expect(point!.high).toBeCloseTo(agg.mx as number, 2);
+	});
+
+	it('is null on days where nothing is in stock', () => {
+		const candidate = db
+			.prepare(
+				`SELECT p.id AS pid, s.snapshot_date AS date
+				 FROM products p
+				 JOIN retailer_listings l ON l.product_id = p.id
+				 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				 GROUP BY p.id, s.snapshot_date
+				 HAVING SUM(CASE WHEN s.stock_status = 'in_stock' THEN 1 ELSE 0 END) = 0
+				 LIMIT 1`
+			)
+			.get() as { pid: number; date: string } | undefined;
+		expect(candidate).toBeDefined();
+		const band = getPriceBand(db, candidate!.pid);
+		const point = band.find((p) => p.date === candidate!.date);
+		expect(point).toBeDefined();
+		expect(point!.low).toBeNull();
+		expect(point!.high).toBeNull();
+	});
+
+	it('sets cheapestInStock only on the latest date with an in-stock listing', () => {
+		const gpu = db
+			.prepare(
+				`SELECT p.id AS pid FROM products p
+				 WHERE p.category = 'gpu'
+				   AND EXISTS (SELECT 1 FROM retailer_listings l JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				               WHERE l.product_id = p.id AND s.stock_status = 'in_stock')
+				 LIMIT 1`
+			)
+			.get() as { pid: number } | undefined;
+		expect(gpu).toBeDefined();
+		const band = getPriceBand(db, gpu!.pid);
+		const latest = db
+			.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
+			.get() as { d: string };
+		const marked = band.filter((p) => p.cheapestInStock !== null);
+		expect(marked.length).toBe(1);
+		expect(marked[0].date).toBe(latest.d);
 	});
 });
 

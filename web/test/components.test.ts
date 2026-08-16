@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { mount, unmount } from 'svelte';
+import { describe, expect, it, vi } from 'vitest';
+import { mount, tick, unmount } from 'svelte';
 import Badge from '../src/lib/components/Badge.svelte';
 import StatTile from '../src/lib/components/StatTile.svelte';
 import PriceChange from '../src/lib/components/PriceChange.svelte';
@@ -8,8 +8,9 @@ import Chip from '../src/lib/components/Chip.svelte';
 import LatestListingTable from '../src/lib/components/LatestListingTable.svelte';
 import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
-import type { LatestListing, ProductGroup } from '../src/lib/server/repos';
-import type { SpecRow } from '../src/lib/server/db';
+import BrandGroupedListings from '../src/lib/components/BrandGroupedListings.svelte';
+import type { LatestListing, ProductGroup, Series } from '../src/lib/server/repos';
+import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
 
 function renderComponent(Component: unknown, props: Record<string, unknown> = {}): string {
 	const target = document.createElement('div');
@@ -302,5 +303,140 @@ describe('SpecPanel', () => {
 		const body = renderComponent(SpecPanel, { spec: specRow({ launch_msrp_usd: 1999 }) });
 		expect(body).toContain('Launch MSRP');
 		expect(body).toContain('$1,999');
+	});
+});
+
+function snapshot(date: string, price: number, stock: string): SnapshotRow {
+	return {
+		id: 1,
+		retailer_listing_id: 1,
+		snapshot_date: date,
+		price_aud: price,
+		stock_status: stock as SnapshotRow['stock_status'],
+		scraped_at: `${date}T04:00:00.000Z`
+	};
+}
+
+function listingSeries(id: number, variant: string, points: SnapshotRow[]): Series {
+	const listing: ListingRow = {
+		id,
+		product_id: 1,
+		retailer: 'scorptec',
+		variant_name: variant,
+		retailer_sku: null,
+		listing_url: `https://example.com/${id}`,
+		status: 'active',
+		first_seen_at: '2026-08-09T04:00:00.000Z',
+		last_seen_at: '2026-08-17T04:00:00.000Z',
+		last_snapshot_at: '2026-08-17T04:00:00.000Z'
+	};
+	return { listing, points };
+}
+
+const BGL_SERIES = [
+	listingSeries(1, 'MSI GeForce RTX 5060 Ventus 2X OC 8GB', [
+		snapshot('2026-08-17', 619, 'in_stock')
+	]),
+	listingSeries(2, 'MSI GeForce RTX 5060 Shadow 2X OC 8GB', [
+		snapshot('2026-08-17', 635, 'out_of_stock')
+	]),
+	listingSeries(3, 'Gigabyte GeForce RTX 5060 Windforce OC 8GB', [
+		snapshot('2026-08-17', 649, 'in_stock')
+	])
+];
+
+describe('BrandGroupedListings', () => {
+	it('renders group headers with price ranges and in-stock counts', () => {
+		const body = renderComponent(BrandGroupedListings, {
+			series: BGL_SERIES,
+			productBrand: 'NVIDIA',
+			selected: new Set<number>(),
+			onToggleListing: () => {}
+		});
+		expect(body).toContain('Retailer listings');
+		expect(body).toContain('MSI · $619–$635 · 2 listings · 1 in stock');
+		expect(body).toContain('Gigabyte · $649 · 1 listing · 1 in stock');
+	});
+
+	it('shows the expand/collapse-all control when more than one group exists', () => {
+		const body = renderComponent(BrandGroupedListings, {
+			series: BGL_SERIES,
+			productBrand: 'NVIDIA',
+			selected: new Set<number>(),
+			onToggleListing: () => {}
+		});
+		expect(body).toContain('Expand all');
+	});
+
+	it('keeps listing rows collapsed by default', () => {
+		const body = renderComponent(BrandGroupedListings, {
+			series: BGL_SERIES,
+			productBrand: 'NVIDIA',
+			selected: new Set<number>(),
+			onToggleListing: () => {}
+		});
+		expect(body).not.toContain('Ventus');
+		expect(body).not.toContain('Show on chart');
+	});
+
+	it('expands a group on header click and renders listing rows', async () => {
+		const target = document.createElement('div');
+		const comp = mount(BrandGroupedListings, {
+			target,
+			props: { series: BGL_SERIES, productBrand: 'NVIDIA', selected: new Set<number>(), onToggleListing: () => {} }
+		});
+		(target.querySelector('button[aria-expanded]') as HTMLElement).click();
+		await tick();
+		expect(target.innerHTML).toContain('Ventus');
+		expect(target.innerHTML).toContain('Show on chart');
+		unmount(comp);
+	});
+
+	it('filters groups via the search input', async () => {
+		const target = document.createElement('div');
+		const comp = mount(BrandGroupedListings, {
+			target,
+			props: { series: BGL_SERIES, productBrand: 'NVIDIA', selected: new Set<number>(), onToggleListing: () => {} }
+		});
+		const input = target.querySelector('input[aria-label="Filter listings by name"]') as HTMLInputElement;
+		input.value = 'windforce';
+		input.dispatchEvent(new Event('input'));
+		await tick();
+		expect(target.innerHTML).toContain('Gigabyte · $649 · 1 listing · 1 in stock');
+		expect(target.innerHTML).not.toContain('MSI');
+		unmount(comp);
+	});
+
+	it('shows the empty state when no listings match', async () => {
+		const target = document.createElement('div');
+		const comp = mount(BrandGroupedListings, {
+			target,
+			props: { series: BGL_SERIES, productBrand: 'NVIDIA', selected: new Set<number>(), onToggleListing: () => {} }
+		});
+		const input = target.querySelector('input[aria-label="Filter listings by name"]') as HTMLInputElement;
+		input.value = 'does-not-exist';
+		input.dispatchEvent(new Event('input'));
+		await tick();
+		expect(target.innerHTML).toContain('No listings match the current filters.');
+		unmount(comp);
+	});
+
+	it('calls onToggleListing with the listing id when toggling onto the chart', async () => {
+		const target = document.createElement('div');
+		const onToggleListing = vi.fn();
+		const comp = mount(BrandGroupedListings, {
+			target,
+			props: {
+				series: BGL_SERIES,
+				productBrand: 'NVIDIA',
+				selected: new Set<number>(),
+				onToggleListing
+			}
+		});
+		(target.querySelector('button[aria-expanded]') as HTMLElement).click();
+		await tick();
+		(target.querySelectorAll('button[aria-pressed]')[0] as HTMLButtonElement).click();
+		expect(onToggleListing).toHaveBeenCalledWith(1);
+		unmount(comp);
 	});
 });
