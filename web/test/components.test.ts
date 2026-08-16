@@ -210,6 +210,43 @@ describe('ProductCard', () => {
 		expect(body).toContain('2 listings');
 		expect(body).toContain('2 in stock');
 	});
+
+	it('omits the compare checkbox when no toggle handler is provided', () => {
+		const body = renderComponent(ProductCard, { group: productGroup() });
+		expect(body).not.toContain('Add to compare');
+	});
+
+	it('renders the compare checkbox with checked and disabled states', () => {
+		const target = document.createElement('div');
+		const comp = mount(ProductCard, {
+			target,
+			props: {
+				group: productGroup(),
+				compareSelected: true,
+				compareDisabled: true,
+				onToggleCompare: () => {}
+			}
+		});
+		expect(target.innerHTML).toContain('Add Ryzen 5 7600 to compare');
+		const input = target.querySelector('input[type="checkbox"]') as HTMLInputElement;
+		expect(input.checked).toBe(true);
+		expect(input.disabled).toBe(true);
+		unmount(comp);
+	});
+
+	it('fires onToggleCompare with the product id when toggled', () => {
+		const target = document.createElement('div');
+		const onToggleCompare = vi.fn();
+		const comp = mount(ProductCard, {
+			target,
+			props: { group: productGroup(), onToggleCompare }
+		});
+		const input = target.querySelector('input[type="checkbox"]') as HTMLInputElement;
+		input.checked = true;
+		input.dispatchEvent(new Event('change', { bubbles: true }));
+		expect(onToggleCompare).toHaveBeenCalledWith(1);
+		unmount(comp);
+	});
 });
 
 function specRow(overrides: Partial<SpecRow> = {}): SpecRow {

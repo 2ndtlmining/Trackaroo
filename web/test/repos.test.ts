@@ -6,6 +6,7 @@ import {
 	MIN_HISTORY_POINTS,
 	deriveListingBrand,
 	getCheapestPerModel,
+	getComparisonData,
 	getLatestListings,
 	getMovers,
 	getPriceBand,
@@ -425,6 +426,71 @@ describe('getPriceBand', () => {
 		const marked = band.filter((p) => p.cheapestInStock !== null);
 		expect(marked.length).toBe(1);
 		expect(marked[0].date).toBe(latest.d);
+	});
+});
+
+describe('getComparisonData', () => {
+	it('returns one entry per requested product, in order, with spec', () => {
+		const all = db
+			.prepare('SELECT id FROM products ORDER BY id LIMIT 2')
+			.all() as Array<{ id: number }>;
+		const entries = getComparisonData(db, [all[0].id, all[1].id]);
+		expect(entries.length).toBe(2);
+		expect(entries[0].product.id).toBe(all[0].id);
+		expect(entries[1].product.id).toBe(all[1].id);
+		expect(entries[0].spec).not.toBeNull();
+	});
+
+	it('skips product ids that do not exist', () => {
+		const all = db.prepare('SELECT id FROM products LIMIT 1').all() as Array<{ id: number }>;
+		const entries = getComparisonData(db, [all[0].id, 999999]);
+		expect(entries.length).toBe(1);
+		expect(entries[0].product.id).toBe(all[0].id);
+	});
+
+	it('computes the cheapest in-stock price per product from the latest day', () => {
+		const gpu = db
+			.prepare(
+				`SELECT p.id AS pid FROM products p
+				 WHERE p.category = 'gpu'
+				   AND EXISTS (SELECT 1 FROM retailer_listings l JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				               WHERE l.product_id = p.id AND s.stock_status = 'in_stock')
+				 LIMIT 1`
+			)
+			.get() as { pid: number } | undefined;
+		expect(gpu).toBeDefined();
+		const entries = getComparisonData(db, [gpu!.pid]);
+		const day = db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get() as {
+			d: string;
+		};
+		const agg = db
+			.prepare(
+				`SELECT MIN(s.price_aud) AS mn FROM retailer_listings l
+				 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				 WHERE l.product_id = ? AND s.snapshot_date = ? AND s.stock_status = 'in_stock'
+				   AND lower(l.variant_name) NOT LIKE '%bundle%'
+				   AND lower(l.variant_name) NOT LIKE '%combo%'
+				   AND lower(l.listing_url) NOT LIKE '%bundle%'
+				   AND lower(l.listing_url) NOT LIKE '%bdl-%'`
+			)
+			.get(gpu!.pid, day.d) as { mn: number | null };
+		expect(entries[0].cheapestInStock).not.toBeNull();
+		expect(entries[0].cheapestInStock!.price).toBeCloseTo(agg.mn as number, 2);
+		expect(entries[0].cheapestInStock!.price).toBe(
+			Math.min(...entries[0].prices.map((p) => p.price!))
+		);
+	});
+
+	it('returns prices only for retailers with an in-stock listing that day', () => {
+		const cpu = db.prepare("SELECT id FROM products WHERE category = 'cpu' LIMIT 1").get() as {
+			id: number;
+		};
+		const entries = getComparisonData(db, [cpu.id]);
+		expect(entries.length).toBe(1);
+		expect(entries[0].prices.length).toBeGreaterThan(0);
+		for (const p of entries[0].prices) {
+			expect(p.price).not.toBeNull();
+		}
 	});
 });
 

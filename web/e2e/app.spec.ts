@@ -209,6 +209,58 @@ await toggle.click();
 	});
 });
 
+test.describe('compare', () => {
+	test('selecting two products in a category enables the compare bar and opens /compare', async ({ page }) => {
+		await goto(page, '/products');
+		const gpuCards = page.locator('article').filter({ hasText: 'GPU' });
+		await expect(gpuCards.first()).toBeVisible();
+		await gpuCards.nth(0).getByRole('checkbox').check();
+		await gpuCards.nth(1).getByRole('checkbox').check();
+
+		const bar = page.getByRole('region', { name: 'Compare bar' });
+		await expect(bar).toBeVisible();
+		await bar.getByRole('link', { name: /Compare \(2\)/ }).click();
+
+		await expect(page).toHaveURL(/\/compare\?ids=\d+,\d+$/);
+		await expect(page.getByRole('heading', { name: 'Compare' })).toBeVisible();
+		// Two product columns plus the "Field" header
+		await expect(page.locator('thead th a')).toHaveCount(2);
+		await expect(page.getByText('Architecture', { exact: true })).toBeVisible();
+	});
+
+	test('locks other categories once one category is selected', async ({ page }) => {
+		await goto(page, '/products');
+		const gpuCard = page.locator('article').filter({ hasText: 'GPU' }).first();
+		const cpuCard = page.locator('article').filter({ hasText: 'CPU' }).first();
+		await expect(gpuCard).toBeVisible();
+		await expect(cpuCard).toBeVisible();
+
+		await gpuCard.getByRole('checkbox').check();
+		await expect(cpuCard.getByRole('checkbox')).toBeDisabled();
+		// Same-category cards stay enabled
+		await expect(
+			page.locator('article').filter({ hasText: 'GPU' }).nth(1).getByRole('checkbox')
+		).toBeEnabled();
+	});
+
+	test('clears the selection from the compare bar', async ({ page }) => {
+		await goto(page, '/products');
+		const gpuCards = page.locator('article').filter({ hasText: 'GPU' });
+		await gpuCards.nth(0).getByRole('checkbox').check();
+		await gpuCards.nth(1).getByRole('checkbox').check();
+
+		const bar = page.getByRole('region', { name: 'Compare bar' });
+		await bar.getByRole('button', { name: 'Clear' }).click();
+		await expect(page.getByRole('region', { name: 'Compare bar' })).toHaveCount(0);
+	});
+
+	test('rejects invalid compare URLs', async ({ page }) => {
+		expect((await page.request.get('/compare?ids=1')).status()).toBe(400);
+		expect((await page.request.get('/compare?ids=1,2,3,4,5')).status()).toBe(400);
+		expect((await page.request.get('/compare?ids=1,999999')).status()).toBe(404);
+	});
+});
+
 test.describe('movers page', () => {
 	test('renders movers with window buttons', async ({ page }) => {
 		await goto(page, '/movers');

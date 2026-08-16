@@ -680,3 +680,61 @@ ${LATEST_CTE}
 			return bv - av;
 		});
 }
+
+export interface ComparePrice {
+	retailer: Retailer;
+	// Best in-stock price on the latest snapshot day (null if nothing in stock).
+	price: number | null;
+}
+
+export interface CompareEntry {
+	product: ProductRow;
+	spec: SpecRow | null;
+	// One entry per retailer that had any snapshot for the product on the
+	// latest snapshot day.
+	prices: ComparePrice[];
+	// Cheapest in-stock price across all retailers on the latest day.
+	cheapestInStock: { price: number; retailer: Retailer } | null;
+}
+
+// Read-only view powering the /compare route: joins products + specs + the
+// latest day's per-retailer prices. No schema changes required.
+export function getComparisonData(db: DB, productIds: number[]): CompareEntry[] {
+	const day = (db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get() as {
+		d: string | null;
+	}).d;
+	if (!day) return [];
+
+	const productStmt = db.prepare('SELECT * FROM products WHERE id = ?');
+	const specStmt = db.prepare(
+		'SELECT * FROM specs WHERE product_id = ? ORDER BY last_synced_at DESC LIMIT 1'
+	);
+	const priceStmt = db.prepare(
+		`SELECT l.retailer AS retailer, MIN(s.price_aud) AS price
+		 FROM retailer_listings l
+		 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+		 WHERE l.product_id = ? AND s.snapshot_date = ? AND s.stock_status = 'in_stock'
+		   AND ${notBundle('l')}
+		 GROUP BY l.retailer`
+	);
+
+	return productIds
+		.map((id): CompareEntry | null => {
+			const product = productStmt.get(id) as ProductRow | undefined;
+			if (!product) return null;
+			const spec = (specStmt.get(id) as SpecRow | undefined) ?? null;
+			const priceRows = priceStmt.all(id, day) as Array<{
+				retailer: Retailer;
+				price: number;
+			}>;
+			const prices: ComparePrice[] = priceRows.map((r) => ({ retailer: r.retailer, price: r.price }));
+			let cheapest: CompareEntry['cheapestInStock'] = null;
+			for (const p of prices) {
+				if (p.price !== null && (cheapest === null || p.price < cheapest.price)) {
+					cheapest = { price: p.price, retailer: p.retailer };
+				}
+			}
+			return { product, spec, prices, cheapestInStock: cheapest };
+		})
+		.filter((e): e is CompareEntry => e !== null);
+}

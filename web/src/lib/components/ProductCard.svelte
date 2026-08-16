@@ -4,7 +4,17 @@
 	import LatestListingTable from './LatestListingTable.svelte';
 	import type { ProductGroup } from '$lib/server/repos';
 
-	let { group }: { group: ProductGroup } = $props();
+	let {
+		group,
+		compareSelected = false,
+		compareDisabled = false,
+		onToggleCompare
+	}: {
+		group: ProductGroup;
+		compareSelected?: boolean;
+		compareDisabled?: boolean;
+		onToggleCompare?: (productId: number) => void;
+	} = $props();
 
 	let expanded = $state(false);
 
@@ -31,7 +41,26 @@
 			>
 				{group.model}
 			</a>
-			<Badge tone="neutral" label={group.category.toUpperCase()} />
+			<div class="flex shrink-0 items-center gap-2">
+				{#if onToggleCompare}
+					<label
+						class="flex cursor-pointer items-center gap-1 text-[10px] uppercase tracking-wide text-text-muted {compareDisabled
+							? 'cursor-not-allowed opacity-50'
+							: ''}"
+					>
+						<input
+							type="checkbox"
+							aria-label="Add {group.model} to compare"
+							checked={compareSelected}
+							disabled={compareDisabled}
+							onchange={() => onToggleCompare(group.productId)}
+							class="accent-accent"
+						/>
+						Compare
+					</label>
+				{/if}
+				<Badge tone="neutral" label={group.category.toUpperCase()} />
+			</div>
 		</div>
 		<div class="mt-0.5 text-xs text-text-muted">{group.brand}</div>
 		{#if priceLabel}
