@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scraper.pccg import match_product as pccg_match
 from scraper.pccg import _parse_price as pccg_parse_price
 from scraper.pccg import _is_bundle_product as pccg_is_bundle
-from fetch_test import match_product as scorptec_match
-from fetch_test import _is_bundle_product as scorptec_is_bundle
+from scraper.scorptec import match_product as scorptec_match
+from scraper.scorptec import _is_bundle_product as scorptec_is_bundle
 
 
 # ── Watchlist product fixtures for matching tests ────────────────────

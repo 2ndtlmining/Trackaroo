@@ -10,7 +10,7 @@ Monorepo: Python scraper + ingest at the repo root, SvelteKit frontend in `web/`
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
   - `e2e.db`, `test-results/`, and `playwright-report/` are gitignored and regenerated on each run.
 - **Type + Svelte check**: `npm run check` (svelte-check, must report 0 errors)
-- **Full validation before finishing a task**: backend `python -m pytest -q` (374 tests, run from the repo root), then from `web/`: `npm run check`, `npm test`, then `npm run test:e2e`.
+- **Full validation before finishing a task**: backend `python -m pytest -q` (365 tests, run from the repo root), then from `web/`: `npm run check`, `npm test`, then `npm run test:e2e`.
 - **Build**: `npm run build` (svelte-kit sync + vite build; run if a change affects the production build).
 
 ## Docker (from the repo root, NOT `web/`)

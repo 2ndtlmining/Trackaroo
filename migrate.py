@@ -1,6 +1,11 @@
 """
 Migrate the Trackaroo database.
 
+IMPORTANT: historical-upgrade tool only. `db/schema.sql` already creates
+tables with `variant_name` + the `specs` table from scratch, so a fresh
+database never needs this. It exists solely to upgrade databases created
+before 12-Aug-2026 (pre-`variant_name`, pre-`specs`).
+
 Applies additive migrations:
 - Adds the variant_name column to retailer_listings (backfilled from
   scraped_name data where available).

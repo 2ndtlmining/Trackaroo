@@ -1,5 +1,5 @@
 """
-Tests for the Scorptec scraper (fetch_test.py).
+Tests for the Scorptec scraper (scraper.scorptec.py).
 
 Tests:
 - URL fallback when href is empty (JS-populated links)
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fetch_test import parse_product_grid, CATEGORY_URL_PATHS, BASE
+from scraper.scorptec import parse_product_grid, CATEGORY_URL_PATHS, BASE
 
 
 # ── HTML fixtures ───────────────────────────────────────────────────
@@ -85,7 +85,7 @@ class TestCategoryUrlPaths:
     """Test that all category keys have a corresponding URL path."""
 
     def test_all_categories_have_path(self):
-        from fetch_test import CATEGORY_URLS
+        from scraper.scorptec import CATEGORY_URLS
         for key in CATEGORY_URLS:
             assert key in CATEGORY_URL_PATHS, f"Missing path for {key}"
 
@@ -346,23 +346,23 @@ class TestGetNextPageUrl:
     """Test pagination link detection."""
 
     def test_finds_next_page_link(self):
-        from fetch_test import get_next_page_url
+        from scraper.scorptec import get_next_page_url
         url = get_next_page_url(HTML_WITH_NEXT_PAGE, "https://www.scorptec.com.au")
         assert url is not None
         assert "paged=2" in url
 
     def test_returns_none_when_no_next_page(self):
-        from fetch_test import get_next_page_url
+        from scraper.scorptec import get_next_page_url
         url = get_next_page_url(HTML_NO_NEXT_PAGE, "https://www.scorptec.com.au")
         assert url is None
 
     def test_returns_none_when_no_pagination(self):
-        from fetch_test import get_next_page_url
+        from scraper.scorptec import get_next_page_url
         url = get_next_page_url(HTML_EMPTY_PAGE, "https://www.scorptec.com.au")
         assert url is None
 
     def test_handles_absolute_url(self):
-        from fetch_test import get_next_page_url
+        from scraper.scorptec import get_next_page_url
         html = '<a href="https://www.scorptec.com.au/product/graphics-cards/nvidia?paged=2" class="next">Next</a>'
         url = get_next_page_url(html, "https://www.scorptec.com.au")
         assert url == "https://www.scorptec.com.au/product/graphics-cards/nvidia?paged=2"
@@ -372,7 +372,7 @@ class TestScrapeAllPages:
     """Test the pagination loop logic."""
 
     def test_collects_products_from_multiple_pages(self):
-        from fetch_test import scrape_all_pages, fetch_page, parse_product_grid
+        from scraper.scorptec import scrape_all_pages, fetch_page, parse_product_grid
         # We can't test actual network calls, but we can verify the function
         # is callable and has the right signature
         import inspect
@@ -382,7 +382,7 @@ class TestScrapeAllPages:
         assert "max_pages" in sig.parameters
 
     def test_max_pages_default_is_20(self):
-        from fetch_test import scrape_all_pages
+        from scraper.scorptec import scrape_all_pages
         import inspect
         sig = inspect.signature(scrape_all_pages)
         assert sig.parameters["max_pages"].default == 20

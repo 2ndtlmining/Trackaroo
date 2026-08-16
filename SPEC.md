@@ -114,7 +114,7 @@ This rule is absolute and applies regardless of the reason data stopped updating
 
 - Plain HTTP fetch (requests) + HTML parse (BeautifulSoup) per retailer's category pages, paginating through results. PCCG is fetched via its Algolia search API directly.
 - Playwright held in reserve only if a retailer turns out to need JS rendering for price/stock (not needed so far — Scorptec is server-rendered, PCCG uses Algolia).
-- One scraper module per retailer (`fetch_test.py` for Scorptec, `scraper/pccg.py` for PCCG), each returning a common normalized record shape, so the ingestion pipeline and DB layer are retailer-agnostic.
+- One scraper module per retailer (`scraper/scorptec.py` for Scorptec, `scraper/pccg.py` for PCCG), each returning a common normalized record shape, so the ingestion pipeline and DB layer are retailer-agnostic.
 - Daily cadence, run via cron or APScheduler inside the container. Reasonable delay between requests within a retailer; no need to hit any site more than once a day.
 - Identify the scraper honestly via a descriptive User-Agent string.
 - **Resilience requirement:** each scrape run should validate its own output (e.g. "did we get a plausible number of products for this category?") and log/alert if a retailer returns zero results or wildly different data than expected — a sign the page structure changed and the parser needs updating, not that all stock vanished. Implemented in `health_checks.py` (match-count thresholds per retailer/category, freshness, anomaly detection).

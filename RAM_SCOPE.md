@@ -87,7 +87,7 @@ Focus on brands commonly stocked by Scorptec/PCCG:
 3. Verify against scope rules
 
 ### Step 3: Scraper updates (~1-2 hours)
-1. Update `fetch_test.py` to handle RAM category pages
+1. Update `scraper/scorptec.py` to handle RAM category pages
 2. Update `scraper/pccg.py` to handle RAM products
 3. Add RAM-specific fields to JSON output (`ram_type`, `ram_capacity_gb`, `ram_speed_mhz`, `ram_timings`)
 4. Test with dry runs

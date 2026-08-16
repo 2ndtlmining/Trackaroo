@@ -40,7 +40,7 @@ def run_scraper(name: str, module: str, label: str) -> bool:
 
     Args:
         name: Display name (e.g. 'Scorptec')
-        module: Python module path (e.g. 'fetch_test' or 'scraper.pccg')
+        module: Python module path (e.g. 'scraper.scorptec' or 'scraper.pccg')
         label: Short label for summary (e.g. 'scorptec')
 
     Returns:
@@ -155,7 +155,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     # ── Scrape ──────────────────────────────────────────────
     results: Dict[str, bool] = {}
     if run_scorptec:
-        results["scorptec"] = run_scraper("Scorptec", "fetch_test", "scorptec")
+        results["scorptec"] = run_scraper("Scorptec", "scraper.scorptec", "scorptec")
         time.sleep(2)  # Polite delay between scrapers
     if run_pccg:
         results["pccg"] = run_scraper("PCCG", "scraper.pccg", "pccg")

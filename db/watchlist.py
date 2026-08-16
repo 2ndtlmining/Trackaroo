@@ -1,7 +1,7 @@
 """Shared watchlist loading utilities for Trackaroo.
 
 Loads `db/watchlist.csv` into normalized dicts used by both the scrapers
-(fetch_test.py, scraper/pccg.py) and the seeder (seed.py). Centralising this
+(scraper/scorptec.py, scraper/pccg.py) and the seeder (seed.py). Centralising this
 avoids three copies of the same CSV-parsing + spec-parsing logic.
 """
 from __future__ import annotations
