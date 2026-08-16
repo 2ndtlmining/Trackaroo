@@ -29,8 +29,10 @@ test('footer shows the product tagline on every page', async ({ page }) => {
 
 	test('header shows snapshot stats and lends context', async ({ page }) => {
 		await goto(page, '/');
-		await expect(page.getByText(/Last snapshot: \d{4}-\d{2}-\d{2}/)).toBeVisible();
-		await expect(page.getByText(/^\d+ snapshots$/)).toBeVisible();
+		await expect(page.getByText(/\d{4}-\d{2}-\d{2}/)).toBeVisible();
+		await expect(page.getByTitle('Most recent price snapshot date')).toBeVisible();
+		await expect(page.getByTitle('Distinct days with a snapshot')).toBeVisible();
+		await expect(page.getByTitle('SQLite database size')).toBeVisible();
 	});
 });
 
@@ -247,5 +249,52 @@ test.describe('product detail', () => {
 	test('404 for an unknown product id', async ({ page }) => {
 		const res = await page.request.get('/product/999999');
 		expect(res.status()).toBe(404);
+	});
+});
+
+test.describe('product detail specs', () => {
+	test('renders the spec panel below the price content', async ({ page }) => {
+		await goto(page, '/product/1');
+
+		const specs = page.getByRole('heading', { name: 'Specs' });
+		await expect(specs).toBeVisible();
+		await expect(page.getByText('Core Ultra 200S — Arrow Lake')).toBeVisible();
+		await expect(page.getByText('10 cores / 10 threads')).toBeVisible();
+		await expect(page.getByText('2.5 / 4.8 GHz')).toBeVisible();
+		await expect(page.getByText('45 W')).toBeVisible();
+
+		// The spec panel must sit below the price graph, never above it.
+		const chartBox = await page.getByLabel('Price history chart').boundingBox();
+		const specsBox = await specs.boundingBox();
+		expect(chartBox).not.toBeNull();
+		expect(specsBox).not.toBeNull();
+		expect(specsBox!.y).toBeGreaterThan(chartBox!.y + chartBox!.height);
+	});
+
+	test('expands the full specs section on demand', async ({ page }) => {
+		await goto(page, '/product/1');
+
+		await expect(page.getByText('LGA1851')).toBeHidden();
+		await page.getByText('Show full specs').click();
+		await expect(page.getByText('LGA1851')).toBeVisible();
+		await expect(page.getByText('24 MB')).toBeVisible();
+	});
+
+	test('renders no spec panel when the product has no specs', async ({ page }) => {
+		await goto(page, '/product/2');
+		await expect(page.getByRole('heading', { name: 'Specs' })).toHaveCount(0);
+	});
+
+	test('renders the gpu spec fields', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const row = page.locator('tbody tr').filter({ hasText: 'RTX 5060 Ti' }).first();
+		await row.locator('a').click();
+
+		await expect(page.getByRole('heading', { name: 'Specs' })).toBeVisible();
+		await expect(page.getByText('RTX 50 — Blackwell')).toBeVisible();
+		// exact: retailer listing names also contain "16GB GDDR7"
+		await expect(page.getByText('16GB GDDR7', { exact: true })).toBeVisible();
+		await expect(page.getByText('4,608')).toBeVisible();
+		await expect(page.getByText('180 W')).toBeVisible();
 	});
 });

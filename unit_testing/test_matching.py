@@ -15,6 +15,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scraper.pccg import match_product as pccg_match
 from scraper.pccg import _parse_price as pccg_parse_price
+from scraper.pccg import _is_bundle_product as pccg_is_bundle
+from fetch_test import match_product as scorptec_match
+from fetch_test import _is_bundle_product as scorptec_is_bundle
 
 
 # ── Watchlist product fixtures for matching tests ────────────────────
@@ -124,6 +127,44 @@ class TestPCCGGPUMatching:
     def test_no_match_for_different_brand(self):
         wp = _make_watchlist_gpu("GeForce RTX 5070", ["rtx 5070"], vram_gb=12)
         assert not pccg_match("AMD Radeon RX 7800 XT", wp)
+
+
+# ── Bundle deals (CPU + motherboard combos) ─────────────────────────
+
+class TestBundleDetection:
+    """Component bundles must never match a single-component watchlist product."""
+
+    def test_pccg_bundle_name_detected(self):
+        assert pccg_is_bundle("Gigabyte Z890 Ultra 5 Power Bundle")
+
+    def test_pccg_normal_cpu_not_bundle(self):
+        assert not pccg_is_bundle("AMD Ryzen 7 9800X3D Processor")
+
+    def test_pccg_bundle_url_detected(self):
+        assert pccg_is_bundle("ASUS Z890 Core Ultra 9", "https://www.pccasegear.com/some-bundle-deal")
+        assert pccg_is_bundle("ASUS Z890 Core Ultra 9", "https://www.scorptec.com.au/bundle/cpu/1-bdl-1")
+
+    def test_scorptec_bundle_name_detected(self):
+        assert scorptec_is_bundle("gigabyte z890 ultra 5 power bundle")
+
+    def test_scorptec_bundle_url_detected(self):
+        assert scorptec_is_bundle("some combo", "", "https://www.scorptec.com.au/bundle/cpu/intel-socket-1851/9327-bdl-9327")
+
+    def test_scorptec_normal_cpu_not_bundle(self):
+        assert not scorptec_is_bundle("intel core ultra 5 245k desktop processor")
+
+    def test_pccg_cpu_bundle_does_not_match_watchlist(self):
+        """A CPU+motherboard bundle must NOT match the CPU-only watchlist product."""
+        wp = _make_watchlist_cpu("Core Ultra 5 245", ["core ultra 5 245"])
+        assert not pccg_match("Gigabyte Z890 Ultra 5 Power Bundle", wp)
+
+    def test_scorptec_cpu_bundle_does_not_match_watchlist(self):
+        wp = _make_watchlist_cpu("Core Ultra 5 245", ["core ultra 5 245"])
+        assert not scorptec_match("gigabyte z890 ultra 5 power bundle", "Intel Core Ultra 5 245 CPU + Z890 motherboard combo", wp)
+
+    def test_scorptec_normal_cpu_still_matches(self):
+        wp = _make_watchlist_cpu("Core Ultra 5 245", ["core ultra 5 245"])
+        assert scorptec_match("intel core ultra 5 245k desktop processor", "Intel Core Ultra 5 245 desktop CPU", wp)
 
 
 # ── Price parsing tests ─────────────────────────────────────────────

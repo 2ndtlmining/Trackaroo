@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { DB } from '../src/lib/server/db';
 import {
 	MIN_HISTORY_POINTS,
@@ -8,7 +10,7 @@ import {
 	getProductHistory,
 	getSummary
 } from '../src/lib/server/repos';
-import { createSeededDb, type SeededDb } from './helpers/seed';
+import { createSeededDb, DATA_DIR, parseDateFromFilename, type SeededDb } from './helpers/seed';
 
 let seeded: SeededDb;
 let db: DB;
@@ -25,10 +27,17 @@ afterAll(() => {
 describe('getSummary', () => {
 	it('reports tracked products, listings today, retailers and date', () => {
 		const summary = getSummary(db);
+		const expectedLatest = fs
+			.readdirSync(DATA_DIR)
+			.filter((f) => f.endsWith('.json'))
+			.map(parseDateFromFilename)
+			.filter(Boolean)
+			.sort()
+			.reverse()[0];
 		expect(summary.trackedProducts).toBeGreaterThan(0);
 		expect(summary.listingsToday).toBeGreaterThan(0);
 		expect(summary.retailerCount).toBe(2);
-		expect(summary.latestSnapshotDate).toBe('2026-08-15');
+		expect(summary.latestSnapshotDate).toBe(expectedLatest);
 	});
 
 	it('reports a biggest mover or null', () => {
@@ -194,6 +203,34 @@ describe('getProductHistory', () => {
 			expect(series.points.length).toBeGreaterThan(0);
 			expect(series.points[0].price_aud).toBeGreaterThan(0);
 		}
+	});
+
+	it('attaches the spec row for a product that has specs', () => {
+		const history = getProductHistory(db, 1);
+		expect(history).not.toBeNull();
+		expect(history!.specs).not.toBeNull();
+		expect(history!.specs!.product_id).toBe(1);
+		expect(history!.specs!.category).toBe('cpu');
+		expect(history!.specs!.architecture).toBe('Arrow Lake');
+		expect(history!.specs!.core_count).toBe(10);
+	});
+
+	it('returns null specs for a product without specs', () => {
+		const history = getProductHistory(db, 2);
+		expect(history).not.toBeNull();
+		expect(history!.specs).toBeNull();
+	});
+
+	it('attaches gpu specs for a gpu product', () => {
+		const row = db
+			.prepare("SELECT id FROM products WHERE category = 'gpu' ORDER BY id LIMIT 1")
+			.get() as { id: number } | undefined;
+		expect(row).toBeDefined();
+		const history = getProductHistory(db, row!.id);
+		expect(history!.specs).not.toBeNull();
+		expect(history!.specs!.category).toBe('gpu');
+		expect(history!.specs!.vram_gb).toBe(16);
+		expect(history!.specs!.memory_type).toBe('GDDR7');
 	});
 
 	it('orders series points by snapshot date', () => {

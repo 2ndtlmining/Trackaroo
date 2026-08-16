@@ -6,7 +6,9 @@ import PriceChange from '../src/lib/components/PriceChange.svelte';
 import StockBadge from '../src/lib/components/StockBadge.svelte';
 import Chip from '../src/lib/components/Chip.svelte';
 import LatestListingTable from '../src/lib/components/LatestListingTable.svelte';
+import SpecPanel from '../src/lib/components/SpecPanel.svelte';
 import type { LatestListing } from '../src/lib/server/repos';
+import type { SpecRow } from '../src/lib/server/db';
 
 function renderComponent(Component: unknown, props: Record<string, unknown> = {}): string {
 	const target = document.createElement('div');
@@ -140,5 +142,99 @@ describe('LatestListingTable', () => {
 		const body = renderComponent(LatestListingTable, { rows: [row] });
 		expect(body).toContain('Stale');
 		expect(body).toContain('last seen');
+	});
+});
+
+function specRow(overrides: Partial<SpecRow> = {}): SpecRow {
+	return {
+		spec_id: 1,
+		product_id: 1,
+		source: 'rightnow-gpu-db',
+		source_record_key: 'GeForce RTX 5060 Ti',
+		category: 'gpu',
+		architecture: 'Blackwell',
+		generation: 'RTX 50',
+		launch_date: '2025-04-16',
+		launch_msrp_usd: null,
+		vram_gb: 16,
+		memory_bus_width_bit: 128,
+		memory_type: 'GDDR7',
+		tdp_watts: 180,
+		core_count: 4608,
+		thread_count: null,
+		base_clock_mhz: null,
+		boost_clock_mhz: null,
+		socket: null,
+		cache_l3_mb: null,
+		raw_json: '{}',
+		last_synced_at: '2026-08-15T00:00:00Z',
+		...overrides
+	};
+}
+
+describe('SpecPanel', () => {
+	it('renders the gpu decision fields', () => {
+		const body = renderComponent(SpecPanel, { spec: specRow() });
+		expect(body).toContain('RTX 50 — Blackwell');
+		expect(body).toContain('16GB GDDR7');
+		expect(body).toContain('4,608');
+		expect(body).toContain('180 W');
+	});
+
+	it('renders the cpu decision fields', () => {
+		const body = renderComponent(SpecPanel, {
+			spec: specRow({
+				category: 'cpu',
+				architecture: 'Zen 5',
+				generation: 'Ryzen 9000',
+				vram_gb: null,
+				memory_bus_width_bit: null,
+				memory_type: null,
+				tdp_watts: 170,
+				core_count: 16,
+				thread_count: 32,
+				base_clock_mhz: 4300,
+				boost_clock_mhz: 5700,
+				socket: 'AM5'
+			})
+		});
+		expect(body).toContain('Ryzen 9000 — Zen 5');
+		expect(body).toContain('16 cores / 32 threads');
+		expect(body).toContain('4.3 / 5.7 GHz');
+		expect(body).toContain('170 W');
+	});
+
+	it('omits rows for null fields', () => {
+		const body = renderComponent(SpecPanel, {
+			spec: specRow({
+				architecture: null,
+				generation: null,
+				vram_gb: null,
+				memory_type: null,
+				memory_bus_width_bit: null,
+				core_count: null,
+				thread_count: null,
+				base_clock_mhz: null,
+				boost_clock_mhz: null,
+				tdp_watts: null,
+				launch_date: null
+			})
+		});
+		expect(body).not.toContain('Generation');
+		expect(body).not.toContain('VRAM');
+		expect(body).not.toContain('TDP');
+		expect(body).toContain('Show full specs');
+	});
+
+	it('keeps the full specs section collapsed by default', () => {
+		const body = renderComponent(SpecPanel, { spec: specRow() });
+		expect(body).toContain('<details');
+		expect(body).not.toContain('<details open');
+	});
+
+	it('shows the launch MSRP when present', () => {
+		const body = renderComponent(SpecPanel, { spec: specRow({ launch_msrp_usd: 1999 }) });
+		expect(body).toContain('Launch MSRP');
+		expect(body).toContain('$1,999');
 	});
 });

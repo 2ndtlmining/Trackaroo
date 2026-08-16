@@ -1,8 +1,10 @@
 """
-Migrate the Trackaroo database to support variant tracking.
+Migrate the Trackaroo database.
 
-Adds the variant_name column to retailer_listings and backfills it from
-scraped_name data where available.
+Applies additive migrations:
+- Adds the variant_name column to retailer_listings (backfilled from
+  scraped_name data where available).
+- Creates the specs table (external product spec data, see sync_specs.py).
 
 Usage:
     python migrate.py              # Apply all pending migrations
@@ -61,6 +63,72 @@ def check_column_exists(conn: sqlite3.Connection, table: str, column: str) -> bo
     return column in columns
 
 
+def check_table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    """Check if a table exists in the database.
+
+    Args:
+        conn: Open SQLite connection.
+        table: Table name.
+
+    Returns:
+        True if the table exists, False otherwise.
+    """
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+    )
+    return cursor.fetchone() is not None
+
+
+SPECS_TABLE_SQL = """
+CREATE TABLE specs (
+    spec_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id        INTEGER NOT NULL REFERENCES products(id),
+    source            TEXT    NOT NULL,               -- 'rightnow-gpu-db' | 'intel-processors-csv' | 'amd-com'
+    source_record_key TEXT    NOT NULL,               -- identifying name from the source dataset, kept for traceability
+    category          TEXT    NOT NULL CHECK (category IN ('cpu', 'gpu')),   -- matches products.category
+    architecture      TEXT,                           -- e.g. 'Blackwell', 'RDNA 4', 'Zen 5', 'Arrow Lake'
+    generation        TEXT,                           -- e.g. 'RTX 50', 'Ryzen 9000'
+    launch_date       TEXT,                           -- ISO date, nullable if unknown
+    launch_msrp_usd   REAL,                           -- as published in source; convert currency at display time
+    vram_gb             REAL,
+    memory_bus_width_bit  INTEGER,
+    memory_type           TEXT,                       -- e.g. 'GDDR7'
+    tdp_watts             INTEGER,
+    core_count            INTEGER,                    -- shader units for GPU, physical cores for CPU
+    thread_count       INTEGER,
+    base_clock_mhz     INTEGER,
+    boost_clock_mhz    INTEGER,
+    socket             TEXT,
+    cache_l3_mb        REAL,
+    raw_json          TEXT    NOT NULL,               -- full original source record, verbatim
+    last_synced_at    TEXT    NOT NULL,               -- ISO timestamp, set by sync job
+    UNIQUE (product_id, source)
+)
+"""
+
+
+def migrate_add_specs_table(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Create the specs table (additive, create-if-missing).
+
+    Args:
+        conn: Open SQLite connection.
+        dry_run: When True, only preview what would change without writing.
+    """
+    if check_table_exists(conn, "specs"):
+        LOGGER.info("  [SKIP] specs table already exists")
+        return
+
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would create specs table")
+        return
+
+    LOGGER.info("  [MIGRATE] Creating specs table...")
+    conn.execute(SPECS_TABLE_SQL)
+    conn.execute("CREATE INDEX idx_specs_product ON specs (product_id)")
+    conn.commit()
+    LOGGER.info("  [OK] specs table created")
+
+
 def migrate_add_variant_name(conn: sqlite3.Connection, dry_run: bool = False) -> None:
     """Add variant_name column to retailer_listings and backfill from existing data.
 
@@ -101,12 +169,21 @@ def main(argv: Optional[List[str]] = None) -> None:
         # Migration: Add variant_name column
         migrate_add_variant_name(conn, dry_run=args.dry_run)
 
+        # Migration: Create specs table
+        migrate_add_specs_table(conn, dry_run=args.dry_run)
+
         if not args.dry_run:
             # Verify
             if check_column_exists(conn, "retailer_listings", "variant_name"):
                 LOGGER.info("\n  [OK] variant_name column is present")
             else:
                 LOGGER.error("\n  [ERROR] variant_name column is missing")
+                sys.exit(1)
+
+            if check_table_exists(conn, "specs"):
+                LOGGER.info("  [OK] specs table is present")
+            else:
+                LOGGER.error("  [ERROR] specs table is missing")
                 sys.exit(1)
 
             # Show current state

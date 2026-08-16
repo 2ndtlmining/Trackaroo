@@ -25,6 +25,7 @@ from health_checks import (
     CheckResult,
     check_json_files,
     check_db_freshness,
+    check_today_coverage,
     check_match_count_anomalies,
     check_price_anomalies,
     run_all_checks,
@@ -546,6 +547,58 @@ class TestCheckPriceAnomalies:
             "VANISHER" in r.message or "NEWCOMER" in r.message for r in results
         )
         assert not any(r.status == CheckResult.ERROR for r in results)
+
+
+# ── Today coverage ──────────────────────────────────────────────────
+
+class TestCheckTodayCoverage:
+    """Test per-retailer "today has a snapshot" reporting."""
+
+    def test_reports_ok_for_retailer_with_today_data(self, db_path):
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Test CPU', 1)")
+        conn.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'scorptec', 'https://x.com/1', 'active')")
+        today = date.today().strftime("%Y-%m-%d")
+        conn.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, ?, 100, 'in_stock')", (today,))
+        conn.commit()
+        conn.close()
+
+        results = check_today_coverage(db_path)
+        scorptec = [r for r in results if r.check_name == "today_coverage_scorptec"][0]
+        assert scorptec.status == CheckResult.OK
+
+    def test_warns_for_retailer_missing_today(self, db_path):
+        """Retailer absent from today's snapshot is a named warning, not an error."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Test CPU', 1)")
+        conn.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'scorptec', 'https://x.com/1', 'active')")
+        yesterday = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+        conn.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, ?, 100, 'in_stock')", (yesterday,))
+        conn.commit()
+        conn.close()
+
+        results = check_today_coverage(db_path)
+        by_name = {r.check_name: r for r in results}
+        assert by_name["today_coverage_pccg"].status == CheckResult.WARNING
+        assert "no snapshot for today" in by_name["today_coverage_pccg"].message
+
+    def test_both_retailers_reported(self, db_path):
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Test CPU', 1)")
+        conn.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'scorptec', 'https://x.com/1', 'active')")
+        conn.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'pccg', 'https://x.com/2', 'active')")
+        today = date.today().strftime("%Y-%m-%d")
+        conn.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, ?, 100, 'in_stock')", (today,))
+        conn.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (2, ?, 110, 'in_stock')", (today,))
+        conn.commit()
+        conn.close()
+
+        results = check_today_coverage(db_path)
+        assert {r.check_name for r in results} == {"today_coverage_scorptec", "today_coverage_pccg"}
+        assert all(r.status == CheckResult.OK for r in results)
 
 
 # ── CheckResult class ────────────────────────────────────────────────

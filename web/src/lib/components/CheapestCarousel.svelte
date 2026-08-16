@@ -6,46 +6,95 @@
 	let { gpu, cpu }: { gpu: CheapestListing[]; cpu: CheapestListing[] } = $props();
 
 	let category = $state<Category>('gpu');
+	let paused = $state(false);
+	let scrollEl: HTMLDivElement | undefined = $state();
+
+	const STEP = 220;
 
 	function setCategory(next: Category) {
 		category = next;
+		scrollEl?.scrollTo({ left: 0, behavior: 'auto' });
 	}
 
 	function list(): CheapestListing[] {
 		return category === 'gpu' ? gpu : cpu;
 	}
+
+	function step(delta: number) {
+		if (!scrollEl) return;
+		scrollEl.scrollBy({ left: delta, behavior: 'smooth' });
+	}
+
+	$effect(() => {
+		// Auto-scroll left → right; pauses on hover/manual interaction and loops.
+		if (!scrollEl || paused) return;
+		const el = scrollEl;
+		const timer = setInterval(() => {
+			const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4;
+			if (atEnd) {
+				el.scrollTo({ left: 0, behavior: 'smooth' });
+			} else {
+				el.scrollBy({ left: STEP, behavior: 'smooth' });
+			}
+		}, 3000);
+		return () => clearInterval(timer);
+	});
 </script>
 
 <div class="rounded-md border border-border bg-surface p-4">
 	<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
 		<h2 class="text-sm font-semibold text-text">Cheapest deals</h2>
-		<div
-			class="inline-flex rounded-md border border-border bg-surface p-0.5"
-			role="tablist"
-			aria-label="Cheapest deals category"
-		>
-			<button
-				type="button"
-				role="tab"
-				aria-selected={category === 'gpu'}
-				onclick={() => setCategory('gpu')}
-				class="rounded-md px-2.5 py-1 text-xs {category === 'gpu'
-					? 'bg-surface-hover font-medium text-text'
-					: 'text-text-muted hover:text-text'}"
+		<div class="flex items-center gap-2">
+			<div
+				class="inline-flex rounded-md border border-border bg-surface p-0.5"
+				role="tablist"
+				aria-label="Cheapest deals category"
 			>
-				GPU
-			</button>
-			<button
-				type="button"
-				role="tab"
-				aria-selected={category === 'cpu'}
-				onclick={() => setCategory('cpu')}
-				class="rounded-md px-2.5 py-1 text-xs {category === 'cpu'
-					? 'bg-surface-hover font-medium text-text'
-					: 'text-text-muted hover:text-text'}"
-			>
-				CPU
-			</button>
+				<button
+					type="button"
+					role="tab"
+					aria-selected={category === 'gpu'}
+					onclick={() => setCategory('gpu')}
+					class="rounded-md px-2.5 py-1 text-xs {category === 'gpu'
+						? 'bg-surface-hover font-medium text-text'
+						: 'text-text-muted hover:text-text'}"
+				>
+					GPU
+				</button>
+				<button
+					type="button"
+					role="tab"
+					aria-selected={category === 'cpu'}
+					onclick={() => setCategory('cpu')}
+					class="rounded-md px-2.5 py-1 text-xs {category === 'cpu'
+						? 'bg-surface-hover font-medium text-text'
+						: 'text-text-muted hover:text-text'}"
+				>
+					CPU
+				</button>
+			</div>
+			<div class="flex items-center gap-1">
+				<button
+					type="button"
+					aria-label="Scroll left"
+					onclick={() => step(-STEP)}
+					onpointerenter={() => (paused = true)}
+					onpointerleave={() => (paused = false)}
+					class="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
+				>
+					‹
+				</button>
+				<button
+					type="button"
+					aria-label="Scroll right"
+					onclick={() => step(STEP)}
+					onpointerenter={() => (paused = true)}
+					onpointerleave={() => (paused = false)}
+					class="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
+				>
+					›
+				</button>
+			</div>
 		</div>
 	</div>
 
@@ -57,8 +106,14 @@
 		</div>
 	{:else}
 		<div
-			class="no-scrollbar flex snap-x snap-proximity gap-3 overflow-x-auto scroll-px-4 pb-2"
+			bind:this={scrollEl}
 			role="list"
+			class="no-scrollbar flex snap-x snap-proximity gap-3 overflow-x-auto scroll-px-4 pb-2"
+			onpointerenter={() => (paused = true)}
+			onpointerleave={() => (paused = false)}
+			onwheel={() => (paused = true)}
+			onkeydown={() => (paused = true)}
+			ontouchstart={() => (paused = true)}
 		>
 			{#each list() as listing (listing.productId)}
 				<article

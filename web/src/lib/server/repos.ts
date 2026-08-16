@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs';
-import type { DB, ListingRow, ProductRow, SnapshotRow } from './db';
+import type { DB, ListingRow, ProductRow, SpecRow, SnapshotRow } from './db';
 import type {
 	Category,
 	GenerationTier,
@@ -23,7 +23,6 @@ export interface Summary {
 	dbSizeBytes: number;
 	biggestMover: Mover | null;
 }
-
 export interface LatestListing {
 	listingId: number;
 	productId: number;
@@ -74,6 +73,19 @@ export interface Series {
 export interface ProductHistory {
 	product: ProductRow;
 	series: Series[];
+	specs: SpecRow | null;
+}
+
+// Excludes CPU+motherboard bundle listings (e.g. Scorptec "... power bundle")
+// from product pricing. Bundles price the whole combo, not the component alone,
+// so they'd throw off CPU-only price listings, movers, and history.
+function notBundle(alias: string): string {
+	return `
+	lower(${alias}.variant_name) NOT LIKE '%bundle%'
+	AND lower(${alias}.variant_name) NOT LIKE '%combo%'
+	AND lower(${alias}.listing_url) NOT LIKE '%bundle%'
+	AND lower(${alias}.listing_url) NOT LIKE '%bdl-%'
+`;
 }
 
 const LATEST_CTE = `
@@ -187,6 +199,7 @@ export function getBrands(db: DB): string[] {
 
 export interface HeaderStats {
 	latestSnapshotDate: string | null;
+	earliestSnapshotDate: string | null;
 	snapshotCount: number;
 	snapshotDays: number;
 	dbSizeBytes: number;
@@ -211,6 +224,9 @@ export function getHeaderStats(db: DB): HeaderStats {
 	const latestDateRow = db
 		.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
 		.get() as { d: string | null };
+	const earliestDateRow = db
+		.prepare('SELECT MIN(snapshot_date) AS d FROM price_snapshots')
+		.get() as { d: string | null };
 	const snaps = db.prepare('SELECT COUNT(*) AS n FROM price_snapshots').get() as { n: number };
 	const snapDays = db
 		.prepare('SELECT COUNT(DISTINCT snapshot_date) AS n FROM price_snapshots')
@@ -218,6 +234,7 @@ export function getHeaderStats(db: DB): HeaderStats {
 
 	return {
 		latestSnapshotDate: latestDateRow.d,
+		earliestSnapshotDate: earliestDateRow.d,
 		snapshotCount: snaps.n,
 		snapshotDays: snapDays.n,
 		dbSizeBytes: dbFileSize(db)
@@ -296,7 +313,7 @@ ${LATEST_CTE}
 		FROM latest lat
 		JOIN retailer_listings l ON l.id = lat.retailer_listing_id
 		JOIN products p ON p.id = l.product_id
-		WHERE l.status = 'active' AND p.tracked = 1${clause}
+		WHERE l.status = 'active' AND p.tracked = 1 AND ${notBundle('l')}${clause}
 		${sortClause(filters.sort)}
 	`;
 
@@ -339,7 +356,7 @@ export function getProductHistory(db: DB, productId: number): ProductHistory | n
 				s.id AS sid, s.retailer_listing_id, s.snapshot_date, s.price_aud, s.stock_status, s.scraped_at
 			FROM retailer_listings l
 			LEFT JOIN price_snapshots s ON s.retailer_listing_id = l.id
-			WHERE l.product_id = ?
+			WHERE l.product_id = ? AND ${notBundle('l')}
 			ORDER BY l.id, s.snapshot_date`
 		)
 		.all(productId) as Array<{
@@ -394,9 +411,16 @@ export function getProductHistory(db: DB, productId: number): ProductHistory | n
 		}
 	}
 
+	// Specs are fetched only on the product detail page — never joined into
+	// list/index queries (IMPROVEMENT_16 §7.3).
+	const spec = db
+		.prepare('SELECT * FROM specs WHERE product_id = ? ORDER BY last_synced_at DESC LIMIT 1')
+		.get(productId) as SpecRow | undefined;
+
 	return {
 		product,
-		series: [...listings.values()].map(({ listing, points }) => ({ listing, points }))
+		series: [...listings.values()].map(({ listing, points }) => ({ listing, points })),
+		specs: spec ?? null
 	};
 }
 
@@ -429,12 +453,14 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 			  AND ps.stock_status = 'in_stock'
 			WHERE p.category = @category
 			  AND p.tracked = 1
+			  AND ${notBundle('l')}
 			  AND ps.price_aud = (
 				SELECT MIN(ps2.price_aud)
 				FROM price_snapshots ps2
 				JOIN retailer_listings l2 ON l2.id = ps2.retailer_listing_id
 				WHERE l2.product_id = p.id
 				  AND l2.status = 'active'
+				  AND ${notBundle('l2')}
 				  AND ps2.snapshot_date = ps.snapshot_date
 				  AND ps2.stock_status = 'in_stock'
 			  )
@@ -487,7 +513,7 @@ ${LATEST_CTE}
 		FROM latest lat
 		JOIN retailer_listings l ON l.id = lat.retailer_listing_id
 		JOIN products p ON p.id = l.product_id
-		WHERE l.status = 'active' AND p.tracked = 1
+		WHERE l.status = 'active' AND p.tracked = 1 AND ${notBundle('l')}
 	`;
 
 	const rows = db.prepare(sql).all({ window: `-${windowDays} days` }) as Array<{

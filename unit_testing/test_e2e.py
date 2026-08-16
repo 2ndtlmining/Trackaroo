@@ -21,7 +21,7 @@ import pytest
 sys_path = str(Path(__file__).resolve().parent.parent)
 sys.path.insert(0, sys_path)
 
-from ingest import ingest_file
+from ingest import ingest_file, is_snapshot_file
 from health_checks import CheckResult, check_db_freshness, check_match_count_anomalies, check_price_anomalies
 from query import show_biggest_movers, show_latest_prices, show_trends
 
@@ -163,10 +163,7 @@ class TestEndToEndRealData:
     """True scraper output -> ingest -> query, using the live data/ files."""
 
     def test_all_real_snapshots_ingest_error_free(self, tmp_path, db_path):
-        files = sorted(
-            f for f in DATA_DIR.glob("*.json")
-            if ".backup" not in f.name  # Skip backup/archive files
-        )
+        files = sorted(f for f in DATA_DIR.glob("*.json") if is_snapshot_file(f.name))
         if not files:
             pytest.skip("No real scraped JSON files available in data/")
 

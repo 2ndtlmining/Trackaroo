@@ -84,6 +84,14 @@ Three core tables, designed to separate canonical product identity from retailer
   - An enum rather than a plain boolean, to handle real-world states like PCCG's "Stock at Supplier" (`preorder`) without losing information. Defaults to `unknown`.
 - Append-only. **No updates, no deletes**, ever — see §7a.
 
+**`specs`** — one row per canonical product, from external spec datasets (added 16-Aug-2026, see `IMPROVEMENT_16_Aug_V1.md`)
+- `product_id` (FK to `products`), `source` (`rightnow-gpu-db` / `intel-processors-csv` / `amd-com`), `source_record_key` (the identifying name in the source dataset, kept for traceability), `category`, `architecture`, `generation`, `launch_date`, `launch_msrp_usd`
+- GPU-specific (nullable on CPU rows): `vram_gb`, `memory_bus_width_bit`, `memory_type`, `tdp_watts`
+- CPU-specific (nullable on GPU rows): `thread_count`, `base_clock_mhz`, `boost_clock_mhz`, `socket`, `cache_l3_mb`
+- `core_count` is deliberately shared — shading units for GPU rows, physical cores for CPU rows (one column, documented, rather than two over-loaded ones)
+- `raw_json` — the full original source record verbatim, so new fields can be read later without a schema migration
+- Populated by the weekly `sync_specs.py` (a separate, best-effort job — never part of the daily price pipeline). Fetched only on the product detail page; **never joined into list/index queries**. Rows are never deleted; a conflicting re-match is flagged in the sync report, never silently overwritten.
+
 This structure is what makes "biggest movers" and "cheapest across retailers" clean SQL queries (window functions over `price_snapshots` joined through `retailer_listings` to `products`) rather than something hand-rolled in application code.
 
 ### 7a. Data retention policy

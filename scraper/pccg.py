@@ -9,7 +9,7 @@ import logging
 import os
 import re
 import time
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Tuple
 from urllib.parse import urlencode
 
@@ -17,13 +17,17 @@ import requests
 
 from config import (
     ALGOLIA_BACKOFF_MAX_SECONDS,
+    ALGOLIA_CIRCUIT_BREAKER_LIMIT,
     ALGOLIA_MAX_RETRIES,
     ALGOLIA_RATE_LIMIT_WAIT_SECONDS,
     ALGOLIA_TIMEOUT_SECONDS,
     BATCH_DELAY,
     BATCH_SIZE,
+    CATEGORY_PASS_DELAY,
     DATA_DIR,
     FILE_DATE_FORMAT,
+    PCCG_COOLDOWN_FILE,
+    PCCG_COOLDOWN_HOURS,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 
@@ -51,8 +55,24 @@ HEADERS = {
 # Batch size for multi-query requests (config-driven — see TRACKAROO_BATCH_SIZE)
 
 
+def _is_bundle_product(name: str, url: str = "") -> bool:
+    """Return True if the listing is a component bundle (e.g. CPU + motherboard).
+
+    Combos price the whole bundle, not the component alone, so they must never
+    match a single-component watchlist product. Signals: 'bundle'/'combo' in the
+    name, or 'bundle'/'bdl-' in the URL.
+    """
+    if "bundle" in name.lower() or "combo" in name.lower():
+        return True
+    url_lower = url.lower()
+    return "bundle" in url_lower or "-bdl-" in url_lower
+
+
 def match_product(scraped_name: str, watchlist_product: WatchlistProduct) -> bool:
     """Check if a scraped product matches a watchlist entry."""
+    # Component bundles (CPU + motherboard) must not match a single component
+    if _is_bundle_product(scraped_name):
+        return False
     name_lower = scraped_name.lower()
     search_terms = watchlist_product["search_terms"]
     if not search_terms:
@@ -168,6 +188,84 @@ def _extract_products(hits: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
     return products
 
 
+def _retry_wait(retry_after: str | None, attempt: int) -> float:
+    """Compute the backoff delay in seconds for a 429 response.
+
+    Algolia/Cloudflare-fronted 429s often carry a ``Retry-After`` header;
+    prefer it over the fixed formula when present. Falls back to
+    ``ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)`` otherwise.
+    """
+    if retry_after:
+        try:
+            return float(retry_after)
+        except (TypeError, ValueError):
+            pass
+    return ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)
+
+
+def _log_api_status_error(r: Any) -> None:
+    """Log a non-200 Algolia response, distinguishing retryable from fatal.
+
+    429 is handled separately (retry loop); 401/403 mean the embedded
+    read-only App ID/API key has likely been rotated by PCCG, which no amount
+    of backoff fixes — worth being able to tell apart at a glance in logs.
+    """
+    if r.status_code in (401, 403):
+        LOGGER.error(
+            "Algolia auth rejected (%s) — App ID/API key likely rotated by PCCG, not a rate-limit issue: %s - %s",
+            r.status_code, r.status_code, r.text[:200],
+        )
+    else:
+        LOGGER.error("Algolia API error: %s - %s", r.status_code, r.text[:200])
+
+
+# ── Circuit-breaker cooldown ─────────────────────────────────────────
+
+def _write_cooldown(reason: str) -> None:
+    """Persist a cooldown file so scheduled retries don't immediately re-trip."""
+    try:
+        payload = {
+            "tripped_at": datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+        }
+        PCCG_COOLDOWN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PCCG_COOLDOWN_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        LOGGER.warning("Cooldown written to %s (reason: %s)", PCCG_COOLDOWN_FILE, reason)
+    except OSError as e:
+        LOGGER.error("Could not write cooldown file %s: %s", PCCG_COOLDOWN_FILE, e)
+
+
+def _cooldown_active() -> bool:
+    """Return True if a persisted cooldown is still within its window.
+
+    Callers should skip the whole PCCG scrape (exit cleanly, not error) when
+    this is True — the site was blocking recently and a retry would just
+    hammer it again.
+    """
+    try:
+        if not PCCG_COOLDOWN_FILE.exists():
+            return False
+        payload = json.loads(PCCG_COOLDOWN_FILE.read_text(encoding="utf-8"))
+        tripped_at = datetime.fromisoformat(payload["tripped_at"])
+        if tripped_at.tzinfo is None:
+            tripped_at = tripped_at.replace(tzinfo=timezone.utc)
+        elapsed = datetime.now(timezone.utc) - tripped_at
+        return elapsed < timedelta(hours=PCCG_COOLDOWN_HOURS)
+    except (OSError, ValueError, KeyError, json.JSONDecodeError, TypeError):
+        LOGGER.warning("Ignoring unreadable cooldown file: %s", PCCG_COOLDOWN_FILE)
+        return False
+
+
+def _clear_cooldown() -> None:
+    """Remove the cooldown file after a successful scrape."""
+    try:
+        if PCCG_COOLDOWN_FILE.exists():
+            PCCG_COOLDOWN_FILE.unlink()
+            LOGGER.info("Cleared PCCG cooldown file %s", PCCG_COOLDOWN_FILE)
+    except OSError as e:
+        LOGGER.error("Could not clear cooldown file %s: %s", PCCG_COOLDOWN_FILE, e)
+
+
 def algolia_single_search(
     query: str,
     category_filter: str,
@@ -202,19 +300,24 @@ def algolia_single_search(
         params_str = urlencode(params_dict)
         payload = {"requests": [{"indexName": ALGOLIA_INDEX, "params": params_str}]}
 
+        retries_exhausted = True
         for attempt in range(ALGOLIA_MAX_RETRIES):
             try:
                 r = requests.post(ALGOLIA_URL, json=payload, headers=HEADERS, timeout=ALGOLIA_TIMEOUT_SECONDS)
                 if r.status_code == 429:
-                    wait = ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)
+                    retry_after = r.headers.get("Retry-After")
+                    wait = _retry_wait(retry_after, attempt)
                     LOGGER.warning("Rate limited (attempt %d/%d), waiting %ds...", attempt + 1, ALGOLIA_MAX_RETRIES, wait)
                     time.sleep(wait)
                     continue
                 if r.status_code != 200:
-                    LOGGER.error("Algolia API error: %s - %s", r.status_code, r.text[:200])
+                    _log_api_status_error(r)
                     return all_products
-
-                data = r.json()
+                try:
+                    data = r.json()
+                except ValueError:
+                    LOGGER.error("Algolia returned non-JSON response (likely a WAF/challenge page), body[:200]: %s", r.text[:200])
+                    return all_products
                 if "results" not in data:
                     LOGGER.error("Algolia API unexpected response")
                     return all_products
@@ -226,8 +329,9 @@ def algolia_single_search(
 
                 # Check if there are more pages
                 nb_pages = result.get("nbPages", 1)
+                retries_exhausted = False
                 if page + 1 >= nb_pages:
-                    break
+                    return all_products
 
                 page += 1
                 time.sleep(0.3)
@@ -236,6 +340,13 @@ def algolia_single_search(
             except requests.RequestException as e:
                 LOGGER.error("Algolia request error: %s", e)
                 return all_products
+
+        if retries_exhausted:
+            LOGGER.error(
+                "Giving up after %d retries on page %d — PCCG appears to be rate-limiting all requests right now.",
+                ALGOLIA_MAX_RETRIES, page,
+            )
+            return all_products
 
     return all_products
 
@@ -292,19 +403,24 @@ def algolia_batch_search(
 
         payload = {"requests": requests_list}
 
+        retries_exhausted = True
         for attempt in range(ALGOLIA_MAX_RETRIES):
             try:
                 r = requests.post(ALGOLIA_URL, json=payload, headers=HEADERS, timeout=ALGOLIA_TIMEOUT_SECONDS)
                 if r.status_code == 429:
-                    wait = ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)
+                    retry_after = r.headers.get("Retry-After")
+                    wait = _retry_wait(retry_after, attempt)
                     LOGGER.warning("Rate limited (attempt %d/%d), waiting %ds...", attempt + 1, ALGOLIA_MAX_RETRIES, wait)
                     time.sleep(wait)
                     continue
                 if r.status_code != 200:
-                    LOGGER.error("Algolia API error: %s - %s", r.status_code, r.text[:200])
+                    _log_api_status_error(r)
                     return all_results
-
-                data = r.json()
+                try:
+                    data = r.json()
+                except ValueError:
+                    LOGGER.error("Algolia returned non-JSON response (likely a WAF/challenge page), body[:200]: %s", r.text[:200])
+                    return all_results
                 if "results" not in data:
                     LOGGER.error("Algolia API unexpected response")
                     return all_results
@@ -322,6 +438,7 @@ def algolia_batch_search(
                         nb_pages_list[idx] = result_nb_pages
 
                 # Success — move to next page
+                retries_exhausted = False
                 page += 1
                 time.sleep(0.3)
                 break
@@ -330,18 +447,25 @@ def algolia_batch_search(
                 LOGGER.error("Algolia batch request error: %s", e)
                 return all_results
 
+        if retries_exhausted:
+            LOGGER.error(
+                "Giving up after %d retries on page %d — PCCG appears to be rate-limiting all requests right now.",
+                ALGOLIA_MAX_RETRIES, page,
+            )
+            return all_results
+
     return all_results
 
 
 def scrape_category(
     category: str,
     watchlist: list[WatchlistProduct],
-) -> Tuple[list[Dict[str, Any]], set[int]]:
+) -> Tuple[list[Dict[str, Any]], set[int], bool]:
     """Scrape a single category (cpu or gpu) from PCCG via Algolia API.
 
     Uses batched multi-query requests to avoid rate limiting.
 
-    Returns (results_list, matched_global_indices_set).
+    Returns (results_list, matched_global_indices_set, breaker_tripped).
     """
     category_watchlist = [wp for wp in watchlist if wp["category"] == category]
     category_filter = "Graphics Cards" if category == "gpu" else "CPUs"
@@ -351,6 +475,7 @@ def scrape_category(
     results: list[Dict[str, Any]] = []
     matched_global: set[int] = set()
     consecutive_failures = 0  # Track consecutive failed batches for backoff
+    breaker_tripped = False
 
     # Sort watchlist by search term length (longest first = most specific)
     sorted_indices = sorted(
@@ -394,6 +519,8 @@ def scrape_category(
 
             # Collect ALL matching products
             for prod in products:
+                if _is_bundle_product(prod["name"], prod.get("url", "")):
+                    continue
                 if match_product(prod["name"], wp):
                     price = _parse_price(prod["price"])
                     if price and global_idx is not None:
@@ -416,6 +543,17 @@ def scrape_category(
         # Use exponential backoff for consecutive failed batches
         if batch_failed:
             consecutive_failures += 1
+            if consecutive_failures >= ALGOLIA_CIRCUIT_BREAKER_LIMIT:
+                LOGGER.error(
+                    "Circuit breaker tripped after %d consecutive failed batches (%s) — "
+                    "PCCG appears to be blocking all requests right now. Aborting remaining "
+                    "%s batches and saving what was matched so far.",
+                    ALGOLIA_CIRCUIT_BREAKER_LIMIT, category,
+                    len(sorted_indices) - batch_start - BATCH_SIZE,
+                )
+                _write_cooldown("429 circuit breaker")
+                breaker_tripped = True
+                break
             delay = min(BATCH_DELAY * (2 ** consecutive_failures), ALGOLIA_BACKOFF_MAX_SECONDS)
         else:
             consecutive_failures = 0
@@ -435,7 +573,7 @@ def scrape_category(
             wp_model = watchlist[global_idx]["model"]
             LOGGER.info("  %s: %d variants saved", wp_model, len(matches))
 
-    return results, matched_global
+    return results, matched_global, breaker_tripped
 
 
 def main() -> None:
@@ -448,14 +586,39 @@ def main() -> None:
     watchlist = load_watchlist()
     LOGGER.info("  %d products", len(watchlist))
 
+    # Respect a circuit-breaker cooldown before doing anything else — a
+    # scheduled retry hitting a recently-blocking API would just add harm.
+    if _cooldown_active():
+        LOGGER.warning(
+            "Skipping PCCG scrape: cooldown still active (file %s, window %.0fh). "
+            "This is expected handled behaviour, not an error.",
+            PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS,
+        )
+        return
+
     all_results: list[Dict[str, Any]] = []
     all_matched: set[int] = set()
+    all_tripped: list[str] = []
 
-    for category in ["cpu", "gpu"]:
-        results, matched = scrape_category(category, watchlist)
+    for i, category in enumerate(["cpu", "gpu"]):
+        results, matched, tripped = scrape_category(category, watchlist)
         all_results.extend(results)
         all_matched.update(matched)
         LOGGER.info("  %s: %d matched", category.upper(), len(results))
+        if tripped:
+            all_tripped.append(category)
+        # Short pause between category passes — both hit the same Algolia
+        # index from the same IP back-to-back.
+        if i == 0:
+            LOGGER.info("  Pausing %.1fs before next category pass...", CATEGORY_PASS_DELAY)
+            time.sleep(CATEGORY_PASS_DELAY)
+
+    # A full (non-tripped) scrape means PCCG is healthy — clear any stale
+    # cooldown so the default path next run is a normal scrape.
+    if not all_tripped:
+        _clear_cooldown()
+    else:
+        LOGGER.error("PCCG scrape incomplete — circuit breaker tripped for: %s", ", ".join(all_tripped))
 
     # Report unmatched
     unmatched = [wp["model"] for i, wp in enumerate(watchlist) if i not in all_matched]

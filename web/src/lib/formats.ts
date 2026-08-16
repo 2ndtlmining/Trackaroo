@@ -11,6 +11,15 @@ export function formatAud(value: number): string {
 	return formatAudFull(value);
 }
 
+export function formatUsd(value: number): string {
+	return new Intl.NumberFormat('en-US', {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 2
+	}).format(value);
+}
+
 export function formatSignedAud(value: number): string {
 	const sign = value > 0 ? '+' : value < 0 ? '−' : '';
 	return `${sign}${formatAudFull(Math.abs(value))}`;

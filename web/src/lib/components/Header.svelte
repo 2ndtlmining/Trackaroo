@@ -33,15 +33,48 @@
 			{/each}
 		</nav>
 		<div class="flex items-center gap-4">
-			<p class="hidden items-center gap-3 text-xs text-text-muted sm:flex">
+			<p class="hidden items-center gap-3 text-xs text-text-muted lg:flex">
 				{#if stats.latestSnapshotDate}
-					<span title="Date of latest snapshot">Last snapshot: {stats.latestSnapshotDate}</span>
+					<span title="Most recent price snapshot date">
+						{stats.latestSnapshotDate}
+					</span>
 				{/if}
-				{#if stats.snapshotCount > 0}
-					<span title="Price snapshots in database">{stats.snapshotCount} snapshots</span>
+				{#if stats.snapshotDays > 0}
+					<span class="inline-flex items-center gap-1.5" title="Distinct days with a snapshot">
+						<svg
+							class="h-3.5 w-3.5 shrink-0"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.8"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+							<circle cx="12" cy="13" r="4" />
+						</svg>
+						{stats.snapshotDays} days
+					</span>
 				{/if}
 				{#if stats.dbSizeBytes > 0}
-					<span title="SQLite database size">{formatBytes(stats.dbSizeBytes)}</span>
+					<span class="inline-flex items-center gap-1.5" title="SQLite database size">
+						<svg
+							class="h-3.5 w-3.5 shrink-0"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.8"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<ellipse cx="12" cy="5" rx="9" ry="3" />
+							<path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+							<path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+						</svg>
+						{formatBytes(stats.dbSizeBytes)}
+					</span>
 				{/if}
 			</p>
 			<ThemeToggle />

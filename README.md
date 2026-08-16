@@ -20,6 +20,18 @@ Daily price and stock tracking for desktop CPUs and GPUs across Australian retai
 | [PC Case Gear](https://www.pccasegear.com/) | ✅ Active | Algolia search API (JS-rendered site) |
 | ~~Mwave~~ | ❌ Removed | CloudFront bot protection blocks scraping |
 
+## Spec data sources
+
+Static hardware specs (VRAM, cores, clocks, TDP, launch date…) come from external
+datasets fetched weekly by `sync_specs.py` — never scraped live per request, and
+never joined into the price pipeline:
+
+| Source | Category | Method |
+|---|---|---|
+| [RightNow-AI/RightNow-GPU-Database](https://github.com/RightNow-AI/RightNow-GPU-Database) | GPU | Raw JSON on GitHub (Apache-2.0; TechPowerUp data via the `dbgpu` project) |
+| [toUpperCase78/intel-processors](https://github.com/toUpperCase78/intel-processors) | Intel CPU | Raw CSVs on GitHub |
+| [amd.com](https://www.amd.com) first-party product pages | AMD CPU | Polite fetch (browser user-agent, 1s delay between pages) |
+
 ## What's built
 
 | Component | Status | Details |
@@ -32,11 +44,13 @@ Daily price and stock tracking for desktop CPUs and GPUs across Australian retai
 | **Ingestion** | ✅ Complete | Reads JSON → writes DB, idempotent, supports dry-run |
 | **Query tool** | ✅ Complete | Latest prices, trends, biggest movers |
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
-| **Regression tests** | ✅ Complete | 251 tests across 15 modules via pytest |
+| **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
+| **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
+| **Regression tests** | ✅ Complete | 374 tests across 19 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products, movers, price-history charts; reads the DB directly via better-sqlite3 |
-| **Frontend tests** | ✅ Complete | 90 vitest + 19 Playwright e2e (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 109 vitest + 27 Playwright e2e (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
@@ -70,6 +84,12 @@ python query.py --model "RTX 5090"
 
 # Show price trends
 python query.py --trends --category gpu
+
+# Sync spec data (weekly, best-effort — separate from the daily price pipeline)
+python sync_specs.py
+python sync_specs.py --category gpu
+python sync_specs.py --dry-run
+python sync_specs.py --report-only
 
 # Run regression tests
 python -m pytest unit_testing/ -v
@@ -134,11 +154,14 @@ Point it at a different DB file with `TRACKAROO_DB=/path/to/trackaroo.db`. The d
 ```
 products ────── retailer_listings ────── price_snapshots
 (canonical)    (per retailer)           (daily snapshot, append-only)
+     │
+     └──────── specs (per product, from external datasets via sync_specs.py)
 ```
 
 - **products** — canonical identity (category, brand, model, generation tier)
 - **retailer_listings** — a specific retailer's page for a product variant (e.g., GIGABYTE, ASUS, Zotac 5090 each get their own listing with `variant_name`)
 - **price_snapshots** — one row per listing per day. Never updated or deleted.
+- **specs** — one row per canonical product, sourced from the external spec datasets above (fetched weekly by `sync_specs.py`). Fetched only on the product detail page — never joined into list/index queries.
 
 The DB runs in `WAL` mode (set by the ingestion writers), so the frontend can read it while the daily cron job writes — no lock errors. Rows are never deleted. Products that roll out of scope are marked `tracked=0`. See [SPEC.md §7a](SPEC.md#7a-data-retention-policy) for the full retention policy.
 
@@ -174,6 +197,8 @@ Trackaroo/
 ├── query.py            # query tool (latest prices, trends, movers)
 ├── backup_db.py        # standalone DB backup with retention pruning
 ├── fetch_test.py       # Scorptec scraper
+├── sync_specs.py       # weekly spec sync (fetch + match + upsert; never calls run_daily.py)
+├── spec_matching.py    # name normalization + product→spec-dataset matching
 ├── migrate.py          # schema migration script
 ├── requirements.txt    # pinned dependencies
 │
@@ -198,13 +223,14 @@ Trackaroo/
 │   ├── cpu_pccg_10_August_2026.json
 │   └── gpu_pccg_10_August_2026.json
 │
-├── unit_testing/       # Python regression tests (251 via pytest)
+├── unit_testing/       # Python regression tests (374 via pytest)
 │   ├── conftest.py             # shared pytest fixtures (in-memory DB)
 │   ├── test_seed.py            # seed + schema tests
 │   ├── test_matching.py        # product matching tests
 │   ├── test_schema.py          # SQLite schema tests
 │   ├── test_ingest.py          # ingestion + pipeline tests
 │   ├── test_scraper.py         # scraper data quality tests
+│   ├── test_pccg_reliability.py  # PCCG 429/rate-limit reliability tests
 │   ├── test_run_daily.py       # daily runner + health check integration tests
 │   ├── test_health_checks.py   # health check validation tests
 │   ├── test_query.py           # query tool tests
@@ -214,14 +240,17 @@ Trackaroo/
 │   ├── test_cli.py             # CLI entry-point smoke tests
 │   ├── test_resync.py          # resync_stock_status.py tests
 │   ├── test_backup.py          # backup_db.py retention tests
-│   └── test_config.py          # config.py env-override tests
+│   ├── test_config.py          # config.py env-override tests
+│   ├── test_specs_schema.py    # specs table DDL + migration tests
+│   ├── test_specs_matching.py  # spec name normalization + matching tests
+│   └── test_sync_specs.py      # sync_specs.py fetch/parse/upsert tests
 │
 └── web/                # Phase 3 frontend (SvelteKit, adapter-node)
-    ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot), …
+    ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot), SpecPanel, …
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /movers, /product/[id]
-    ├── test/                   # 90 vitest regression tests (6 suites)
-    ├── e2e/                    # 19 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── test/                   # 109 vitest regression tests (6 suites)
+    ├── e2e/                    # 27 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```
@@ -233,6 +262,7 @@ Trackaroo/
 3. **[SCOPE_RULES.md](SCOPE_RULES.md)** — which products are tracked and why
 4. **[DECISIONS.md](DECISIONS.md)** — rationale behind key choices
 5. **[DEPLOYMENT.md](DEPLOYMENT.md)** — Docker (single image), compose, host cron
+6. **[IMPROVEMENT_16_Aug_V1.md](IMPROVEMENT_16_Aug_V1.md)** — real spec data plan + PCCG reliability fixes (both implemented; kept as the spec-data rationale)
 
 ## Ground rules
 

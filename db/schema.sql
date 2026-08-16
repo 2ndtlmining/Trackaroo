@@ -90,3 +90,39 @@ BEGIN
     )
     AND (last_snapshot_at IS NULL OR last_snapshot_at < NEW.scraped_at);
 END;
+
+-- ─────────────────────────────────────────────────────────────
+-- specs: one row per canonical product, from an external spec
+-- source (see sync_specs.py). Rows are never deleted; a product
+-- whose source record disappears upstream keeps its last-known
+-- row. Only fetched on the product detail page — never joined
+-- into list/index queries.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE specs (
+    spec_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id        INTEGER NOT NULL REFERENCES products(id),
+    source            TEXT    NOT NULL,               -- 'rightnow-gpu-db' | 'intel-processors-csv' | 'amd-com'
+    source_record_key TEXT    NOT NULL,               -- identifying name from the source dataset, kept for traceability
+    category          TEXT    NOT NULL CHECK (category IN ('cpu', 'gpu')),   -- matches products.category
+    architecture      TEXT,                           -- e.g. 'Blackwell', 'RDNA 4', 'Zen 5', 'Arrow Lake'
+    generation        TEXT,                           -- e.g. 'RTX 50', 'Ryzen 9000'
+    launch_date       TEXT,                           -- ISO date, nullable if unknown
+    launch_msrp_usd   REAL,                           -- as published in source; convert currency at display time
+    -- GPU-specific (nullable for CPU rows)
+    vram_gb             REAL,
+    memory_bus_width_bit  INTEGER,
+    memory_type           TEXT,                       -- e.g. 'GDDR7'
+    tdp_watts             INTEGER,
+    core_count            INTEGER,                    -- shader units for GPU, physical cores for CPU
+    -- CPU-specific (nullable for GPU rows)
+    thread_count       INTEGER,
+    base_clock_mhz     INTEGER,
+    boost_clock_mhz    INTEGER,
+    socket             TEXT,
+    cache_l3_mb        REAL,
+    raw_json          TEXT    NOT NULL,               -- full original source record, verbatim
+    last_synced_at    TEXT    NOT NULL,               -- ISO timestamp, set by sync job
+    UNIQUE (product_id, source)
+);
+
+CREATE INDEX idx_specs_product ON specs (product_id);

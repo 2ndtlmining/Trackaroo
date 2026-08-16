@@ -203,6 +203,21 @@ def parse_product_grid(html: str, category_path: str = "") -> List[Dict[str, Any
     return products
 
 
+def _is_bundle_product(name: str, desc: str = "", url: str = "") -> bool:
+    """Return True if the listing is a component bundle (e.g. CPU + motherboard).
+
+    Scorptec sells combos like "gigabyte z890 ultra 5 power bundle". These price
+    the whole combo, not the CPU alone, so they must never match a CPU-only
+    watchlist product. Signals: the word 'bundle'/'combo' in the name/description,
+    or the Scorptec bundle URL pattern (/bundle/ or '-bdl-' slug).
+    """
+    haystack = f"{name.lower()} {desc.lower()}"
+    if "bundle" in haystack or "combo" in haystack:
+        return True
+    url_lower = url.lower()
+    return "/bundle/" in url_lower or "-bdl-" in url_lower
+
+
 def match_product(scraped_name: str, scraped_desc: str, watchlist_product: WatchlistProduct) -> bool:
     """Check if a scraped product matches a watchlist entry using search terms.
 
@@ -219,6 +234,10 @@ def match_product(scraped_name: str, scraped_desc: str, watchlist_product: Watch
     Returns:
         True if the scraped product matches the watchlist entry.
     """
+    # Component bundles (CPU + motherboard) must not match a single component
+    if _is_bundle_product(scraped_name, scraped_desc):
+        return False
+
     name_lower = scraped_name.lower()
     desc_lower = scraped_desc.lower()
     combined = f"{name_lower} {desc_lower}"
@@ -290,6 +309,8 @@ def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, A
         logger.info("Total for %s: %d products across all pages", cat_key, len(scraped_products))
 
         for scraped in scraped_products:
+            if _is_bundle_product(scraped["name"], scraped.get("full_description", ""), scraped.get("url", "")):
+                continue
             for i in watchlist_order:
                 wp = watchlist[i]
                 if match_product(scraped["name"], scraped["full_description"], wp):

@@ -21,6 +21,7 @@ import sys
 sys.path.insert(0, sys_path)
 from ingest import (
     parse_date_from_filename,
+    is_snapshot_file,
     find_or_create_product,
     find_or_create_listing,
     ingest_file,
@@ -954,3 +955,32 @@ class TestVariantTracking:
             WHERE p.model = ?
         """, ("GeForce RTX 5090",)).fetchone()[0]
         assert listing_count == 5
+
+
+# ── Snapshot filename filter ─────────────────────────────────────────
+
+class TestIsSnapshotFile:
+    """data/ holds non-snapshot JSON (spec_sync_report.json, pccg_cooldown.json,
+    .backup archives) — the ingest glob must only pick up files following the
+    '{cpu|gpu}_{scorptec|pccg}_{date}.json' convention. Regression for the
+    2026-08-16 bug where spec_sync_report.json was ingested as a snapshot."""
+
+    def test_snapshot_filenames_accepted(self):
+        assert is_snapshot_file("cpu_scorptec_10_August_2026.json")
+        assert is_snapshot_file("gpu_pccg_09_August_2026.json")
+        assert is_snapshot_file("gpu_scorptec_1_August_2026.json")
+
+    def test_spec_sync_report_rejected(self):
+        assert not is_snapshot_file("spec_sync_report.json")
+
+    def test_pccg_cooldown_rejected(self):
+        assert not is_snapshot_file("pccg_cooldown.json")
+
+    def test_backup_files_rejected(self):
+        assert not is_snapshot_file("gpu_pccg_13_August_2026.backup_buggy.json")
+
+    def test_malformed_names_rejected(self):
+        assert not is_snapshot_file("cpu_mwave_10_August_2026.json")
+        assert not is_snapshot_file("ram_scorptec_10_August_2026.json")
+        assert not is_snapshot_file("cpu_scorptec_10_August_2026.jsonx")
+        assert not is_snapshot_file("cpu_scorptec_10_August_2026")

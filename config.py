@@ -30,6 +30,10 @@ Environment variables (all optional):
     TRACKAROO_ALGOLIA_MAX_RETRIES       Algolia request retries        (default: 3)
     TRACKAROO_ALGOLIA_BACKOFF_MAX       Upper bound for exponential backoff (default: 20)
     TRACKAROO_ALGOLIA_RATE_LIMIT_WAIT   Base wait on 429 (seconds)     (default: 5)
+    TRACKAROO_ALGOLIA_CIRCUIT_BREAKER   Consecutive failed batches before aborting (default: 3)
+    TRACKAROO_PCCG_COOLDOWN_HOURS       Cooldown window after breaker trips (default: 4)
+    TRACKAROO_PCCG_COOLDOWN_FILE        Breaker cooldown state file   (default: <data>/pccg_cooldown.json)
+    TRACKAROO_CATEGORY_PASS_DELAY       Delay between CPU/GPU passes  (default: 2.0)
     TRACKAROO_BUSY_TIMEOUT_MS           SQLite busy timeout (ms)       (default: 5000)
 """
 from __future__ import annotations
@@ -128,3 +132,11 @@ ALGOLIA_TIMEOUT_SECONDS = _env_int("TRACKAROO_ALGOLIA_TIMEOUT_SECONDS", 15)
 ALGOLIA_MAX_RETRIES = _env_int("TRACKAROO_ALGOLIA_MAX_RETRIES", 3)
 ALGOLIA_BACKOFF_MAX_SECONDS = _env_float("TRACKAROO_ALGOLIA_BACKOFF_MAX", 20.0)
 ALGOLIA_RATE_LIMIT_WAIT_SECONDS = _env_float("TRACKAROO_ALGOLIA_RATE_LIMIT_WAIT", 5.0)
+# Circuit breaker: abort a category pass after this many consecutive failed
+# batches (all retries exhausted), rather than grinding through the whole
+# watchlist against a blocking API. Written to PCCG_COOLDOWN_FILE on trip.
+ALGOLIA_CIRCUIT_BREAKER_LIMIT = _env_int("TRACKAROO_ALGOLIA_CIRCUIT_BREAKER", 3)
+PCCG_COOLDOWN_HOURS = _env_float("TRACKAROO_PCCG_COOLDOWN_HOURS", 4.0)
+PCCG_COOLDOWN_FILE = _env_path("TRACKAROO_PCCG_COOLDOWN_FILE", DATA_DIR / "pccg_cooldown.json")
+# Short pause between the CPU and GPU category passes (same Algolia index/IP).
+CATEGORY_PASS_DELAY = _env_float("TRACKAROO_CATEGORY_PASS_DELAY", 2.0)

@@ -24,7 +24,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from config import DATA_DIR, DB_PATH, FILE_DATE_FORMAT, SCRAPER_TIMEOUT_SECONDS
-from health_checks import CheckResult, check_db_freshness, check_json_files, check_match_count_anomalies
+from health_checks import CheckResult, check_db_freshness, check_json_files, check_match_count_anomalies, check_today_coverage
 from ingest import init_db
 
 LOGGER = logging.getLogger(__name__)
@@ -204,6 +204,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     if not args.no_health and not args.scrape_only:
         db_results = (
             check_db_freshness(DB_PATH)
+            + check_today_coverage(DB_PATH)
             + check_match_count_anomalies(DB_PATH)
         )
         _report_results(db_results, "DB validation")

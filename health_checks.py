@@ -29,6 +29,7 @@ from typing import List, Optional
 
 from config import (
     DATA_DIR,
+    DB_DATE_FORMAT,
     DB_PATH,
     DEFAULT_MIN_PER_CATEGORY,
     DEFAULT_MIN_TOTAL,
@@ -273,6 +274,70 @@ def check_db_freshness(db_path: Optional[Path] = None) -> list[CheckResult]:
     return results
 
 
+# ── Today coverage (per-retailer) ────────────────────────────────────
+
+def check_today_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
+    """Report, per retailer, whether today's date has a snapshot yet.
+
+    Goal: make "Scorptec ingested, PCCG missing for today" a named,
+    expected-shape warning instead of something only visible by reading scrape
+    logs. Backed by the cooldown mechanism (IMPROVEMENT_16_Aug_V1.md §10.3/10.4):
+    a recent PCCG circuit-breaker trip legitimately skips today's PCCG scrape,
+    so this check surfaces the gap as a warning rather than an error.
+
+    Args:
+        db_path: Path to the SQLite database. Defaults to db/trackaroo.db.
+
+    Returns:
+        List of CheckResult objects.
+    """
+    results: list[CheckResult] = []
+
+    if db_path is None:
+        db_path = DB_PATH
+
+    if not db_path.exists():
+        return results  # Missing DB is reported by check_db_freshness
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        return results  # DB issues handled by check_db_freshness
+
+    try:
+        today = date.today().strftime(DB_DATE_FORMAT)
+        rows = conn.execute("""
+            SELECT rl.retailer,
+                   COUNT(DISTINCT rl.id) as today_variants
+            FROM price_snapshots ps
+            JOIN retailer_listings rl ON ps.retailer_listing_id = rl.id
+            WHERE ps.snapshot_date = ?
+            GROUP BY rl.retailer
+        """, (today,)).fetchall()
+
+        with_today = {row["retailer"]: row["today_variants"] for row in rows}
+        for retailer in ("scorptec", "pccg"):
+            if retailer in with_today:
+                results.append(CheckResult(
+                    f"today_coverage_{retailer}",
+                    CheckResult.OK,
+                    f"{retailer}: {with_today[retailer]} variants captured for today ({today})",
+                ))
+            else:
+                results.append(CheckResult(
+                    f"today_coverage_{retailer}",
+                    CheckResult.WARNING,
+                    f"{retailer}: no snapshot for today ({today}) yet",
+                ))
+    except sqlite3.Error:
+        pass  # Handled by other checks
+    finally:
+        conn.close()
+
+    return results
+
+
 # ── Match count anomaly detection ───────────────────────────────────
 
 def check_match_count_anomalies(db_path: Optional[Path] = None) -> list[CheckResult]:
@@ -506,6 +571,13 @@ def run_all_checks(
     for r in freshness_results:
         LOGGER.info("  %s", r)
 
+    # Today coverage (per retailer)
+    LOGGER.info("\n--- Today Coverage ---")
+    coverage_results = check_today_coverage(db_path)
+    all_results.extend(coverage_results)
+    for r in coverage_results:
+        LOGGER.info("  %s", r)
+
     # Match count anomalies
     LOGGER.info("\n--- Match Count Anomalies ---")
     match_results = check_match_count_anomalies(db_path)
@@ -554,6 +626,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     elif args.db_only:
         results = (
             check_db_freshness(args.db_path) +
+            check_today_coverage(args.db_path) +
             check_match_count_anomalies(args.db_path) +
             check_price_anomalies(args.db_path)
         )

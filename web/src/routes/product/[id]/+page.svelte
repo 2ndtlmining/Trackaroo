@@ -2,6 +2,7 @@
 	import PriceChart, { type ChartSeries } from '$lib/components/PriceChart.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Badge from '$lib/components/Badge.svelte';
+	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import { formatAud, formatDate, stockLabel } from '$lib/formats';
 	import type { StockStatus } from '$lib/types';
 	import type { BadgeTone } from '$lib/components/Badge.svelte';
@@ -124,5 +125,9 @@
 				</ul>
 			</div>
 		</div>
+	{/if}
+
+	{#if data.specs}
+		<SpecPanel spec={data.specs} />
 	{/if}
 </div>

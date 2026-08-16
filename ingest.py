@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sqlite3
 import sys
 from datetime import datetime
@@ -29,6 +30,16 @@ from config import DATA_DIR, DB_PATH, DB_DATE_FORMAT, FILE_DATE_FORMAT, SCHEMA_P
 LOGGER = logging.getLogger(__name__)
 
 Stats = Dict[str, int]
+
+# Snapshot files follow '{cpu|gpu}_{scorptec|pccg}_{day}_{Month}_{year}.json'.
+# data/ also holds non-snapshot JSON (spec_sync_report.json, pccg_cooldown.json,
+# *.backup*.json archives) — those must never be ingested.
+_SNAPSHOT_FILENAME_RE = re.compile(r"^(?:cpu|gpu)_(?:scorptec|pccg)_\d{1,2}_\w+_\d{4}\.json$")
+
+
+def is_snapshot_file(filename: str) -> bool:
+    """True if the filename follows the snapshot naming convention."""
+    return bool(_SNAPSHOT_FILENAME_RE.match(filename))
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
@@ -271,10 +282,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.file:
         files: List[Path] = [args.file]
     else:
-        files = sorted(
-            f for f in DATA_DIR.glob("*.json")
-            if ".backup" not in f.name  # Skip backup/archive files
-        )
+        files = sorted(f for f in DATA_DIR.glob("*.json") if is_snapshot_file(f.name))
 
     if not files:
         LOGGER.info("No JSON files found to ingest.")

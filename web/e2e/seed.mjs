@@ -126,6 +126,66 @@ export function seedE2eDb(dbPath = DB_PATH) {
 	});
 
 	insertAll();
+
+	// Deterministic spec rows so the product page spec panel is testable:
+	// product 1 (Core Ultra 5 245, CPU) and the first GPU product.
+	const firstProduct = db.prepare('SELECT id FROM products LIMIT 1').get();
+	const firstGpu = db
+		.prepare("SELECT id FROM products WHERE category = 'gpu' ORDER BY id LIMIT 1")
+		.get();
+	const insertSpec = db.prepare(
+		`INSERT INTO specs (product_id, source, source_record_key, category, architecture, generation,
+			launch_date, vram_gb, memory_bus_width_bit, memory_type, tdp_watts, core_count,
+			thread_count, base_clock_mhz, boost_clock_mhz, socket, cache_l3_mb, raw_json, last_synced_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	);
+	if (firstProduct) {
+		insertSpec.run(
+			firstProduct.id,
+			'intel-processors-csv',
+			'Core Ultra 5 245',
+			'cpu',
+			'Arrow Lake',
+			'Core Ultra 200S',
+			'2025-12-04',
+			null,
+			null,
+			null,
+			45,
+			10,
+			10,
+			2500,
+			4800,
+			'LGA1851',
+			24,
+			'{}',
+			'2026-08-15T00:00:00Z'
+		);
+	}
+	if (firstGpu) {
+		insertSpec.run(
+			firstGpu.id,
+			'rightnow-gpu-db',
+			'GeForce RTX 5060 Ti',
+			'gpu',
+			'Blackwell',
+			'RTX 50',
+			'2025-04-16',
+			16,
+			128,
+			'GDDR7',
+			180,
+			4608,
+			null,
+			null,
+			null,
+			null,
+			null,
+			'{}',
+			'2026-08-15T00:00:00Z'
+		);
+	}
+
 	db.close();
 	return dbPath;
 }

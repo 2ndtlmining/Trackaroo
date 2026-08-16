@@ -111,6 +111,43 @@ location), so this works from any working directory.
 30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --backup 14 >> /var/log/trackaroo_daily.log 2>&1
 ```
 
+### PCCG scheduled retry (automatic, safe to run unconditionally)
+
+PCCG rate-limits aggressively; when it does, the scraper now fails fast via a
+circuit breaker (see IMPROVEMENT_16_Aug_V1.md §10). Because each run is cheap
+and respects the cooldown file, you can schedule a plain `run_daily.py --pccg`
+a few hours after the main daily run without any guard logic — it either picks
+up the missing PCCG data or exits quietly:
+
+```cron
+30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --backup 14 >> /var/log/trackaroo_daily.log 2>&1
+30 12 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --pccg >> /var/log/trackaroo_pccg_retry.log 2>&1
+30 18 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --pccg >> /var/log/trackaroo_pccg_retry.log 2>&1
+```
+
+Key behaviours that make this safe:
+
+- **Cooldown:** when the circuit breaker trips, the scraper writes
+  `data/pccg_cooldown.json`. Any run within the next
+  `TRACKAROO_PCCG_COOLDOWN_HOURS` (default 4) skips scraping entirely and
+  exits `0` (expected handled behaviour, not a failure). A successful scrape
+  clears the file.
+- **Idempotent ingestion:** re-ingesting an already-present snapshot is a
+  no-op (existing "never delete, ingestion is idempotent" rule), so retries
+  that do succeed never duplicate data.
+- **Visibility:** `health_checks.py` reports per-retailer whether today's date
+  has a snapshot (`Today Coverage` section), so a blocked PCCG shows up as a
+  named warning — `pccg: no snapshot for today yet` — even when the retry
+  respected the cooldown and exited quietly.
+
+For the all-in-one Docker container (Option C), add a host crontab entry that
+runs the same image one-shot (`docker run --rm -v trackaroo-data:/data -e RUN_ONCE=1 trackaroo`) — note this runs the full pipeline, so pick a time clear of
+the main scheduled run, or run a second container with the pipeline-only
+entrypoint (`deploy/entrypoint.sh`). The cooldown file lives in the shared
+volume, so the scoring is identical either way.
+
+> **First run:** the pipeline scrapes live retailer sites, so the dashboard
+
 Environment: set `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` (and any
 `TRACKAROO_*` overrides) in the crontab's environment or a `.env` read by the
 shell wrapper (the scripts read `os.environ` directly — they do not load a

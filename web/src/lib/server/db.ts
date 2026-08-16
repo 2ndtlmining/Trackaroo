@@ -44,6 +44,30 @@ export interface SnapshotRow {
 	scraped_at: string;
 }
 
+export interface SpecRow {
+	spec_id: number;
+	product_id: number;
+	source: string;
+	source_record_key: string;
+	category: Category;
+	architecture: string | null;
+	generation: string | null;
+	launch_date: string | null;
+	launch_msrp_usd: number | null;
+	vram_gb: number | null;
+	memory_bus_width_bit: number | null;
+	memory_type: string | null;
+	tdp_watts: number | null;
+	core_count: number | null;
+	thread_count: number | null;
+	base_clock_mhz: number | null;
+	boost_clock_mhz: number | null;
+	socket: string | null;
+	cache_l3_mb: number | null;
+	raw_json: string;
+	last_synced_at: string;
+}
+
 export interface OpenOptions {
 	readonly?: boolean;
 	fileMustExist?: boolean;
