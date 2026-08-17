@@ -50,6 +50,8 @@ Also compute, per listing, alongside deal_score:
 
 ## 4. "Cheapest per model" GPU carousel — for the dashboard
 
+> **STATUS: DONE (2026-08-17)** — shipped as the `CheapestCarousel` with a GPU/CPU toggle (resolved the GPU-only vs +CPU scope question below); each card shows model, cheapest in-stock price at the latest snapshot, retailer, and a 90d-low badge.
+
 Revised from the original "Best Deals" idea — this version has **no dependency on accumulated price history**, so it can ship immediately rather than waiting on weeks of data.
 
 **Placement:** top of the Dashboard, above the current stat cards or directly below them.
@@ -98,19 +100,21 @@ ORDER BY p.model; -- or by a defined tier/performance order if you want the caro
 
 ## 5. Inline sparkline instead of "New listing" pill
 
+> **STATUS: DONE (2026-08-18)** — shipped as the `Sparkline` component: a 24px SVG polyline (up = red/coral, down = green/teal, flat = muted, dash when <2 points). Rendered as a "Trend" column between Price and Stock in `LatestListingTable` (products card rows, the dashboard table) and in the movers dense table (window-matched 24h/7d/30d), and on each unexpanded `/products` card showing the product's cheapest-in-stock-per-day line (`getSparklines` for listing series, `getProductSparklines` for card series). No uPlot needed for a bare trend line.
+
 **Problem:** the "7-day change" column currently just says "New listing" for everything (expected, given the DB is one day old) — but even once history builds up, a text badge ("+5%" / "−12%") is less immediately scannable than a shape.
 
 **Implementation:** a small inline sparkline (uPlot, already in the planned stack per `SPEC.md` §12) per row/card showing the last 7–30 days of price. Color the line red/green based on net direction. This becomes one of the highest-value additions once there's real history — it's the fastest way for a human eye to spot "this just dropped."
 
 ## 6. Priority order
 
-Item 5 (sparklines) needs real price history to matter; the carousel (item 4, now shipped with a GPU/CPU toggle) has no such dependency. Product images (item 2) and the deal score (item 1) have been **declined** by the user and are dropped from the plan:
+Item 5 (sparklines) needed real price history to matter; the carousel (item 4, now shipped with a GPU/CPU toggle) had no such dependency. Product images (item 2) and the deal score (item 1) have been **declined** by the user and are dropped from the plan:
 
 1. ~~Product images (item 2)~~ — declined by the user
 2. ~~**Deal score** (item 1)~~ — **declined** (2026-08-17) — not building; the "is this a good deal" signal stays out of scope
 3. ~~**Card layout for Products page** (item 3)~~ — **done** (one card per product, cheapest in-stock "from $X" + retailer, expandable per-variant listings; dense table kept on Movers/Dashboard)
 4. ~~Cheapest-per-model GPU carousel (item 4)~~ — **done** (single carousel, GPU/CPU toggle, cheapest in-stock per model at latest snapshot)
-5. **Sparklines** (item 5) — depends on accumulated history, lowest urgency right now but highest payoff once data exists
+5. ~~**Sparklines** (item 5)~~ — **done** (18-Aug): `Sparkline` component with a Trend column in `LatestListingTable` + movers table, and per-card trend lines on the `/products` grid
 
 ## 7. Documentation note
 
