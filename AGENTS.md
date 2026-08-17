@@ -22,8 +22,9 @@ Monorepo: Python scraper + ingest at the repo root, SvelteKit frontend in `web/`
   docker run -d --name trackaroo -p 3000:3000 -v trackaroo-data:/data trackaroo
   ```
 - `deploy/entrypoint-single.sh` seeds the DB, starts the dashboard (:3000) and
-  runs the pipeline every `RUN_INTERVAL_HOURS` (default 24). `RUN_ONCE=1` runs
-  one pipeline then exits.
+  runs the pipeline every `RUN_INTERVAL_HOURS` (default 24), plus the weekly
+  spec sync (`sync_specs.py`) at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default
+  Sunday 03:00). `RUN_ONCE=1` runs one pipeline then exits.
 - `docker-compose.yml` is the optional two-service split of the SAME image
   (`cron` pins the pipeline-only entrypoint, `web` runs the server).
 - Critical constraint: the app NEEDS Python 3.12 (PEP 701 f-strings like

@@ -1,10 +1,17 @@
 # Project Status
 
-**Last updated:** 2026-08-17 (hardcoded-values pass: 14 scraper/backup/spec-sync tuning constants moved from source into `config.py` as `TRACKAROO_*` env-overridable knobs, plus a `busy_timeout` dedup in `backup_db.py`; 383 → **391** pytest tests. Earlier same day: regression coverage pass — `migrate.py` (the only fully-untested backend module) got a dedicated test module and the Scorptec pagination loop went from signature-only to functional mocked-network tests (365→383); docs-hygiene pass — AGENTS.md vitest count corrected 117→154, stale Mwave filter option removed from the frontend, SPEC.md/README/DEPLOYMENT.md synced to shipped state; feature-suggestions §2–§4 shipped: band-chart product page + brand-grouped listings, compare route, 90-day low/high badges; repo cleanup §6 done — `resync_stock_status.py` removed, `fetch_test.py` → `scraper/scorptec.py`)
+**Last updated:** 2026-08-17 (weekly spec-sync scheduling: `deploy/entrypoint-single.sh` now auto-runs `sync_specs.py` once a week in-container at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00), with DEPLOYMENT/README/AGENTS updated. Same session: hardcoded-values pass — 14 scraper/backup/spec-sync tuning constants moved from source into `config.py` as `TRACKAROO_*` env-overridable knobs, plus a `busy_timeout` dedup in `backup_db.py`; 383 → **391** pytest tests. Earlier same day: regression coverage pass — `migrate.py` (the only fully-untested backend module) got a dedicated test module and the Scorptec pagination loop went from signature-only to functional mocked-network tests (365→383); docs-hygiene pass — AGENTS.md vitest count corrected 117→154, stale Mwave filter option removed from the frontend, SPEC.md/README/DEPLOYMENT.md synced to shipped state; feature-suggestions §2–§4 shipped: band-chart product page + brand-grouped listings, compare route, 90-day low/high badges; repo cleanup §6 done — `resync_stock_status.py` removed, `fetch_test.py` → `scraper/scorptec.py`)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 5 — frontend/UX improvements program + PCCG reliability (see Active Issues below).
 
 ## Active Issues
+
+### ✅ COMPLETE: Weekly spec sync scheduling (17-Aug-2026)
+- **`deploy/entrypoint-single.sh`** now schedules `sync_specs.py` automatically: a background `spec_sync_loop` polls hourly and runs the sync once a week at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00, clear of the daily price run). Cron-style DOW (0=Sun..6=Sat) derived from GNU `date %u` mod 7; the hour is zero-padded for a clean `date +%H` comparison. A `last_run` guard makes a mid-window container restart re-run it (safe — `sync_specs.py` upserts).
+- **New env knobs:** `SPEC_SYNC_DOW` (default 0) and `SPEC_SYNC_HOUR` (default 3), documented in the entrypoint header, DEPLOYMENT.md, README.md, and AGENTS.md.
+- **DEPLOYMENT.md:** the "Weekly spec sync" section now states Option C (single image) auto-schedules it in-container (no host crontab needed); the host-crontab guidance now applies to bare-host and Option A (compose) deployments.
+- **Note:** the compose `cron` service uses the pipeline-only `entrypoint.sh`, so it does *not* auto-schedule the spec sync — those deployments keep the host-crontab approach.
+- **Validation:** `sh -n` syntax check passes on the entrypoint; DOW-mapping and hour-padding logic verified.
 
 ### ✅ COMPLETE: Hardcoded-values pass — tuning constants moved to config (17-Aug-2026)
 - **Audit:** swept the production code for hardcoded tuning values (timeouts, delays, retry counts, page caps, retention). 14 values were magic numbers; all are now `TRACKAROO_*` env-overridable knobs in `config.py` (read at import time, same pattern as the existing knobs).
@@ -195,9 +202,9 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - `requirements.txt` — pinned dependencies
 - `Dockerfile` — **single all-in-one image** (Python pipeline + dashboard); `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`
 - `docker-compose.yml` — optional two-service split of the same image
-- `deploy/entrypoint-single.sh` — all-in-one entrypoint (seed → dashboard → pipeline scheduler); `entrypoint.sh` for pipeline-only
+- `deploy/entrypoint-single.sh` — all-in-one entrypoint (seed → dashboard → pipeline scheduler + weekly spec sync); `entrypoint.sh` for pipeline-only
 - `.dockerignore` — excludes regenerable artifacts and the web build context
-- `unit_testing/` — **383 regression tests** across 19 modules (seed, matching, schema, ingestion, scraper, migrate, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, backup, config, specs schema, specs matching, sync_specs; `test_resync.py` removed 17-Aug with its one-off script)
+- `unit_testing/` — **391 regression tests** across 19 modules (seed, matching, schema, ingestion, scraper, migrate, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, backup, config, specs schema, specs matching, sync_specs; `test_resync.py` removed 17-Aug with its one-off script)
 - RAM tracking scope (`RAM_SCOPE.md`) — plan for adding DDR4/DDR5 RAM price tracking
 - Historical data: Scorptec + PCCG snapshots for 09-Aug through 17-Aug (16-Aug PCCG missing — rate-limited; 17-Aug full: 185 Scorptec + 123 PCCG = 308 snapshots)
 - `.env.example` — committed template documenting Algolia env vars (and `.gitignore` negation)
@@ -243,11 +250,11 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 9 days, 09–17 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)
 2. **Reverse proxy + TLS** — put the dashboard behind Caddy/nginx/Traefik if internet-facing (docs in DEPLOYMENT.md)
 3. **Monitoring/alerting** — watch pipeline success via exit codes / logs (health checks already log "DB health: all N checks passed")
-4. **Weekly spec sync cadence** — `sync_specs.py` is built and has run once live; schedule it (e.g. Sunday 03:00, clear of the daily price run) when the deployment cron is finalised
+4. ✅ **Weekly spec sync cadence** — done 17-Aug: `deploy/entrypoint-single.sh` now runs `sync_specs.py` once a week in-container at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00, clear of the daily price run); DEPLOYMENT.md/README/AGENTS updated
 
 ## Regression test count
 
-- **383 tests (was 365; +18 = 12 new `test_migrate.py` + 6 functional Scorptec fetch/pagination tests replacing 2 signature-only checks)** across 19 test modules via pytest
+- **391 tests (was 383; +8 = 5 config env-override + 4 config-import lock-in tests for the new `TRACKAROO_*` tuning knobs)** across 19 test modules via pytest
   - `test_seed.py` — seed, watchlist loading, schema creation
   - `test_matching.py` — product matching logic
   - `test_schema.py` — schema validation, triggers, constraints
@@ -263,7 +270,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
   - `test_performance.py` — query wall-clock bounds + index usage over ~10k synthetic snapshots
   - `test_cli.py` — CLI entry-point smoke tests
   - `test_backup.py` — backup_db.py retention
-  - `test_config.py` — config.py env-override
+  - `test_config.py` — config.py env-override + **tuning-knob import lock-in (pccg pagination, scorptec, sync_specs, backup/run_daily)**
   - `test_specs_schema.py` — **new:** specs table DDL + idempotent migration
   - `test_specs_matching.py` — **new:** name normalization + product→dataset matching
   - `test_sync_specs.py` — **new:** fetch/parse/upsert, conflict no-overwrite, report, CLI flags

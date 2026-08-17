@@ -36,6 +36,10 @@ On boot the container:
    a no-op when the volume already has snapshots.
 3. Starts the SvelteKit dashboard on :3000.
 4. Runs the daily pipeline immediately, then every `RUN_INTERVAL_HOURS`.
+5. Runs the spec sync (`python sync_specs.py`) once a week at
+   `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00), clear of the
+   daily price run. It refreshes the `specs` table (GPU/CPU) from upstream
+   sources; safe to re-run (upserts).
 
 Logs: `docker logs -f trackaroo`
 
@@ -44,6 +48,8 @@ Logs: `docker logs -f trackaroo`
 | Pipeline cadence | 24h | `-e RUN_INTERVAL_HOURS=6` |
 | Backups retained | 14 | `-e BACKUP_KEEP=30` |
 | Dashboard port | 3000 | `-p 8080:3000` |
+| Spec-sync day | Sunday (0) | `-e SPEC_SYNC_DOW=1` (Mon) … `6` (Sat) |
+| Spec-sync hour | 03:00 | `-e SPEC_SYNC_HOUR=12` |
 
 One-shot run (e.g. from a host crontab, starts web then exits after a pipeline):
 
@@ -120,7 +126,15 @@ location), so this works from any working directory.
 datasets. It is a wholly separate job — never called from or by `run_daily.py`
 — and is best-effort: a failed sync leaves the last-known-good spec data in
 place and the site keeps working. Schedule it well clear of the daily price
-run (e.g. Sunday 03:00):
+run (e.g. Sunday 03:00).
+
+**Option C (single image) schedules it automatically.** The all-in-one
+entrypoint runs `sync_specs.py` once a week in-container at `SPEC_SYNC_DOW` @
+`SPEC_SYNC_HOUR` (default Sunday 03:00), so no host crontab is needed. Tune it
+with `-e SPEC_SYNC_DOW=1 -e SPEC_SYNC_HOUR=12` (or set them in the container
+env).
+
+For bare-host and Option A (compose) deployments, add a host crontab entry:
 
 ```cron
 0 3 * * 0 cd /opt/trackaroo && /usr/bin/env python3 sync_specs.py >> /var/log/trackaroo_specs.log 2>&1
@@ -128,9 +142,7 @@ run (e.g. Sunday 03:00):
 
 A non-zero exit means a source fetch failed (nothing was written); the report
 from the last run is in `data/spec_sync_report.json` (`python sync_specs.py
---report-only` reprints it).
-
-For the all-in-one Docker container (Option C), schedule
+--report-only` reprints it). For the compose setup you can also run
 `docker exec trackaroo python sync_specs.py` from a host crontab — the spec
 state lives in the shared volume, so the outcome is identical to a host-run
 sync.

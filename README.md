@@ -119,9 +119,12 @@ docker run --rm -v trackaroo-data:/data -e RUN_ONCE=1 trackaroo
 
 On boot the container seeds the DB from the watchlist, serves the dashboard on
 :3000, and runs the pipeline immediately, then every `RUN_INTERVAL_HOURS`
-(default 24h). Knobs: `RUN_INTERVAL_HOURS`, `BACKUP_KEEP` (default 14),
-`-p 8080:3000` to change the host port. A docker-compose two-service split is
-also kept for those who prefer it — see [DEPLOYMENT.md](DEPLOYMENT.md).
+(default 24h). It also runs the weekly spec sync (`sync_specs.py`) once a week
+at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00). Knobs:
+`RUN_INTERVAL_HOURS`, `BACKUP_KEEP` (default 14), `SPEC_SYNC_DOW` (0=Sun),
+`SPEC_SYNC_HOUR`, `-p 8080:3000` to change the host port. A docker-compose
+two-service split is also kept for those who prefer it — see
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Frontend (`web/`)
 
