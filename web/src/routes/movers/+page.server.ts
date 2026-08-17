@@ -1,4 +1,4 @@
-import { getMovers } from '$lib/server/repos';
+import { getMovers, getSparklines } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 
 const WINDOWS = ['24h', '7d', '30d'] as const;
@@ -11,5 +11,10 @@ export function load({ url }: { url: URL }) {
 	const window = (WINDOWS as readonly string[]).includes(raw) ? (raw as WindowKey) : '7d';
 	const db = getDb();
 	const movers = getMovers(db, DAYS[window]);
-	return { movers, window, windows: WINDOWS };
+	const sparklines = getSparklines(db, movers.map((m) => m.listingId), DAYS[window]);
+	return {
+		movers: movers.map((m) => ({ ...m, sparkline: sparklines.get(m.listingId) ?? [] })),
+		window,
+		windows: WINDOWS
+	};
 }

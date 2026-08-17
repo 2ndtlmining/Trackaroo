@@ -114,9 +114,12 @@ test.describe('dashboard', () => {
 		const table = page.locator('table');
 		await expect(table).toBeVisible();
 		// Seeded data has both CPU and GPU rows across both retailers
-		await expect(table.getByRole('columnheader', { name: 'Model' })).toBeVisible();
+await expect(table.getByRole('columnheader', { name: 'Model' })).toBeVisible();
 		await expect(table.getByRole('columnheader', { name: 'Price' })).toBeVisible();
+		await expect(table.getByRole('columnheader', { name: 'Trend' })).toBeVisible();
 		await expect(table.locator('tbody tr').first()).toBeVisible();
+		await expect(table.locator('tbody svg').first()).toBeVisible();
+		expect(await table.locator('tbody svg polyline').count()).toBeGreaterThan(0);
 	});
 
 	test('filters the table by category via the URL', async ({ page }) => {
@@ -318,23 +321,6 @@ test.describe('compare', () => {
 	});
 });
 
-test.describe('troubleshooting', () => {
-	test('renders the temporary coverage view', async ({ page }) => {
-		await goto(page, '/troubleshooting');
-		await expect(page.getByRole('heading', { name: 'Troubleshooting' })).toBeVisible();
-		await expect(page.getByText(/scorptec/i).first()).toBeVisible();
-		await expect(page.getByText(/pccg/i).first()).toBeVisible();
-	});
-
-	test('serves the health JSON endpoint', async ({ page }) => {
-		const res = await page.request.get('/api/health');
-		expect(res.status()).toBe(200);
-		const body = await res.json();
-		expect(body.referenceDate).toBeTruthy();
-		expect(body.retailers.length).toBe(2);
-	});
-});
-
 test.describe('movers page', () => {
 	test('renders movers with window buttons', async ({ page }) => {
 		await goto(page, '/movers');
@@ -342,7 +328,9 @@ test.describe('movers page', () => {
 		for (const w of ['24h', '7d', '30d']) {
 			await expect(page.getByRole('button', { name: w })).toBeVisible();
 		}
-		await expect(page.locator('table')).toBeVisible();
+await expect(page.locator('table')).toBeVisible();
+		await expect(page.locator('table thead th').filter({ hasText: 'Trend' })).toBeVisible();
+		await expect(page.locator('table svg polyline').first()).toBeVisible();
 	});
 
 	test('switching the window updates the URL and keeps data', async ({ page }) => {

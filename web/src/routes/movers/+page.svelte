@@ -4,6 +4,7 @@
 	import { formatAud, formatPct, formatSignedAud } from '$lib/formats';
 	import PriceChange from '$lib/components/PriceChange.svelte';
 	import Badge from '$lib/components/Badge.svelte';
+	import Sparkline from '$lib/components/Sparkline.svelte';
 	import type { Mover } from '$lib/server/repos';
 	import type { ChangeDirection } from '$lib/types';
 
@@ -53,6 +54,8 @@
 		});
 		return arr;
 	});
+
+	const hasTrend = $derived(sorted.some((m) => (m.sparkline?.length ?? 0) >= 2));
 </script>
 
 <svelte:head>
@@ -164,6 +167,9 @@
 						<th class="px-3 py-2 font-medium">Variant</th>
 						<th class="px-3 py-2 text-right font-medium">Old</th>
 						<th class="px-3 py-2 text-right font-medium">New</th>
+						{#if hasTrend}
+							<th class="w-16 px-3 py-2 font-medium">Trend</th>
+						{/if}
 						<th class="px-3 py-2 text-right font-medium">Change</th>
 						<th class="px-3 py-2 font-medium">Points</th>
 					</tr>
@@ -188,6 +194,11 @@
 							<td class="num px-3 py-2 text-right text-text">
 								{formatAud(m.newPrice)}
 							</td>
+							{#if hasTrend}
+								<td class="w-16 px-3 py-2">
+									<Sparkline points={m.sparkline} />
+								</td>
+							{/if}
 							<td class="px-3 py-2 text-right">
 								{#if m.notEnoughHistory}
 									<Badge tone="neutral" label="Not enough history" />
