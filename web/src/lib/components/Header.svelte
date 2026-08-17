@@ -3,7 +3,7 @@
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { formatBytes } from '$lib/formats';
 
-	let { stats } = $props<{ stats: import('$lib/server/repos').HeaderStats }>();
+	let { stats, onOpenSearch }: { stats: import('$lib/server/repos').HeaderStats; onOpenSearch?: () => void } = $props();
 
 	const links = [
 		{ href: '/', label: 'Dashboard' },
@@ -77,6 +77,31 @@
 					</span>
 				{/if}
 			</p>
+			{#if onOpenSearch}
+				<button
+					type="button"
+					onclick={onOpenSearch}
+					class="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-text"
+					aria-label="Search products"
+					title="Search products (Ctrl+K)"
+				>
+					<svg
+						class="h-3.5 w-3.5 shrink-0"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<circle cx="11" cy="11" r="8" />
+						<path d="m21 21-4.35-4.35" />
+					</svg>
+					<span class="hidden sm:inline">Search</span>
+					<kbd class="rounded border border-border px-1 py-0.5 font-mono text-[10px]">Ctrl K</kbd>
+				</button>
+			{/if}
 			<ThemeToggle />
 		</div>
 	</div>

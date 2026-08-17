@@ -4,12 +4,15 @@
 	import PriceChange from './PriceChange.svelte';
 	import StockBadge from './StockBadge.svelte';
 	import Badge from './Badge.svelte';
+	import Sparkline from './Sparkline.svelte';
 	import type { LatestListing } from '$lib/server/repos';
 	import type { ChangeDirection } from '$lib/types';
 
 	// compact: hide the Model/Category columns (used inside product cards,
 	// where the card header already shows them).
 	let { rows, compact = false }: { rows: LatestListing[]; compact?: boolean } = $props();
+
+	const hasTrend = $derived(rows.some((row) => (row.sparkline?.length ?? 0) >= 2));
 
 	function changeInfo(row: LatestListing): { direction: ChangeDirection; label: string } {
 		const direction = classifyChange({
@@ -65,6 +68,9 @@
 					<th class="px-3 py-2 font-medium">Retailer</th>
 					<th class="px-3 py-2 font-medium">Variant</th>
 					<th class="px-3 py-2 text-right font-medium">Price</th>
+					{#if hasTrend}
+						<th class="w-16 px-3 py-2 font-medium">Trend</th>
+					{/if}
 					<th class="px-3 py-2 font-medium">Stock</th>
 					<th class="px-3 py-2 font-medium">7-day change</th>
 					<th class="px-3 py-2 font-medium">Freshness</th>
@@ -96,6 +102,11 @@
 							>
 								{formatAud(row.latestPrice)}
 							</td>
+							{#if hasTrend}
+								<td class="w-16 px-3 py-2">
+									<Sparkline points={row.sparkline} />
+								</td>
+							{/if}
 							<td class="px-3 py-2"><StockBadge stock={row.latestStock} /></td>
 							<td class="px-3 py-2">
 								<PriceChange

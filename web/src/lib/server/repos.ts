@@ -23,6 +23,12 @@ export interface Summary {
 	dbSizeBytes: number;
 	biggestMover: Mover | null;
 }
+export interface SparklinePoint {
+	listingId: number;
+	date: string;
+	price: number;
+}
+
 export interface LatestListing {
 	listingId: number;
 	productId: number;
@@ -43,6 +49,7 @@ export interface LatestListing {
 	windowStartDate: string | null;
 	windowStartPrice: number | null;
 	pointsInWindow: number;
+	sparkline?: SparklinePoint[];
 }
 
 export interface ProductGroup {
@@ -275,6 +282,25 @@ export function getBrands(db: DB): string[] {
 	return rows.map((r) => r.brand);
 }
 
+export interface ProductIndexEntry {
+	id: number;
+	category: Category;
+	brand: string;
+	model: string;
+	productVariant: string | null;
+}
+
+export function getProductIndex(db: DB): ProductIndexEntry[] {
+	return db
+		.prepare(
+			`SELECT id, category, brand, model, variant AS productVariant
+			 FROM products
+			 WHERE tracked = 1
+			 ORDER BY category, model`
+		)
+		.all() as ProductIndexEntry[];
+}
+
 export interface HeaderStats {
 	latestSnapshotDate: string | null;
 	earliestSnapshotDate: string | null;
@@ -418,6 +444,32 @@ ${LATEST_CTE}
 		windowStartPrice: r.window_start_price,
 		pointsInWindow: r.points_in_window
 	}));
+}
+
+export function getSparklines(
+	db: DB,
+	listingIds: number[],
+	days = DEFAULT_WINDOW_DAYS
+): Map<number, SparklinePoint[]> {
+	if (listingIds.length === 0) return new Map();
+	const placeholders = listingIds.map(() => '?').join(',');
+	const rows = db
+		.prepare(
+			`SELECT retailer_listing_id AS listingId, snapshot_date AS date, price_aud AS price
+			 FROM price_snapshots
+			 WHERE retailer_listing_id IN (${placeholders})
+			   AND snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)
+			 ORDER BY retailer_listing_id, snapshot_date ASC`
+		)
+		.all(...listingIds, `-${days} days`) as SparklinePoint[];
+
+	const byListing = new Map<number, SparklinePoint[]>();
+	for (const row of rows) {
+		const arr = byListing.get(row.listingId) ?? [];
+		arr.push(row);
+		byListing.set(row.listingId, arr);
+	}
+	return byListing;
 }
 
 export function getPriceBand(db: DB, productId: number): PriceBandPoint[] {

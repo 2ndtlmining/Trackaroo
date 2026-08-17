@@ -218,6 +218,52 @@ test.describe('products page', () => {
 await toggle.click();
 		await expect(card.locator('table')).toHaveCount(0);
 	});
+
+	test('shows a trend sparkline column once a card is expanded', async ({ page }) => {
+		await goto(page, '/products');
+		const card = page.locator('article').first();
+		await expect(card).toBeVisible();
+		await card.getByRole('button', { name: /listing/i }).click();
+		await expect(card.locator('table')).toBeVisible();
+		await expect(card.locator('table thead th').filter({ hasText: 'Trend' })).toBeVisible();
+		await expect(card.locator('table svg').first()).toBeVisible();
+		expect(await card.locator('table svg polyline').count()).toBeGreaterThan(0);
+	});
+});
+
+test.describe('command palette', () => {
+	test('opens with Ctrl+K, searches and navigates to a product on Enter', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		await expect(dialog).toBeVisible();
+		await expect(dialog.getByRole('textbox', { name: 'Search products' })).toBeFocused();
+
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('7600');
+		const first = dialog.getByRole('option').first();
+		await expect(first).toContainText('Ryzen 5 7600');
+		await page.keyboard.press('Enter');
+		await expect(page).toHaveURL(/\/product\/\d+$/);
+		await expect(page.getByRole('heading', { name: /Ryzen 5 7600/ })).toBeVisible();
+	});
+
+	test('closes with Escape', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		await expect(dialog).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
+	});
+
+	test('offers a quick compare row when exactly two products match', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
+		await expect(dialog.getByRole('option').first()).toContainText('Compare');
+	});
 });
 
 test.describe('compare', () => {

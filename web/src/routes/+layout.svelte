@@ -1,12 +1,15 @@
 <script lang="ts">
 	import '../app.css';
 	import Header from '$lib/components/Header.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 
 	let { data, children } = $props();
+
+	let paletteOpen = $state(false);
 </script>
 
 <div class="flex min-h-screen flex-col">
-	<Header stats={data.stats} />
+	<Header stats={data.stats} onOpenSearch={() => (paletteOpen = true)} />
 	<main class="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
 		{@render children()}
 	</main>
@@ -15,4 +18,10 @@
 			Trackaroo — AU CPU &amp; GPU price tracker
 		</div>
 	</footer>
+	<CommandPalette
+		items={data.productIndex}
+		open={paletteOpen}
+		onToggle={() => (paletteOpen = !paletteOpen)}
+		onClose={() => (paletteOpen = false)}
+	/>
 </div>

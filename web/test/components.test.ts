@@ -9,8 +9,9 @@ import LatestListingTable from '../src/lib/components/LatestListingTable.svelte'
 import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
 import BrandGroupedListings from '../src/lib/components/BrandGroupedListings.svelte';
-import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
-import type { LatestListing, ProductGroup, Series, CheapestListing } from '../src/lib/server/repos';
+	import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
+	import Sparkline from '../src/lib/components/Sparkline.svelte';
+	import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
 
 function renderComponent(Component: unknown, props: Record<string, unknown> = {}): string {
@@ -511,5 +512,43 @@ describe('CheapestCarousel', () => {
 	it('shows a tooltip title with the full variant name on the card', () => {
 		const body = renderComponent(CheapestCarousel, { gpu: [cheapestListing()], cpu: [] });
 		expect(body).toContain('title="Gigabyte GeForce RTX 5060 Ti Windforce OC 16GB"');
+	});
+});
+
+function sparkline(prices: number[]): SparklinePoint[] {
+	return prices.map((price, i) => ({
+		listingId: 1,
+		date: `2026-08-${String(9 + i).padStart(2, '0')}`,
+		price
+	}));
+}
+
+describe('Sparkline', () => {
+	it('renders a dash when there are fewer than two points', () => {
+		const body = renderComponent(Sparkline, { points: sparkline([299]) });
+		expect(body).toContain('—');
+		expect(body).not.toContain('<polyline');
+	});
+
+	it('renders a dash when points are undefined', () => {
+		const body = renderComponent(Sparkline, { points: undefined });
+		expect(body).toContain('—');
+	});
+
+	it('uses the up (red/coral) stroke when the price increased', () => {
+		const body = renderComponent(Sparkline, { points: sparkline([299, 320, 310, 330]) });
+		expect(body).toContain('stroke-up');
+		expect(body).toContain('<polyline');
+	});
+
+	it('uses the down (green/teal) stroke when the price decreased', () => {
+		const body = renderComponent(Sparkline, { points: sparkline([330, 310, 300, 290]) });
+		expect(body).toContain('stroke-down');
+		expect(body).toContain('<polyline');
+	});
+
+	it('labels the trend with the start and end prices', () => {
+		const body = renderComponent(Sparkline, { points: sparkline([299, 330]) });
+		expect(body).toContain('$299 → $330');
 	});
 });

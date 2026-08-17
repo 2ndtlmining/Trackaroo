@@ -14,6 +14,8 @@ import {
 	getPriceBand,
 	getPriceExtremes,
 	getProductHistory,
+	getProductIndex,
+	getSparklines,
 	getSummary,
 	groupListingsByProduct
 } from '../src/lib/server/repos';
@@ -751,5 +753,66 @@ describe('getMovers', () => {
 		const oneDay = getMovers(db, 1).filter((m) => m.oldPrice !== null);
 		const sevenDay = getMovers(db, 7).filter((m) => m.oldPrice !== null);
 		expect(sevenDay.length).toBeGreaterThanOrEqual(oneDay.length);
+	});
+});
+
+describe('getProductIndex', () => {
+	it('returns tracked products with the fields the palette needs', () => {
+		const index = getProductIndex(db);
+		expect(index.length).toBeGreaterThan(0);
+		for (const entry of index) {
+			expect(entry.id).toBeGreaterThan(0);
+			expect(entry.category).toMatch(/^(cpu|gpu)$/);
+			expect(entry.brand.length).toBeGreaterThan(0);
+			expect(entry.model.length).toBeGreaterThan(0);
+			expect('productVariant' in entry).toBe(true);
+		}
+	});
+
+	it('is ordered by category then model', () => {
+		const index = getProductIndex(db);
+		const keys = index.map((e) => `${e.category}|${e.model}`);
+		expect(keys).toEqual([...keys].sort());
+	});
+});
+
+describe('getSparklines', () => {
+	it('returns an empty map for no listing ids', () => {
+		expect(getSparklines(db, []).size).toBe(0);
+	});
+
+	it('returns one ascending-dated series per listing within the window', () => {
+		const listings = getLatestListings(db).slice(0, 5);
+		const ids = new Set(listings.map((l) => l.listingId));
+		const sparklines = getSparklines(db, [...ids]);
+
+		expect(sparklines.size).toBeGreaterThan(0);
+		expect(sparklines.size).toBeLessThanOrEqual(ids.size);
+		for (const [listingId, points] of sparklines) {
+			expect(ids.has(listingId)).toBe(true);
+			expect(points.length).toBeGreaterThanOrEqual(1);
+			const dates = points.map((p) => p.date);
+			expect(dates).toEqual([...dates].sort());
+			for (const p of points) {
+				expect(p.listingId).toBe(listingId);
+				expect(p.price).toBeGreaterThan(0);
+			}
+		}
+	});
+
+	it('only returns points inside the requested window', () => {
+		const listings = getLatestListings(db).slice(0, 3);
+		const ids = listings.map((l) => l.listingId);
+		const maxDate = db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get() as {
+			d: string;
+		};
+		const windowStart = new Date(`${maxDate.d}T00:00:00Z`);
+		windowStart.setUTCDate(windowStart.getUTCDate() - 7);
+		const sparklines = getSparklines(db, ids, 7);
+		for (const points of sparklines.values()) {
+			for (const p of points) {
+				expect(p.date >= windowStart.toISOString().slice(0, 10)).toBe(true);
+			}
+		}
 	});
 });

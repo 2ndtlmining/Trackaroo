@@ -1,8 +1,10 @@
-import { getHeaderStats } from '$lib/server/repos';
+import { getHeaderStats, getProductIndex } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 
 export function load() {
+	const db = getDb();
 	return {
-		stats: getHeaderStats(getDb())
+		stats: getHeaderStats(db),
+		productIndex: getProductIndex(db)
 	};
 }
