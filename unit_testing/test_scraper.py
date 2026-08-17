@@ -476,11 +476,13 @@ class TestScrapeAllPages:
         assert len(products) == 1
         assert products[0]["name"] == "test gpu"
 
-    def test_max_pages_default_is_20(self):
+    def test_max_pages_default_is_config_value(self):
+        """The pagination safety cap defaults to config.SCORPTEC_MAX_PAGES."""
+        import config
         from scraper.scorptec import scrape_all_pages
         import inspect
         sig = inspect.signature(scrape_all_pages)
-        assert sig.parameters["max_pages"].default == 20
+        assert sig.parameters["max_pages"].default == config.SCORPTEC_MAX_PAGES
 
 
 class TestPCCGPagination:

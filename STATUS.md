@@ -1,10 +1,24 @@
 # Project Status
 
-**Last updated:** 2026-08-17 (regression coverage pass: `migrate.py` — the only fully-untested backend module — now has a dedicated test module, and the Scorptec `fetch_page`/`scrape_all_pages` pagination loop went from signature-only checks to functional mocked-network tests; 365 → **383** pytest tests. Earlier same day: docs-hygiene pass — AGENTS.md vitest count corrected 117→154, stale Mwave filter option removed from the frontend, SPEC.md/README/DEPLOYMENT.md synced to shipped state; feature-suggestions §2–§4 shipped: band-chart product page + brand-grouped listings, compare route, 90-day low/high badges; repo cleanup §6 done — `resync_stock_status.py` removed, `fetch_test.py` → `scraper/scorptec.py`)
+**Last updated:** 2026-08-17 (hardcoded-values pass: 14 scraper/backup/spec-sync tuning constants moved from source into `config.py` as `TRACKAROO_*` env-overridable knobs, plus a `busy_timeout` dedup in `backup_db.py`; 383 → **391** pytest tests. Earlier same day: regression coverage pass — `migrate.py` (the only fully-untested backend module) got a dedicated test module and the Scorptec pagination loop went from signature-only to functional mocked-network tests (365→383); docs-hygiene pass — AGENTS.md vitest count corrected 117→154, stale Mwave filter option removed from the frontend, SPEC.md/README/DEPLOYMENT.md synced to shipped state; feature-suggestions §2–§4 shipped: band-chart product page + brand-grouped listings, compare route, 90-day low/high badges; repo cleanup §6 done — `resync_stock_status.py` removed, `fetch_test.py` → `scraper/scorptec.py`)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 5 — frontend/UX improvements program + PCCG reliability (see Active Issues below).
 
 ## Active Issues
+
+### ✅ COMPLETE: Hardcoded-values pass — tuning constants moved to config (17-Aug-2026)
+- **Audit:** swept the production code for hardcoded tuning values (timeouts, delays, retry counts, page caps, retention). 14 values were magic numbers; all are now `TRACKAROO_*` env-overridable knobs in `config.py` (read at import time, same pattern as the existing knobs).
+- **New config knobs (14):**
+  - `TRACKAROO_BACKUP_KEEP` (14) — backup retention; `backup_db.DEFAULT_KEEP` and `run_daily --backup` now derive from it
+  - `TRACKAROO_SCRAPER_GAP_SECONDS` (2.0) — gap between the two scrapers in `run_daily.py`
+  - `TRACKAROO_SCORPTEC_TIMEOUT_SECONDS` (15), `TRACKAROO_SCORPTEC_MAX_RETRIES` (2), `TRACKAROO_SCORPTEC_RETRY_DELAY` (2.0), `TRACKAROO_SCORPTEC_PAGE_DELAY` (0.5), `TRACKAROO_SCORPTEC_MAX_PAGES` (20) — `scraper/scorptec.py`
+  - `TRACKAROO_ALGOLIA_HITS_PER_PAGE` (20), `TRACKAROO_ALGOLIA_MAX_PAGES` (10), `TRACKAROO_ALGOLIA_BATCH_MAX_PAGES` (3), `TRACKAROO_ALGOLIA_PAGE_DELAY` (0.3) — `scraper/pccg.py` (the call site's `hits_per_page=20, max_pages=3` now uses the config values)
+  - `TRACKAROO_SPEC_FETCH_TIMEOUT` (20), `TRACKAROO_SPEC_RETRY_BACKOFF` (2.0), `TRACKAROO_AMD_FETCH_DELAY` (1.0) — `sync_specs.py`
+- **Dedup fix:** `backup_db.py` hardcoded `PRAGMA busy_timeout=5000` instead of using `config.BUSY_TIMEOUT_MS` — now uses the config value.
+- **Left alone (logic, not tuning):** `query.py` `LIMIT 2` (change computation needs exactly 2 points), HTTP status codes, `test_concurrency.py`'s deliberate `busy_timeout=100`.
+- **Default-signature note:** `scorptec.fetch_page`'s `retries` default is now `None` → resolved to `config.SCORPTEC_MAX_RETRIES` at call time (avoids binding the config value at import time, which would break env-override tests). `scrape_all_pages`'s `max_pages` default binds `config.SCORPTEC_MAX_PAGES` at import time (same pattern as `BATCH_SIZE`).
+- **Tests:** +5 env-override tests in `test_config.py` (subprocess pattern) + 4 config-import lock-in tests (pccg pagination, scorptec tuning, sync_specs tuning, backup/run_daily); `test_scraper.py`'s `test_max_pages_default_is_20` now asserts against `config.SCORPTEC_MAX_PAGES`. `.env.example` + `config.py` docstring updated with the new vars.
+- **Regression (all green):** pytest **391** (was 383; +8) / svelte-check 0 errors / vitest 154 / e2e 38 (33.7s).
 
 ### ✅ COMPLETE: Regression coverage pass (17-Aug-2026)
 - **Coverage review:** audited the full regression suite (365 pytest / 154 vitest / 38 e2e) against the code surface. Verdict: adequate — strong contract e2e (`test_e2e.py`), PCCG reliability lock-ins, full frontend query-layer + browser coverage. Two real gaps found and closed:

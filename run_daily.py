@@ -23,7 +23,14 @@ import time
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from config import DATA_DIR, DB_PATH, FILE_DATE_FORMAT, SCRAPER_TIMEOUT_SECONDS
+from config import (
+    BACKUP_KEEP,
+    DATA_DIR,
+    DB_PATH,
+    FILE_DATE_FORMAT,
+    SCRAPER_GAP_SECONDS,
+    SCRAPER_TIMEOUT_SECONDS,
+)
 from health_checks import CheckResult, check_db_freshness, check_json_files, check_match_count_anomalies, check_today_coverage
 from ingest import init_db
 
@@ -137,7 +144,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     parser.add_argument("--scrape-only", action="store_true", help="Scrape but don't ingest")
     parser.add_argument("--no-health", action="store_true", help="Skip health checks")
-    parser.add_argument("--backup", type=int, metavar="KEEP", nargs="?", const=14,
+    parser.add_argument("--backup", type=int, metavar="KEEP", nargs="?", const=BACKUP_KEEP,
                         help="Back up the DB after ingestion (optionally: how many backups to keep)")
     args = parser.parse_args(argv)
 
@@ -156,7 +163,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     results: Dict[str, bool] = {}
     if run_scorptec:
         results["scorptec"] = run_scraper("Scorptec", "scraper.scorptec", "scorptec")
-        time.sleep(2)  # Polite delay between scrapers
+        time.sleep(SCRAPER_GAP_SECONDS)  # Polite delay between scrapers
     if run_pccg:
         results["pccg"] = run_scraper("PCCG", "scraper.pccg", "pccg")
 

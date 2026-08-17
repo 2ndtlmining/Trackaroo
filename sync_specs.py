@@ -36,7 +36,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 from bs4 import BeautifulSoup
 
-from config import DATA_DIR, DB_PATH
+from config import (
+    AMD_FETCH_DELAY_SECONDS,
+    DATA_DIR,
+    DB_PATH,
+    SPEC_FETCH_TIMEOUT_SECONDS,
+    SPEC_RETRY_BACKOFF,
+)
 from spec_matching import match_cpu, match_gpu
 
 LOGGER = logging.getLogger(__name__)
@@ -64,7 +70,6 @@ AMD_UA = {
         "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     )
 }
-AMD_FETCH_DELAY_SECONDS = 1.0
 
 REPORT_FILENAME = "spec_sync_report.json"
 
@@ -78,7 +83,7 @@ def fetch_url(
     url: str,
     headers: Optional[Dict[str, str]] = None,
     retries: int = 2,
-    timeout: int = 20,
+    timeout: int = SPEC_FETCH_TIMEOUT_SECONDS,
 ) -> Optional[str]:
     """Fetch a URL, returning the body decoded as UTF-8, or None on failure.
 
@@ -90,7 +95,7 @@ def fetch_url(
             r = requests.get(url, headers=headers or {}, timeout=timeout)
         except requests.RequestException as e:
             LOGGER.warning("Attempt %d failed for %s: %s", attempt + 1, url, e)
-            time.sleep(2)
+            time.sleep(SPEC_RETRY_BACKOFF)
             continue
         if r.status_code == 200:
             return r.content.decode("utf-8", errors="replace")
@@ -98,7 +103,7 @@ def fetch_url(
             LOGGER.warning("Definitive HTTP %s for %s", r.status_code, url)
             return None
         LOGGER.warning("Non-200 status %s for %s", r.status_code, url)
-        time.sleep(2)
+        time.sleep(SPEC_RETRY_BACKOFF)
     return None
 
 

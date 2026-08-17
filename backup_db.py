@@ -27,11 +27,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from config import BACKUP_DIR, DB_PATH
+from config import BACKUP_DIR, BACKUP_KEEP, BUSY_TIMEOUT_MS, DB_PATH
 
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_KEEP = 14
+DEFAULT_KEEP = BACKUP_KEEP
 BACKUP_SUFFIX = ".db"
 BACKUP_PREFIX = "trackaroo_"
 
@@ -72,7 +72,7 @@ def backup_database(
     # Use a dedicated connection with a busy timeout so a running writer does
     # not fault the copy; the online-backup API reads without exclusive locks.
     src_conn = sqlite3.connect(str(src))
-    src_conn.execute(f"PRAGMA busy_timeout=5000")
+    src_conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     try:
         dest_conn = sqlite3.connect(str(dest))
         try:

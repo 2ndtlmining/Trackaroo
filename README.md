@@ -46,7 +46,7 @@ never joined into the price pipeline:
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 383 tests across 19 modules via pytest |
+| **Regression tests** | ✅ Complete | 391 tests across 19 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid, expandable per-variant listings, compare selection), compare (`/compare?ids=` side-by-side specs + prices), movers, price-history charts (low/high band + togglable listing lines + brand-grouped listings panel); reads the DB directly via better-sqlite3 |
@@ -223,7 +223,7 @@ Trackaroo/
 │   ├── cpu_pccg_10_August_2026.json
 │   └── gpu_pccg_10_August_2026.json
 │
-├── unit_testing/       # Python regression tests (383 via pytest)
+├── unit_testing/       # Python regression tests (391 via pytest)
 │   ├── conftest.py             # shared pytest fixtures (in-memory DB)
 │   ├── test_seed.py            # seed + schema tests
 │   ├── test_matching.py        # product matching tests

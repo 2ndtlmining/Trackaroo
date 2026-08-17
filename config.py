@@ -35,6 +35,24 @@ Environment variables (all optional):
     TRACKAROO_PCCG_COOLDOWN_FILE        Breaker cooldown state file   (default: <data>/pccg_cooldown.json)
     TRACKAROO_CATEGORY_PASS_DELAY       Delay between CPU/GPU passes  (default: 2.0)
     TRACKAROO_BUSY_TIMEOUT_MS           SQLite busy timeout (ms)       (default: 5000)
+
+    TRACKAROO_BACKUP_KEEP               Backups to retain (days)      (default: 14)
+    TRACKAROO_SCRAPER_GAP_SECONDS       Delay between the two scrapers (default: 2.0)
+
+    TRACKAROO_SCORPTEC_TIMEOUT_SECONDS  Scorptec HTTP timeout          (default: 15)
+    TRACKAROO_SCORPTEC_MAX_RETRIES      Scorptec fetch retries         (default: 2)
+    TRACKAROO_SCORPTEC_RETRY_DELAY      Delay between Scorptec retries (default: 2.0)
+    TRACKAROO_SCORPTEC_PAGE_DELAY       Delay between Scorptec pages   (default: 0.5)
+    TRACKAROO_SCORPTEC_MAX_PAGES        Scorptec pagination safety cap (default: 20)
+
+    TRACKAROO_ALGOLIA_HITS_PER_PAGE     Algolia hits per page          (default: 20)
+    TRACKAROO_ALGOLIA_MAX_PAGES         Algolia pagination safety cap  (default: 10)
+    TRACKAROO_ALGOLIA_BATCH_MAX_PAGES   Page cap for batch searches    (default: 3)
+    TRACKAROO_ALGOLIA_PAGE_DELAY        Delay between Algolia pages    (default: 0.3)
+
+    TRACKAROO_SPEC_FETCH_TIMEOUT        Spec-source fetch timeout      (default: 20)
+    TRACKAROO_SPEC_RETRY_BACKOFF        Delay between spec fetch retries (default: 2.0)
+    TRACKAROO_AMD_FETCH_DELAY           Delay between AMD page fetches (default: 1.0)
 """
 from __future__ import annotations
 
@@ -140,3 +158,32 @@ PCCG_COOLDOWN_HOURS = _env_float("TRACKAROO_PCCG_COOLDOWN_HOURS", 4.0)
 PCCG_COOLDOWN_FILE = _env_path("TRACKAROO_PCCG_COOLDOWN_FILE", DATA_DIR / "pccg_cooldown.json")
 # Short pause between the CPU and GPU category passes (same Algolia index/IP).
 CATEGORY_PASS_DELAY = _env_float("TRACKAROO_CATEGORY_PASS_DELAY", 2.0)
+
+# ── Backup retention ──────────────────────────────────────────────────
+# Number of most-recent DB backups to keep; older ones are pruned.
+BACKUP_KEEP = _env_int("TRACKAROO_BACKUP_KEEP", 14)
+
+# Polite gap between the two scrapers in the daily runner.
+SCRAPER_GAP_SECONDS = _env_float("TRACKAROO_SCRAPER_GAP_SECONDS", 2.0)
+
+# ── Scorptec scraper tuning ───────────────────────────────────────────
+SCORPTEC_TIMEOUT_SECONDS = _env_int("TRACKAROO_SCORPTEC_TIMEOUT_SECONDS", 15)
+SCORPTEC_MAX_RETRIES = _env_int("TRACKAROO_SCORPTEC_MAX_RETRIES", 2)
+SCORPTEC_RETRY_DELAY = _env_float("TRACKAROO_SCORPTEC_RETRY_DELAY", 2.0)
+SCORPTEC_PAGE_DELAY = _env_float("TRACKAROO_SCORPTEC_PAGE_DELAY", 0.5)
+# Safety cap on pagination per category (avoids infinite loops on a
+# misbehaving pagination link).
+SCORPTEC_MAX_PAGES = _env_int("TRACKAROO_SCORPTEC_MAX_PAGES", 20)
+
+# ── Algolia pagination tuning (PCCG) ──────────────────────────────────
+ALGOLIA_HITS_PER_PAGE = _env_int("TRACKAROO_ALGOLIA_HITS_PER_PAGE", 20)
+ALGOLIA_MAX_PAGES = _env_int("TRACKAROO_ALGOLIA_MAX_PAGES", 10)
+# Batch searches paginate shallower than single searches — products appear
+# early in the ranked results, so 3 pages is enough.
+ALGOLIA_BATCH_MAX_PAGES = _env_int("TRACKAROO_ALGOLIA_BATCH_MAX_PAGES", 3)
+ALGOLIA_PAGE_DELAY = _env_float("TRACKAROO_ALGOLIA_PAGE_DELAY", 0.3)
+
+# ── Spec sync tuning (sync_specs.py) ──────────────────────────────────
+SPEC_FETCH_TIMEOUT_SECONDS = _env_int("TRACKAROO_SPEC_FETCH_TIMEOUT", 20)
+SPEC_RETRY_BACKOFF = _env_float("TRACKAROO_SPEC_RETRY_BACKOFF", 2.0)
+AMD_FETCH_DELAY_SECONDS = _env_float("TRACKAROO_AMD_FETCH_DELAY", 1.0)

@@ -85,6 +85,22 @@ class TestEnvOverrides:
         out = _config_value_with_env("TRACKAROO_BATCH_SIZE", "32", "BATCH_SIZE")
         assert out == "32"
 
+    def test_backup_keep_env_override(self):
+        out = _config_value_with_env("TRACKAROO_BACKUP_KEEP", "30", "BACKUP_KEEP")
+        assert out == "30"
+
+    def test_scorptec_timeout_env_override(self):
+        out = _config_value_with_env("TRACKAROO_SCORPTEC_TIMEOUT_SECONDS", "30", "SCORPTEC_TIMEOUT_SECONDS")
+        assert out == "30"
+
+    def test_algolia_hits_per_page_env_override(self):
+        out = _config_value_with_env("TRACKAROO_ALGOLIA_HITS_PER_PAGE", "50", "ALGOLIA_HITS_PER_PAGE")
+        assert out == "50"
+
+    def test_spec_fetch_timeout_env_override(self):
+        out = _config_value_with_env("TRACKAROO_SPEC_FETCH_TIMEOUT", "45", "SPEC_FETCH_TIMEOUT_SECONDS")
+        assert out == "45"
+
 
 class TestMalformedOverrides:
     def test_non_numeric_int_falls_back(self):
@@ -122,3 +138,31 @@ class TestSharedConsumption:
         import scraper.pccg as pccg
         assert pccg.BATCH_SIZE == config.BATCH_SIZE
         assert pccg.BATCH_DELAY == config.BATCH_DELAY
+
+    def test_pccg_pagination_imports_config(self):
+        import scraper.pccg as pccg
+        assert pccg.ALGOLIA_HITS_PER_PAGE == config.ALGOLIA_HITS_PER_PAGE
+        assert pccg.ALGOLIA_MAX_PAGES == config.ALGOLIA_MAX_PAGES
+        assert pccg.ALGOLIA_BATCH_MAX_PAGES == config.ALGOLIA_BATCH_MAX_PAGES
+        assert pccg.ALGOLIA_PAGE_DELAY == config.ALGOLIA_PAGE_DELAY
+
+    def test_scorptec_tuning_imports_config(self):
+        import scraper.scorptec as scorptec
+        assert scorptec.SCORPTEC_TIMEOUT_SECONDS == config.SCORPTEC_TIMEOUT_SECONDS
+        assert scorptec.SCORPTEC_MAX_RETRIES == config.SCORPTEC_MAX_RETRIES
+        assert scorptec.SCORPTEC_RETRY_DELAY == config.SCORPTEC_RETRY_DELAY
+        assert scorptec.SCORPTEC_PAGE_DELAY == config.SCORPTEC_PAGE_DELAY
+        assert scorptec.SCORPTEC_MAX_PAGES == config.SCORPTEC_MAX_PAGES
+
+    def test_sync_specs_tuning_imports_config(self):
+        import sync_specs
+        assert sync_specs.SPEC_FETCH_TIMEOUT_SECONDS == config.SPEC_FETCH_TIMEOUT_SECONDS
+        assert sync_specs.SPEC_RETRY_BACKOFF == config.SPEC_RETRY_BACKOFF
+        assert sync_specs.AMD_FETCH_DELAY_SECONDS == config.AMD_FETCH_DELAY_SECONDS
+
+    def test_backup_keep_imports_config(self):
+        import backup_db
+        import run_daily
+        assert backup_db.DEFAULT_KEEP == config.BACKUP_KEEP
+        assert run_daily.BACKUP_KEEP == config.BACKUP_KEEP
+        assert run_daily.SCRAPER_GAP_SECONDS == config.SCRAPER_GAP_SECONDS

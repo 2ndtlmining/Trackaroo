@@ -14,7 +14,15 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import requests
 from bs4 import BeautifulSoup
 
-from config import DATA_DIR, FILE_DATE_FORMAT
+from config import (
+    DATA_DIR,
+    FILE_DATE_FORMAT,
+    SCORPTEC_MAX_PAGES,
+    SCORPTEC_MAX_RETRIES,
+    SCORPTEC_PAGE_DELAY,
+    SCORPTEC_RETRY_DELAY,
+    SCORPTEC_TIMEOUT_SECONDS,
+)
 from db.watchlist import load_watchlist, WatchlistProduct
 
 logger = logging.getLogger(__name__)
@@ -50,25 +58,28 @@ CATEGORY_URL_PATHS: Dict[str, str] = {
 }
 
 
-def fetch_page(url: str, retries: int = 2) -> Optional[str]:
+def fetch_page(url: str, retries: Optional[int] = None) -> Optional[str]:
     """Fetch a URL with retries.
 
     Args:
         url: The URL to fetch.
-        retries: Number of retry attempts after the initial try.
+        retries: Number of retry attempts after the initial try. Defaults to
+            config.SCORPTEC_MAX_RETRIES.
 
     Returns:
         The response text on success, or None if all attempts fail.
     """
+    if retries is None:
+        retries = SCORPTEC_MAX_RETRIES
     for attempt in range(retries + 1):
         try:
-            r = requests.get(url, headers=HEADERS, timeout=15)
+            r = requests.get(url, headers=HEADERS, timeout=SCORPTEC_TIMEOUT_SECONDS)
             if r.status_code == 200:
                 return r.text
             logger.warning("Non-200 status %s for %s", r.status_code, url)
         except requests.RequestException as e:
             logger.warning("Attempt %d failed for %s: %s", attempt + 1, url, e)
-            time.sleep(2)
+            time.sleep(SCORPTEC_RETRY_DELAY)
     return None
 
 
@@ -95,13 +106,14 @@ def get_next_page_url(html: str, base_url: str) -> Optional[str]:
     return None
 
 
-def scrape_all_pages(url: str, category_path: str, max_pages: int = 20) -> List[Dict[str, Any]]:
+def scrape_all_pages(url: str, category_path: str, max_pages: int = SCORPTEC_MAX_PAGES) -> List[Dict[str, Any]]:
     """Scrape all pages of a Scorptec category, following pagination links.
 
     Args:
         url: Starting URL for the category.
         category_path: URL path segment for constructing fallback product URLs.
-        max_pages: Safety limit to avoid infinite loops.
+        max_pages: Safety limit to avoid infinite loops. Defaults to
+            config.SCORPTEC_MAX_PAGES.
 
     Returns:
         All scraped products across all pages.
@@ -112,7 +124,7 @@ def scrape_all_pages(url: str, category_path: str, max_pages: int = 20) -> List[
 
     while current_url and page <= max_pages:
         logger.info("Page %d: %s", page, current_url)
-        time.sleep(0.5)  # Be polite between pages
+        time.sleep(SCORPTEC_PAGE_DELAY)  # Be polite between pages
 
         html = fetch_page(current_url)
         if not html:

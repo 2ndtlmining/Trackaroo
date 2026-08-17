@@ -17,8 +17,12 @@ import requests
 
 from config import (
     ALGOLIA_BACKOFF_MAX_SECONDS,
+    ALGOLIA_BATCH_MAX_PAGES,
     ALGOLIA_CIRCUIT_BREAKER_LIMIT,
+    ALGOLIA_HITS_PER_PAGE,
+    ALGOLIA_MAX_PAGES,
     ALGOLIA_MAX_RETRIES,
+    ALGOLIA_PAGE_DELAY,
     ALGOLIA_RATE_LIMIT_WAIT_SECONDS,
     ALGOLIA_TIMEOUT_SECONDS,
     BATCH_DELAY,
@@ -269,8 +273,8 @@ def _clear_cooldown() -> None:
 def algolia_single_search(
     query: str,
     category_filter: str,
-    hits_per_page: int = 20,
-    max_pages: int = 10,
+    hits_per_page: int = ALGOLIA_HITS_PER_PAGE,
+    max_pages: int = ALGOLIA_MAX_PAGES,
 ) -> list[Dict[str, Any]]:
     """Search a single query on PCCG via Algolia, paginating through all results.
 
@@ -334,7 +338,7 @@ def algolia_single_search(
                     return all_products
 
                 page += 1
-                time.sleep(0.3)
+                time.sleep(ALGOLIA_PAGE_DELAY)
                 break
 
             except requests.RequestException as e:
@@ -354,8 +358,8 @@ def algolia_single_search(
 def algolia_batch_search(
     queries: list[str],
     category_filter: str,
-    hits_per_page: int = 20,
-    max_pages: int = 10,
+    hits_per_page: int = ALGOLIA_HITS_PER_PAGE,
+    max_pages: int = ALGOLIA_MAX_PAGES,
 ) -> list[list[Dict[str, Any]]]:
     """Batch search PCCG via Algolia multi-query API with pagination.
 
@@ -440,7 +444,7 @@ def algolia_batch_search(
                 # Success — move to next page
                 retries_exhausted = False
                 page += 1
-                time.sleep(0.3)
+                time.sleep(ALGOLIA_PAGE_DELAY)
                 break
 
             except requests.RequestException as e:
@@ -502,8 +506,11 @@ def scrape_category(
             primary_term = wp["search_terms"][0] if wp["search_terms"] else wp["model"]
             queries.append(primary_term)
 
-        # Batch query — max 3 pages is enough; products appear early
-        batch_results = algolia_batch_search(queries, category_filter, hits_per_page=20, max_pages=3)
+        # Batch query — shallow pagination is enough; products appear early
+        batch_results = algolia_batch_search(
+            queries, category_filter,
+            hits_per_page=ALGOLIA_HITS_PER_PAGE, max_pages=ALGOLIA_BATCH_MAX_PAGES,
+        )
 
         # Check if batch failed (all empty) — if so, add a cool-down
         batch_failed = all(len(pr) == 0 for pr in batch_results)
