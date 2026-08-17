@@ -272,6 +272,23 @@ test.describe('compare', () => {
 	});
 });
 
+test.describe('troubleshooting', () => {
+	test('renders the temporary coverage view', async ({ page }) => {
+		await goto(page, '/troubleshooting');
+		await expect(page.getByRole('heading', { name: 'Troubleshooting' })).toBeVisible();
+		await expect(page.getByText(/scorptec/i).first()).toBeVisible();
+		await expect(page.getByText(/pccg/i).first()).toBeVisible();
+	});
+
+	test('serves the health JSON endpoint', async ({ page }) => {
+		const res = await page.request.get('/api/health');
+		expect(res.status()).toBe(200);
+		const body = await res.json();
+		expect(body.referenceDate).toBeTruthy();
+		expect(body.retailers.length).toBe(2);
+	});
+});
+
 test.describe('movers page', () => {
 	test('renders movers with window buttons', async ({ page }) => {
 		await goto(page, '/movers');

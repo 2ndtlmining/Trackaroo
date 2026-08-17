@@ -1,12 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import type { DB } from '../src/lib/server/db';
+import { openDatabase, type DB } from '../src/lib/server/db';
 import {
 	MIN_HISTORY_POINTS,
 	deriveListingBrand,
 	getCheapestPerModel,
 	getComparisonData,
+	getCoverageSummary,
 	getLatestListings,
 	getMovers,
 	getPriceBand,
@@ -15,7 +17,7 @@ import {
 	getSummary,
 	groupListingsByProduct
 } from '../src/lib/server/repos';
-import { createSeededDb, DATA_DIR, parseDateFromFilename, type SeededDb } from './helpers/seed';
+import { createSeededDb, DATA_DIR, SCHEMA_PATH, parseDateFromFilename, type SeededDb } from './helpers/seed';
 
 let seeded: SeededDb;
 let db: DB;
@@ -552,7 +554,167 @@ describe('getComparisonData', () => {
 			expect(p.price).not.toBeNull();
 		}
 	});
+
+	it('uses each listing’s latest snapshot rather than a single global date', () => {
+		const mini = createMiniCompareDb(true);
+		try {
+			const entries = getComparisonData(mini.db, [1]);
+			expect(entries.length).toBe(1);
+			const byRetailer = Object.fromEntries(
+				entries[0].prices.map((p) => [p.retailer, p.price])
+			);
+			expect(byRetailer.scorptec).toBe(490);
+			// PCCG's last snapshot is 8-16, not the global max 8-17 — its real
+			// price must still surface instead of vanishing.
+			expect(byRetailer.pccg).toBe(510);
+			expect(entries[0].cheapestInStock).toEqual({ price: 490, retailer: 'scorptec' });
+		} finally {
+			mini.close();
+		}
+	});
+
+	it('excludes a retailer whose latest snapshot is out of stock', () => {
+		const mini = createMiniCompareDb(false);
+		try {
+			const entries = getComparisonData(mini.db, [1]);
+			expect(entries.length).toBe(1);
+			const byRetailer = Object.fromEntries(
+				entries[0].prices.map((p) => [p.retailer, p.price])
+			);
+			expect(byRetailer.scorptec).toBe(490);
+			expect(byRetailer.pccg).toBeUndefined();
+			expect(entries[0].cheapestInStock).toEqual({ price: 490, retailer: 'scorptec' });
+		} finally {
+			mini.close();
+		}
+	});
 });
+
+// One CPU product, one listing per retailer. Scorptec has snapshots on 8-16 and
+// 8-17; PCCG has only 8-16 (optionally in stock). Global max date is 8-17, so
+// the old exact-date lookup would miss PCCG entirely.
+function createMiniCompareDb(pccgInStock: boolean): { db: DB; close: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-mini-'));
+	const file = path.join(dir, 'mini.db');
+	const db = openDatabase(file, { readonly: false, fileMustExist: false });
+	db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 7600', 'current', 1)"
+	).run();
+	const scorptecId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'scorptec', 'A', 'https://scorptec/a', 'active')"
+		).run().lastInsertRowid
+	);
+	const pccgId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'pccg', 'B', 'https://pccg/b', 'active')"
+		).run().lastInsertRowid
+	);
+	const insertSnapshot = db.prepare(
+		'INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) VALUES (?, ?, ?, ?, ?)'
+	);
+	insertSnapshot.run(scorptecId, '2026-08-16', 500, 'in_stock', '2026-08-16T04:00:00.000Z');
+	insertSnapshot.run(scorptecId, '2026-08-17', 490, 'in_stock', '2026-08-17T04:00:00.000Z');
+	insertSnapshot.run(
+		pccgId,
+		'2026-08-16',
+		510,
+		pccgInStock ? 'in_stock' : 'out_of_stock',
+		'2026-08-16T04:00:00.000Z'
+	);
+	return {
+		db,
+		close: () => {
+			db.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	};
+}
+
+describe('getCoverageSummary', () => {
+	it('summarises retailers and per-product rows on the seeded db', () => {
+		const summary = getCoverageSummary(db);
+		expect(summary.referenceDate).toBeTruthy();
+		expect(summary.retailers.map((r) => r.retailer).sort()).toEqual(['pccg', 'scorptec']);
+		expect(summary.rows.length).toBeGreaterThan(0);
+		expect(Array.isArray(summary.zeroListings)).toBe(true);
+		for (const row of summary.rows) {
+			expect(row.last7.length).toBe(7);
+			expect(row.snapshotCount).toBeGreaterThanOrEqual(0);
+		}
+	});
+
+	it('marks every day of a full-week history and reports gap 0', () => {
+		const mini = createCoverageMiniDb();
+		try {
+			const summary = getCoverageSummary(mini.db);
+			const today = new Date().toISOString().slice(0, 10);
+			expect(summary.referenceDate).toBe(today);
+			const row = summary.rows.find(
+				(r) => r.retailer === 'scorptec' && r.model === 'Ryzen 5 7600'
+			);
+			expect(row).toBeDefined();
+			expect(row!.snapshotCount).toBe(7);
+			expect(row!.lastDate).toBe(today);
+			expect(row!.gapDays).toBe(0);
+			expect(row!.last7).toEqual([true, true, true, true, true, true, true]);
+		} finally {
+			mini.close();
+		}
+	});
+
+	it('flags tracked products with no in-stock data in the last 7 days', () => {
+		const mini = createCoverageMiniDb();
+		try {
+			const summary = getCoverageSummary(mini.db);
+			expect(summary.zeroListings.some((p) => p.model === 'Core i5-14600K')).toBe(true);
+		} finally {
+			mini.close();
+		}
+	});
+});
+
+// Two tracked products (one with a full 7-day listing history, one never
+// listed) plus an untracked throwaway product. Product 1 is listed at
+// Scorptec with snapshots on every day ending today.
+function createCoverageMiniDb(): { db: DB; close: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-cov-'));
+	const file = path.join(dir, 'cov.db');
+	const db = openDatabase(file, { readonly: false, fileMustExist: false });
+	db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 7600', 'current', 1)"
+	).run();
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('gpu', 'NVIDIA', 'RTX 5060 Ti', 'current', 1)"
+	).run();
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'Intel', 'Core i5-14600K', 'current-1', 1)"
+	).run();
+	const listingId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'scorptec', 'A', 'https://scorptec/a', 'active')"
+		).run().lastInsertRowid
+	);
+	const today = new Date().toISOString().slice(0, 10);
+	const insertSnapshot = db.prepare(
+		'INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) VALUES (?, ?, ?, ?, ?)'
+	);
+	for (let i = 6; i >= 0; i -= 1) {
+		const d = new Date(`${today}T00:00:00Z`);
+		d.setUTCDate(d.getUTCDate() - i);
+		const iso = d.toISOString().slice(0, 10);
+		insertSnapshot.run(listingId, iso, 400 + i, 'in_stock', `${iso}T04:00:00.000Z`);
+	}
+	return {
+		db,
+		close: () => {
+			db.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	};
+}
 
 describe('getMovers', () => {
 	it('returns movers for a 7-day window', () => {
