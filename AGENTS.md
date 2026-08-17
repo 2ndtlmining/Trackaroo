@@ -4,7 +4,7 @@ Monorepo: Python scraper + ingest at the repo root, SvelteKit frontend in `web/`
 
 ## Commands (run from `web/`)
 
-- **Unit tests**: `npm test` (Vitest, 171 tests, ~2s)
+- **Unit tests**: `npm test` (Vitest, 177 tests, ~2s)
 - **Watch mode**: `npm run test:watch`
 - **E2E tests**: `npm run test:e2e` (Playwright, Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
