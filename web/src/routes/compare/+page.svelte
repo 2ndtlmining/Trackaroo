@@ -1,99 +1,15 @@
 <script lang="ts">
-	import { formatAud, formatDate, formatUsd } from '$lib/formats';
 	import Badge from '$lib/components/Badge.svelte';
+	import { buildCompareRows } from '$lib/compareRows';
 	import type { CompareEntry } from '$lib/server/repos';
-	import type { Retailer } from '$lib/types';
 
 	let { data }: { data: { entries: CompareEntry[] } } = $props();
 
 	const entries = $derived(data.entries);
 
-	const retailers = $derived(
-		[...new Set<Retailer>(entries.flatMap((e) => e.prices.map((p) => p.retailer)))].sort(
-			(a, b) => a.localeCompare(b)
-		)
+	const rows = $derived(
+		buildCompareRows(entries).map((d) => ({ label: d.label, values: entries.map(d.value) }))
 	);
-
-	function clock(mhz: number | null): string | null {
-		return mhz === null ? null : `${(mhz / 1000).toFixed(1)} GHz`;
-	}
-
-	type RowDef = (e: CompareEntry) => string | null;
-
-	const rowDefs = $derived<{ label: string; value: RowDef }[]>([
-		...retailers.map((r) => ({
-			label: `Best price — ${r}`,
-			value: (e: CompareEntry) => {
-				const p = e.prices.find((x) => x.retailer === r);
-				return p?.price !== undefined && p.price !== null ? formatAud(p.price) : null;
-			}
-		})),
-		{
-			label: 'Cheapest in stock',
-			value: (e: CompareEntry) =>
-				e.cheapestInStock ? `${formatAud(e.cheapestInStock.price)} · ${e.cheapestInStock.retailer}` : null
-		},
-		{
-			label: 'Launch MSRP (USD)',
-			value: (e: CompareEntry) => (e.spec?.launch_msrp_usd ? formatUsd(e.spec.launch_msrp_usd) : null)
-		},
-		{
-			label: 'Launch date',
-			value: (e: CompareEntry) => (e.spec?.launch_date ? formatDate(e.spec.launch_date) : null)
-		},
-		{
-			label: 'Architecture',
-			value: (e: CompareEntry) => e.spec?.architecture ?? null
-		},
-		{
-			label: 'Generation',
-			value: (e: CompareEntry) => e.spec?.generation ?? null
-		},
-		{
-			label: 'VRAM',
-			value: (e: CompareEntry) => (e.spec?.vram_gb ? `${e.spec.vram_gb}GB` : null)
-		},
-		{
-			label: 'Memory type',
-			value: (e: CompareEntry) => e.spec?.memory_type ?? null
-		},
-		{
-			label: 'Memory bus',
-			value: (e: CompareEntry) =>
-				e.spec?.memory_bus_width_bit ? `${e.spec.memory_bus_width_bit}-bit` : null
-		},
-		{
-			label: 'TDP',
-			value: (e: CompareEntry) => (e.spec?.tdp_watts ? `${e.spec.tdp_watts} W` : null)
-		},
-		{
-			label: 'Cores / shaders',
-			value: (e: CompareEntry) =>
-				e.spec?.core_count ? e.spec.core_count.toLocaleString() : null
-		},
-		{
-			label: 'Threads',
-			value: (e: CompareEntry) => (e.spec?.thread_count ? String(e.spec.thread_count) : null)
-		},
-		{
-			label: 'Base clock',
-			value: (e: CompareEntry) => clock(e.spec?.base_clock_mhz ?? null)
-		},
-		{
-			label: 'Boost clock',
-			value: (e: CompareEntry) => clock(e.spec?.boost_clock_mhz ?? null)
-		},
-		{
-			label: 'Socket',
-			value: (e: CompareEntry) => e.spec?.socket ?? null
-		},
-		{
-			label: 'L3 cache',
-			value: (e: CompareEntry) => (e.spec?.cache_l3_mb ? `${e.spec.cache_l3_mb} MB` : null)
-		}
-	]);
-
-	const rows = $derived(rowDefs.map((d) => ({ label: d.label, values: entries.map(d.value) })));
 </script>
 
 <svelte:head>

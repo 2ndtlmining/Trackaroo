@@ -727,39 +727,42 @@ ${LATEST_CTE}
 
 export interface ComparePrice {
 	retailer: Retailer;
-	// Best in-stock price on the latest snapshot day (null if nothing in stock).
+	// Best in-stock price on the product's latest snapshot day per listing
+	// (null if nothing in stock).
 	price: number | null;
 }
 
 export interface CompareEntry {
 	product: ProductRow;
 	spec: SpecRow | null;
-	// One entry per retailer that had any snapshot for the product on the
-	// latest snapshot day.
+	// One entry per retailer that had any in-stock snapshot for the product.
+	// Uses each listing's own latest snapshot (LATEST_CTE), not a single
+	// global date — a retailer that skipped a day (e.g. PCCG cooldown) still
+	// reports its most recent real price instead of vanishing.
 	prices: ComparePrice[];
-	// Cheapest in-stock price across all retailers on the latest day.
+	// Cheapest in-stock price across all retailers' latest snapshots.
 	cheapestInStock: { price: number; retailer: Retailer } | null;
 }
 
-// Read-only view powering the /compare route: joins products + specs + the
-// latest day's per-retailer prices. No schema changes required.
+// Read-only view powering the /compare route: joins products + specs + each
+// listing's latest in-stock price (per-listing, so a retailer that missed the
+// latest day still contributes its real price). No schema changes required.
 export function getComparisonData(db: DB, productIds: number[]): CompareEntry[] {
-	const day = (db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get() as {
-		d: string | null;
-	}).d;
-	if (!day) return [];
+	const hasData = db.prepare('SELECT 1 AS ok FROM price_snapshots LIMIT 1').get();
+	if (!hasData) return [];
 
 	const productStmt = db.prepare('SELECT * FROM products WHERE id = ?');
 	const specStmt = db.prepare(
 		'SELECT * FROM specs WHERE product_id = ? ORDER BY last_synced_at DESC LIMIT 1'
 	);
 	const priceStmt = db.prepare(
-		`SELECT l.retailer AS retailer, MIN(s.price_aud) AS price
-		 FROM retailer_listings l
-		 JOIN price_snapshots s ON s.retailer_listing_id = l.id
-		 WHERE l.product_id = ? AND s.snapshot_date = ? AND s.stock_status = 'in_stock'
-		   AND ${notBundle('l')}
-		 GROUP BY l.retailer`
+		`${LATEST_CTE}
+		SELECT l.retailer AS retailer, MIN(lat.price_aud) AS price
+		FROM retailer_listings l
+		JOIN latest lat ON lat.retailer_listing_id = l.id
+		WHERE l.product_id = ? AND lat.stock_status = 'in_stock'
+		  AND ${notBundle('l')}
+		GROUP BY l.retailer`
 	);
 
 	return productIds
@@ -767,7 +770,7 @@ export function getComparisonData(db: DB, productIds: number[]): CompareEntry[] 
 			const product = productStmt.get(id) as ProductRow | undefined;
 			if (!product) return null;
 			const spec = (specStmt.get(id) as SpecRow | undefined) ?? null;
-			const priceRows = priceStmt.all(id, day) as Array<{
+			const priceRows = priceStmt.all(id) as Array<{
 				retailer: Retailer;
 				price: number;
 			}>;
@@ -781,4 +784,179 @@ export function getComparisonData(db: DB, productIds: number[]): CompareEntry[] 
 			return { product, spec, prices, cheapestInStock: cheapest };
 		})
 		.filter((e): e is CompareEntry => e !== null);
+}
+
+// ── Coverage summary (troubleshooting view) ─────────────────────────────
+
+export interface CoverageRetailer {
+	retailer: Retailer;
+	// Most recent snapshot date for the retailer (any product).
+	lastDate: string | null;
+	// Number of distinct snapshot dates the retailer has contributed.
+	dateCount: number;
+	// Number of listing variants captured on the reference (latest-data) date.
+	referenceDateVariants: number;
+}
+
+export interface CoverageRow {
+	retailer: Retailer;
+	category: Category;
+	productId: number;
+	model: string;
+	brand: string;
+	// Total snapshots across all of the product's listings at this retailer.
+	snapshotCount: number;
+	// Most recent snapshot date for the product at this retailer.
+	lastDate: string | null;
+	// Days between the last snapshot and today (null when the product has no
+	// snapshots at this retailer at all).
+	gapDays: number | null;
+	// One slot per day for the last 7 days (oldest → newest): true when the
+	// product had at least one snapshot at this retailer that day.
+	last7: boolean[];
+}
+
+export interface CoverageProduct {
+	productId: number;
+	category: Category;
+	model: string;
+	brand: string;
+}
+
+export interface CoverageSummary {
+	// Latest snapshot date across the whole database.
+	referenceDate: string;
+	// Per-retailer freshness summary.
+	retailers: CoverageRetailer[];
+	// Per (retailer, product) snapshot coverage for tracked products.
+	rows: CoverageRow[];
+	// Tracked products with no in-stock snapshot in the last 7 days — the
+	// "still counted but effectively unavailable" case.
+	zeroListings: CoverageProduct[];
+}
+
+function isoAddDays(dateStr: string, delta: number): string {
+	const d = new Date(`${dateStr}T00:00:00Z`);
+	d.setUTCDate(d.getUTCDate() + delta);
+	return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(from: string, to: string): number {
+	return Math.round(
+		(Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000
+	);
+}
+
+// Backs the temporary /troubleshooting view: per-retailer freshness plus a
+// per-(retailer, product) snapshot drill-down and the zero-listings list.
+// Pure read over existing tables — no schema changes.
+export function getCoverageSummary(db: DB): CoverageSummary {
+	const refRow = db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get() as {
+		d: string | null;
+	};
+	const referenceDate = refRow.d ?? '';
+	if (!referenceDate) {
+		return { referenceDate: '', retailers: [], rows: [], zeroListings: [] };
+	}
+	const today = new Date().toISOString().slice(0, 10);
+	const windowStart = isoAddDays(today, -6);
+
+	const retailerRows = db
+		.prepare(
+			`SELECT rl.retailer AS retailer,
+			        MAX(ps.snapshot_date) AS last_date,
+			        COUNT(DISTINCT ps.snapshot_date) AS date_count,
+			        COUNT(DISTINCT CASE WHEN ps.snapshot_date = ? THEN rl.id END) AS ref_variants
+			 FROM price_snapshots ps
+			 JOIN retailer_listings rl ON rl.id = ps.retailer_listing_id
+			 GROUP BY rl.retailer`
+		)
+		.all(referenceDate) as Array<{
+		retailer: Retailer;
+		last_date: string | null;
+		date_count: number;
+		ref_variants: number;
+	}>;
+
+	const rowRows = db
+		.prepare(
+			`SELECT rl.retailer AS retailer,
+			        p.category AS category,
+			        p.id AS product_id,
+			        p.model AS model,
+			        p.brand AS brand,
+			        COUNT(ps.id) AS snapshot_count,
+			        MAX(ps.snapshot_date) AS last_date
+			 FROM products p
+			 JOIN retailer_listings rl ON rl.product_id = p.id
+			 LEFT JOIN price_snapshots ps ON ps.retailer_listing_id = rl.id
+			 WHERE p.tracked = 1
+			 GROUP BY rl.retailer, p.id`
+		)
+		.all() as Array<{
+		retailer: Retailer;
+		category: Category;
+		product_id: number;
+		model: string;
+		brand: string;
+		snapshot_count: number;
+		last_date: string | null;
+	}>;
+
+	const presenceRows = db
+		.prepare(
+			`SELECT rl.retailer AS retailer, rl.product_id AS product_id, ps.snapshot_date AS d
+			 FROM price_snapshots ps
+			 JOIN retailer_listings rl ON rl.id = ps.retailer_listing_id
+			 WHERE ps.snapshot_date >= ?`
+		)
+		.all(windowStart) as Array<{ retailer: Retailer; product_id: number; d: string }>;
+	const presence = new Set(
+		presenceRows.map((r) => `${r.retailer}|${r.product_id}|${r.d}`)
+	);
+
+	const days = Array.from({ length: 7 }, (_, i) => isoAddDays(today, i - 6));
+
+	const rows: CoverageRow[] = rowRows.map((r) => {
+		const lastDate = r.last_date;
+		const gapDays = lastDate === null ? null : daysBetween(lastDate, today);
+		const last7 = days.map((d) => presence.has(`${r.retailer}|${r.product_id}|${d}`));
+		return {
+			retailer: r.retailer,
+			category: r.category,
+			productId: r.product_id,
+			model: r.model,
+			brand: r.brand,
+			snapshotCount: r.snapshot_count,
+			lastDate,
+			gapDays,
+			last7
+		};
+	});
+
+	const zeroListings = db
+		.prepare(
+			`SELECT p.id AS product_id, p.category AS category, p.model AS model, p.brand AS brand
+			 FROM products p
+			 WHERE p.tracked = 1
+			   AND NOT EXISTS (
+			       SELECT 1
+			       FROM retailer_listings rl
+			       JOIN price_snapshots ps ON ps.retailer_listing_id = rl.id
+			       WHERE rl.product_id = p.id AND ps.snapshot_date >= ? AND ps.stock_status = 'in_stock'
+			   )`
+		)
+		.all(windowStart) as CoverageProduct[];
+
+	return {
+		referenceDate,
+		retailers: retailerRows.map((r) => ({
+			retailer: r.retailer,
+			lastDate: r.last_date,
+			dateCount: r.date_count,
+			referenceDateVariants: r.ref_variants
+		})),
+		rows,
+		zeroListings
+	};
 }
