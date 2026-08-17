@@ -49,8 +49,8 @@ never joined into the price pipeline:
 | **Regression tests** | ✅ Complete | 391 tests across 19 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
-| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid, expandable per-variant listings, compare selection), compare (`/compare?ids=` side-by-side specs + prices), movers, price-history charts (low/high band + togglable listing lines + brand-grouped listings panel); reads the DB directly via better-sqlite3 |
-| **Frontend tests** | ✅ Complete | 154 vitest + 38 Playwright e2e (with a `goto()` hydration helper) |
+| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid, expandable per-variant listings, compare selection), compare (`/compare?ids=` side-by-side specs + prices), movers, price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), troubleshooting (`/troubleshooting` + `/api/health`, temporary diagnostics); reads the DB directly via better-sqlite3 |
+| **Frontend tests** | ✅ Complete | 164 vitest + 40 Playwright e2e (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
@@ -128,7 +128,7 @@ two-service split is also kept for those who prefer it — see
 
 ## Frontend (`web/`)
 
-SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard, `/products` (card grid grouped by product, expandable variant listings, compare checkboxes), `/compare?ids=` (side-by-side specs + per-retailer best prices for 2–4 same-category products), `/movers` (24h/7d/30d, sortable), `/product/[id]` (meta + uPlot history chart with low/high band and 90-day chips + brand-grouped listings panel + spec panel).
+SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard, `/products` (card grid grouped by product, expandable variant listings, compare checkboxes), `/compare?ids=` (side-by-side specs + per-retailer best prices for 2–4 same-category products), `/movers` (24h/7d/30d, sortable), `/product/[id]` (meta + uPlot history chart with low/high band and 90-day chips + brand-grouped listings panel + spec panel), `/troubleshooting` + `/api/health` (temporary diagnostics: retailer → category → model snapshot coverage).
 
 ```bash
 cd web
@@ -143,10 +143,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (154 vitest)
+# Run frontend unit tests (164 vitest)
 npm test
 
-# Run browser e2e regression tests (38 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (40 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -252,9 +252,9 @@ Trackaroo/
     ├── src/lib/branding.ts     # client-safe AIB brand derivation (grouped listings)
     ├── src/lib/listingsPanel.ts # pure grouped-listings logic (search, filters, sort)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
-    ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 154 vitest regression tests (7 suites)
-    ├── e2e/                    # 38 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── src/routes/             # /, /products, /compare, /movers, /product/[id], /troubleshooting (+ /api/health)
+    ├── test/                   # 164 vitest regression tests (8 suites)
+    ├── e2e/                    # 40 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```

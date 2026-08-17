@@ -1,10 +1,18 @@
 # Project Status
 
-**Last updated:** 2026-08-17 (weekly spec-sync scheduling: `deploy/entrypoint-single.sh` now auto-runs `sync_specs.py` once a week in-container at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00), with DEPLOYMENT/README/AGENTS updated. Same session: hardcoded-values pass — 14 scraper/backup/spec-sync tuning constants moved from source into `config.py` as `TRACKAROO_*` env-overridable knobs, plus a `busy_timeout` dedup in `backup_db.py`; 383 → **391** pytest tests. Earlier same day: regression coverage pass — `migrate.py` (the only fully-untested backend module) got a dedicated test module and the Scorptec pagination loop went from signature-only to functional mocked-network tests (365→383); docs-hygiene pass — AGENTS.md vitest count corrected 117→154, stale Mwave filter option removed from the frontend, SPEC.md/README/DEPLOYMENT.md synced to shipped state; feature-suggestions §2–§4 shipped: band-chart product page + brand-grouped listings, compare route, 90-day low/high badges; repo cleanup §6 done — `resync_stock_status.py` removed, `fetch_test.py` → `scraper/scorptec.py`)
+**Last updated:** 2026-08-18 (18-Aug session: 18-Aug data scraped + ingested live — both retailers, 306 snapshots, all 7 health checks green; `TRACKAROO_BUGS_AND_TROUBLESHOOTING.md` findings fixed — `getComparisonData` no longer requires an exact match to the global latest snapshot date (now uses the per-listing `LATEST_CTE`, so a retailer that missed a day still reports its real price), compare page now filters spec rows by category (GPU-only vs CPU-only fields; shared rows stay), specs table confirmed healthy (`SELECT COUNT(*) FROM specs` = 95, zero orphan `product_id`s — no import fix needed), PCCG cooldown confirmed as designed (`IMPROVEMENT_16_Aug_V1.md` §11.3/11.4: 3-consecutive-batch breaker + 4h `pccg_cooldown.json` window, env-tunable; not a matching bug); new temporary `/troubleshooting` view + `/api/health` JSON endpoint (retailer → category → model snapshot coverage with last-7-day gap markers + a "tracked but no in-stock data in 7 days" list); test coverage reviewed and extended — +5 `compareRows` (new suite), +2 `getComparisonData` (per-listing latest / out-of-stock exclusion), +3 `getCoverageSummary`, +2 e2e (troubleshooting view + health JSON) → **164 vitest / 40 e2e**; full regression green — pytest 391 / vitest 164 / e2e 40 / svelte-check 0 errors. Prior session (17-Aug): weekly spec-sync scheduling in the single-image entrypoint, hardcoded-values → `TRACKAROO_*` config knobs (391 pytest), regression coverage pass (migrate + Scorptec pagination), feature-suggestions §2–§4 + §6 shipped)
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 5 — frontend/UX improvements program + PCCG reliability (see Active Issues below).
 
 ## Active Issues
+
+### ✅ COMPLETE: Bug fixes from `TRACKAROO_BUGS_AND_TROUBLESHOOTING.md` + temporary troubleshooting view (18-Aug-2026)
+- **§2.1 `getComparisonData` exact-date bug (confirmed + fixed):** the old price query used a single global `MAX(snapshot_date)` and required `snapshot_date = ?` exactly — any product whose only retailer missed that day (e.g. PCCG in cooldown) rendered every "Best price" row as N/A despite real prices a day or two earlier. Now uses the per-listing `LATEST_CTE` (same pattern as `getMovers`), so Compare matches how the rest of the app treats "latest price". +2 vitest lock-ins (a mini-DB where PCCG's latest snapshot is a day earlier than the global max still surfaces its price; an out-of-stock latest snapshot excludes that retailer).
+- **§2.2 Specs — settled, no fix needed:** `SELECT COUNT(*) FROM specs` = **95** (46 GPU + 25 Intel + 24 AMD), `SELECT COUNT(*) FROM specs WHERE product_id NOT IN (SELECT id FROM products)` = **0** — the import committed and the join is healthy. The empty-compare symptom was the §2.1 date bug, not missing spec rows.
+- **§3.2 Compare page now category-aware:** `rowDefs` was a single hardcoded 15-row array shown for every comparison. Extracted to a pure `web/src/lib/compareRows.ts` (`buildCompareRows`) — the server already guarantees a single category, so one check picks the rows: shared (MSRP, launch date, architecture, generation, TDP) + GPU (VRAM, memory type, memory bus, clocks) or CPU (cores/shaders, threads, clocks, socket, L3 cache). +5 vitest in a new `compareRows.test.ts` (GPU hides CPU fields and vice-versa, value formatting, N/A for missing fields, per-retailer price rows).
+- **§1.1 PCCG gaps — confirmed by design, not a bug:** `check_today_coverage` + the cooldown mechanism are the intended behaviour (`IMPROVEMENT_16_Aug_V1.md` §11.3/11.4): circuit breaker after 3 consecutive failed Algolia batches → `data/pccg_cooldown.json` → scraper skips within `TRACKAROO_PCCG_COOLDOWN_HOURS` (default 4h). No cooldown file is present now (PCCG healthy, 18-Aug scraped fine). The troubleshooting view surfaces the "stale but expected" cases directly.
+- **§4 Temporary troubleshooting view + `/api/health`:** `getCoverageSummary(db)` in `repos.ts` — per-retailer freshness (last date, date count, variants on the reference date), per-(retailer, category, product) snapshot count + last date + days-gap + last-7-day present/gap markers, and the "tracked product with no in-stock snapshot in the last 7 days" list. Rendered at `/troubleshooting` (retailer → category → model tables, gap badges, day dots), exposed as JSON at `/api/health`. Both flagged as temporary scaffolding to delete once the PCCG cooldown + compare/specs issues are confirmed settled. +3 vitest (`getCoverageSummary`) + 2 e2e (view renders, `/api/health` JSON shape).
+- **Test coverage review:** audited against the fixes — the gaps the old suite had (exact-date regression, category row split, coverage diagnostics) are now locked in. Full regression green: pytest **391** / svelte-check 0 errors / vitest **164** (+10: 5 compareRows, 5 repos) / e2e **40** (+2).
 
 ### ✅ COMPLETE: Weekly spec sync scheduling (17-Aug-2026)
 - **`deploy/entrypoint-single.sh`** now schedules `sync_specs.py` automatically: a background `spec_sync_loop` polls hourly and runs the sync once a week at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00, clear of the daily price run). Cron-style DOW (0=Sun..6=Sat) derived from GNU `date %u` mod 7; the hour is zero-padded for a clean `date +%H` comparison. A `last_run` guard makes a mid-window container restart re-run it (safe — `sync_specs.py` upserts).
@@ -206,7 +214,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - `.dockerignore` — excludes regenerable artifacts and the web build context
 - `unit_testing/` — **391 regression tests** across 19 modules (seed, matching, schema, ingestion, scraper, migrate, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, backup, config, specs schema, specs matching, sync_specs; `test_resync.py` removed 17-Aug with its one-off script)
 - RAM tracking scope (`RAM_SCOPE.md`) — plan for adding DDR4/DDR5 RAM price tracking
-- Historical data: Scorptec + PCCG snapshots for 09-Aug through 17-Aug (16-Aug PCCG missing — rate-limited; 17-Aug full: 185 Scorptec + 123 PCCG = 308 snapshots)
+- Historical data: Scorptec + PCCG snapshots for 09-Aug through 18-Aug (16-Aug PCCG missing — rate-limited; 18-Aug full: both retailers, 306 snapshots ingested)
 - `.env.example` — committed template documenting Algolia env vars (and `.gitignore` negation)
 - `PHASE3_PLAN.md` — executable Phase 3 frontend handoff plan (locked decisions, data model facts, M0–M5 steps)
 - `web/` — Phase 3 frontend (SvelteKit + TS + Tailwind v4 + adapter-node):
@@ -214,13 +222,13 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
   - `src/lib/components/` — `Badge`, `StatTile`, `PriceChange`, `Chip`, `Filters`, `Header`, `LatestListingTable` (also renders `compact` inside product cards), `PriceChart` (uPlot; low/high band + cheapest-in-stock + toggleable listing overlays), `SpecPanel` (product-page spec panel), `CheapestCarousel` (dashboard cheapest-deals, GPU/CPU toggle, 90d-low badge), `ProductCard` (products-page card grid, compare checkbox), `BrandGroupedListings` (product-page grouped listings panel), `+layout.svelte`
   - `src/lib/` — `branding.ts` (client-safe AIB brand derivation), `listingsPanel.ts` (pure grouped-listings logic), `formats.ts`/`change.ts`
   - `src/lib/server/` — `db.ts` (better-sqlite3 read-only singleton), `repos.ts` (incl. `groupListingsByProduct`, `getPriceBand`, `getComparisonData`, `getPriceExtremes`)
-  - Routes — `/` dashboard (table), `/products` (card grid, expandable variant listings, compare selection), `/compare` (side-by-side specs + prices), `/movers` (dense table), `/product/[id]` with URL-driven filters
-  - `test/` — vitest: formats (28), change (11), filters (18), theme (7), repos (44), components (36), listingsPanel (10) — **154 tests**
-  - `e2e/` — Playwright: 38 tests (app.spec.ts + seed.mjs deterministic DB, incl. spec-panel, grouped-listings panel, compare flow/validation, 90d-low badges + chips) — **38 tests**
+  - Routes — `/` dashboard (table), `/products` (card grid, expandable variant listings, compare selection), `/compare` (side-by-side specs + prices), `/movers` (dense table), `/product/[id]` with URL-driven filters, `/troubleshooting` (temporary diagnostics), `/api/health` (temporary JSON)
+  - `test/` — vitest: formats (28), change (11), filters (18), theme (7), repos (49), components (36), listingsPanel (10), compareRows (5) — **164 tests**
+  - `e2e/` — Playwright: 40 tests (app.spec.ts + seed.mjs deterministic DB, incl. spec-panel, grouped-listings panel, compare flow/validation, 90d-low badges + chips, troubleshooting view + /api/health JSON) — **40 tests**
 
 ## What's verified
 
-- **Backend:** 383 tests pass — seed, matching, schema/triggers, ingestion, scrapers, DB migration, PCCG reliability, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, backup, config, specs schema/matching/sync
+- **Backend:** 391 tests pass — seed, matching, schema/triggers, ingestion, scrapers, DB migration, PCCG reliability, daily runner, health checks, query, concurrent WAL access, E2E pipeline, query performance, CLI entry points, backup, config, specs schema/matching/sync
 - **Stock status:** PCCG 13-Aug corrected from 123 all-in_stock to 86 in_stock + 35 out_of_stock + 2 preorder; resync verified idempotent (one-off `resync_stock_status.py` tool since removed — bug fixed at the source)
 - **Concurrency:** test proving readers hit no lock errors while a writer commits under WAL (stable 10/10)
 - **Performance:** `show_latest_prices` 60ms / `show_biggest_movers` 7ms on ~10k synthetic snapshots; history query provably index-backed
@@ -231,10 +239,11 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - **Code quality:** all modules type-hinted + logged; shared watchlist module deduplicates logic; secrets moved to env vars
 - **Spec sync:** live-fetch coverage verified against the real watchlist — Intel 25/25, AMD 24/28 (4 OEM-only SKUs have no public page), GPU 46/47 (RX 9070 XTX absent from the dataset); upsert conflict/unmatched/vanished-row behaviour locked in by tests; price pipeline untouched (§2 priority rule)
 - **Spec panel:** renders below the price chart on `/product/[id]` (E2E bounding-box assertion), hidden when a product has no spec row; fetched via one extra `SELECT` in the detail load only — never joined into list/index queries
-- **Frontend:** `svelte-check` 0 errors; vitest **154 passing**; Playwright e2e **38 passing**; production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
+- **Frontend:** `svelte-check` 0 errors; vitest **164 passing**; Playwright e2e **40 passing**; production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
 - **Docker:** single all-in-one image built and booted — DB seeded, both scrapers OK, 315 listings ingested, backup created, dashboard HTTP 200 with live stats
 - **Feature suggestions §2–§4:** band chart + brand-grouped listings on `/product/[id]`, `/compare?ids=` (2–4 same-category products), `90d low`/`90d high` on product page + dashboard cards — regression green after each milestone
-- **Regression:** backend 383 passing (pytest); frontend 154 passing (vitest) + 38 e2e (Playwright)
+- **Troubleshooting:** `/troubleshooting` view + `/api/health` JSON — retailer → category → model snapshot coverage with last-7-day gap markers and the zero-in-stock-listings list; confirmed `getComparisonData` per-listing latest fix and category-aware compare rows (18-Aug)
+- **Regression:** backend 391 passing (pytest); frontend 164 passing (vitest) + 40 e2e (Playwright)
 
 ## What's NOT done yet
 
@@ -247,10 +256,11 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 
 ## Next concrete steps
 
-1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 9 days, 09–17 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)
+1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 10 days, 09–18 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)
 2. **Reverse proxy + TLS** — put the dashboard behind Caddy/nginx/Traefik if internet-facing (docs in DEPLOYMENT.md)
 3. **Monitoring/alerting** — watch pipeline success via exit codes / logs (health checks already log "DB health: all N checks passed")
 4. ✅ **Weekly spec sync cadence** — done 17-Aug: `deploy/entrypoint-single.sh` now runs `sync_specs.py` once a week in-container at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00, clear of the daily price run); DEPLOYMENT.md/README/AGENTS updated
+5. ✅ **Bug fixes + troubleshooting view** — done 18-Aug: `getComparisonData` per-listing latest fix, category-aware compare rows, `/troubleshooting` + `/api/health` (temporary scaffolding — delete once the PCCG cooldown behaviour and compare/specs issues are confirmed settled)
 
 ## Regression test count
 
@@ -274,8 +284,8 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
   - `test_specs_schema.py` — **new:** specs table DDL + idempotent migration
   - `test_specs_matching.py` — **new:** name normalization + product→dataset matching
   - `test_sync_specs.py` — **new:** fetch/parse/upsert, conflict no-overwrite, report, CLI flags
-- **Frontend unit (vitest, `web/`) — 154 tests** across 7 suites (formats 28, change 11, filters 18, theme 7, repos 44, components 36, listingsPanel 10) — against temp DBs seeded from `data/*.json`
-- **Frontend e2e (Playwright, `web/e2e/`) — 38 tests** — navigation, theme, dashboard filters, **products card grid (3: heading+cards, empty state, card expand/collapse)**, **compare (4: flow to /compare, category lock, clear bar, invalid URLs)**, movers, product detail, **grouped listings (4: brand groups, expand+toggle, search, in-stock filter)**, **spec panel (4: below-chart layout, expand/collapse, no-panel negative, GPU fields)**, **90d chips + carousel badge (2)**; runs via `npm run test:e2e` against a seeded dev server
+- **Frontend unit (vitest, `web/`) — 164 tests** across 8 suites (formats 28, change 11, filters 18, theme 7, repos 49, components 36, listingsPanel 10, compareRows 5) — against temp DBs seeded from `data/*.json`; 18-Aug added +5 compareRows (new suite), +2 getComparisonData (per-listing latest, out-of-stock exclusion), +3 getCoverageSummary
+- **Frontend e2e (Playwright, `web/e2e/`) — 40 tests** — navigation, theme, dashboard filters, **products card grid (3: heading+cards, empty state, card expand/collapse)**, **compare (4: flow to /compare, category lock, clear bar, invalid URLs)**, movers, product detail, **grouped listings (4: brand groups, expand+toggle, search, in-stock filter)**, **spec panel (4: below-chart layout, expand/collapse, no-panel negative, GPU fields)**, **90d chips + carousel badge (2)**, **troubleshooting (2: view renders, /api/health JSON)**; runs via `npm run test:e2e` against a seeded dev server
 
 ## How to update this file
 
