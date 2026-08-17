@@ -249,6 +249,43 @@ describe('ProductCard', () => {
 		expect(onToggleCompare).toHaveBeenCalledWith(1);
 		unmount(comp);
 	});
+
+	it('renders a trend sparkline on the unexpanded card when history exists', () => {
+		const body = renderComponent(ProductCard, {
+			group: productGroup({
+				sparkline: [
+					{ date: '2026-08-16', price: 299 },
+					{ date: '2026-08-17', price: 289 },
+					{ date: '2026-08-18', price: 285 }
+				]
+			})
+		});
+		expect(body).toContain('<polyline');
+	});
+
+	it('still shows the sparkline on a no-in-stock card with history', () => {
+		const body = renderComponent(ProductCard, {
+			group: productGroup({
+				cheapestInStockPrice: null,
+				cheapestInStockRetailer: null,
+				inStockCount: 0,
+				sparkline: [
+					{ date: '2026-08-16', price: 299 },
+					{ date: '2026-08-17', price: 289 },
+					{ date: '2026-08-18', price: 285 }
+				]
+			})
+		});
+		expect(body).toContain('No in-stock listings');
+		expect(body).toContain('<polyline');
+	});
+
+	it('omits the card sparkline when there is no in-stock history', () => {
+		const body = renderComponent(ProductCard, {
+			group: productGroup({ sparkline: [] })
+		});
+		expect(body).not.toContain('<polyline');
+	});
 });
 
 function specRow(overrides: Partial<SpecRow> = {}): SpecRow {

@@ -29,6 +29,12 @@ export interface SparklinePoint {
 	price: number;
 }
 
+// Product-level price series (cheapest in-stock per day) for card sparklines.
+export interface PricePoint {
+	date: string;
+	price: number;
+}
+
 export interface LatestListing {
 	listingId: number;
 	productId: number;
@@ -63,6 +69,9 @@ export interface ProductGroup {
 	cheapestInStockPrice: number | null;
 	cheapestInStockRetailer: Retailer | null;
 	inStockCount: number;
+	// Cheapest in-stock price per day across the product's listings (for the
+	// unexpanded card sparkline); empty when no in-stock history in the window.
+	sparkline?: PricePoint[];
 }
 
 // Groups per-listing rows into one entry per product (for the Products card
@@ -471,6 +480,43 @@ export function getSparklines(
 		byListing.set(row.listingId, arr);
 	}
 	return byListing;
+}
+
+// Cheapest in-stock price per day for each product (single query, windowed on
+// the DB max date like getSparklines). Powers the unexpanded card sparkline so
+// the card grid shows the tracked price trend at a glance.
+export function getProductSparklines(
+	db: DB,
+	productIds: number[],
+	days = DEFAULT_WINDOW_DAYS
+): Map<number, PricePoint[]> {
+	if (productIds.length === 0) return new Map();
+	const placeholders = productIds.map(() => '?').join(',');
+	const rows = db
+		.prepare(
+			`SELECT l.product_id AS productId, s.snapshot_date AS date, MIN(s.price_aud) AS price
+			 FROM retailer_listings l
+			 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+			 WHERE l.product_id IN (${placeholders})
+			   AND s.stock_status = 'in_stock'
+			   AND ${notBundle('l')}
+			   AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)
+			 GROUP BY l.product_id, s.snapshot_date
+			 ORDER BY l.product_id, s.snapshot_date ASC`
+		)
+		.all(...productIds, `-${days} days`) as Array<{
+		productId: number;
+		date: string;
+		price: number;
+	}>;
+
+	const byProduct = new Map<number, PricePoint[]>();
+	for (const row of rows) {
+		const arr = byProduct.get(row.productId) ?? [];
+		arr.push({ date: row.date, price: row.price });
+		byProduct.set(row.productId, arr);
+	}
+	return byProduct;
 }
 
 export function getPriceBand(db: DB, productId: number): PriceBandPoint[] {

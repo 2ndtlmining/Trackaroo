@@ -2,6 +2,7 @@
 	import { formatAud } from '$lib/formats';
 	import Badge from './Badge.svelte';
 	import LatestListingTable from './LatestListingTable.svelte';
+	import Sparkline from './Sparkline.svelte';
 	import type { ProductGroup } from '$lib/server/repos';
 
 	let {
@@ -30,6 +31,7 @@
 		group.inStockCount > 0 ? `${listingCount} · ${group.inStockCount} in stock` : listingCount
 	);
 	const toggleLabel = $derived(expanded ? 'Hide listings' : `Show ${listingCount}`);
+	const sparklineReady = $derived(!!group.sparkline && group.sparkline.length >= 2);
 </script>
 
 <article class="flex flex-col rounded-md border border-border bg-surface">
@@ -71,9 +73,21 @@
 				>
 					{group.cheapestInStockRetailer}
 				</span>
+				{#if sparklineReady}
+					<span class="ml-auto shrink-0">
+						<Sparkline points={group.sparkline} />
+					</span>
+				{/if}
 			</div>
 		{:else}
-			<div class="mt-2 text-sm text-text-muted">No in-stock listings</div>
+			<div class="mt-2 flex items-center gap-2">
+				<span class="text-sm text-text-muted">No in-stock listings</span>
+				{#if sparklineReady}
+					<span class="ml-auto shrink-0">
+						<Sparkline points={group.sparkline} />
+					</span>
+				{/if}
+			</div>
 		{/if}
 		<div class="mt-1 text-xs text-text-muted">{countLine}</div>
 	</div>

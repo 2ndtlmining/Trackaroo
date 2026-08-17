@@ -1,4 +1,10 @@
-import { getBrands, getLatestListings, getSparklines, groupListingsByProduct } from '$lib/server/repos';
+import {
+	getBrands,
+	getLatestListings,
+	getProductSparklines,
+	getSparklines,
+	groupListingsByProduct
+} from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 import { parseFilters } from '$lib/filters';
 import type { ListingFilters } from '$lib/types';
@@ -12,8 +18,13 @@ export function load({ url }: { url: URL }) {
 		...l,
 		sparkline: sparklines.get(l.listingId) ?? []
 	}));
+	const groups = groupListingsByProduct(withSparklines, filters.sort);
+	const productSparklines = getProductSparklines(db, groups.map((g) => g.productId));
 	return {
-		groups: groupListingsByProduct(withSparklines, filters.sort),
+		groups: groups.map((g) => ({
+			...g,
+			sparkline: productSparklines.get(g.productId) ?? []
+		})),
 		brands: getBrands(db)
 	};
 }

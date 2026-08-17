@@ -14,6 +14,7 @@ import {
 	getPriceExtremes,
 	getProductHistory,
 	getProductIndex,
+	getProductSparklines,
 	getSparklines,
 	getSummary,
 	groupListingsByProduct
@@ -724,6 +725,58 @@ describe('getSparklines', () => {
 		const windowStart = new Date(`${maxDate.d}T00:00:00Z`);
 		windowStart.setUTCDate(windowStart.getUTCDate() - 7);
 		const sparklines = getSparklines(db, ids, 7);
+		for (const points of sparklines.values()) {
+			for (const p of points) {
+				expect(p.date >= windowStart.toISOString().slice(0, 10)).toBe(true);
+			}
+		}
+	});
+});
+
+describe('getProductSparklines', () => {
+	it('returns an empty map for no product ids', () => {
+		expect(getProductSparklines(db, []).size).toBe(0);
+	});
+
+	it('returns the cheapest in-stock price per day per product, ascending', () => {
+		const rows = db
+			.prepare('SELECT DISTINCT product_id AS id FROM retailer_listings LIMIT 4')
+			.all() as Array<{ id: number }>;
+		const ids = rows.map((r) => r.id);
+		const sparklines = getProductSparklines(db, ids);
+
+		expect(sparklines.size).toBeGreaterThan(0);
+		const cheapestStmt = db.prepare(
+			`SELECT MIN(s.price_aud) AS mn
+			 FROM retailer_listings l
+			 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+			 WHERE l.product_id = ? AND s.snapshot_date = ? AND s.stock_status = 'in_stock'`
+		);
+		for (const [productId, points] of sparklines) {
+			expect(ids).toContain(productId);
+			expect(points.length).toBeGreaterThanOrEqual(1);
+			const dates = points.map((p) => p.date);
+			expect(dates).toEqual([...dates].sort());
+			for (const p of points) {
+				expect(p.price).toBeGreaterThan(0);
+				const row = cheapestStmt.get(productId, p.date) as { mn: number | null };
+				expect(row.mn).not.toBeNull();
+				expect(p.price).toBeCloseTo(row.mn as number, 2);
+			}
+		}
+	});
+
+	it('only returns points inside the requested window', () => {
+		const rows = db
+			.prepare('SELECT DISTINCT product_id AS id FROM retailer_listings LIMIT 3')
+			.all() as Array<{ id: number }>;
+		const ids = rows.map((r) => r.id);
+		const maxDate = db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get() as {
+			d: string;
+		};
+		const windowStart = new Date(`${maxDate.d}T00:00:00Z`);
+		windowStart.setUTCDate(windowStart.getUTCDate() - 7);
+		const sparklines = getProductSparklines(db, ids, 7);
 		for (const points of sparklines.values()) {
 			for (const p of points) {
 				expect(p.date >= windowStart.toISOString().slice(0, 10)).toBe(true);

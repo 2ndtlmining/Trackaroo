@@ -198,6 +198,10 @@ test.describe('products page', () => {
 		expect(await cards.count()).toBeGreaterThan(0);
 		// Each card shows the model name and a "from $" price (or no-in-stock note)
 		await expect(cards.first()).toContainText(/from \$|No in-stock listings/);
+		// At least one unexpanded card shows a trend sparkline (cards with history)
+		const sparklineCard = cards.filter({ has: page.locator('svg') }).first();
+		expect(await sparklineCard.count()).toBeGreaterThan(0);
+		await expect(sparklineCard.locator('svg').first()).toBeVisible();
 	});
 
 	test('shows an empty state when no filters match', async ({ page }) => {

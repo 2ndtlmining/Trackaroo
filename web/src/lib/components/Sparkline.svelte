@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { formatAud } from '$lib/formats';
-	import type { SparklinePoint } from '$lib/server/repos';
+	import type { PricePoint } from '$lib/server/repos';
 
-	let { points }: { points: SparklinePoint[] | undefined } = $props();
+	let { points }: { points: PricePoint[] | undefined } = $props();
 
 	const values = $derived((points ?? []).map((p) => p.price));
 	const ready = $derived(values.length >= 2);
