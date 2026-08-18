@@ -174,6 +174,26 @@ def _amd_launch_date_to_iso(value: Optional[str]) -> Optional[str]:
         return None
 
 
+def _amd_memory_speed_mhz(value: Optional[str]) -> Optional[int]:
+    """Parse amd.com 'Max Memory Speed' ('2x1R DDR5-5600 2x2R DDR5-5600 …')
+    into the highest supported data rate in MHz (e.g. 5600)."""
+    if not value:
+        return None
+    speeds = [int(m) for m in re.findall(r"\b(\d{3,5})\s*MT/s\b", value)]
+    if not speeds:
+        speeds = [int(m) for m in re.findall(r"[- ](\d{3,5})\b", value)]
+    return max(speeds) if speeds else None
+
+
+def _clean_codename(value: Optional[str]) -> Optional[str]:
+    """Trim a CPU codename and drop the trailing socket tag amd.com appends
+    ('Granite Ridge AM5' → 'Granite Ridge')."""
+    name = _clean(value)
+    if name is None:
+        return None
+    return re.sub(r"\s+AM[45]\s*$", "", name) or None
+
+
 # ── Parsers (pure functions: text in → normalized records out) ───────
 def parse_gpu_records(json_text: str) -> List[Dict[str, Any]]:
     """Parse the RightNow GPU dataset JSON into normalized records.
@@ -208,8 +228,22 @@ def parse_gpu_records(json_text: str) -> List[Dict[str, Any]]:
             "base_clock_mhz": _to_int(g.get("baseClock")),
             "boost_clock_mhz": _to_int(g.get("boostClock")),
             "socket": None,
-            # l2Cache is not L3 — kept in raw_json only
             "cache_l3_mb": None,
+            # TechPowerUp-grade detail (see backfill_specs_extra)
+            "gpu_die": _clean(g.get("gpuName")),
+            "bus_interface": _clean(g.get("busInterface")),
+            "memory_bandwidth_gbps": _to_float(g.get("memoryBandwidth")),
+            "memory_clock_mhz": _to_float(g.get("memoryClock")),
+            "process_nm": _to_float(g.get("processSize")),
+            "foundry": _clean(g.get("foundry")),
+            "codename": None,
+            "l1_cache_kb": None,
+            # l2Cache is the GPU's L2 (e.g. 96 MB on RTX 5090), not CPU L3
+            "l2_cache_mb": _to_float(g.get("l2Cache")),
+            "memory_speed_mhz": None,
+            "memory_channels": None,
+            "memory_types": None,
+            "integrated_graphics": None,
         })
     return records
 
@@ -249,8 +283,23 @@ def parse_intel_records(csv_texts: List[str]) -> List[Dict[str, Any]]:
                 "boost_clock_mhz": _ghz_to_mhz(_clean(row.get("Max. Turbo Freq.(GHz)"))),
                 # v1_8 has no socket column; Ultra has 'Sockets Supported'
                 "socket": _clean(row.get("Sockets Supported")),
-                # Cache(MB) is total cache, not L3 — kept in raw_json only
-                "cache_l3_mb": None,
+                # Intel's 'Cache(MB)' is 'Intel Smart Cache' (total cache) —
+                # for the desktop watchlist it equals TPU's L3 figure.
+                "cache_l3_mb": _to_float(_clean(row.get("Cache(MB)"))),
+                # TechPowerUp-grade detail (see backfill_specs_extra)
+                "gpu_die": None,
+                "bus_interface": None,
+                "memory_bandwidth_gbps": None,
+                "memory_clock_mhz": None,
+                "process_nm": _to_float(_clean(row.get("Lithography(nm)"))),
+                "foundry": None,
+                "codename": _clean(row.get("Code Name")),
+                "l1_cache_kb": None,
+                "l2_cache_mb": None,
+                "memory_speed_mhz": _to_int(_clean(row.get("Max Memory Speed(MHz)"))),
+                "memory_channels": _to_int(_clean(row.get("Max Memory Channels"))),
+                "memory_types": _clean(row.get("Memory Types")),
+                "integrated_graphics": _clean(row.get("Integrated Graphics")),
             })
     return records
 
@@ -291,6 +340,20 @@ def parse_amd_record(html: str) -> Optional[Dict[str, Any]]:
         "boost_clock_mhz": _ghz_to_mhz(_strip_unit(fields.get("Max. Boost Clock"), "GHz")),
         "socket": _clean(fields.get("CPU Socket")),
         "cache_l3_mb": _to_float(_strip_unit(fields.get("L3 Cache"), "MB")),
+        # TechPowerUp-grade detail (see backfill_specs_extra)
+        "gpu_die": None,
+        "bus_interface": None,
+        "memory_bandwidth_gbps": None,
+        "memory_clock_mhz": None,
+        "process_nm": None,
+        "foundry": None,
+        "codename": _clean_codename(fields.get("Former Codename")),
+        "l1_cache_kb": _to_float(_strip_unit(fields.get("L1 Cache"), "KB")),
+        "l2_cache_mb": _to_float(_strip_unit(fields.get("L2 Cache"), "MB")),
+        "memory_speed_mhz": _amd_memory_speed_mhz(fields.get("Max Memory Speed")),
+        "memory_channels": _to_int(fields.get("Memory Channels")),
+        "memory_types": _clean(fields.get("System Memory Type")),
+        "integrated_graphics": _clean(fields.get("Graphics Model")),
     }
 
 
@@ -412,8 +475,11 @@ INSERT INTO specs (
     architecture, generation, launch_date, launch_msrp_usd,
     vram_gb, memory_bus_width_bit, memory_type, tdp_watts, core_count,
     thread_count, base_clock_mhz, boost_clock_mhz, socket, cache_l3_mb,
+    gpu_die, bus_interface, memory_bandwidth_gbps, memory_clock_mhz,
+    process_nm, foundry, codename, l1_cache_kb, l2_cache_mb,
+    memory_speed_mhz, memory_channels, memory_types, integrated_graphics,
     raw_json, last_synced_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -424,8 +490,145 @@ def _record_values(product_id: int, source: str, rec: Dict[str, Any], raw_json: 
         rec["vram_gb"], rec["memory_bus_width_bit"], rec["memory_type"],
         rec["tdp_watts"], rec["core_count"], rec["thread_count"],
         rec["base_clock_mhz"], rec["boost_clock_mhz"], rec["socket"],
-        rec["cache_l3_mb"], raw_json, now,
+        rec["cache_l3_mb"],
+        rec["gpu_die"], rec["bus_interface"], rec["memory_bandwidth_gbps"],
+        rec["memory_clock_mhz"], rec["process_nm"], rec["foundry"],
+        rec["codename"], rec["l1_cache_kb"], rec["l2_cache_mb"],
+        rec["memory_speed_mhz"], rec["memory_channels"], rec["memory_types"],
+        rec["integrated_graphics"],
+        raw_json, now,
     )
+
+
+_EXTRA_COLUMNS = [
+    "gpu_die",
+    "bus_interface",
+    "memory_bandwidth_gbps",
+    "memory_clock_mhz",
+    "process_nm",
+    "foundry",
+    "codename",
+    "l1_cache_kb",
+    "l2_cache_mb",
+    "memory_speed_mhz",
+    "memory_channels",
+    "memory_types",
+    "integrated_graphics",
+]
+
+
+def _extract_extra(raw: Dict[str, Any], source: str) -> Dict[str, Any]:
+    """Extract TechPowerUp-grade fields from a verbatim source record.
+
+    Each parser also emits these fields up front (for fresh rows); this
+    function re-derives them from raw_json so existing rows can be backfilled
+    without a re-fetch. Unknown keys yield None (never an exception).
+    """
+    if source == SOURCE_GPU:
+        return {
+            "gpu_die": _clean(raw.get("gpuName")),
+            "bus_interface": _clean(raw.get("busInterface")),
+            "memory_bandwidth_gbps": _to_float(raw.get("memoryBandwidth")),
+            "memory_clock_mhz": _to_float(raw.get("memoryClock")),
+            "process_nm": _to_float(raw.get("processSize")),
+            "foundry": _clean(raw.get("foundry")),
+            "codename": None,
+            "l1_cache_kb": None,
+            "l2_cache_mb": _to_float(raw.get("l2Cache")),
+            "memory_speed_mhz": None,
+            "memory_channels": None,
+            "memory_types": None,
+            "integrated_graphics": None,
+        }
+    if source == SOURCE_INTEL:
+        return {
+            "gpu_die": None,
+            "bus_interface": None,
+            "memory_bandwidth_gbps": None,
+            "memory_clock_mhz": None,
+            "process_nm": _to_float(_clean(raw.get("Lithography(nm)"))),
+            "foundry": None,
+            "codename": _clean(raw.get("Code Name")),
+            "l1_cache_kb": None,
+            "l2_cache_mb": None,
+            "memory_speed_mhz": _to_int(_clean(raw.get("Max Memory Speed(MHz)"))),
+            "memory_channels": _to_int(_clean(raw.get("Max Memory Channels"))),
+            "memory_types": _clean(raw.get("Memory Types")),
+            "integrated_graphics": _clean(raw.get("Integrated Graphics")),
+        }
+    if source == SOURCE_AMD:
+        return {
+            "gpu_die": None,
+            "bus_interface": None,
+            "memory_bandwidth_gbps": None,
+            "memory_clock_mhz": None,
+            "process_nm": None,
+            "foundry": None,
+            "codename": _clean_codename(raw.get("Former Codename")),
+            "l1_cache_kb": _to_float(_strip_unit(raw.get("L1 Cache"), "KB")),
+            "l2_cache_mb": _to_float(_strip_unit(raw.get("L2 Cache"), "MB")),
+            "memory_speed_mhz": _amd_memory_speed_mhz(raw.get("Max Memory Speed")),
+            "memory_channels": _to_int(raw.get("Memory Channels")),
+            "memory_types": _clean(raw.get("System Memory Type")),
+            "integrated_graphics": _clean(raw.get("Graphics Model")),
+        }
+    return {col: None for col in _EXTRA_COLUMNS}
+
+
+def backfill_specs_extra(conn: sqlite3.Connection, dry_run: bool = False) -> int:
+    """Fill the TechPowerUp-grade columns from each row's verbatim raw_json.
+
+    Idempotent: only rows where a target column is NULL are touched, so it is
+    safe to run after every sync. Intel 'Cache(MB)' is also mapped into
+    cache_l3_mb here (it matches TPU's L3 for the desktop watchlist).
+    Returns the number of rows updated.
+    """
+    updated = 0
+    if not _specs_table_exists(conn):
+        return 0
+    existing = {
+        r["name"] for r in conn.execute("PRAGMA table_info(specs)").fetchall()
+    }
+    if not set(_EXTRA_COLUMNS).issubset(existing):
+        LOGGER.warning(
+            "specs table is missing extra columns (run `python migrate.py` "
+            "first); skipping backfill"
+        )
+        return 0
+    rows = conn.execute(
+        f"SELECT spec_id, source, raw_json, cache_l3_mb, "
+        f"{', '.join(_EXTRA_COLUMNS)} FROM specs"
+    ).fetchall()
+    for row in rows:
+        try:
+            raw = json.loads(row["raw_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        extra = _extract_extra(raw, row["source"])
+        sets = [
+            f"{col} = ?"
+            for col in _EXTRA_COLUMNS
+            if row[col] is None and extra.get(col) is not None
+        ]
+        params = [extra[col] for col in _EXTRA_COLUMNS if row[col] is None and extra.get(col) is not None]
+        if row["cache_l3_mb"] is None and row["source"] == SOURCE_INTEL:
+            cache_mb = _to_float(_clean(raw.get("Cache(MB)")))
+            if cache_mb is not None:
+                sets.append("cache_l3_mb = ?")
+                params.append(cache_mb)
+        if not sets:
+            continue
+        if not dry_run:
+            conn.execute(
+                f"UPDATE specs SET {', '.join(sets)} WHERE spec_id = ?",
+                (*params, row["spec_id"]),
+            )
+        updated += 1
+    if not dry_run:
+        conn.commit()
+    return updated
 
 
 def sync_source(
@@ -669,6 +872,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         if args.dry_run:
             LOGGER.info("(Dry run complete — no DB writes, report not saved)")
         else:
+            backfilled = backfill_specs_extra(conn)
+            if backfilled:
+                LOGGER.info("Backfilled TechPowerUp-grade columns for %d specs rows", backfilled)
             report = build_report(synced_at, False, source_stats, failed_sources)
             path = write_report(report)
             LOGGER.info("Report written to %s", path)

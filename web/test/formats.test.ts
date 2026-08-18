@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
 	formatAud,
 	formatAxisLabel,
+	formatBandwidth,
 	formatBytes,
+	formatCacheKb,
+	formatCacheMb,
 	formatDate,
+	formatMhz,
 	formatPct,
+	formatProcess,
 	formatRelative,
 	formatSignedAud,
 	freshnessLabel,
@@ -150,6 +155,32 @@ describe('formatBytes', () => {
 		expect(formatBytes(500)).toBe('500 B');
 		expect(formatBytes(1536)).toBe('1.5 KB');
 		expect(formatBytes(1048576)).toBe('1.0 MB');
+	});
+});
+
+describe('spec format helpers', () => {
+	it('formats bandwidth in GB/s and TB/s', () => {
+		expect(formatBandwidth(null)).toBeNull();
+		expect(formatBandwidth(504.2)).toBe('504 GB/s');
+		expect(formatBandwidth(1790)).toBe('1.79 TB/s');
+	});
+
+	it('formats process node with optional foundry', () => {
+		expect(formatProcess(5, 'TSMC')).toBe('TSMC 5 nm');
+		expect(formatProcess(3, null)).toBe('3 nm');
+		expect(formatProcess(null, 'TSMC')).toBe('TSMC');
+		expect(formatProcess(null, null)).toBeNull();
+	});
+
+	it('formats cache sizes and clocks', () => {
+		expect(formatCacheMb(24)).toBe('24 MB');
+		expect(formatCacheMb(96.5)).toBe('96.5 MB');
+		expect(formatCacheMb(null)).toBeNull();
+		expect(formatCacheKb(1280)).toBe('1280 KB');
+		expect(formatCacheKb(null)).toBeNull();
+		expect(formatMhz(5600)).toBe('5600 MHz');
+		expect(formatMhz(1750.5)).toBe('1750.5 MHz');
+		expect(formatMhz(null)).toBeNull();
 	});
 });
 

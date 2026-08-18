@@ -88,6 +88,33 @@ export function formatBytes(bytes: number): string {
 	return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+export function formatBandwidth(gbps: number | null): string | null {
+	if (gbps === null) return null;
+	if (gbps >= 1000) return `${(gbps / 1000).toFixed(2)} TB/s`;
+	return `${gbps.toFixed(0)} GB/s`;
+}
+
+export function formatProcess(nm: number | null, foundry: string | null): string | null {
+	if (nm === null && foundry === null) return null;
+	const nmStr = nm !== null ? `${Number.isInteger(nm) ? nm.toFixed(0) : nm.toFixed(1)} nm` : '';
+	return [foundry, nmStr].filter(Boolean).join(' ') || null;
+}
+
+export function formatCacheMb(mb: number | null): string | null {
+	if (mb === null) return null;
+	return `${Number.isInteger(mb) ? mb.toFixed(0) : mb.toFixed(1)} MB`;
+}
+
+export function formatCacheKb(kb: number | null): string | null {
+	if (kb === null) return null;
+	return `${Number.isInteger(kb) ? kb.toFixed(0) : kb.toFixed(1)} KB`;
+}
+
+export function formatMhz(mhz: number | null): string | null {
+	if (mhz === null) return null;
+	return `${Number.isInteger(mhz) ? mhz.toFixed(0) : mhz.toFixed(1)} MHz`;
+}
+
 // Short/known tokens that should render fully uppercase (brands, acronyms that
 // arrive lowercase from Scorptec's all-lowercase names). "ti" is intentionally
 // NOT here — NVIDIA's suffix renders as "Ti".

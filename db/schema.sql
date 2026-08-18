@@ -120,6 +120,21 @@ CREATE TABLE specs (
     boost_clock_mhz    INTEGER,
     socket             TEXT,
     cache_l3_mb        REAL,
+    -- TechPowerUp-grade detail (extracted from the verbatim source record;
+    -- see sync_specs.py backfill_specs_extra). Nullable per source.
+    gpu_die            TEXT,                          -- GPU die, e.g. 'GB202'
+    bus_interface      TEXT,                          -- e.g. 'PCIe 5.0 x16'
+    memory_bandwidth_gbps REAL,                       -- e.g. 1790 (RTX 5090)
+    memory_clock_mhz   REAL,                          -- e.g. 1750
+    process_nm         REAL,                          -- lithography, e.g. 5 (nm)
+    foundry            TEXT,                          -- e.g. 'TSMC'
+    codename           TEXT,                          -- CPU codename, e.g. 'Granite Ridge'
+    l1_cache_kb        REAL,                          -- CPU L1 (total KB; AMD)
+    l2_cache_mb        REAL,                          -- CPU L2 (MB) or GPU L2 (MB)
+    memory_speed_mhz   REAL,                          -- max supported memory speed
+    memory_channels    REAL,                          -- e.g. 2 (dual channel)
+    memory_types       TEXT,                          -- e.g. 'DDR5' / 'Up to DDR5 6400 MT/s'
+    integrated_graphics TEXT,                         -- e.g. 'Intel Graphics' / AMD Radeon Graphics
     raw_json          TEXT    NOT NULL,               -- full original source record, verbatim
     last_synced_at    TEXT    NOT NULL,               -- ISO timestamp, set by sync job
     UNIQUE (product_id, source)

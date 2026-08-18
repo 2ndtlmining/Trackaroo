@@ -105,11 +105,46 @@ CREATE TABLE specs (
     boost_clock_mhz    INTEGER,
     socket             TEXT,
     cache_l3_mb        REAL,
+    -- TechPowerUp-grade detail (extracted from the verbatim source record)
+    gpu_die            TEXT,
+    bus_interface      TEXT,
+    memory_bandwidth_gbps REAL,
+    memory_clock_mhz   REAL,
+    process_nm         REAL,
+    foundry            TEXT,
+    codename           TEXT,
+    l1_cache_kb        REAL,
+    l2_cache_mb        REAL,
+    memory_speed_mhz   REAL,
+    memory_channels    REAL,
+    memory_types       TEXT,
+    integrated_graphics TEXT,
     raw_json          TEXT    NOT NULL,               -- full original source record, verbatim
     last_synced_at    TEXT    NOT NULL,               -- ISO timestamp, set by sync job
     UNIQUE (product_id, source)
 )
 """
+
+
+# Extra spec columns added after the initial table creation (backfilled from
+# each row's verbatim raw_json by sync_specs.backfill_specs_extra).
+# Types must mirror db/schema.sql — numeric fields are REAL so better-sqlite3
+# returns numbers (a TEXT-affinity column would come back as strings).
+SPECS_EXTRA_COLUMNS = {
+    "gpu_die": "TEXT",
+    "bus_interface": "TEXT",
+    "memory_bandwidth_gbps": "REAL",
+    "memory_clock_mhz": "REAL",
+    "process_nm": "REAL",
+    "foundry": "TEXT",
+    "codename": "TEXT",
+    "l1_cache_kb": "REAL",
+    "l2_cache_mb": "REAL",
+    "memory_speed_mhz": "REAL",
+    "memory_channels": "REAL",
+    "memory_types": "TEXT",
+    "integrated_graphics": "TEXT",
+}
 
 
 def migrate_add_specs_table(conn: sqlite3.Connection, dry_run: bool = False) -> None:
@@ -155,6 +190,31 @@ def migrate_add_variant_name(conn: sqlite3.Connection, dry_run: bool = False) ->
     LOGGER.info("  [OK] Column added successfully")
 
 
+def migrate_add_specs_columns(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Add the TechPowerUp-grade spec columns to specs (additive, per-column
+    create-if-missing). Values are backfilled from each row's raw_json by
+    sync_specs.backfill_specs_extra — this migration only widens the schema.
+    """
+    missing = [
+        col
+        for col in SPECS_EXTRA_COLUMNS
+        if not check_column_exists(conn, "specs", col)
+    ]
+    if not missing:
+        LOGGER.info("  [SKIP] all specs extra columns already present")
+        return
+
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would add specs columns: %s", ", ".join(missing))
+        return
+
+    for col in missing:
+        LOGGER.info("  [MIGRATE] Adding specs.%s %s ...", col, SPECS_EXTRA_COLUMNS[col])
+        conn.execute(f"ALTER TABLE specs ADD COLUMN {col} {SPECS_EXTRA_COLUMNS[col]}")
+    conn.commit()
+    LOGGER.info("  [OK] specs columns added: %s", ", ".join(missing))
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -176,6 +236,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: Create specs table
         migrate_add_specs_table(conn, dry_run=args.dry_run)
+
+        # Migration: Widen specs with TechPowerUp-grade columns
+        migrate_add_specs_columns(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify

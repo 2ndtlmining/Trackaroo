@@ -31,7 +31,9 @@ GPU_JSON = json.dumps([
         "generation": "GeForce 40", "releaseDate": "2024-01-08",
         "baseClock": 1980.0, "boostClock": 2475.0, "memorySize": 12.0,
         "memoryType": "GDDR6X", "memoryBus": 192, "tdp": 220,
-        "shaders": 7168, "l2Cache": 48.0,
+        "shaders": 7168, "l2Cache": 48.0, "gpuName": "AD103",
+        "busInterface": "PCIe 4.0 x16", "memoryBandwidth": 504.2,
+        "memoryClock": 1313.0, "processSize": 5, "foundry": "TSMC",
     },
     {
         "name": "GeForce RTX 4070", "architecture": "Ada Lovelace",
@@ -56,7 +58,7 @@ ULTRA_CSV = (
     "Cache Info,Max Memory Size(GB),Memory Types,Max Memory Speed(MHz),"
     "Max Memory Channels,Integrated Graphics,Sockets Supported\n"
     "Core Ultra 5 322,Launched,Q1'26,Panther Lake,Mobile,6,6,2,4.40,2.50,55,12,"
-    "Intel Smart Cache,128,Up to LPDDR5X 7467 MT/s,N/A,2,Intel Graphics,FCBGA2540\n"
+    "Intel Smart Cache,128,Up to LPDDR5X 7467 MT/s,7467,2,Intel Graphics,FCBGA2540\n"
 )
 
 AMD_HTML = """
@@ -64,6 +66,7 @@ AMD_HTML = """
 <dt>Name</dt><dd>AMD Ryzen 9 9950X3D</dd>
 <dt>Family</dt><dd>Ryzen</dd>
 <dt>Series</dt><dd>Ryzen 9000 Series</dd>
+<dt>Former Codename</dt><dd>Granite Ridge AM5</dd>
 <dt>Processor Architecture</dt><dd>Zen 5</dd>
 <dt># of CPU Cores</dt><dd>16</dd>
 <dt>Multithreading (SMT)</dt><dd>Yes</dd>
@@ -75,6 +78,10 @@ AMD_HTML = """
 <dt>L3 Cache</dt><dd>128 MB</dd>
 <dt>Default TDP</dt><dd>170W</dd>
 <dt>CPU Socket</dt><dd>AM5</dd>
+<dt>System Memory Type</dt><dd>DDR5</dd>
+<dt>Max Memory Speed</dt><dd>2x1R DDR5-5600 2x2R DDR5-5600 4x1R DDR5-3600</dd>
+<dt>Memory Channels</dt><dd>2</dd>
+<dt>Graphics Model</dt><dd>AMD Radeon Graphics</dd>
 <dt>Launch Date</dt><dd>03/12/2025</dd>
 </table></body></html>
 """
@@ -107,6 +114,13 @@ class TestParseGpuRecords:
         assert rec["base_clock_mhz"] == 1980
         assert rec["boost_clock_mhz"] == 2475
         assert rec["cache_l3_mb"] is None  # l2Cache is not L3
+        assert rec["gpu_die"] == "AD103"
+        assert rec["bus_interface"] == "PCIe 4.0 x16"
+        assert rec["memory_bandwidth_gbps"] == 504.2
+        assert rec["memory_clock_mhz"] == 1313.0
+        assert rec["process_nm"] == 5
+        assert rec["foundry"] == "TSMC"
+        assert rec["l2_cache_mb"] == 48.0
         assert rec["raw"]["name"] == "GeForce RTX 4070 SUPER"
 
     def test_missing_optional_fields_become_none(self):
@@ -144,7 +158,12 @@ class TestParseIntelRecords:
         assert rec["base_clock_mhz"] == 2500
         assert rec["boost_clock_mhz"] == 4600
         assert rec["socket"] is None  # v1_8 has no socket column
-        assert rec["cache_l3_mb"] is None  # Cache(MB) is total, not L3
+        assert rec["cache_l3_mb"] == 20.0  # Intel 'Cache(MB)' = L3 for desktop
+        assert rec["codename"] == "Raptor Lake"
+        assert rec["process_nm"] == 7
+        assert rec["memory_speed_mhz"] is None  # 'N/A' in the source
+        assert rec["memory_types"] == "Up to DDR5 4800 MT/s"
+        assert rec["integrated_graphics"] == "Intel UHD Graphics 730"
 
     def test_multiple_files_merged(self):
         recs = ss.parse_intel_records([INTEL_CSV, ULTRA_CSV])
@@ -152,6 +171,9 @@ class TestParseIntelRecords:
         ultra = next(r for r in recs if r["name"] == "Core Ultra 5 322")
         assert ultra["socket"] == "FCBGA2540"
         assert ultra["architecture"] == "Panther Lake"
+        assert ultra["cache_l3_mb"] == 12.0
+        assert ultra["memory_speed_mhz"] == 7467
+        assert ultra["memory_channels"] == 2
 
     def test_bom_stripped(self):
         recs = ss.parse_intel_records(["\ufeff" + INTEL_CSV])
@@ -184,6 +206,13 @@ class TestParseAmdRecord:
         assert rec["socket"] == "AM5"
         assert rec["cache_l3_mb"] == 128.0
         assert rec["raw"]["CPU Socket"] == "AM5"
+        assert rec["codename"] == "Granite Ridge"
+        assert rec["l1_cache_kb"] == 1280.0
+        assert rec["l2_cache_mb"] == 16.0
+        assert rec["memory_speed_mhz"] == 5600
+        assert rec["memory_channels"] == 2
+        assert rec["memory_types"] == "DDR5"
+        assert rec["integrated_graphics"] == "AMD Radeon Graphics"
 
     def test_no_spec_table_returns_none(self):
         assert ss.parse_amd_record("<html><body><p>no table</p></body></html>") is None
@@ -341,6 +370,12 @@ class TestSyncSource:
         assert row["vram_gb"] == 12.0
         assert row["tdp_watts"] == 220
         assert row["core_count"] == 7168
+        assert row["gpu_die"] == "AD103"
+        assert row["bus_interface"] == "PCIe 4.0 x16"
+        assert row["memory_bandwidth_gbps"] == 504.2
+        assert row["process_nm"] == 5
+        assert row["foundry"] == "TSMC"
+        assert row["l2_cache_mb"] == 48.0
         assert row["last_synced_at"].endswith("Z")
         assert json.loads(row["raw_json"])["name"] == "GeForce RTX 4070 SUPER"
 
@@ -414,6 +449,129 @@ class TestSyncSource:
         assert row["socket"] == "AM5"
         assert row["cache_l3_mb"] == 128.0
         assert row["thread_count"] == 32
+
+
+# ── backfill_specs_extra ─────────────────────────────────────────────
+
+class TestBackfillSpecsExtra:
+    def test_backfills_gpu_from_raw_json(self, db):
+        _insert_product(db, "gpu", "NVIDIA", "GeForce RTX 4070 Super", vram_gb=12)
+        recs = ss.parse_gpu_records(GPU_JSON)
+        ss.sync_source("gpu", ss.SOURCE_GPU, recs, db, ss.load_products(db, "gpu"))
+        db.execute(
+            "UPDATE specs SET gpu_die = NULL, bus_interface = NULL, process_nm = NULL"
+        )
+        db.commit()
+
+        updated = ss.backfill_specs_extra(db)
+        assert updated == 1
+        row = db.execute("SELECT gpu_die, bus_interface, process_nm FROM specs").fetchone()
+        assert row["gpu_die"] == "AD103"
+        assert row["bus_interface"] == "PCIe 4.0 x16"
+        assert row["process_nm"] == 5
+
+    def test_backfills_intel_cache_l3(self, db):
+        _insert_product(db, "cpu", "Intel", "Core i5-13400", cores=10)
+        recs = ss.parse_intel_records([INTEL_CSV])
+        ss.sync_source("cpu", ss.SOURCE_INTEL, recs, db, ss.load_products(db, "cpu"))
+        db.execute("UPDATE specs SET cache_l3_mb = NULL")
+        db.commit()
+
+        updated = ss.backfill_specs_extra(db)
+        assert updated == 1
+        row = db.execute(
+            "SELECT cache_l3_mb, codename, memory_types FROM specs"
+        ).fetchone()
+        assert row["cache_l3_mb"] == 20.0
+        assert row["codename"] == "Raptor Lake"
+        assert row["memory_types"] == "Up to DDR5 4800 MT/s"
+
+    def test_backfills_amd_from_raw_json(self, db):
+        _insert_product(db, "cpu", "AMD", "Ryzen 9 9950X3D", cores=16)
+        rec = ss.parse_amd_record(AMD_HTML)
+        assert rec is not None
+        ss.sync_source("cpu", ss.SOURCE_AMD, [rec], db, ss.load_products(db, "cpu"))
+        db.execute(
+            "UPDATE specs SET codename = NULL, l1_cache_kb = NULL, "
+            "memory_speed_mhz = NULL, memory_channels = NULL"
+        )
+        db.commit()
+
+        updated = ss.backfill_specs_extra(db)
+        assert updated == 1
+        row = db.execute(
+            "SELECT codename, l1_cache_kb, memory_speed_mhz, memory_channels FROM specs"
+        ).fetchone()
+        assert row["codename"] == "Granite Ridge"
+        assert row["l1_cache_kb"] == 1280.0
+        assert row["memory_speed_mhz"] == 5600
+        assert row["memory_channels"] == 2
+
+    def test_idempotent(self, db):
+        _insert_product(db, "gpu", "NVIDIA", "GeForce RTX 4070 Super", vram_gb=12)
+        recs = ss.parse_gpu_records(GPU_JSON)
+        ss.sync_source("gpu", ss.SOURCE_GPU, recs, db, ss.load_products(db, "gpu"))
+        db.execute("UPDATE specs SET gpu_die = NULL")
+        db.commit()
+
+        assert ss.backfill_specs_extra(db) == 1
+        assert ss.backfill_specs_extra(db) == 0  # nothing left to fill
+
+    def test_dry_run_does_not_write(self, db):
+        _insert_product(db, "gpu", "NVIDIA", "GeForce RTX 4070 Super", vram_gb=12)
+        recs = ss.parse_gpu_records(GPU_JSON)
+        ss.sync_source("gpu", ss.SOURCE_GPU, recs, db, ss.load_products(db, "gpu"))
+        db.execute("UPDATE specs SET gpu_die = NULL")
+        db.commit()
+
+        updated = ss.backfill_specs_extra(db, dry_run=True)
+        assert updated == 1
+        row = db.execute("SELECT gpu_die FROM specs").fetchone()
+        assert row["gpu_die"] is None
+
+    def test_skips_when_extra_columns_missing(self, db):
+        """An un-migrated DB (no extra columns) is left untouched."""
+        _insert_product(db, "gpu", "NVIDIA", "GeForce RTX 4070 Super", vram_gb=12)
+        # Fake a pre-migration schema: rebuild specs without the new columns.
+        db.execute("DROP TABLE specs")
+        db.execute(
+            """CREATE TABLE specs (
+                spec_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                source_record_key TEXT NOT NULL,
+                category TEXT NOT NULL CHECK (category IN ('gpu','cpu','ram','storage','motherboard','psu','case','cooling')),
+                architecture TEXT,
+                generation TEXT,
+                launch_date TEXT,
+                launch_msrp_usd REAL,
+                vram_gb REAL,
+                memory_bus_width_bit INTEGER,
+                memory_type TEXT,
+                tdp_watts INTEGER,
+                core_count INTEGER,
+                thread_count INTEGER,
+                base_clock_mhz INTEGER,
+                boost_clock_mhz INTEGER,
+                socket TEXT,
+                cache_l3_mb REAL,
+                raw_json TEXT NOT NULL,
+                last_synced_at TEXT NOT NULL
+            )"""
+        )
+        pid = db.execute("SELECT id FROM products WHERE model = 'GeForce RTX 4070 Super'").fetchone()[0]
+        db.execute(
+            "INSERT INTO specs (product_id, source, source_record_key, category, "
+            "architecture, vram_gb, tdp_watts, cache_l3_mb, raw_json, last_synced_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (pid, ss.SOURCE_GPU, "GeForce RTX 4070 SUPER", "gpu", "Ada Lovelace",
+             12.0, 220, None, json.dumps(json.loads(GPU_JSON)[0]), "2026-08-16T00:00:00Z"),
+        )
+        db.commit()
+
+        assert ss.backfill_specs_extra(db) == 0  # gracefully skipped
+        row = db.execute("SELECT cache_l3_mb FROM specs").fetchone()
+        assert row[0] is None
 
 
 # ── main entry point ──────────────────────────────────────────────────

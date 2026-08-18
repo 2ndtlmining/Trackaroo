@@ -309,6 +309,19 @@ function specRow(overrides: Partial<SpecRow> = {}): SpecRow {
 		boost_clock_mhz: null,
 		socket: null,
 		cache_l3_mb: null,
+		gpu_die: null,
+		bus_interface: null,
+		memory_bandwidth_gbps: null,
+		memory_clock_mhz: null,
+		process_nm: null,
+		foundry: null,
+		codename: null,
+		l1_cache_kb: null,
+		l2_cache_mb: null,
+		memory_speed_mhz: null,
+		memory_channels: null,
+		memory_types: null,
+		integrated_graphics: null,
 		raw_json: '{}',
 		last_synced_at: '2026-08-15T00:00:00Z',
 		...overrides
@@ -379,6 +392,61 @@ describe('SpecPanel', () => {
 		const body = renderComponent(SpecPanel, { spec: specRow({ launch_msrp_usd: 1999 }) });
 		expect(body).toContain('Launch MSRP');
 		expect(body).toContain('$1,999');
+	});
+
+	it('shows GPU detail rows (die, bandwidth, process)', () => {
+		const body = renderComponent(SpecPanel, {
+			spec: specRow({
+				gpu_die: 'GB202',
+				bus_interface: 'PCIe 5.0 x16',
+				memory_bandwidth_gbps: 1790,
+				memory_clock_mhz: 1750,
+				process_nm: 5,
+				foundry: 'TSMC',
+				l2_cache_mb: 96
+			})
+		});
+		expect(body).toContain('GB202');
+		expect(body).toContain('PCIe 5.0 x16');
+		expect(body).toContain('1.79 TB/s');
+		expect(body).toContain('1750 MHz');
+		expect(body).toContain('TSMC 5 nm');
+		expect(body).toContain('96 MB');
+	});
+
+	it('shows CPU detail rows (codename, memory, caches)', () => {
+		const body = renderComponent(SpecPanel, {
+			spec: specRow({
+				category: 'cpu',
+				architecture: 'Zen 5',
+				generation: 'Ryzen 9000',
+				vram_gb: null,
+				memory_bus_width_bit: null,
+				memory_type: null,
+				tdp_watts: 170,
+				core_count: 16,
+				thread_count: 32,
+				base_clock_mhz: 4300,
+				boost_clock_mhz: 5700,
+				socket: 'AM5',
+				cache_l3_mb: 64,
+				codename: 'Granite Ridge',
+				l1_cache_kb: 1280,
+				l2_cache_mb: 16,
+				memory_speed_mhz: 5600,
+				memory_channels: 2,
+				memory_types: 'DDR5',
+				integrated_graphics: 'AMD Radeon Graphics',
+				process_nm: null,
+				foundry: null
+			})
+		});
+		expect(body).toContain('Granite Ridge');
+		expect(body).toContain('DDR5');
+		expect(body).toContain('5600 MHz');
+		expect(body).toContain('1280 KB');
+		expect(body).toContain('16 MB');
+		expect(body).toContain('AMD Radeon Graphics');
 	});
 });
 

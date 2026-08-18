@@ -2,7 +2,7 @@
 Tests for the specs table — creation, columns, constraints.
 
 Verifies that:
-- The table exists with the expected 21 columns
+- The table exists with the expected 34 columns
 - The idx_specs_product index exists
 - The category CHECK constraint rejects invalid values
 - UNIQUE (product_id, source) prevents duplicate rows per source
@@ -17,7 +17,12 @@ EXPECTED_COLUMNS = {
     "architecture", "generation", "launch_date", "launch_msrp_usd",
     "vram_gb", "memory_bus_width_bit", "memory_type", "tdp_watts",
     "core_count", "thread_count", "base_clock_mhz", "boost_clock_mhz",
-    "socket", "cache_l3_mb", "raw_json", "last_synced_at",
+    "socket", "cache_l3_mb",
+    "gpu_die", "bus_interface", "memory_bandwidth_gbps", "memory_clock_mhz",
+    "process_nm", "foundry", "codename", "l1_cache_kb", "l2_cache_mb",
+    "memory_speed_mhz", "memory_channels", "memory_types",
+    "integrated_graphics",
+    "raw_json", "last_synced_at",
 }
 
 

@@ -24,6 +24,19 @@ function gpuSpec(overrides: Partial<SpecRow> = {}): SpecRow {
 		boost_clock_mhz: 2500,
 		socket: null,
 		cache_l3_mb: null,
+		gpu_die: 'GB206',
+		bus_interface: 'PCIe 5.0 x16',
+		memory_bandwidth_gbps: 448,
+		memory_clock_mhz: 1750,
+		process_nm: 5,
+		foundry: 'TSMC',
+		codename: null,
+		l1_cache_kb: null,
+		l2_cache_mb: 48,
+		memory_speed_mhz: null,
+		memory_channels: null,
+		memory_types: null,
+		integrated_graphics: null,
 		raw_json: '{}',
 		last_synced_at: '2026-08-15T00:00:00Z',
 		...overrides
@@ -51,6 +64,19 @@ function cpuSpec(overrides: Partial<SpecRow> = {}): SpecRow {
 		boost_clock_mhz: 4800,
 		socket: 'LGA1851',
 		cache_l3_mb: 24,
+		gpu_die: null,
+		bus_interface: null,
+		memory_bandwidth_gbps: null,
+		memory_clock_mhz: null,
+		process_nm: 3,
+		foundry: null,
+		codename: 'Arrow Lake',
+		l1_cache_kb: null,
+		l2_cache_mb: null,
+		memory_speed_mhz: 6400,
+		memory_channels: 2,
+		memory_types: 'Up to DDR5 6400 MT/s',
+		integrated_graphics: 'Intel Graphics',
 		raw_json: '{}',
 		last_synced_at: '2026-08-15T00:00:00Z',
 		...overrides
@@ -90,16 +116,21 @@ describe('buildCompareRows', () => {
 			'Cheapest in stock',
 			'Launch MSRP (USD)',
 			'Architecture',
+			'GPU die',
 			'VRAM',
 			'Memory type',
 			'Memory bus',
+			'Bandwidth',
+			'Bus interface',
+			'Process',
+			'L2 cache',
 			'Base clock',
 			'Boost clock',
 			'TDP'
 		]) {
 			expect(labels).toContain(expected);
 		}
-		for (const absent of ['Cores / shaders', 'Threads', 'Socket', 'L3 cache']) {
+		for (const absent of ['Cores / shaders', 'Threads', 'Socket', 'L3 cache', 'Codename', 'Memory support']) {
 			expect(labels).not.toContain(absent);
 		}
 	});
@@ -115,15 +146,19 @@ describe('buildCompareRows', () => {
 		for (const expected of [
 			'Cores / shaders',
 			'Threads',
+			'Codename',
 			'Socket',
 			'L3 cache',
+			'L2 cache',
+			'Memory support',
+			'Max memory speed',
 			'Base clock',
 			'Boost clock',
 			'TDP'
 		]) {
 			expect(labels).toContain(expected);
 		}
-		for (const absent of ['VRAM', 'Memory type', 'Memory bus']) {
+		for (const absent of ['VRAM', 'Memory type', 'Memory bus', 'Bandwidth', 'Bus interface']) {
 			expect(labels).not.toContain(absent);
 		}
 	});
@@ -138,6 +173,9 @@ describe('buildCompareRows', () => {
 		expect(byLabel.get('VRAM')!(e)).toBe('16GB');
 		expect(byLabel.get('Memory bus')!(e)).toBe('128-bit');
 		expect(byLabel.get('Base clock')!(e)).toBe('2.3 GHz');
+		expect(byLabel.get('GPU die')!(e)).toBe('GB206');
+		expect(byLabel.get('Bandwidth')!(e)).toBe('448 GB/s');
+		expect(byLabel.get('Process')!(e)).toBe('TSMC 5 nm');
 	});
 
 	it('returns null for fields missing from the spec', () => {

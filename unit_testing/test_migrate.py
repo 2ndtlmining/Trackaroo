@@ -21,10 +21,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import migrate
 from migrate import (
+    SPECS_EXTRA_COLUMNS,
     check_column_exists,
     check_table_exists,
     get_connection,
     main,
+    migrate_add_specs_columns,
     migrate_add_specs_table,
     migrate_add_variant_name,
 )
@@ -206,6 +208,72 @@ class TestMigrateSpecsTable:
             # Second run must skip cleanly, not fail on the existing table.
             migrate_add_specs_table(conn)
             assert check_table_exists(conn, "specs") is True
+        finally:
+            conn.close()
+
+
+class TestMigrateSpecsColumns:
+    """The TechPowerUp-grade spec column migration."""
+
+    def _legacy_specs_db(self, tmp_path):
+        """A DB with the pre-detail specs table (21 columns, no extras)."""
+        path = _make_legacy_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_add_specs_table(conn)
+            # Simulate the pre-migration 21-column table by dropping the extras.
+            for col in SPECS_EXTRA_COLUMNS:
+                if check_column_exists(conn, "specs", col):
+                    conn.execute(f"ALTER TABLE specs DROP COLUMN {col}")
+            conn.commit()
+        finally:
+            conn.close()
+        return path
+
+    def test_adds_missing_columns(self, tmp_path):
+        path = self._legacy_specs_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_add_specs_columns(conn)
+            for col in SPECS_EXTRA_COLUMNS:
+                assert check_column_exists(conn, "specs", col) is True
+            # Numeric columns must be REAL (not TEXT) so better-sqlite3 returns
+            # numbers — a TEXT column would yield strings to the frontend.
+            types = {
+                r["name"]: r["type"].upper()
+                for r in conn.execute("PRAGMA table_info(specs)").fetchall()
+            }
+            for col, decl in SPECS_EXTRA_COLUMNS.items():
+                assert types[col] == decl.upper(), f"{col} is {types[col]}, want {decl}"
+        finally:
+            conn.close()
+
+    def test_dry_run_makes_no_change(self, tmp_path):
+        path = self._legacy_specs_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_add_specs_columns(conn, dry_run=True)
+            assert check_column_exists(conn, "specs", "gpu_die") is False
+        finally:
+            conn.close()
+
+    def test_idempotent_when_columns_present(self, tmp_path):
+        path = self._legacy_specs_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_add_specs_columns(conn)
+            migrate_add_specs_columns(conn)  # second run skips cleanly
+            assert check_column_exists(conn, "specs", "gpu_die") is True
+        finally:
+            conn.close()
+
+    def test_existing_rows_keep_null_extras(self, tmp_path):
+        path = self._legacy_specs_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_add_specs_columns(conn)
+            row = conn.execute("SELECT gpu_die, bus_interface FROM specs").fetchone()
+            assert row is None  # table empty — added columns are nullable
         finally:
             conn.close()
 

@@ -1,5 +1,14 @@
 <script lang="ts">
-	import { formatDate, formatRelative, formatUsd } from '$lib/formats';
+	import {
+		formatBandwidth,
+		formatCacheKb,
+		formatCacheMb,
+		formatDate,
+		formatMhz,
+		formatProcess,
+		formatRelative,
+		formatUsd
+	} from '$lib/formats';
 	import type { SpecRow } from '$lib/server/db';
 
 	let { spec }: { spec: SpecRow } = $props();
@@ -46,7 +55,13 @@
 	const busWidth = $derived(
 		spec.memory_bus_width_bit !== null ? `${spec.memory_bus_width_bit}-bit` : null
 	);
-	const cache = $derived(spec.cache_l3_mb !== null ? `${spec.cache_l3_mb} MB` : null);
+	const cache = $derived(formatCacheMb(spec.cache_l3_mb));
+	const bandwidth = $derived(formatBandwidth(spec.memory_bandwidth_gbps));
+	const process = $derived(formatProcess(spec.process_nm, spec.foundry));
+	const memoryClock = $derived(formatMhz(spec.memory_clock_mhz));
+	const memorySpeed = $derived(formatMhz(spec.memory_speed_mhz));
+	const l1Cache = $derived(formatCacheKb(spec.l1_cache_kb));
+	const l2Cache = $derived(formatCacheMb(spec.l2_cache_mb));
 </script>
 
 <div class="overflow-hidden rounded-md border border-border">
@@ -62,6 +77,12 @@
 			</div>
 		{/if}
 		{#if isGpu}
+			{#if spec.gpu_die}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">GPU die</span>
+					<span class="font-medium text-text">{spec.gpu_die}</span>
+				</div>
+			{/if}
 			{#if vram}
 				<div class="flex items-center justify-between gap-3 px-3 py-2">
 					<span class="text-text-muted">VRAM</span>
@@ -72,6 +93,12 @@
 				<div class="flex items-center justify-between gap-3 px-3 py-2">
 					<span class="text-text-muted">Launch MSRP</span>
 					<span class="num font-medium text-text">{msrp}</span>
+				</div>
+			{/if}
+			{#if bandwidth}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Bandwidth</span>
+					<span class="num font-medium text-text">{bandwidth}</span>
 				</div>
 			{/if}
 			{#if shaders}
@@ -85,6 +112,12 @@
 				<div class="flex items-center justify-between gap-3 px-3 py-2">
 					<span class="text-text-muted">Cores / threads</span>
 					<span class="num font-medium text-text">{coresThreads}</span>
+				</div>
+			{/if}
+			{#if spec.codename}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Codename</span>
+					<span class="font-medium text-text">{spec.codename}</span>
 				</div>
 			{/if}
 			{#if msrp}
@@ -115,10 +148,22 @@
 			Show full specs
 		</summary>
 		<div class="divide-y divide-border text-sm">
+			{#if isGpu && spec.bus_interface}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Bus interface</span>
+					<span class="font-medium text-text">{spec.bus_interface}</span>
+				</div>
+			{/if}
 			{#if isGpu && busWidth}
 				<div class="flex items-center justify-between gap-3 px-3 py-2">
 					<span class="text-text-muted">Memory bus</span>
 					<span class="num font-medium text-text">{busWidth}</span>
+				</div>
+			{/if}
+			{#if isGpu && memoryClock}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Memory clock</span>
+					<span class="num font-medium text-text">{memoryClock}</span>
 				</div>
 			{/if}
 			{#if !isGpu && spec.socket}
@@ -127,10 +172,64 @@
 					<span class="font-medium text-text">{spec.socket}</span>
 				</div>
 			{/if}
+			{#if !isGpu && spec.memory_types}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Memory support</span>
+					<span class="font-medium text-text">{spec.memory_types}</span>
+				</div>
+			{/if}
+			{#if !isGpu && memorySpeed}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Max memory speed</span>
+					<span class="num font-medium text-text">{memorySpeed}</span>
+				</div>
+			{/if}
+			{#if !isGpu && spec.memory_channels !== null}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Memory channels</span>
+					<span class="num font-medium text-text">{spec.memory_channels}</span>
+				</div>
+			{/if}
+			{#if !isGpu && spec.integrated_graphics}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Integrated graphics</span>
+					<span class="font-medium text-text">{spec.integrated_graphics}</span>
+				</div>
+			{/if}
+			{#if !isGpu && process}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Process</span>
+					<span class="num font-medium text-text">{process}</span>
+				</div>
+			{/if}
+			{#if isGpu && process}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Process</span>
+					<span class="num font-medium text-text">{process}</span>
+				</div>
+			{/if}
 			{#if cache}
 				<div class="flex items-center justify-between gap-3 px-3 py-2">
-					<span class="text-text-muted">Cache</span>
+					<span class="text-text-muted">Cache L3</span>
 					<span class="num font-medium text-text">{cache}</span>
+				</div>
+			{/if}
+			{#if !isGpu && l2Cache}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Cache L2</span>
+					<span class="num font-medium text-text">{l2Cache}</span>
+				</div>
+			{/if}
+			{#if !isGpu && l1Cache}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Cache L1</span>
+					<span class="num font-medium text-text">{l1Cache}</span>
+				</div>
+			{/if}
+			{#if isGpu && l2Cache}
+				<div class="flex items-center justify-between gap-3 px-3 py-2">
+					<span class="text-text-muted">Cache L2</span>
+					<span class="num font-medium text-text">{l2Cache}</span>
 				</div>
 			{/if}
 			{#if spec.launch_date}

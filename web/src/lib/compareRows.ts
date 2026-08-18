@@ -1,4 +1,4 @@
-import { formatAud, formatDate, formatUsd } from './formats';
+import { formatAud, formatBandwidth, formatCacheMb, formatDate, formatProcess, formatUsd } from './formats';
 import type { CompareEntry } from './server/repos';
 import type { Retailer } from './types';
 
@@ -39,6 +39,10 @@ const sharedSpecRows: CompareRow[] = [
 
 const gpuSpecRows: CompareRow[] = [
 	{
+		label: 'GPU die',
+		value: (e) => e.spec?.gpu_die ?? null
+	},
+	{
 		label: 'VRAM',
 		value: (e) => (e.spec?.vram_gb ? `${e.spec.vram_gb}GB` : null)
 	},
@@ -49,6 +53,22 @@ const gpuSpecRows: CompareRow[] = [
 	{
 		label: 'Memory bus',
 		value: (e) => (e.spec?.memory_bus_width_bit ? `${e.spec.memory_bus_width_bit}-bit` : null)
+	},
+	{
+		label: 'Bandwidth',
+		value: (e) => formatBandwidth(e.spec?.memory_bandwidth_gbps ?? null)
+	},
+	{
+		label: 'Bus interface',
+		value: (e) => e.spec?.bus_interface ?? null
+	},
+	{
+		label: 'Process',
+		value: (e) => formatProcess(e.spec?.process_nm ?? null, e.spec?.foundry ?? null)
+	},
+	{
+		label: 'L2 cache',
+		value: (e) => formatCacheMb(e.spec?.l2_cache_mb ?? null)
 	},
 	{
 		label: 'Base clock',
@@ -70,6 +90,10 @@ const cpuSpecRows: CompareRow[] = [
 		value: (e) => (e.spec?.thread_count ? String(e.spec.thread_count) : null)
 	},
 	{
+		label: 'Codename',
+		value: (e) => e.spec?.codename ?? null
+	},
+	{
 		label: 'Base clock',
 		value: (e) => clock(e.spec?.base_clock_mhz ?? null)
 	},
@@ -83,7 +107,19 @@ const cpuSpecRows: CompareRow[] = [
 	},
 	{
 		label: 'L3 cache',
-		value: (e) => (e.spec?.cache_l3_mb ? `${e.spec.cache_l3_mb} MB` : null)
+		value: (e) => formatCacheMb(e.spec?.cache_l3_mb ?? null)
+	},
+	{
+		label: 'L2 cache',
+		value: (e) => formatCacheMb(e.spec?.l2_cache_mb ?? null)
+	},
+	{
+		label: 'Memory support',
+		value: (e) => e.spec?.memory_types ?? null
+	},
+	{
+		label: 'Max memory speed',
+		value: (e) => (e.spec?.memory_speed_mhz ? `${e.spec.memory_speed_mhz} MHz` : null)
 	}
 ];
 

@@ -164,8 +164,12 @@ export function seedDatabase(file: string): DB {
 	const insertSpec = db.prepare(
 		`INSERT INTO specs (product_id, source, source_record_key, category, architecture, generation,
 			launch_date, vram_gb, memory_bus_width_bit, memory_type, tdp_watts, core_count,
-			thread_count, base_clock_mhz, boost_clock_mhz, socket, cache_l3_mb, raw_json, last_synced_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			thread_count, base_clock_mhz, boost_clock_mhz, socket, cache_l3_mb,
+			gpu_die, bus_interface, memory_bandwidth_gbps, memory_clock_mhz, process_nm, foundry,
+			codename, l1_cache_kb, l2_cache_mb, memory_speed_mhz, memory_channels, memory_types,
+			integrated_graphics, raw_json, last_synced_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 	if (firstProduct) {
 		insertSpec.run(
@@ -186,6 +190,19 @@ export function seedDatabase(file: string): DB {
 			4800,
 			'LGA1851',
 			24,
+			null,
+			null,
+			null,
+			null,
+			3,
+			null,
+			'Arrow Lake',
+			null,
+			null,
+			6400,
+			2,
+			'Up to DDR5 6400 MT/s',
+			'Intel Graphics',
 			'{}',
 			'2026-08-15T00:00:00Z'
 		);
@@ -205,6 +222,19 @@ export function seedDatabase(file: string): DB {
 			180,
 			4608,
 			null,
+			null,
+			null,
+			null,
+			null,
+			'GB203',
+			'PCIe 5.0 x16',
+			448,
+			1750,
+			5,
+			'TSMC',
+			null,
+			null,
+			48,
 			null,
 			null,
 			null,

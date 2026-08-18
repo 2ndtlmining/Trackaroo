@@ -64,6 +64,19 @@ export interface SpecRow {
 	boost_clock_mhz: number | null;
 	socket: string | null;
 	cache_l3_mb: number | null;
+	gpu_die: string | null;
+	bus_interface: string | null;
+	memory_bandwidth_gbps: number | null;
+	memory_clock_mhz: number | null;
+	process_nm: number | null;
+	foundry: string | null;
+	codename: string | null;
+	l1_cache_kb: number | null;
+	l2_cache_mb: number | null;
+	memory_speed_mhz: number | null;
+	memory_channels: number | null;
+	memory_types: string | null;
+	integrated_graphics: string | null;
 	raw_json: string;
 	last_synced_at: string;
 }
