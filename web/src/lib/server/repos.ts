@@ -271,6 +271,9 @@ function filtersToParams(filters: ListingFilters): { clause: string; params: Rec
 		clauses.push('(p.model LIKE @q OR p.brand LIKE @q OR p.variant LIKE @q OR l.variant_name LIKE @q)');
 		params.q = `%${filters.query}%`;
 	}
+	if (filters.inStock) {
+		clauses.push("lat.stock_status = 'in_stock'");
+	}
 	return { clause: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', params };
 }
 

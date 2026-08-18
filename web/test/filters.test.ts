@@ -35,6 +35,16 @@ describe('parseFilters', () => {
 		expect(parseFilters(new URLSearchParams('sort=bogus')).sort).toBeUndefined();
 	});
 
+	it('parses an in-stock flag', () => {
+		expect(parseFilters(new URLSearchParams('in_stock=1'))).toEqual({ inStock: true });
+		expect(parseFilters(new URLSearchParams('in_stock=true'))).toEqual({ inStock: true });
+	});
+
+	it('ignores in-stock params that are not enabled', () => {
+		expect(parseFilters(new URLSearchParams('in_stock=0'))).toEqual({});
+		expect(parseFilters(new URLSearchParams('in_stock=yes'))).toEqual({});
+	});
+
 	it('ignores invalid enum values', () => {
 		const params = new URLSearchParams('category=ram&retailer=ebay&tier=ancient');
 		expect(parseFilters(params)).toEqual({});
@@ -84,6 +94,23 @@ describe('updateFilter', () => {
 		expect(next.get('sort')).toBe('price-asc');
 	});
 
+	it('maps inStock to the in_stock URL key', () => {
+		const next = updateFilter(new URLSearchParams(), 'inStock', '1');
+		expect(next.get('in_stock')).toBe('1');
+		expect(next.get('inStock')).toBeNull();
+	});
+
+	it('removes in_stock when inStock is cleared', () => {
+		const params = new URLSearchParams('in_stock=1');
+		const next = updateFilter(params, 'inStock', null);
+		expect(next.get('in_stock')).toBeNull();
+	});
+
+	it('round-trips inStock with parseFilters', () => {
+		const next = updateFilter(new URLSearchParams(), 'inStock', '1');
+		expect(parseFilters(next)).toEqual({ inStock: true });
+	});
+
 	it('removes the key when value is null', () => {
 		const params = new URLSearchParams('brand=AMD');
 		const next = updateFilter(params, 'brand', null);
@@ -107,6 +134,7 @@ describe('hasActiveFilters', () => {
 		expect(hasActiveFilters({ generation_tier: 'current' })).toBe(true);
 		expect(hasActiveFilters({ query: '5090' })).toBe(true);
 		expect(hasActiveFilters({ sort: 'price-asc' })).toBe(true);
+		expect(hasActiveFilters({ inStock: true })).toBe(true);
 	});
 });
 

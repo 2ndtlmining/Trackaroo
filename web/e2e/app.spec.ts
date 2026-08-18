@@ -202,6 +202,18 @@ await expect(table.getByRole('columnheader', { name: 'Model' })).toBeVisible();
 		await expect(page).toHaveURL('/');
 		await expect(page.getByText('Tracked products')).toBeVisible();
 	});
+
+	test('in-stock filter keeps only in-stock rows', async ({ page }) => {
+		await goto(page, '/');
+		await page.getByLabel('In stock only').check();
+		await expect(page).toHaveURL(/\/\?in_stock=1/);
+		const rows = page.locator('tbody tr');
+		const count = await rows.count();
+		expect(count).toBeGreaterThan(0);
+		for (let i = 0; i < count; i += 1) {
+			await expect(rows.nth(i)).toContainText('In stock');
+		}
+	});
 });
 
 test.describe('products page', () => {

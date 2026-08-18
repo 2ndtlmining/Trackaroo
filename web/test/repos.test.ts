@@ -109,6 +109,16 @@ describe('getLatestListings', () => {
 		}
 	});
 
+	it('filters to in-stock listings only', () => {
+		const all = getLatestListings(db);
+		const inStock = getLatestListings(db, { inStock: true });
+		expect(inStock.length).toBeGreaterThan(0);
+		expect(inStock.every((r) => r.latestStock === 'in_stock')).toBe(true);
+		if (all.some((r) => r.latestStock !== 'in_stock')) {
+			expect(inStock.length).toBeLessThan(all.length);
+		}
+	});
+
 	it('returns no results for a nonsense search', () => {
 		expect(getLatestListings(db, { query: 'zzz-zzz-nonsense' })).toEqual([]);
 	});

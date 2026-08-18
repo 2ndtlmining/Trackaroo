@@ -17,6 +17,7 @@ export interface ListingFilters {
 	generation_tier?: GenerationTier;
 	query?: string;
 	sort?: ListingSort;
+	inStock?: boolean;
 }
 
 export type ListingSort = 'price-asc' | 'price-desc';

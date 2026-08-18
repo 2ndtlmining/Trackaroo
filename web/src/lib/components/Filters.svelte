@@ -25,10 +25,11 @@
 
 	let queryTimer: ReturnType<typeof setTimeout> | undefined;
 	function setQuery(value: string) {
+		if (value === (filters.query ?? '')) return;
 		clearTimeout(queryTimer);
 		queryTimer = setTimeout(() => {
 			set('query', value);
-		}, 250);
+		}, 450);
 	}
 
 	async function clear() {
@@ -93,6 +94,19 @@
 		oninput={(e) => setQuery((e.target as HTMLInputElement).value)}
 		class="h-8 w-40 rounded-md border border-border bg-surface px-2 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
 	/>
+
+	<label
+		class="flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-sm text-text"
+	>
+		<input
+			type="checkbox"
+			class="accent-accent"
+			aria-label="In stock only"
+			checked={filters.inStock ?? false}
+			onchange={(e) => set('inStock', (e.target as HTMLInputElement).checked ? '1' : '')}
+		/>
+		In stock
+	</label>
 
 	<select
 		class="h-8 rounded-md border border-border bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none"

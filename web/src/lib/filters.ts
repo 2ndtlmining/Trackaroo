@@ -34,6 +34,8 @@ export function parseFilters(searchParams: URLSearchParams): ListingFilters {
 	if (query) filters.query = query;
 	const sort = searchParams.get('sort');
 	if (sort === 'price-asc' || sort === 'price-desc') filters.sort = sort;
+	const inStock = searchParams.get('in_stock');
+	if (inStock === '1' || inStock === 'true') filters.inStock = true;
 	return filters;
 }
 
@@ -43,7 +45,8 @@ const URL_KEY: Record<keyof ListingFilters, string> = {
 	brand: 'brand',
 	generation_tier: 'tier',
 	query: 'q',
-	sort: 'sort'
+	sort: 'sort',
+	inStock: 'in_stock'
 };
 
 export function updateFilter(
@@ -70,7 +73,8 @@ export function hasActiveFilters(filters: ListingFilters): boolean {
 			filters.brand ||
 			filters.generation_tier ||
 			filters.query ||
-			filters.sort
+			filters.sort ||
+			filters.inStock
 	);
 }
 
