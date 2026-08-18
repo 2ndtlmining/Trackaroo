@@ -237,6 +237,39 @@ is internet-facing.
 - Backups: verify `/data/backups/` contains recent files:
   `ls -la /data/backups | head`.
 
+## Daily Discord digest
+
+`run_daily.py` posts a short digest of the biggest CPU/GPU price moves to
+Discord after a successful run — but **only when no health check errored**.
+A partial or unchecked scrape never celebrates moves that may be artifacts.
+`--no-notify` opts out; dry runs, `--scrape-only`, and `--no-health` skip it
+automatically.
+
+Set up a webhook per channel in Discord (Server Settings → Integrations →
+Webhooks → New Webhook, copy the URL) and pass them to the pipeline:
+
+- Option C (single image): `-e DISCORD_WEBHOOK_GPU=… -e DISCORD_WEBHOOK_CPU=…`
+- Option A (compose): export the vars on the host or in a `.env`; the cron
+  service forwards them (see `docker-compose.yml`).
+- Option B (host cron): put the vars in a repo-root `.env` (gitignored) —
+  `notify_discord.py` loads it automatically — or export them in the crontab:
+  ```cron
+  30 6 * * * cd /opt/trackaroo && /usr/bin/env DISCORD_WEBHOOK_GPU=... DISCORD_WEBHOOK_CPU=... python3 run_daily.py --backup 14 >> /var/log/trackaroo_daily.log 2>&1
+  ```
+
+Both webhooks are optional — with neither set the digest is a no-op, and a
+webhook failure is logged without failing the run. Embed colours match the
+dashboard tokens (`#F87171` up / `#34D399` down); the per-product link goes to
+the retailer listing. `TRACKAROO_PUBLIC_BASE_URL` (optional) additionally
+adds a "Trackaroo page" link when the dashboard has a stable public URL.
+
+Preview or verify without sending:
+
+```bash
+python notify_discord.py --dry-run   # print the exact embeds
+python notify_discord.py --test      # send one static sample embed per webhook
+```
+
 ## Config reference
 
 Every knob is overridable via environment — see `config.py` and `.env.example`

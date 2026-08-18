@@ -17,6 +17,10 @@
 #   TRACKAROO_DB         SQLite db path (default /data/trackaroo.db)
 #   SPEC_SYNC_DOW        Spec-sync day of week, cron style 0=Sun..6=Sat (default 0)
 #   SPEC_SYNC_HOUR       Spec-sync hour of day, 0-23 (default 3)
+#   DISCORD_WEBHOOK_GPU  Discord webhook for the GPU digest (optional)
+#   DISCORD_WEBHOOK_CPU  Discord webhook for the CPU digest (optional)
+#   TRACKAROO_PUBLIC_BASE_URL  Public dashboard URL, adds Trackaroo links to
+#                        the Discord digest (optional)
 #
 # A single pipeline iteration can be run and then exit with RUN_ONCE=1
 # (used for one-shot `docker run` from a host crontab).

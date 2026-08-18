@@ -9,6 +9,7 @@ Tests:
 """
 import sqlite3
 import json
+import argparse
 from datetime import date
 from pathlib import Path
 
@@ -145,6 +146,43 @@ class TestHealthCheckIntegration:
         from health_checks import check_json_files, check_db_freshness, CheckResult
         # Should not raise
         assert CheckResult.OK == "OK"
+
+
+class TestNotifyGating:
+    """The Discord digest only fires on a healthy full run."""
+
+    def _args(self, **overrides):
+        defaults = {
+            "dry_run": False,
+            "scrape_only": False,
+            "no_health": False,
+            "no_notify": False,
+        }
+        defaults.update(overrides)
+        return argparse.Namespace(**defaults)
+
+    def test_health_errors_flatten_and_filter(self):
+        from health_checks import CheckResult
+        from run_daily import health_errors
+
+        err = CheckResult("thing", CheckResult.ERROR, "boom")
+        warn = CheckResult("thing", CheckResult.WARNING, "meh")
+        ok = CheckResult("thing", CheckResult.OK, "fine")
+
+        assert health_errors([warn, ok], [err]) == [err]
+        assert health_errors([warn, ok], []) == []
+        assert health_errors() == []
+
+    def test_notify_enabled_default(self):
+        from run_daily import notify_enabled
+        assert notify_enabled(self._args()) is True
+
+    def test_notify_disabled_by_each_flag(self):
+        from run_daily import notify_enabled
+        assert notify_enabled(self._args(dry_run=True)) is False
+        assert notify_enabled(self._args(scrape_only=True)) is False
+        assert notify_enabled(self._args(no_health=True)) is False
+        assert notify_enabled(self._args(no_notify=True)) is False
 
     def test_json_validation_runs_on_today(self, tmp_path, monkeypatch):
         """JSON validation runs for today's date when files exist."""

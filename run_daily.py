@@ -12,6 +12,7 @@ Usage:
     python run_daily.py --dry-run    # Preview without writing to DB
     python run_daily.py --scrape-only  # Scrape but don't ingest (just save JSON)
     python run_daily.py --no-health  # Skip health checks
+    python run_daily.py --no-notify  # Skip the Discord digest
 """
 from __future__ import annotations
 
@@ -133,6 +134,24 @@ def _report_results(results: List[CheckResult], label: str) -> None:
             LOGGER.warning("  %s", r)
 
 
+def health_errors(*result_groups: List[CheckResult]) -> List[CheckResult]:
+    """Flatten one or more check result lists down to their ERROR entries.
+
+    Used to gate the Discord digest: a run with any ERROR-level health result
+    should not celebrate moves built from partial/garbage data.
+    """
+    return [r for r in sum(result_groups, []) if r.status == CheckResult.ERROR]
+
+
+def notify_enabled(args: argparse.Namespace) -> bool:
+    """True when the Discord digest should be attempted.
+
+    Digest only fires on a real, full run with health checks on — dry runs,
+    scrape-only, skipped health checks, or an explicit --no-notify all disable it.
+    """
+    return not (args.dry_run or args.scrape_only or args.no_health or args.no_notify)
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -144,6 +163,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     parser.add_argument("--scrape-only", action="store_true", help="Scrape but don't ingest")
     parser.add_argument("--no-health", action="store_true", help="Skip health checks")
+    parser.add_argument("--no-notify", action="store_true", help="Skip the Discord digest")
     parser.add_argument("--backup", type=int, metavar="KEEP", nargs="?", const=BACKUP_KEEP,
                         help="Back up the DB after ingestion (optionally: how many backups to keep)")
     args = parser.parse_args(argv)
@@ -178,6 +198,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         sys.exit(1)
 
     # ── Health check: validate JSON before ingestion ───────
+    json_results: List[CheckResult] = []
     if not args.no_health:
         json_results = check_json_files(today_filename())
         _report_results(json_results, "JSON validation")
@@ -208,6 +229,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         conn.close()
 
     # ── Health check: validate DB state after ingestion ───
+    db_results: List[CheckResult] = []
     if not args.no_health and not args.scrape_only:
         db_results = (
             check_db_freshness(DB_PATH)
@@ -221,6 +243,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         warnings = [r for r in db_results if r.status == CheckResult.WARNING]
         if not errors and not warnings:
             LOGGER.info("\nDB health: all %d checks passed", ok_count)
+
+    # ── Discord digest (optional) ──────────────────────────────────────
+    # Only on a real full run with passing health checks: a partial or
+    # unchecked scrape shouldn't celebrate moves that may be artifacts.
+    if notify_enabled(args):
+        failed = health_errors(json_results, db_results)
+        if failed:
+            LOGGER.warning("Skipping Discord digest — %d health check error(s).", len(failed))
+        else:
+            from notify_discord import run as run_notify
+            run_notify()
 
     # ── Backup (optional) ───────────────────────────────────────────
     if args.backup and not args.dry_run and not args.scrape_only:
