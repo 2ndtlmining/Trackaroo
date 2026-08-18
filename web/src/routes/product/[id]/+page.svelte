@@ -3,7 +3,7 @@
 	import Chip from '$lib/components/Chip.svelte';
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import BrandGroupedListings from '$lib/components/BrandGroupedListings.svelte';
-	import { formatAud, formatDate } from '$lib/formats';
+	import { formatAud, formatDate, titleCase } from '$lib/formats';
 	import type { ProductHistory } from '$lib/server/repos';
 
 	let { data }: { data: ProductHistory } = $props();
@@ -25,9 +25,9 @@
 			.filter((s) => s.points.length > 0)
 			.map((s) => ({
 				listingId: s.listing.id,
-				label:
-					s.listing.variant_name ??
-					`${s.listing.retailer} SKU ${s.listing.retailer_sku ?? '?'}`,
+label:
+				titleCase(s.listing.variant_name ?? '') ||
+				`${s.listing.retailer} SKU ${s.listing.retailer_sku ?? '?'}`,
 				points: s.points.map((p) => ({ date: p.snapshot_date, price: p.price_aud }))
 			}))
 	);

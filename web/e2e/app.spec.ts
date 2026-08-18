@@ -122,6 +122,20 @@ await expect(table.getByRole('columnheader', { name: 'Model' })).toBeVisible();
 		expect(await table.locator('tbody svg polyline').count()).toBeGreaterThan(0);
 	});
 
+	test('column headers sort the table via the tri-state cycle', async ({ page }) => {
+		await goto(page, '/');
+		const priceHeader = page.getByRole('button', { name: /^Price/ });
+		await expect(priceHeader).toBeVisible();
+		// unsorted -> ascending -> descending -> unsorted
+		await priceHeader.click();
+		await expect(priceHeader).toContainText('▲');
+		await priceHeader.click();
+		await expect(priceHeader).toContainText('▼');
+		await priceHeader.click();
+		await expect(priceHeader).not.toContainText('▲');
+		await expect(priceHeader).not.toContainText('▼');
+	});
+
 	test('filters the table by category via the URL', async ({ page }) => {
 		await goto(page, '/');
 		const categorySelect = page.getByLabel('Filter by category');
@@ -271,6 +285,15 @@ test.describe('command palette', () => {
 		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
 		await expect(dialog.getByRole('option').first()).toContainText('Compare');
 	});
+
+	test('shows a snapshot count badge on each result', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
+		await expect(dialog.getByText(/snapshots/).first()).toBeVisible();
+		await expect(dialog.getByText(/snapshots/)).toHaveCount(2);
+	});
 });
 
 test.describe('compare', () => {
@@ -354,7 +377,7 @@ await expect(page.locator('table')).toBeVisible();
 		await expect(page.getByRole('button', { name: '7d' })).toHaveClass(/bg-surface-hover/);
 	});
 
-	test('movers link through to product pages', async ({ page }) => {
+test('movers link through to product pages', async ({ page }) => {
 		await goto(page, '/movers');
 		const firstLink = page.locator('tbody tr a').first();
 		await expect(firstLink).toBeVisible();
@@ -364,6 +387,19 @@ await expect(page.locator('table')).toBeVisible();
 
 		await firstLink.click();
 		await expect(page).toHaveURL(new RegExp(`/product/${id}$`));
+	});
+
+	test('column headers sort the movers table via the tri-state cycle', async ({ page }) => {
+		await goto(page, '/movers');
+		const newHeader = page.getByRole('button', { name: /^New/ });
+		await expect(newHeader).toBeVisible();
+		await newHeader.click();
+		await expect(newHeader).toContainText('▲');
+		await newHeader.click();
+		await expect(newHeader).toContainText('▼');
+		await newHeader.click();
+		await expect(newHeader).not.toContainText('▲');
+		await expect(newHeader).not.toContainText('▼');
 	});
 });
 
@@ -423,6 +459,23 @@ test.describe('product detail grouped listings', () => {
 
 		await showButton.click();
 		await expect(page.getByRole('button', { name: 'On chart' }).first()).toBeVisible();
+		// The chart must survive the overlay toggle (reactive rebuild).
+		await expect(page.getByLabel('Price history chart')).toBeVisible();
+	});
+
+	test('re-renders the chart when navigating between products', async ({ page }) => {
+		await openGpuProduct(page);
+		await expect(page.getByLabel('Price history chart')).toBeVisible();
+
+		// Navigate to a different product via the palette — same route
+		// component, so this exercises the client-side-navigation reuse path.
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('7600');
+		await page.keyboard.press('Enter');
+
+		await expect(page.getByRole('heading', { name: /Ryzen 5 7600/ })).toBeVisible();
+		await expect(page.getByLabel('Price history chart')).toBeVisible();
 	});
 
 	test('search narrows the brand groups', async ({ page }) => {

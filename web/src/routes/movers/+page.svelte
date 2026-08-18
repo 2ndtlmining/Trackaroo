@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { formatAud, formatPct, formatSignedAud } from '$lib/formats';
+	import { formatAud, formatPct, formatSignedAud, titleCase } from '$lib/formats';
 	import PriceChange from '$lib/components/PriceChange.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Sparkline from '$lib/components/Sparkline.svelte';
 	import type { Mover } from '$lib/server/repos';
 	import type { ChangeDirection } from '$lib/types';
+	import { nextSortDir, sortRows, type SortDir } from '$lib/tableSort';
 
 	let {
 		data
@@ -54,6 +55,39 @@
 		});
 		return arr;
 	});
+
+	// Column-header sorting is an orthogonal layer on top of the Abs/Pct/Price
+	// ordering: it re-orders whatever set the controls produced.
+	type ColSortKey = 'old' | 'new' | 'change' | 'points';
+	let colKey = $state<ColSortKey | null>(null);
+	let colDir = $state<SortDir>(null);
+
+	function onColHeader(key: ColSortKey) {
+		if (colKey === key) {
+			colDir = nextSortDir(colDir);
+		} else {
+			colKey = key;
+			colDir = 'asc';
+		}
+	}
+
+	function colArrow(key: ColSortKey): string {
+		if (colKey !== key || colDir === null) return '';
+		return colDir === 'asc' ? ' ▲' : ' ▼';
+	}
+
+	function colValue(m: Mover, key: ColSortKey): string | number | null {
+		if (key === 'old') return m.oldPrice;
+		if (key === 'new') return m.newPrice;
+		if (key === 'change') return m.change;
+		return m.historyPoints;
+	}
+
+	const ordered = $derived(
+		colKey !== null && colDir !== null
+			? sortRows(sorted, colDir, (m) => colValue(m, colKey!))
+			: sorted
+	);
 
 	const hasTrend = $derived(sorted.some((m) => (m.sparkline?.length ?? 0) >= 2));
 </script>
@@ -165,17 +199,41 @@
 						<th class="px-3 py-2 font-medium">Model</th>
 						<th class="px-3 py-2 font-medium">Retailer</th>
 						<th class="px-3 py-2 font-medium">Variant</th>
-						<th class="px-3 py-2 text-right font-medium">Old</th>
-						<th class="px-3 py-2 text-right font-medium">New</th>
+						<th class="px-3 py-2 text-right font-medium">
+							<button
+								type="button"
+								onclick={() => onColHeader('old')}
+								class="font-medium text-text-muted hover:text-text"
+							>Old{colArrow('old')}</button>
+						</th>
+						<th class="px-3 py-2 text-right font-medium">
+							<button
+								type="button"
+								onclick={() => onColHeader('new')}
+								class="font-medium text-text-muted hover:text-text"
+							>New{colArrow('new')}</button>
+						</th>
 						{#if hasTrend}
 							<th class="w-16 px-3 py-2 font-medium">Trend</th>
 						{/if}
-						<th class="px-3 py-2 text-right font-medium">Change</th>
-						<th class="px-3 py-2 font-medium">Points</th>
+						<th class="px-3 py-2 text-right font-medium">
+							<button
+								type="button"
+								onclick={() => onColHeader('change')}
+								class="font-medium text-text-muted hover:text-text"
+							>Change{colArrow('change')}</button>
+						</th>
+						<th class="px-3 py-2 font-medium">
+							<button
+								type="button"
+								onclick={() => onColHeader('points')}
+								class="font-medium text-text-muted hover:text-text"
+							>Points{colArrow('points')}</button>
+						</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each sorted as m (m.listingId)}
+					{#each ordered as m (m.listingId)}
 						<tr class="border-b border-border last:border-b-0 hover:bg-surface-hover">
 							<td class="px-3 py-2">
 								<a
@@ -185,8 +243,8 @@
 								>
 							</td>
 							<td class="px-3 py-2 text-text">{m.retailer}</td>
-							<td class="px-3 py-2 text-text-muted" title={m.variantName ?? undefined}>
-								{m.variantName?.split(',')[0].trim() ?? '—'}
+							<td class="px-3 py-2 text-text-muted" title={titleCase(m.variantName) || undefined}>
+								{titleCase(m.variantName).split(',')[0].trim() || '—'}
 							</td>
 							<td class="num px-3 py-2 text-right text-text-muted">
 								{m.oldPrice === null ? '—' : formatAud(m.oldPrice)}

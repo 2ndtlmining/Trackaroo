@@ -168,8 +168,19 @@
 										Compare {row.a.model} vs {row.b.model}
 									</span>
 								{:else}
-									<span class="flex-1 truncate text-text">{row.item.model}</span>
+									<span
+										class="flex-1 truncate {row.item.snapshotCount === 0
+											? 'text-text-muted/60'
+											: 'text-text'}"
+									>
+										{row.item.model}
+									</span>
 									<span class="shrink-0 text-xs text-text-muted">{row.item.brand}</span>
+									<span class="shrink-0 text-xs text-text-muted">
+										{row.item.snapshotCount === 0
+											? 'no data yet'
+											: `${row.item.snapshotCount} ${row.item.snapshotCount === 1 ? 'snapshot' : 'snapshots'}`}
+									</span>
 									<Badge tone="neutral" label={row.item.category.toUpperCase()} />
 								{/if}
 							</button>

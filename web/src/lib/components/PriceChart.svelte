@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
 	import { formatAud } from '$lib/formats';
@@ -249,7 +249,19 @@
 		}
 	}
 
-	onMount(mount);
+	// Reactive rebuild: buildData/buildSeries read the current props, so this
+	// effect re-runs when the route data changes (client-side navigation
+	// between products) or when listing overlays are toggled on/off. The chart
+	// is recreated from scratch so series indices and band layout always match
+	// the incoming data (no stale state survives).
+	$effect(() => {
+		void buildData();
+		void buildSeries();
+		if (!chartEl) return;
+		destroy();
+		mount();
+	});
+
 	onDestroy(destroy);
 </script>
 

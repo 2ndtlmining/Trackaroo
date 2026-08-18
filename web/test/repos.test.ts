@@ -682,6 +682,24 @@ describe('getProductIndex', () => {
 			expect(entry.brand.length).toBeGreaterThan(0);
 			expect(entry.model.length).toBeGreaterThan(0);
 			expect('productVariant' in entry).toBe(true);
+			expect(entry.snapshotCount).toBeGreaterThanOrEqual(0);
+		}
+	});
+
+	it('reports snapshot counts so the palette can flag products without history', () => {
+		const index = getProductIndex(db);
+		const withHistory = index.filter((e) => e.snapshotCount > 0);
+		expect(withHistory.length).toBeGreaterThan(0);
+		for (const entry of withHistory) {
+			const row = db
+				.prepare(
+					`SELECT COUNT(s.id) AS n
+					 FROM retailer_listings l
+					 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+					 WHERE l.product_id = ?`
+				)
+				.get(entry.id) as { n: number };
+			expect(entry.snapshotCount).toBe(row.n);
 		}
 	});
 

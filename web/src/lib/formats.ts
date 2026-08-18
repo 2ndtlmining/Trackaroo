@@ -87,3 +87,36 @@ export function formatBytes(bytes: number): string {
 	const value = bytes / 1024 ** i;
 	return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+// Short/known tokens that should render fully uppercase (brands, acronyms that
+// arrive lowercase from Scorptec's all-lowercase names). "ti" is intentionally
+// NOT here — NVIDIA's suffix renders as "Ti".
+const UPPER_WORDS = new Set(['amd', 'asus', 'evga', 'zotac', 'msi', 'rtx', 'gtx', 'oc', 'rgb', 'argb', 'xt', 'xtx']);
+
+// Unit/acronym prefixes glued to a number ("gddr7" -> "GDDR7", "8gb" -> "8GB").
+const PREFIX_WORDS = new Set(['gddr', 'gb', 'tb', 'g', 'w', 'k', 'm', 'mb', 'hz', 'ghz', 'mhz', 'vram', 'cu']);
+
+// Display-only title-casing for retailer-provided variant names. Only words
+// that are currently ENTIRELY lowercase are touched, so already-cased tokens
+// ("RTX", "GDDR7", "GeForce") are left alone. Known acronyms uppercase fully
+// ("rtx" -> "RTX", "oc" -> "OC"); other words capitalise their first letter
+// and uppercase any letters following a digit ("5600x" -> "5600X",
+// "7800x3d" -> "7800X3D", "gddr7" -> "GDDR7").
+export function titleCase(name: string | null): string {
+	if (!name) return '';
+	return name.replace(/\b[a-z0-9]+\b/g, (token) => {
+		if (UPPER_WORDS.has(token)) return token.toUpperCase();
+		let out: string;
+		const prefix = token.match(/^([a-z]+)(\d.*)$/);
+		if (prefix && PREFIX_WORDS.has(prefix[1])) {
+			out = prefix[1].toUpperCase() + prefix[2];
+		} else {
+			out = token.charAt(0).toUpperCase() + token.slice(1);
+		}
+		const digitIdx = out.search(/\d/);
+		if (digitIdx !== -1 && /[a-z]/.test(out.slice(digitIdx + 1))) {
+			out = out.slice(0, digitIdx + 1) + out.slice(digitIdx + 1).toUpperCase();
+		}
+		return out;
+	});
+}

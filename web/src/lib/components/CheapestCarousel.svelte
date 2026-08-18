@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatAud } from '$lib/formats';
+	import { formatAud, titleCase } from '$lib/formats';
 	import type { CheapestListing } from '$lib/server/repos';
 	import type { Category } from '$lib/types';
 
@@ -139,8 +139,8 @@
 							</span>
 						{/if}
 					</div>
-					<div class="mt-1 line-clamp-2 text-xs text-text-muted" title={listing.variantName ?? undefined}>
-						{listing.variantName ?? listing.model}
+					<div class="mt-1 line-clamp-2 text-xs text-text-muted" title={titleCase(listing.variantName) || undefined}>
+						{titleCase(listing.variantName) || listing.model}
 					</div>
 					<a
 						href="/product/{listing.productId}"

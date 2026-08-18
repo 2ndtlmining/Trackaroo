@@ -298,15 +298,22 @@ export interface ProductIndexEntry {
 	brand: string;
 	model: string;
 	productVariant: string | null;
+	// Total price snapshots across the product's listings — lets the palette
+	// show which products actually have price history yet.
+	snapshotCount: number;
 }
 
 export function getProductIndex(db: DB): ProductIndexEntry[] {
 	return db
 		.prepare(
-			`SELECT id, category, brand, model, variant AS productVariant
-			 FROM products
-			 WHERE tracked = 1
-			 ORDER BY category, model`
+			`SELECT p.id, p.category, p.brand, p.model, p.variant AS productVariant,
+			        COUNT(s.id) AS snapshotCount
+			 FROM products p
+			 LEFT JOIN retailer_listings l ON l.product_id = p.id
+			 LEFT JOIN price_snapshots s ON s.retailer_listing_id = l.id
+			 WHERE p.tracked = 1
+			 GROUP BY p.id
+			 ORDER BY p.category, p.model`
 		)
 		.all() as ProductIndexEntry[];
 }

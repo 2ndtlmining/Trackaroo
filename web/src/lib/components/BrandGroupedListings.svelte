@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatAud, formatDate } from '$lib/formats';
+	import { formatAud, formatDate, titleCase } from '$lib/formats';
 	import StockBadge from './StockBadge.svelte';
 	import { buildBrandGroups, toListingDisplays, type ListingDisplay } from '$lib/listingsPanel';
 	import type { Series } from '$lib/server/repos';
@@ -135,8 +135,8 @@
 										rel="noopener noreferrer"
 										class="min-w-0 flex-1"
 									>
-										<span class="block truncate font-medium text-text" title={listing.variantName ?? undefined}>
-											{listing.variantName ?? `${listing.retailer} listing`}
+										<span class="block truncate font-medium text-text" title={titleCase(listing.variantName) || undefined}>
+											{titleCase(listing.variantName) || `${listing.retailer} listing`}
 										</span>
 										<span class="text-xs text-text-muted">{dateRange(listing)}</span>
 									</a>

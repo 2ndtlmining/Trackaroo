@@ -8,7 +8,8 @@ import {
 	formatRelative,
 	formatSignedAud,
 	freshnessLabel,
-	stockLabel
+	stockLabel,
+	titleCase
 } from '../src/lib/formats';
 
 describe('formatAud', () => {
@@ -149,5 +150,32 @@ describe('formatBytes', () => {
 		expect(formatBytes(500)).toBe('500 B');
 		expect(formatBytes(1536)).toBe('1.5 KB');
 		expect(formatBytes(1048576)).toBe('1.0 MB');
+	});
+});
+
+describe('titleCase', () => {
+	it('title-cases entirely-lowercase words', () => {
+		expect(titleCase('amd ryzen 5 5600x desktop processor')).toBe(
+			'AMD Ryzen 5 5600X Desktop Processor'
+		);
+	});
+
+	it('uppercases the digit-then-letter suffix', () => {
+		expect(titleCase('amd ryzen 7 7800x3d desktop processor')).toBe(
+			'AMD Ryzen 7 7800X3D Desktop Processor'
+		);
+		expect(titleCase('ryzen 9 5900xt')).toBe('Ryzen 9 5900XT');
+	});
+
+	it('leaves already-mixed-case tokens untouched', () => {
+		expect(titleCase('gigabyte geforce rtx 4070 gaming oc 12g')).toBe(
+			'Gigabyte Geforce RTX 4070 Gaming OC 12G'
+		);
+		expect(titleCase('GeForce RTX 5090')).toBe('GeForce RTX 5090');
+	});
+
+	it('handles non-letter words and empty strings', () => {
+		expect(titleCase('')).toBe('');
+		expect(titleCase('16gb gddr7')).toBe('16GB GDDR7');
 	});
 });
