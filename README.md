@@ -50,7 +50,7 @@ never joined into the price pipeline:
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
-| **Frontend tests** | ✅ Complete | 187 vitest + 46 Playwright e2e (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 188 vitest + 46 Playwright e2e (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
@@ -143,7 +143,7 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (187 vitest)
+# Run frontend unit tests (188 vitest)
 npm test
 
 # Run browser e2e regression tests (46 Playwright, against a seeded dev server)
@@ -254,7 +254,7 @@ Trackaroo/
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 187 vitest regression tests (9 suites)
+    ├── test/                   # 188 vitest regression tests (9 suites)
     ├── e2e/                    # 46 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
