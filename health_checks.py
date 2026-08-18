@@ -37,6 +37,8 @@ from config import (
     MATCH_THRESHOLDS,
     MIN_HISTORY_FOR_ANOMALY,
     PRICE_ANOMALY_STD_DEVS,
+    SPEC_COVERAGE_MIN_PCT,
+    SPEC_STALE_THRESHOLD_DAYS,
     STALE_THRESHOLD_DAYS,
 )
 
@@ -538,6 +540,118 @@ def check_price_anomalies(db_path: Optional[Path] = None) -> list[CheckResult]:
     return results
 
 
+# ── Spec coverage / staleness ────────────────────────────────────────
+
+def check_spec_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
+    """Report whether tracked products have spec rows and the spec data is fresh.
+
+    Specs are static-ish and refresh on a weekly, best-effort schedule via
+    `sync_specs.py` (separate from the daily price pipeline). This check makes
+    a silently missing or stale specs table visible:
+
+    - WARNING when the `specs` table is absent (run `python migrate.py` once)
+    - WARNING when tracked-product spec coverage drops below
+      `SPEC_COVERAGE_MIN_PCT` (real watchlist: 95/100 = 95%; the 5 unmatched
+      are known — Radeon RX 9070 XTX not in the GPU dataset, plus four OEM-only
+      AMD SKUs with no amd.com page)
+    - WARNING when the newest spec sync is older than `SPEC_STALE_THRESHOLD_DAYS`
+
+    Args:
+        db_path: Path to the SQLite database. Defaults to db/trackaroo.db.
+
+    Returns:
+        List of CheckResult objects.
+    """
+    results: list[CheckResult] = []
+
+    if db_path is None:
+        db_path = DB_PATH
+
+    if not db_path.exists():
+        return results  # Missing DB is reported by check_db_freshness
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        return results  # DB issues handled by check_db_freshness
+
+    try:
+        has_specs = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'specs'"
+        ).fetchone()
+        if not has_specs:
+            results.append(CheckResult(
+                "specs_table",
+                CheckResult.WARNING,
+                "specs table missing - run `python migrate.py` (product pages simply show no spec panel)",
+            ))
+            return results
+
+        total = conn.execute(
+            "SELECT COUNT(*) FROM products WHERE tracked = 1"
+        ).fetchone()[0]
+        with_specs = conn.execute("""
+            SELECT COUNT(DISTINCT p.id) FROM products p
+            JOIN specs s ON s.product_id = p.id
+            WHERE p.tracked = 1
+        """).fetchone()[0]
+
+        if total > 0:
+            pct = 100.0 * with_specs / total
+            missing_rows = conn.execute("""
+                SELECT p.model FROM products p
+                LEFT JOIN specs s ON s.product_id = p.id
+                WHERE p.tracked = 1 AND s.product_id IS NULL
+                ORDER BY p.category, p.model
+            """).fetchall()
+            missing = ", ".join(r["model"] for r in missing_rows[:5])
+            if len(missing_rows) > 5:
+                missing += f" (+{len(missing_rows) - 5} more)"
+            if pct < SPEC_COVERAGE_MIN_PCT:
+                results.append(CheckResult(
+                    "spec_coverage",
+                    CheckResult.WARNING,
+                    f"Low spec coverage: {with_specs}/{total} tracked products "
+                    f"({pct:.0f}%) - missing: {missing}",
+                ))
+            else:
+                results.append(CheckResult(
+                    "spec_coverage",
+                    CheckResult.OK,
+                    f"Spec coverage OK: {with_specs}/{total} tracked products ({pct:.0f}%)",
+                ))
+
+        latest = conn.execute("SELECT MAX(last_synced_at) FROM specs").fetchone()[0]
+        if latest is None:
+            results.append(CheckResult(
+                "spec_staleness",
+                CheckResult.WARNING,
+                "No spec sync recorded - run `python sync_specs.py`",
+            ))
+        else:
+            last_date = datetime.fromisoformat(latest.replace("Z", "+00:00")).date()
+            days_since = (date.today() - last_date).days
+            if days_since > SPEC_STALE_THRESHOLD_DAYS:
+                results.append(CheckResult(
+                    "spec_staleness",
+                    CheckResult.WARNING,
+                    f"Stale specs: last sync {days_since} days ago ({latest})",
+                ))
+            else:
+                results.append(CheckResult(
+                    "spec_staleness",
+                    CheckResult.OK,
+                    f"Specs fresh: last sync {days_since} days ago ({latest})",
+                ))
+    except sqlite3.Error:
+        pass  # Handled by other checks
+    finally:
+        conn.close()
+
+    return results
+
+
 # ── Aggregate runner ────────────────────────────────────────────────
 
 def run_all_checks(
@@ -592,6 +706,13 @@ def run_all_checks(
     for r in price_results:
         LOGGER.info("  %s", r)
 
+    # Spec coverage / staleness
+    LOGGER.info("\n--- Spec Coverage / Staleness ---")
+    spec_results = check_spec_coverage(db_path)
+    all_results.extend(spec_results)
+    for r in spec_results:
+        LOGGER.info("  %s", r)
+
     # Summary
     errors = sum(1 for r in all_results if r.status == CheckResult.ERROR)
     warnings = sum(1 for r in all_results if r.status == CheckResult.WARNING)
@@ -628,7 +749,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             check_db_freshness(args.db_path) +
             check_today_coverage(args.db_path) +
             check_match_count_anomalies(args.db_path) +
-            check_price_anomalies(args.db_path)
+            check_price_anomalies(args.db_path) +
+            check_spec_coverage(args.db_path)
         )
     else:
         results = run_all_checks(args.date, args.db_path)

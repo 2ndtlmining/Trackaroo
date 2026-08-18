@@ -28,11 +28,14 @@ from health_checks import (
     check_today_coverage,
     check_match_count_anomalies,
     check_price_anomalies,
+    check_spec_coverage,
     run_all_checks,
     MATCH_THRESHOLDS,
     STALE_THRESHOLD_DAYS,
     PRICE_ANOMALY_STD_DEVS,
     MIN_HISTORY_FOR_ANOMALY,
+    SPEC_COVERAGE_MIN_PCT,
+    SPEC_STALE_THRESHOLD_DAYS,
 )
 
 
@@ -599,6 +602,114 @@ class TestCheckTodayCoverage:
         results = check_today_coverage(db_path)
         assert {r.check_name for r in results} == {"today_coverage_scorptec", "today_coverage_pccg"}
         assert all(r.status == CheckResult.OK for r in results)
+
+
+# ── Spec coverage / staleness ────────────────────────────────────────
+
+class TestCheckSpecCoverage:
+    """Test spec coverage + staleness reporting."""
+
+    def _insert_product(self, conn, model):
+        conn.execute(
+            "INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', ?, 1)",
+            (model,),
+        )
+        return conn.execute(
+            "SELECT id FROM products WHERE model = ?", (model,)
+        ).fetchone()[0]
+
+    def _insert_spec(self, conn, product_id, last_synced):
+        conn.execute(
+            "INSERT INTO specs (product_id, source, source_record_key, category, raw_json, last_synced_at) "
+            "VALUES (?, 'amd-com', ?, 'cpu', '{}', ?)",
+            (product_id, f"record-{product_id}", last_synced),
+        )
+
+    def test_full_coverage_ok(self, db_path):
+        """Tracked product with a fresh spec row reports OK for both checks."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        pid = self._insert_product(conn, "Ryzen 7 9800X3D")
+        self._insert_spec(conn, pid, "2026-08-18T04:21:36Z")
+        conn.commit()
+        conn.close()
+
+        results = check_spec_coverage(db_path)
+        by_name = {r.check_name: r for r in results}
+        assert by_name["spec_coverage"].status == CheckResult.OK
+        assert "1/1" in by_name["spec_coverage"].message
+        assert by_name["spec_staleness"].status == CheckResult.OK
+        assert "days ago" in by_name["spec_staleness"].message
+
+    def test_low_coverage_warns(self, db_path):
+        """Tracked products without a spec row produce a WARNING naming them."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        matched = self._insert_product(conn, "Ryzen 7 9800X3D")
+        self._insert_spec(conn, matched, "2026-08-18T04:21:36Z")
+        self._insert_product(conn, "Ryzen 5 5500")
+        self._insert_product(conn, "Ryzen 9 9900")
+        conn.commit()
+        conn.close()
+
+        results = check_spec_coverage(db_path)
+        by_name = {r.check_name: r for r in results}
+        assert by_name["spec_coverage"].status == CheckResult.WARNING
+        assert "1/3" in by_name["spec_coverage"].message
+        assert "Ryzen 5 5500" in by_name["spec_coverage"].message
+        assert "Ryzen 9 9900" in by_name["spec_coverage"].message
+
+    def test_missing_specs_table_warns(self, tmp_path):
+        """A DB without the specs table is a named warning, not a crash."""
+        path = tmp_path / "no_specs.db"
+        conn = sqlite3.connect(str(path))
+        conn.execute("CREATE TABLE products (id INTEGER PRIMARY KEY, category TEXT, brand TEXT, model TEXT, tracked INTEGER)")
+        conn.commit()
+        conn.close()
+
+        results = check_spec_coverage(path)
+        warnings = [r for r in results if r.status == CheckResult.WARNING]
+        assert any(r.check_name == "specs_table" for r in warnings)
+        assert any("migrate" in r.message for r in warnings)
+
+    def test_no_spec_sync_recorded_warns(self, db_path):
+        """A specs table with no rows reports no-sync, not coverage maths."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._insert_product(conn, "Ryzen 7 9800X3D")
+        conn.commit()
+        conn.close()
+
+        results = check_spec_coverage(db_path)
+        by_name = {r.check_name: r for r in results}
+        assert by_name["spec_coverage"].status == CheckResult.WARNING
+        assert by_name["spec_staleness"].status == CheckResult.WARNING
+        assert "No spec sync recorded" in by_name["spec_staleness"].message
+
+    def test_stale_spec_data_warns(self, db_path):
+        """Spec sync older than SPEC_STALE_THRESHOLD_DAYS produces a WARNING."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        pid = self._insert_product(conn, "Ryzen 7 9800X3D")
+        old = (date.today() - timedelta(days=SPEC_STALE_THRESHOLD_DAYS + 1)).strftime("%Y-%m-%dT04:21:36Z")
+        self._insert_spec(conn, pid, old)
+        conn.commit()
+        conn.close()
+
+        results = check_spec_coverage(db_path)
+        by_name = {r.check_name: r for r in results}
+        assert by_name["spec_staleness"].status == CheckResult.WARNING
+        assert "Stale specs" in by_name["spec_staleness"].message
+
+    def test_db_not_found(self, tmp_path):
+        """Missing database returns no results (not an error)."""
+        results = check_spec_coverage(tmp_path / "nonexistent.db")
+        assert len(results) == 0
+
+    def test_thresholds_positive(self):
+        assert SPEC_COVERAGE_MIN_PCT > 0
+        assert SPEC_COVERAGE_MIN_PCT <= 100
+        assert SPEC_STALE_THRESHOLD_DAYS > 0
 
 
 # ── CheckResult class ────────────────────────────────────────────────

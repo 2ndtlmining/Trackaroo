@@ -53,6 +53,9 @@ Environment variables (all optional):
     TRACKAROO_SPEC_FETCH_TIMEOUT        Spec-source fetch timeout      (default: 20)
     TRACKAROO_SPEC_RETRY_BACKOFF        Delay between spec fetch retries (default: 2.0)
     TRACKAROO_AMD_FETCH_DELAY           Delay between AMD page fetches (default: 1.0)
+
+    TRACKAROO_SPEC_COVERAGE_MIN_PCT     Spec coverage threshold %      (default: 80.0)
+    TRACKAROO_SPEC_STALE_THRESHOLD_DAYS Spec staleness threshold days  (default: 14)
 """
 from __future__ import annotations
 
@@ -187,3 +190,7 @@ ALGOLIA_PAGE_DELAY = _env_float("TRACKAROO_ALGOLIA_PAGE_DELAY", 0.3)
 SPEC_FETCH_TIMEOUT_SECONDS = _env_int("TRACKAROO_SPEC_FETCH_TIMEOUT", 20)
 SPEC_RETRY_BACKOFF = _env_float("TRACKAROO_SPEC_RETRY_BACKOFF", 2.0)
 AMD_FETCH_DELAY_SECONDS = _env_float("TRACKAROO_AMD_FETCH_DELAY", 1.0)
+
+# ── Spec coverage tuning (health_checks.py check_spec_coverage) ──────
+SPEC_COVERAGE_MIN_PCT = _env_float("TRACKAROO_SPEC_COVERAGE_MIN_PCT", 80.0)
+SPEC_STALE_THRESHOLD_DAYS = _env_int("TRACKAROO_SPEC_STALE_THRESHOLD_DAYS", 14)
