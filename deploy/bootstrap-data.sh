@@ -51,6 +51,17 @@ if [ "$specs_count" -eq 0 ] && [ -f /app/seed-data/specs_seed.json ]; then
     fi
 fi
 
+# Apply curated launch MSRPs — the spec sources don't publish pricing, so
+# launch_msrp_usd would otherwise stay NULL. Idempotent (sync_specs.py never
+# overwrites the column), so safe on every boot.
+if [ -f db/launch_msrp.json ]; then
+    if python backfill_msrp.py; then
+        log "Launch MSRPs applied from curated mapping."
+    else
+        log "Launch MSRP backfill failed (non-fatal)."
+    fi
+fi
+
 # Only hydrate if the DB has no snapshots yet.
 has_snapshots=$(python - <<'PY'
 import sqlite3
