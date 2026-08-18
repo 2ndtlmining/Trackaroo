@@ -8,11 +8,48 @@
 # partially hydrated DB skips duplicate snapshot dates (ingest.py).
 
 set -e
-[ -d /app/seed-data ] || exit 0
 
 log() {
     echo "[trackaroo] $(date '+%Y-%m-%d %H:%M:%S') $1"
 }
+
+# Keep an existing volume's schema current (idempotent — a fresh DB seeded
+# from db/schema.sql is already up to date, so this is a no-op there).
+python migrate.py || log "WARNING: migrate.py failed (continuing — weekly spec sync may need it)"
+
+[ -d /app/seed-data ] || exit 0
+
+# Hydrate specs on an empty table. Gated on the specs table itself (NOT the
+# snapshot gate below) so a fresh volume — or an existing volume that never
+# ran the weekly spec sync — gets spec rows on boot instead of showing N/A
+# until the next Sunday. Idempotent: skipped once rows exist.
+specs_count=$(python - <<'PY'
+import sqlite3
+import os
+from pathlib import Path
+db = Path(os.environ.get("TRACKAROO_DB", "/data/trackaroo.db"))
+if not db.exists():
+    print(0)
+else:
+    conn = sqlite3.connect(str(db))
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM specs").fetchone()[0]
+        print(n)
+    except sqlite3.OperationalError:
+        print(0)
+    finally:
+        conn.close()
+PY
+)
+
+if [ "$specs_count" -eq 0 ] && [ -f /app/seed-data/specs_seed.json ]; then
+    log "Empty specs table — hydrating from baked seed data..."
+    if python sync_specs.py --import /app/seed-data/specs_seed.json; then
+        log "Specs hydrated from seed data."
+    else
+        log "Specs hydration failed (the weekly spec sync will retry)."
+    fi
+fi
 
 # Only hydrate if the DB has no snapshots yet.
 has_snapshots=$(python - <<'PY'
