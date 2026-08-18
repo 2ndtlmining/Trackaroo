@@ -36,7 +36,7 @@
 </script>
 
 <article class="flex flex-col rounded-md border border-border bg-surface">
-	<div class="p-3">
+	<div class="grow p-3">
 		<div class="flex items-start justify-between gap-2">
 			<a
 				href="/product/{group.productId}"
@@ -70,7 +70,7 @@
 			{group.brand}
 		</div>
 		{#if priceLabel}
-			<div class="mt-2 flex items-center gap-2">
+			<div class="mt-2 flex min-h-7 items-center gap-2">
 				<span class="num text-lg font-semibold text-text">{priceLabel}</span>
 				<span
 					class="shrink-0 rounded-full border border-border bg-surface-hover px-2 py-0.5 text-[10px] uppercase tracking-wide text-text-muted"
@@ -84,7 +84,7 @@
 				{/if}
 			</div>
 		{:else}
-			<div class="mt-2 flex items-center gap-2">
+			<div class="mt-2 flex min-h-7 items-center gap-2">
 				<span class="text-sm text-text-muted">No in-stock listings</span>
 				{#if sparklineReady}
 					<span class="ml-auto shrink-0">

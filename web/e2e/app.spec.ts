@@ -447,6 +447,12 @@ await goto(page, '/product/1');
 		await expect(page.getByText('90d high', { exact: true })).toBeVisible();
 	});
 
+	test('shows when the product was last updated', async ({ page }) => {
+		await goto(page, '/product/1');
+		await expect(page.getByText(/^Updated /)).toBeVisible();
+		await expect(page.getByText(/^Updated (just now|\d+[mhdw]o? ago|never)$/)).toBeVisible();
+	});
+
 	test('404 for an unknown product id', async ({ page }) => {
 		const res = await page.request.get('/product/999999');
 		expect(res.status()).toBe(404);

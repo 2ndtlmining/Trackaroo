@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { mount, tick, unmount } from 'svelte';
 import Badge from '../src/lib/components/Badge.svelte';
 import BrandIcon from '../src/lib/components/BrandIcon.svelte';
+import CommandPalette from '../src/lib/components/CommandPalette.svelte';
 import StatTile from '../src/lib/components/StatTile.svelte';
 import PriceChange from '../src/lib/components/PriceChange.svelte';
 import StockBadge from '../src/lib/components/StockBadge.svelte';
@@ -210,6 +211,10 @@ describe('ProductCard', () => {
 		expect(body).toContain('CPU');
 		expect(body).toContain('from $299');
 		expect(body).toContain('scorptec');
+		// The card content grows to fill the grid cell and the price row keeps a
+		// consistent height whether or not a sparkline is present.
+		expect(body).toContain('class="grow p-3"');
+		expect(body).toContain('mt-2 flex min-h-7 items-center gap-2');
 	});
 
 	it('shows a no-in-stock note when nothing is in stock', () => {
@@ -479,6 +484,38 @@ describe('SpecPanel', () => {
 	});
 });
 
+describe('CommandPalette', () => {
+	it('shows a bordered empty-state panel when nothing matches', async () => {
+		const target = document.createElement('div');
+		const comp = mount(CommandPalette, {
+			target,
+			props: {
+				items: [
+					{
+						id: 1,
+						category: 'cpu' as const,
+						brand: 'AMD',
+						model: 'Ryzen 5 7600',
+						productVariant: null,
+						snapshotCount: 7
+					}
+				],
+				open: true,
+				onToggle: () => {},
+				onClose: () => {}
+			}
+		});
+		await tick();
+		const input = target.querySelector('input[aria-label="Search products"]') as HTMLInputElement;
+		input.value = 'zzz-no-match';
+		input.dispatchEvent(new Event('input', { bubbles: true }));
+		await tick();
+		expect(target.innerHTML).toContain('No matches.');
+		expect(target.innerHTML).toContain('rounded-md border border-border bg-surface');
+		unmount(comp);
+	});
+});
+
 function snapshot(date: string, price: number, stock: string): SnapshotRow {
 	return {
 		id: 1,
@@ -591,6 +628,8 @@ describe('BrandGroupedListings', () => {
 		input.dispatchEvent(new Event('input'));
 		await tick();
 		expect(target.innerHTML).toContain('No listings match the current filters.');
+		// Matches the standard empty-state panel treatment used elsewhere
+		expect(target.innerHTML).toContain('rounded-md border border-border bg-surface px-4 py-8');
 		unmount(comp);
 	});
 

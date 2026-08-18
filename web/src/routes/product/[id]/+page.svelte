@@ -4,7 +4,7 @@
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import BrandGroupedListings from '$lib/components/BrandGroupedListings.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
-	import { formatAud, formatDate, titleCase } from '$lib/formats';
+	import { formatAud, formatDate, formatRelative, titleCase } from '$lib/formats';
 	import type { ProductHistory } from '$lib/server/repos';
 
 	let { data }: { data: ProductHistory } = $props();
@@ -100,6 +100,11 @@ label:
 			<Chip label="History span" value={span} />
 			<Chip label="Snapshots" value={String(totalPoints)} />
 		</div>
+		{#if product.last_snapshot_at}
+			<p class="mt-2 text-xs text-text-muted">
+				Updated {formatRelative(product.last_snapshot_at)}
+			</p>
+		{/if}
 	</div>
 
 	{#if hasChartData}

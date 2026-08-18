@@ -105,7 +105,7 @@
 	</div>
 
 	{#if groups.length === 0}
-		<div class="bg-surface px-4 py-6 text-center text-sm text-text-muted">
+		<div class="rounded-md border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted">
 			No listings match the current filters.
 		</div>
 	{:else}
