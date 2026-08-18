@@ -26,7 +26,10 @@ const sharedSpecRows: CompareRow[] = [
 	},
 	{
 		label: 'Generation',
-		value: (e) => e.spec?.generation ?? null
+		// Match the product-detail panel: some sources (Intel CSVs) carry the
+		// generation under `architecture` only, so fall back to it rather than
+		// rendering N/A for genuinely-populated data.
+		value: (e) => e.spec?.generation ?? e.spec?.architecture ?? null
 	},
 	{
 		label: 'TDP',

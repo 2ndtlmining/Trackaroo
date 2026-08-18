@@ -148,6 +148,15 @@ describe('buildCompareRows', () => {
 		expect(byLabel.get('TDP')!(e)).toBeNull();
 	});
 
+	it('falls back to architecture when generation is missing (Intel source)', () => {
+		const rows = buildCompareRows([
+			entry({ spec: gpuSpec({ generation: null, architecture: 'Arrow Lake' }) })
+		]);
+		const byLabel = new Map(rows.map((r) => [r.label, r.value]));
+		const e = entry({ spec: gpuSpec({ generation: null, architecture: 'Arrow Lake' }) });
+		expect(byLabel.get('Generation')!(e)).toBe('Arrow Lake');
+	});
+
 	it('only emits a Best price row per retailer present in the data', () => {
 		const rows = buildCompareRows([entry({ prices: [{ retailer: 'scorptec', price: 849 }] })]);
 		const labels = rows.map((r) => r.label);
