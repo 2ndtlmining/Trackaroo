@@ -22,15 +22,33 @@ Daily price and stock tracking for desktop CPUs and GPUs across Australian retai
 
 ## Spec data sources
 
-Static hardware specs (VRAM, cores, clocks, TDP, launch date…) come from external
-datasets fetched weekly by `sync_specs.py` — never scraped live per request, and
-never joined into the price pipeline:
+Static hardware specs (VRAM, cores, clocks, TDP, launch date, GPU die, bus
+interface, memory bandwidth, process node, foundry, cache layout, memory
+support…) come from external datasets fetched weekly by `sync_specs.py` —
+never scraped live per request, and never joined into the price pipeline:
 
 | Source | Category | Method |
 |---|---|---|
 | [RightNow-AI/RightNow-GPU-Database](https://github.com/RightNow-AI/RightNow-GPU-Database) | GPU | Raw JSON on GitHub (Apache-2.0; TechPowerUp data via the `dbgpu` project) |
 | [toUpperCase78/intel-processors](https://github.com/toUpperCase78/intel-processors) | Intel CPU | Raw CSVs on GitHub |
 | [amd.com](https://www.amd.com) first-party product pages | AMD CPU | Polite fetch (browser user-agent, 1s delay between pages) |
+
+Each of the 13 TechPowerUp-grade fields is extracted from the source record's
+verbatim `raw_json` (the parsers map them up front for fresh rows, and the
+idempotent `backfill_specs_extra()` re-derives them for existing rows on every
+sync):
+
+- **GPU** (RightNow = TechPowerUp): `gpu_die` ← `gpuName` (e.g. GB202), `bus_interface` ← `busInterface` (e.g. PCIe 5.0 x16), `memory_bandwidth_gbps` ← `memoryBandwidth` (GB/s, e.g. 1790 ≈ 1.79 TB/s), `memory_clock_mhz` ← `memoryClock`, `process_nm` ← `processSize`, `foundry` ← `foundry` (TSMC), `l2_cache_mb` ← `l2Cache` (e.g. 96 MB on RTX 5090).
+- **Intel** (`intel-processors` CSVs): `codename` ← `Code Name` (Arrow Lake), `process_nm` ← `Lithography(nm)`, `memory_speed_mhz` ← `Max Memory Speed(MHz)`, `memory_channels` ← `Max Memory Channels`, `memory_types` ← `Memory Types`, `integrated_graphics` ← `Integrated Graphics`, and `cache_l3_mb` ← `Cache(MB)` (Intel "Smart Cache" equals TechPowerUp's L3 for the desktop watchlist).
+- **AMD** (first-party amd.com): `codename` ← `Former Codename` (socket tag stripped, e.g. "Granite Ridge"), `l1_cache_kb` ← `L1 Cache`, `l2_cache_mb` ← `L2 Cache`, `memory_speed_mhz` ← highest data rate in `Max Memory Speed`, `memory_channels` ← `Memory Channels`, `memory_types` ← `System Memory Type` (DDR5), `integrated_graphics` ← `Graphics Model`.
+
+**Known gaps:** GPU launch MSRP is **not present in the dataset** (stays NULL);
+a handful of OEM-only SKUs have no amd.com page. Specs refresh on a **weekly,
+best-effort** schedule (container default: Sunday 03:00 via `SPEC_SYNC_DOW` /
+`SPEC_SYNC_HOUR`; bare host: `0 3 * * 0` crontab). Re-running `sync_specs.py`
+is always safe — rows are never deleted, conflicts are reported not overwritten,
+and the extra-column backfill is idempotent. Per-run match/conflict/unmatched
+detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-only`).
 
 ## What's built
 
