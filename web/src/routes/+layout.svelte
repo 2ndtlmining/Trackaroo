@@ -15,7 +15,7 @@
 	</main>
 	<footer class="border-t border-border">
 		<div class="mx-auto max-w-6xl px-4 py-4 text-xs text-text-muted">
-			Trackaroo — AU CPU &amp; GPU price tracker
+			Trackaroo — AU CPU &amp; GPU price tracker · Logos are trademarks of their respective owners
 		</div>
 	</footer>
 	<CommandPalette

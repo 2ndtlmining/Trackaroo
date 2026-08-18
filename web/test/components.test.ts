@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mount, tick, unmount } from 'svelte';
 import Badge from '../src/lib/components/Badge.svelte';
+import BrandIcon from '../src/lib/components/BrandIcon.svelte';
 import StatTile from '../src/lib/components/StatTile.svelte';
 import PriceChange from '../src/lib/components/PriceChange.svelte';
 import StockBadge from '../src/lib/components/StockBadge.svelte';
@@ -58,6 +59,33 @@ describe('Badge', () => {
 		const body = renderComponent(Badge, { label: '+5%', tone: 'up' });
 		expect(body).toContain('bg-up');
 		expect(body).toContain('text-up');
+	});
+});
+
+describe('BrandIcon', () => {
+	it('renders an svg with the brand color for a known brand', () => {
+		const body = renderComponent(BrandIcon, { brand: 'AMD' });
+		expect(body).toContain('<svg');
+		expect(body).toContain('<path');
+		expect(body).toContain('fill="#ED1C24"');
+		expect(body).toContain('aria-label="AMD"');
+	});
+
+	it('renders the NVIDIA and Intel colors', () => {
+		expect(renderComponent(BrandIcon, { brand: 'NVIDIA' })).toContain('fill="#76B900"');
+		expect(renderComponent(BrandIcon, { brand: 'Intel' })).toContain('fill="#0071C5"');
+	});
+
+	it('renders nothing for an unknown brand', () => {
+		const body = renderComponent(BrandIcon, { brand: 'PNY' });
+		expect(body).not.toContain('<svg');
+		expect(body).not.toContain('fill=');
+	});
+
+	it('respects the size prop', () => {
+		const body = renderComponent(BrandIcon, { brand: 'AMD', size: 24 });
+		expect(body).toContain('width="24"');
+		expect(body).toContain('height="24"');
 	});
 });
 
@@ -178,6 +206,7 @@ describe('ProductCard', () => {
 		const body = renderComponent(ProductCard, { group: productGroup() });
 		expect(body).toContain('Ryzen 5 7600');
 		expect(body).toContain('AMD');
+		expect(body).toContain('fill="#ED1C24"');
 		expect(body).toContain('CPU');
 		expect(body).toContain('from $299');
 		expect(body).toContain('scorptec');

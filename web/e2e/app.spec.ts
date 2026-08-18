@@ -25,6 +25,7 @@ test.describe('navigation & layout', () => {
 test('footer shows the product tagline on every page', async ({ page }) => {
 		await goto(page, '/products');
 		await expect(page.getByText('Trackaroo — AU CPU & GPU price tracker')).toBeVisible();
+		await expect(page.getByText('Logos are trademarks of their respective owners')).toBeVisible();
 	});
 
 	test('header shows snapshot stats and lends context', async ({ page }) => {
@@ -224,10 +225,16 @@ test.describe('products page', () => {
 		expect(await cards.count()).toBeGreaterThan(0);
 		// Each card shows the model name and a "from $" price (or no-in-stock note)
 		await expect(cards.first()).toContainText(/from \$|No in-stock listings/);
+		// Brand logo icons render on the cards (AMD/NVIDIA/Intel seeded)
+		await expect(page.locator('svg[aria-label="AMD"]').first()).toBeVisible();
+		await expect(page.locator('svg[aria-label="NVIDIA"]').first()).toBeVisible();
+		await expect(page.locator('svg[aria-label="Intel"]').first()).toBeVisible();
 		// At least one unexpanded card shows a trend sparkline (cards with history)
-		const sparklineCard = cards.filter({ has: page.locator('svg') }).first();
+		const sparklineCard = cards.filter({ has: page.locator('svg polyline') }).first();
 		expect(await sparklineCard.count()).toBeGreaterThan(0);
-		await expect(sparklineCard.locator('svg').first()).toBeVisible();
+		await expect(
+			sparklineCard.locator('svg').filter({ has: page.locator('polyline') }).first()
+		).toBeVisible();
 	});
 
 	test('shows an empty state when no filters match', async ({ page }) => {
@@ -324,6 +331,8 @@ test.describe('compare', () => {
 		await expect(page.getByRole('heading', { name: 'Compare' })).toBeVisible();
 		// Two product columns plus the "Field" header
 		await expect(page.locator('thead th a')).toHaveCount(2);
+		// Each column header shows a brand logo icon
+		await expect(page.locator('thead svg[aria-label]')).toHaveCount(2);
 		await expect(page.getByText('Architecture', { exact: true })).toBeVisible();
 	});
 
@@ -423,6 +432,8 @@ test.describe('product detail', () => {
 await goto(page, '/product/1');
 
 		await expect(page.locator('h1').first()).toBeVisible();
+		// Product 1 is an Intel chip — the header shows its brand logo
+		await expect(page.locator('svg[aria-label="Intel"]').first()).toBeVisible();
 		await expect(page.getByText('Category', { exact: true })).toBeVisible();
 		await expect(page.getByText('Listings', { exact: true })).toBeVisible();
 		await expect(page.getByText('History span', { exact: true })).toBeVisible();

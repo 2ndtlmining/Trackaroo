@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { formatAud } from '$lib/formats';
 	import Badge from './Badge.svelte';
+	import BrandIcon from './BrandIcon.svelte';
 	import LatestListingTable from './LatestListingTable.svelte';
 	import Sparkline from './Sparkline.svelte';
 	import type { ProductGroup } from '$lib/server/repos';
@@ -64,7 +65,10 @@
 				<Badge tone="neutral" label={group.category.toUpperCase()} />
 			</div>
 		</div>
-		<div class="mt-0.5 text-xs text-text-muted">{group.brand}</div>
+		<div class="mt-0.5 flex items-center gap-1.5 text-xs text-text-muted">
+			<BrandIcon brand={group.brand} size={14} />
+			{group.brand}
+		</div>
 		{#if priceLabel}
 			<div class="mt-2 flex items-center gap-2">
 				<span class="num text-lg font-semibold text-text">{priceLabel}</span>

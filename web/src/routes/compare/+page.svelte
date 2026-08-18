@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Badge from '$lib/components/Badge.svelte';
+	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import { buildCompareRows } from '$lib/compareRows';
 	import type { CompareEntry } from '$lib/server/repos';
 
@@ -42,6 +43,7 @@
 								{entry.product.model}
 							</a>
 							<span class="mt-1 flex items-center gap-1.5 text-xs text-text-muted">
+								<BrandIcon brand={entry.product.brand} size={14} />
 								{entry.product.brand}
 								<Badge tone="neutral" label={entry.product.category.toUpperCase()} />
 							</span>

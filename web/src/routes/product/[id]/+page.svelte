@@ -3,6 +3,7 @@
 	import Chip from '$lib/components/Chip.svelte';
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import BrandGroupedListings from '$lib/components/BrandGroupedListings.svelte';
+	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import { formatAud, formatDate, titleCase } from '$lib/formats';
 	import type { ProductHistory } from '$lib/server/repos';
 
@@ -74,7 +75,10 @@ label:
 
 <div class="space-y-6">
 	<div>
-		<p class="text-sm text-text-muted">{product.brand}</p>
+		<p class="flex items-center gap-1.5 text-sm text-text-muted">
+			<BrandIcon brand={product.brand} size={16} />
+			{product.brand}
+		</p>
 		<h1 class="text-xl font-semibold text-text">
 			{product.model}{product.variant ? ` · ${product.variant}` : ''}
 		</h1>
