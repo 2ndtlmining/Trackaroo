@@ -290,6 +290,30 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 5. **Price anomaly detection maturity** — a single-day jump only trips the 3σ check once a listing has ~10+ history points (max deviation ≈ √N); most listings still below that depth. See DECISIONS.md.
 6. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3/4
 
+## Next up (planned 18-Aug — picked up tomorrow)
+
+### 🚩 Price-drop & restock alerts (Discord-first) — agreed design
+The standout UX feature: turn the tracker into something that *tells you when to buy* instead of checking daily.
+
+- **Table:** `price_alerts` (`product_id`, `target_price`, `channel CHECK IN ('discord','email','webhook')`, `notify_on_restock`, `active`, `created_at`, `last_notified_at`); migration in `migrate.py`; `UNIQUE(product_id, channel)`.
+- **Check:** `check_alerts.py` (or a step in `run_daily.py`) runs **after ingest** so it only fires on fresh prices; compares each active alert to the product's **cheapest in-stock variant** (same query the cards use); fires when `price <= target_price`. Cooldown via `last_notified_at` + last-notified-price so a sustained breach doesn't spam. Optional restock notify when an out-of-stock variant returns.
+- **Delivery (all stdlib, no new deps):**
+  - **Discord (primary):** `urllib` POST `{"content": msg}` to the webhook URL — no auth beyond the URL, generous rate limits.
+  - **Email:** `smtplib` + `email.message` (Gmail app password / SendGrid / any SMTP).
+  - **Generic webhook:** same POST pattern (ntfy.sh / Slack).
+  - All channels opt-in via env vars; unconfigured = silently disabled (best-effort, never breaks the pipeline).
+- **Config:** `TRACKAROO_DISCORD_WEBHOOK_URL`, `TRACKAROO_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM/TO`, `TRACKAROO_ALERT_WEBHOOK_URL` + `.env.example`.
+- **UI:** "Alert me under $X" + channel picker on the product page. **Note:** the web app opens the DB **read-only** (`web/src/lib/server/db.ts:90`) — the alert server action needs a dedicated **write connection** for just those endpoints (WAL allows one writer + readers). Small "My alerts" list/delete panel.
+- **Tests:** matcher unit tests (hit / miss / cooldown / restock), mocked delivery (captured POST, fake SMTP), migration test, e2e for the form.
+- **Schedule:** run after each daily ingest (entrypoint or cron).
+
+### Backlog (UX, ranked by value/effort)
+1. **Products-page filters** — category/brand/generation filter + text search on the grid (~½ day).
+2. **"Since tracked" stat chips** — cheapest-ever / highest-ever / 30-day average on the product page; the band data is already queried for the chart (~1–2 h).
+3. **Deal highlight** — badge cards whose cheapest in-stock price is below the 30-day average (~2–3 h).
+4. **Mobile responsiveness pass** — card grid / compare / chart on phone viewports (~few hours).
+5. **RSS feed of biggest movers** (~1 h).
+
 ## Next concrete steps
 
 1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 10 days, 09–18 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)
@@ -302,7 +326,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 
 ## Regression test count
 
-- **391 tests (was 383; +8 = 5 config env-override + 4 config-import lock-in tests for the new `TRACKAROO_*` tuning knobs)** across 19 test modules via pytest
+- **408 tests (was 391; +10 spec-enrichment = 6 backfill + 4 migrate-column, then +7 spec-coverage health checks)** across 19 test modules via pytest
   - `test_seed.py` — seed, watchlist loading, schema creation
   - `test_matching.py` — product matching logic
   - `test_schema.py` — schema validation, triggers, constraints
@@ -322,7 +346,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
   - `test_specs_schema.py` — **new:** specs table DDL + idempotent migration
   - `test_specs_matching.py` — **new:** name normalization + product→dataset matching
   - `test_sync_specs.py` — **new:** fetch/parse/upsert, conflict no-overwrite, report, CLI flags
-- **Frontend unit (vitest, `web/`) — 188 tests** across 9 suites (formats 32, change 11, filters 18, theme 7, repos 55, components 44, listingsPanel 10, compareRows 6, tableSort 5) — against temp DBs seeded from `data/*.json`; 18-Aug added +5 compareRows (new suite), +2 getComparisonData (per-listing latest, out-of-stock exclusion), +3 getCoverageSummary (removed with the scaffolding), +2 getProductIndex + 3 getSparklines + 5 Sparkline component (UI-additions session), +3 getProductSparklines + 3 ProductCard card-sparkline render tests (card-sparkline session), +4 titleCase +5 tableSort (new suite) +1 getProductIndex snapshotCount (Round-3 session), +1 compareRows generation→architecture fallback (Round-3 amend)
+- **Frontend unit (vitest, `web/`) — 193 tests** across 9 suites (formats 35, change 11, filters 18, theme 7, repos 55, components 46, listingsPanel 10, compareRows 6, tableSort 5) — against temp DBs seeded from `data/*.json`; 18-Aug added +5 compareRows (new suite), +2 getComparisonData (per-listing latest, out-of-stock exclusion), +3 getCoverageSummary (removed with the scaffolding), +2 getProductIndex + 3 getSparklines + 5 Sparkline component (UI-additions session), +3 getProductSparklines + 3 ProductCard card-sparkline render tests (card-sparkline session), +4 titleCase +5 tableSort (new suite) +1 getProductIndex snapshotCount (Round-3 session), +1 compareRows generation→architecture fallback (Round-3 amend), +3 format helpers +2 SpecPanel detail rows (spec-enrichment session)
 - **Frontend e2e (Playwright, `web/e2e/`) — 46 tests** — navigation, theme, dashboard filters, **dashboard table (populated + Trend sparklines + column-sort tri-state)**, **products card grid (4: heading+cards, empty state, card expand/collapse, sparkline trend column)**, **compare (4: flow to /compare, category lock, clear bar, invalid URLs)**, **movers (5: renders + Trend sparklines, window switching, invalid-window fallback, link-through, column-sort tri-state)**, product detail, **grouped listings (5: brand groups, expand+toggle+chart-survives, chart navigation, search, in-stock filter)**, **spec panel (4: below-chart layout, expand/collapse, no-panel negative, GPU fields)**, **90d chips + carousel badge (2)**, **command palette (4: Ctrl+K open + Enter-navigate, Escape close, quick-compare row, snapshot-count badge)**; troubleshooting view + health-JSON tests removed with the scaffolding; runs via `npm run test:e2e` against a seeded dev server
 
 ## How to update this file
