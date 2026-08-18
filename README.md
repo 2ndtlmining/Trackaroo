@@ -64,8 +64,8 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 401 tests across 19 modules via pytest |
-| **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies |
+| **Regression tests** | ✅ Complete | 408 tests across 19 modules via pytest |
+| **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
 | **Frontend tests** | ✅ Complete | 193 vitest + 46 Playwright e2e (with a `goto()` hydration helper) |
@@ -244,7 +244,7 @@ Trackaroo/
 │   ├── cpu_pccg_10_August_2026.json
 │   └── gpu_pccg_10_August_2026.json
 │
-├── unit_testing/       # Python regression tests (401 via pytest)
+├── unit_testing/       # Python regression tests (408 via pytest)
 │   ├── conftest.py             # shared pytest fixtures (in-memory DB)
 │   ├── test_seed.py            # seed + schema tests
 │   ├── test_matching.py        # product matching tests
