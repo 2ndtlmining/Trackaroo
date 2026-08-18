@@ -688,3 +688,132 @@ class TestMain:
         with pytest.raises(SystemExit) as exc:
             ss.main([])
         assert exc.value.code == 1
+
+
+# ── seed export / import (--export / --import) ───────────────────────
+
+class TestSeedExportImport:
+    def _seed_row(self, db, path):
+        """Insert a product + gpu spec row, then export it to path."""
+        _insert_product(db, "gpu", "NVIDIA", "GeForce RTX 4070 Super", vram_gb=12)
+        ss.sync_source("gpu", ss.SOURCE_GPU, ss.parse_gpu_records(GPU_JSON),
+                       db, ss.load_products(db, "gpu"))
+        n = ss.export_specs(db, path)
+        assert n == 1
+        return path
+
+    def test_export_json_shape(self, db, tmp_path):
+        out = tmp_path / "specs_seed.json"
+        self._seed_row(db, out)
+        data = json.loads(out.read_text(encoding="utf-8"))
+        assert len(data) == 1
+        row = data[0]
+        assert set(row.keys()) == set(ss._SEED_COLUMNS)
+        assert "spec_id" not in row
+        assert row["product_id"] == 1
+        assert row["vram_gb"] == 12.0
+        assert row["tdp_watts"] == 220
+        assert row["gpu_die"] == "AD103"
+        assert isinstance(row["raw_json"], str)  # raw stays a JSON string
+
+    def test_import_restores_rows(self, db, tmp_path):
+        out = tmp_path / "specs_seed.json"
+        self._seed_row(db, out)
+        db.execute("DELETE FROM specs")
+        db.commit()
+        n = ss.import_specs(db, out)
+        assert n == 1
+        row = db.execute("SELECT * FROM specs").fetchone()
+        assert row["product_id"] == 1
+        assert row["gpu_die"] == "AD103"
+        assert row["memory_bandwidth_gbps"] == 504.2
+
+    def test_import_idempotent(self, db, tmp_path):
+        out = tmp_path / "specs_seed.json"
+        self._seed_row(db, out)
+        db.execute("DELETE FROM specs")
+        db.commit()
+        ss.import_specs(db, out)
+        ss.import_specs(db, out)  # re-import must not duplicate
+        assert db.execute("SELECT COUNT(*) FROM specs").fetchone()[0] == 1
+
+    def test_import_replaces_existing(self, db, tmp_path):
+        """INSERT OR REPLACE keys on (product_id, source), so a diverged row
+        is overwritten with the seed value (bootstrap is authoritative)."""
+        out = tmp_path / "specs_seed.json"
+        self._seed_row(db, out)
+        db.execute("UPDATE specs SET raw_json = raw_json || ' '")
+        db.commit()
+        n = ss.import_specs(db, out)
+        assert n == 1
+        row = db.execute("SELECT raw_json FROM specs").fetchone()
+        assert not row[0].endswith(" ")
+
+    def test_import_dry_run_no_writes(self, db, tmp_path):
+        out = tmp_path / "specs_seed.json"
+        self._seed_row(db, out)
+        db.execute("DELETE FROM specs")
+        db.commit()
+        n = ss.import_specs(db, out, dry_run=True)
+        assert n == 1
+        assert db.execute("SELECT COUNT(*) FROM specs").fetchone()[0] == 0
+
+    def test_import_rejects_non_list(self, db, tmp_path):
+        bad = tmp_path / "bad.json"
+        bad.write_text(json.dumps({"not": "a list"}), encoding="utf-8")
+        with pytest.raises(ValueError):
+            ss.import_specs(db, bad)
+
+    def test_main_export_flag(self, tmp_path, monkeypatch):
+        db_file = tmp_path / "t.db"
+        _make_db_file(db_file, [("gpu", "NVIDIA", "GeForce RTX 4070 Super", 12, None)])
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.row_factory = sqlite3.Row
+        ss.sync_source("gpu", ss.SOURCE_GPU, ss.parse_gpu_records(GPU_JSON),
+                       conn, ss.load_products(conn, "gpu"))
+        conn.close()
+        monkeypatch.setattr(ss, "DB_PATH", db_file)
+        out = tmp_path / "specs_seed.json"
+        ss.main(["--export", str(out)])
+        data = json.loads(out.read_text(encoding="utf-8"))
+        assert data[0]["source"] == ss.SOURCE_GPU
+
+    def test_main_import_flag(self, tmp_path, monkeypatch):
+        db_file = tmp_path / "t.db"
+        _make_db_file(db_file, [("gpu", "NVIDIA", "GeForce RTX 4070 Super", 12, None)])
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.row_factory = sqlite3.Row
+        ss.sync_source("gpu", ss.SOURCE_GPU, ss.parse_gpu_records(GPU_JSON),
+                       conn, ss.load_products(conn, "gpu"))
+        out = tmp_path / "specs_seed.json"
+        ss.export_specs(conn, out)
+        conn.execute("DELETE FROM specs")
+        conn.commit()
+        conn.close()
+        monkeypatch.setattr(ss, "DB_PATH", db_file)
+        ss.main(["--import", str(out)])
+        assert _count_specs(db_file) == 1
+
+    def test_main_export_missing_db_exits_nonzero(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(ss, "DB_PATH", tmp_path / "nope.db")
+        with pytest.raises(SystemExit) as exc:
+            ss.main(["--export", str(tmp_path / "s.json")])
+        assert exc.value.code == 1
+
+    def test_main_import_missing_file_exits_nonzero(self, tmp_path, monkeypatch):
+        db_file = tmp_path / "t.db"
+        _make_db_file(db_file, [])
+        monkeypatch.setattr(ss, "DB_PATH", db_file)
+        with pytest.raises(SystemExit) as exc:
+            ss.main(["--import", str(tmp_path / "nope.json")])
+        assert exc.value.code == 1
+
+    def test_main_export_import_mutually_exclusive(self, tmp_path, monkeypatch):
+        db_file = tmp_path / "t.db"
+        _make_db_file(db_file, [])
+        monkeypatch.setattr(ss, "DB_PATH", db_file)
+        with pytest.raises(SystemExit) as exc:
+            ss.main(["--export", "a", "--import", "b"])
+        assert exc.value.code == 2

@@ -500,6 +500,55 @@ def _record_values(product_id: int, source: str, rec: Dict[str, Any], raw_json: 
     )
 
 
+# Column set for seed export/import — mirrors _INSERT_SQL (all specs columns
+# except the autoincrement spec_id, which is reassigned on import).
+_SEED_COLUMNS = [
+    "product_id", "source", "source_record_key", "category",
+    "architecture", "generation", "launch_date", "launch_msrp_usd",
+    "vram_gb", "memory_bus_width_bit", "memory_type", "tdp_watts", "core_count",
+    "thread_count", "base_clock_mhz", "boost_clock_mhz", "socket", "cache_l3_mb",
+    "gpu_die", "bus_interface", "memory_bandwidth_gbps", "memory_clock_mhz",
+    "process_nm", "foundry", "codename", "l1_cache_kb", "l2_cache_mb",
+    "memory_speed_mhz", "memory_channels", "memory_types", "integrated_graphics",
+    "raw_json", "last_synced_at",
+]
+
+
+def export_specs(conn: sqlite3.Connection, path: Path) -> int:
+    """Write the specs table as JSON seed data (baked into the Docker image so
+    a fresh volume has spec rows immediately — see bootstrap-data.sh).
+
+    Excludes spec_id (auto-assigned on import). Values keep their SQLite types
+    (numbers/strings), raw_json stays a JSON string.
+    """
+    rows = conn.execute(
+        f"SELECT {', '.join(_SEED_COLUMNS)} FROM specs ORDER BY product_id, source"
+    ).fetchall()
+    data = [dict(row) for row in rows]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return len(data)
+
+
+def import_specs(conn: sqlite3.Connection, path: Path, dry_run: bool = False) -> int:
+    """Upsert specs rows from a JSON seed export.
+
+    INSERT OR REPLACE keys on the UNIQUE (product_id, source) constraint, so a
+    re-run on an already-hydrated DB is a safe no-op. Returns rows imported.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("seed spec file must contain a JSON list of rows")
+    sql = _INSERT_SQL.replace("INSERT INTO specs", "INSERT OR REPLACE INTO specs", 1)
+    for rec in data:
+        values = tuple(rec.get(col) for col in _SEED_COLUMNS)
+        if not dry_run:
+            conn.execute(sql, values)
+    if not dry_run:
+        conn.commit()
+    return len(data)
+
+
 _EXTRA_COLUMNS = [
     "gpu_die",
     "bus_interface",
@@ -823,7 +872,15 @@ def main(argv: Optional[List[str]] = None) -> None:
                         help="Fetch + match + report, no DB writes")
     parser.add_argument("--report-only", action="store_true",
                         help="Print the last sync report and exit (no fetch)")
+    parser.add_argument("--export", metavar="PATH", default=None,
+                        help="Export the specs table as JSON seed data and exit "
+                             "(regenerate data/specs_seed.json after extractor changes)")
+    parser.add_argument("--import", dest="import_path", metavar="PATH", default=None,
+                        help="Upsert specs from a JSON seed export and exit (no fetch)")
     args = parser.parse_args(argv)
+
+    if args.export and args.import_path:
+        parser.error("--export and --import are mutually exclusive")
 
     if args.report_only:
         report = read_report()
@@ -831,6 +888,28 @@ def main(argv: Optional[List[str]] = None) -> None:
             LOGGER.error("No previous sync report at %s", DATA_DIR / REPORT_FILENAME)
             sys.exit(1)
         print(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+
+    if args.export or args.import_path:
+        if args.import_path and not Path(args.import_path).exists():
+            LOGGER.error("Seed file not found at %s", args.import_path)
+            sys.exit(1)
+        if not DB_PATH.exists():
+            LOGGER.error("Database not found at %s. Run seed.py first.", DB_PATH)
+            sys.exit(1)
+        conn = get_connection()
+        try:
+            if not _specs_table_exists(conn):
+                LOGGER.error("specs table is missing. Run: python migrate.py")
+                sys.exit(1)
+            if args.export:
+                n = export_specs(conn, Path(args.export))
+                LOGGER.info("Exported %d spec rows to %s", n, args.export)
+            else:
+                n = import_specs(conn, Path(args.import_path), dry_run=args.dry_run)
+                LOGGER.info("Imported %d spec rows from %s", n, args.import_path)
+        finally:
+            conn.close()
         return
 
     if not DB_PATH.exists():
