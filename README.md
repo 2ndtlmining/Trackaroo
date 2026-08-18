@@ -89,10 +89,17 @@ python run_daily.py --dry-run
 # Skip health checks
 python run_daily.py --no-health
 
+# Skip the Discord digest (it fires automatically on healthy runs)
+python run_daily.py --no-notify
+
 # Run health checks standalone
 python health_checks.py
 python health_checks.py --json-only
 python health_checks.py --db-only
+
+# Preview or send the daily Discord digest standalone
+python notify_discord.py --dry-run
+python notify_discord.py --test
 
 # Query latest prices
 python query.py
@@ -210,11 +217,13 @@ Trackaroo/
 ├── DECISIONS.md        # rationale for key choices
 ├── FRONTEND_IMPROVEMENTS.md  # frontend/UX improvement implementation brief
 │
-├── run_daily.py        # one-command daily scraper + ingest runner (with health checks)
+├── run_daily.py        # one-command daily scraper + ingest runner (health checks + Discord digest)
+├── notify_discord.py   # daily Discord digest of biggest CPU/GPU moves (top 3 up/down per category)
 ├── health_checks.py    # validate JSON output + DB state after each run
 ├── seed.py             # populate products table from watchlist.csv
 ├── ingest.py           # read JSON snapshots → write to DB
 ├── query.py            # query tool (latest prices, trends, movers)
+├── backfill_msrp.py    # backfill launch_msrp_usd from db/launch_msrp.json (one-off, re-runnable)
 ├── backup_db.py        # standalone DB backup with retention pruning
 ├── sync_specs.py       # weekly spec sync (fetch + match + upsert; never calls run_daily.py)
 ├── spec_matching.py    # name normalization + product→spec-dataset matching
