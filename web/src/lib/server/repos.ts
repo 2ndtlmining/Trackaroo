@@ -9,9 +9,9 @@ import type {
 	Retailer,
 	StockStatus
 } from '../types';
+import { MIN_HISTORY_POINTS } from '../constants';
 
 export const DEFAULT_WINDOW_DAYS = 7;
-export const MIN_HISTORY_POINTS = 3;
 
 export interface Summary {
 	trackedProducts: number;
@@ -72,6 +72,12 @@ export interface ProductGroup {
 	// Cheapest in-stock price per day across the product's listings (for the
 	// unexpanded card sparkline); empty when no in-stock history in the window.
 	sparkline?: PricePoint[];
+	// Average of the per-day cheapest in-stock price over the trailing 30 days
+	// (null when no in-stock history in the window).
+	avg30?: number | null;
+	// True when the current cheapest in-stock price is below the 30-day
+	// average (and there is enough history to trust the average).
+	deal?: boolean;
 }
 
 // Groups per-listing rows into one entry per product (for the Products card
@@ -163,6 +169,8 @@ export interface ProductHistory {
 	series: Series[];
 	specs: SpecRow | null;
 	band: PriceBandPoint[];
+	// Trailing-30-day stats for the detail page's "30d avg" chip.
+	stats: ProductStats;
 }
 
 // Canonical display names for AIB/GPU partner brands, keyed by the lowercase
@@ -529,6 +537,71 @@ export function getProductSparklines(
 	return byProduct;
 }
 
+// Average of the per-day cheapest in-stock price over the trailing window
+// (the same series the sparklines draw), plus the number of days that series
+// has — the point count gates the "30d avg" chip and the deal badge so a
+// product with 1-2 days of history is never shown a misleading average.
+export interface ProductStats {
+	avg30: number | null;
+	avg30Points: number;
+}
+
+export function getProductStats(db: DB, productId: number, days = 30): ProductStats {
+	const row = db
+		.prepare(
+			`SELECT AVG(day_min.price) AS avg, COUNT(*) AS points
+			 FROM (
+				SELECT s.snapshot_date, MIN(s.price_aud) AS price
+				FROM retailer_listings l
+				JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				WHERE l.product_id = ?
+				  AND s.stock_status = 'in_stock'
+				  AND ${notBundle('l')}
+				  AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)
+				GROUP BY s.snapshot_date
+			 ) day_min`
+		)
+		.get(productId, `-${days} days`) as { avg: number | null; points: number };
+	return { avg30: row.avg, avg30Points: row.points };
+}
+
+// Per-product 30-day stats for a list of products (single query, like
+// getProductSparklines) — powers the deal badges on the products grid.
+export function getProductDealStats(
+	db: DB,
+	productIds: number[],
+	days = 30
+): Map<number, ProductStats> {
+	if (productIds.length === 0) return new Map();
+	const placeholders = productIds.map(() => '?').join(',');
+	const rows = db
+		.prepare(
+			`SELECT day_min.product_id AS productId, AVG(day_min.price) AS avg, COUNT(*) AS points
+			 FROM (
+				SELECT l.product_id, s.snapshot_date, MIN(s.price_aud) AS price
+				FROM retailer_listings l
+				JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				WHERE l.product_id IN (${placeholders})
+				  AND s.stock_status = 'in_stock'
+				  AND ${notBundle('l')}
+				  AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)
+				GROUP BY l.product_id, s.snapshot_date
+			 ) day_min
+			 GROUP BY day_min.product_id`
+		)
+		.all(...productIds, `-${days} days`) as Array<{
+		productId: number;
+		avg: number | null;
+		points: number;
+	}>;
+
+	const byProduct = new Map<number, ProductStats>();
+	for (const row of rows) {
+		byProduct.set(row.productId, { avg30: row.avg, avg30Points: row.points });
+	}
+	return byProduct;
+}
+
 export function getPriceBand(db: DB, productId: number): PriceBandPoint[] {
 	const rows = db
 		.prepare(
@@ -642,7 +715,8 @@ export function getProductHistory(db: DB, productId: number): ProductHistory | n
 		product,
 		series: [...listings.values()].map(({ listing, points }) => ({ listing, points })),
 		specs: spec ?? null,
-		band: getPriceBand(db, productId)
+		band: getPriceBand(db, productId),
+		stats: getProductStats(db, productId)
 	};
 }
 
@@ -656,6 +730,10 @@ export interface CheapestListing {
 	snapshotDate: string;
 	ninetyDayLow: number | null;
 	ninetyDayHigh: number | null;
+	// Average of the per-day cheapest in-stock price over the trailing 30
+	// days (null when no in-stock history in the window) + day count.
+	avg30: number | null;
+	avg30Points: number;
 }
 
 // Lowest/highest in-stock price for a product over the trailing window,
@@ -706,7 +784,29 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 				 WHERE l3.product_id = p.id
 				   AND ps3.stock_status = 'in_stock'
 				   AND ${notBundle('l3')}
-				   AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-90 days')) AS high90
+				   AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-90 days')) AS high90,
+				(SELECT AVG(dm.price)
+				 FROM (
+					SELECT ps3.snapshot_date, MIN(ps3.price_aud) AS price
+					FROM price_snapshots ps3
+					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+					WHERE l3.product_id = p.id
+					  AND ps3.stock_status = 'in_stock'
+					  AND ${notBundle('l3')}
+					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-30 days')
+					GROUP BY ps3.snapshot_date
+				 ) dm) AS avg30,
+				(SELECT COUNT(*)
+				 FROM (
+					SELECT ps3.snapshot_date
+					FROM price_snapshots ps3
+					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+					WHERE l3.product_id = p.id
+					  AND ps3.stock_status = 'in_stock'
+					  AND ${notBundle('l3')}
+					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-30 days')
+					GROUP BY ps3.snapshot_date
+				 ) dm) AS avg30_points
 			FROM products p
 			JOIN retailer_listings l ON l.product_id = p.id AND l.status = 'active'
 			JOIN price_snapshots ps
@@ -739,6 +839,8 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 		snapshot_date: string;
 		low90: number | null;
 		high90: number | null;
+		avg30: number | null;
+		avg30_points: number;
 	}>;
 
 	return rows.map((r) => ({
@@ -750,7 +852,9 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 		price: r.price,
 		snapshotDate: r.snapshot_date,
 		ninetyDayLow: r.low90,
-		ninetyDayHigh: r.high90
+		ninetyDayHigh: r.high90,
+		avg30: r.avg30,
+		avg30Points: r.avg30_points
 	}));
 }
 

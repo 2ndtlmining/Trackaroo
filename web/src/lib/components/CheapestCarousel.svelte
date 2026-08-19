@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { formatAud, titleCase } from '$lib/formats';
-	import type { CheapestListing } from '$lib/server/repos';
+	import { MIN_HISTORY_POINTS } from '$lib/constants';
+	import { type CheapestListing } from '$lib/server/repos';
 	import type { Category } from '$lib/types';
 
 	let { gpu, cpu }: { gpu: CheapestListing[]; cpu: CheapestListing[] } = $props();
@@ -136,6 +137,18 @@
 								title="Lowest price in the last 90 days"
 							>
 								90d low
+							</span>
+						{/if}
+						{#if
+							listing.avg30 !== null &&
+							listing.avg30Points >= MIN_HISTORY_POINTS &&
+							listing.price < listing.avg30
+						}
+							<span
+								class="shrink-0 rounded-full border border-down/30 bg-down/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-down"
+								title={`Below the 30-day average (${formatAud(listing.avg30)})`}
+							>
+								Deal
 							</span>
 						{/if}
 					</div>

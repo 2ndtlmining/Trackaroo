@@ -217,6 +217,21 @@ describe('ProductCard', () => {
 		expect(body).toContain('mt-2 flex min-h-7 items-center gap-2');
 	});
 
+	it('shows a Deal badge with the 30-day average tooltip when flagged', () => {
+		const body = renderComponent(ProductCard, {
+			group: productGroup({ deal: true, avg30: 320 })
+		});
+		expect(body).toContain('Deal');
+		expect(body).toContain('Below the 30-day average ($320)');
+	});
+
+	it('omits the Deal badge when the group is not flagged as a deal', () => {
+		const body = renderComponent(ProductCard, {
+			group: productGroup({ avg30: 320 })
+		});
+		expect(body).not.toContain('Deal');
+	});
+
 	it('shows a no-in-stock note when nothing is in stock', () => {
 		const body = renderComponent(ProductCard, {
 			group: productGroup({
@@ -687,6 +702,8 @@ function cheapestListing(overrides: Partial<CheapestListing> = {}): CheapestList
 		snapshotDate: '2026-08-17',
 		ninetyDayLow: 799,
 		ninetyDayHigh: 899,
+		avg30: null,
+		avg30Points: 0,
 		...overrides
 	};
 }
@@ -703,6 +720,29 @@ describe('CheapestCarousel', () => {
 		const body = renderComponent(CheapestCarousel, { gpu: [cheapestListing()], cpu: [] });
 		expect(body).not.toContain('90d low');
 		expect(body).toContain('$849');
+	});
+
+	it('shows the Deal badge when the price is below the 30-day average', () => {
+		const listing = cheapestListing({ price: 799, avg30: 849, avg30Points: 5 });
+		const body = renderComponent(CheapestCarousel, { gpu: [listing], cpu: [] });
+		expect(body).toContain('Deal');
+		expect(body).toContain('Below the 30-day average ($849)');
+	});
+
+	it('omits the Deal badge when the price is at or above the 30-day average', () => {
+		const body = renderComponent(CheapestCarousel, {
+			gpu: [cheapestListing({ avg30: 849, avg30Points: 5 })],
+			cpu: []
+		});
+		expect(body).not.toContain('Deal');
+	});
+
+	it('omits the Deal badge when there is not enough 30-day history', () => {
+		const body = renderComponent(CheapestCarousel, {
+			gpu: [cheapestListing({ price: 799, avg30: 849, avg30Points: 2 })],
+			cpu: []
+		});
+		expect(body).not.toContain('Deal');
 	});
 
 	it('shows a tooltip title with the full variant name on the card', () => {

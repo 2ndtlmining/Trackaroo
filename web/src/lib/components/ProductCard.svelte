@@ -77,6 +77,18 @@
 				>
 					{group.cheapestInStockRetailer}
 				</span>
+				{#if group.deal}
+					<span
+						class="shrink-0 rounded-full border border-down/30 bg-down/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-down"
+						title={
+							group.avg30 != null
+								? `Below the 30-day average (${formatAud(group.avg30)})`
+								: 'Below the 30-day average'
+						}
+					>
+						Deal
+					</span>
+				{/if}
 				{#if sparklineReady}
 					<span class="ml-auto shrink-0">
 						<Sparkline points={group.sparkline} />

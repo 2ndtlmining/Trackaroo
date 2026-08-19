@@ -4,7 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { openDatabase, type DB } from '../src/lib/server/db';
 import {
-	MIN_HISTORY_POINTS,
 	deriveListingBrand,
 	getCheapestPerModel,
 	getComparisonData,
@@ -12,13 +11,16 @@ import {
 	getMovers,
 	getPriceBand,
 	getPriceExtremes,
+	getProductDealStats,
 	getProductHistory,
 	getProductIndex,
 	getProductSparklines,
+	getProductStats,
 	getSparklines,
 	getSummary,
 	groupListingsByProduct
 } from '../src/lib/server/repos';
+import { MIN_HISTORY_POINTS } from '../src/lib/constants';
 import { createSeededDb, DATA_DIR, SCHEMA_PATH, parseDateFromFilename, type SeededDb } from './helpers/seed';
 
 let seeded: SeededDb;
@@ -271,6 +273,21 @@ describe('getCheapestPerModel', () => {
 			expect(row.ninetyDayHigh as number).toBeGreaterThanOrEqual(row.price);
 		}
 	});
+
+	it('carries 30-day average stats for each model', () => {
+		const rows = getCheapestPerModel(db, 'gpu');
+		expect(rows.length).toBeGreaterThan(0);
+		for (const row of rows) {
+			if (row.avg30 === null) {
+				expect(row.avg30Points).toBe(0);
+			} else {
+				expect(row.avg30Points).toBeGreaterThan(0);
+				// An average of per-day minimums can never sit below the
+				// 90-day minimum (the 30-day min >= 90-day min, avg >= min).
+				expect(row.avg30).toBeGreaterThanOrEqual(row.ninetyDayLow as number);
+			}
+		}
+	});
 });
 
 describe('getPriceExtremes', () => {
@@ -381,7 +398,166 @@ describe('getProductHistory', () => {
 			expect([...dates].sort()).toEqual(dates);
 		}
 	});
+
+	it('attaches trailing 30-day stats', () => {
+		const history = getProductHistory(db, 1);
+		expect(history).not.toBeNull();
+		expect(history!.stats.avg30Points).toBeGreaterThanOrEqual(0);
+		if (history!.stats.avg30 !== null) {
+			expect(history!.stats.avg30).toBeGreaterThan(0);
+			expect(history!.stats.avg30Points).toBeGreaterThan(0);
+		}
+	});
 });
+
+describe('getProductStats', () => {
+	it('returns a null average and zero points for an unknown product', () => {
+		expect(getProductStats(db, 999_999)).toEqual({ avg30: null, avg30Points: 0 });
+	});
+
+	it('averages the per-day cheapest in-stock price over the trailing 30 days', () => {
+		const product = db
+			.prepare("SELECT id FROM products WHERE category = 'cpu' LIMIT 1")
+			.get() as { id: number };
+		const { avg30, avg30Points } = getProductStats(db, product.id);
+		expect(avg30).not.toBeNull();
+		expect(avg30Points).toBeGreaterThan(0);
+
+		const day = db
+			.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
+			.get() as { d: string };
+		const agg = db
+			.prepare(
+				`SELECT AVG(dm.price) AS avg, COUNT(*) AS points
+				 FROM (
+					SELECT s.snapshot_date, MIN(s.price_aud) AS price
+					FROM retailer_listings l
+					JOIN price_snapshots s ON s.retailer_listing_id = l.id
+					WHERE l.product_id = ?
+					  AND s.stock_status = 'in_stock'
+					  AND lower(l.variant_name) NOT LIKE '%bundle%'
+					  AND lower(l.variant_name) NOT LIKE '%combo%'
+					  AND lower(l.listing_url) NOT LIKE '%bundle%'
+					  AND lower(l.listing_url) NOT LIKE '%bdl-%'
+					  AND s.snapshot_date >= date(?, '-30 days')
+					GROUP BY s.snapshot_date
+				 ) dm`
+			)
+			.get(product.id, day.d) as { avg: number | null; points: number };
+		expect(avg30).toBeCloseTo(agg.avg as number, 6);
+		expect(avg30Points).toBe(agg.points);
+	});
+
+	it('excludes out-of-stock and bundle listings and honours the window', () => {
+		const mini = createMiniStatsDb();
+		try {
+			// Per-day cheapest: 8-15 $500, 8-16 $480, 8-17 $460 — the $100
+			// bundle and PCCG's out-of-stock $450 are ignored.
+			expect(getProductStats(mini.db, 1)).toEqual({ avg30: 480, avg30Points: 3 });
+			// A 1-day window keeps only 8-16 and 8-17.
+			expect(getProductStats(mini.db, 1, 1)).toEqual({ avg30: 470, avg30Points: 2 });
+		} finally {
+			mini.close();
+		}
+	});
+
+	it('returns a null average when there is no in-stock history in the window', () => {
+		const mini = createMiniStatsDb();
+		try {
+			// Product 2 only ever had out-of-stock snapshots.
+			expect(getProductStats(mini.db, 2)).toEqual({ avg30: null, avg30Points: 0 });
+		} finally {
+			mini.close();
+		}
+	});
+});
+
+describe('getProductDealStats', () => {
+	it('returns an empty map for an empty input', () => {
+		expect(getProductDealStats(db, []).size).toBe(0);
+	});
+
+	it('matches getProductStats for each product with in-stock history', () => {
+		const ids = (
+			db
+				.prepare('SELECT id FROM products WHERE tracked = 1 ORDER BY id LIMIT 3')
+				.all() as Array<{ id: number }>
+		).map((r) => r.id);
+		const stats = getProductDealStats(db, ids);
+		for (const id of ids) {
+			const single = getProductStats(db, id);
+			if (single.avg30Points === 0) {
+				expect(stats.has(id)).toBe(false);
+			} else {
+				expect(stats.get(id)).toEqual(single);
+			}
+		}
+	});
+
+	it('omits products with no in-stock history in the window', () => {
+		const mini = createMiniStatsDb();
+		try {
+			const stats = getProductDealStats(mini.db, [1, 2]);
+			expect(stats.size).toBe(1);
+			expect(stats.get(1)).toEqual({ avg30: 480, avg30Points: 3 });
+			expect(stats.has(2)).toBe(false);
+		} finally {
+			mini.close();
+		}
+	});
+});
+
+// Product 1: Scorptec in stock at $500/$480/$460 across 8-15..8-17, a $100
+// bundle listing on 8-17, and PCCG out of stock at $450 on 8-17. Product 2
+// only ever had out-of-stock snapshots. Global max date is 8-17.
+function createMiniStatsDb(): { db: DB; close: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-stats-'));
+	const file = path.join(dir, 'stats.db');
+	const db = openDatabase(file, { readonly: false, fileMustExist: false });
+	db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 7600', 'current', 1)"
+	).run();
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 8600', 'current', 1)"
+	).run();
+	const scorptecId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'scorptec', 'A', 'https://scorptec/a', 'active')"
+		).run().lastInsertRowid
+	);
+	const bundleId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'scorptec', 'A power bundle', 'https://scorptec/a-bundle', 'active')"
+		).run().lastInsertRowid
+	);
+	const pccgId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'pccg', 'B', 'https://pccg/b', 'active')"
+		).run().lastInsertRowid
+	);
+	const oosId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (2, 'scorptec', 'C', 'https://scorptec/c', 'active')"
+		).run().lastInsertRowid
+	);
+	const insertSnapshot = db.prepare(
+		'INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) VALUES (?, ?, ?, ?, ?)'
+	);
+	insertSnapshot.run(scorptecId, '2026-08-15', 500, 'in_stock', '2026-08-15T04:00:00.000Z');
+	insertSnapshot.run(scorptecId, '2026-08-16', 480, 'in_stock', '2026-08-16T04:00:00.000Z');
+	insertSnapshot.run(scorptecId, '2026-08-17', 460, 'in_stock', '2026-08-17T04:00:00.000Z');
+	insertSnapshot.run(bundleId, '2026-08-17', 100, 'in_stock', '2026-08-17T04:00:00.000Z');
+	insertSnapshot.run(pccgId, '2026-08-17', 450, 'out_of_stock', '2026-08-17T04:00:00.000Z');
+	insertSnapshot.run(oosId, '2026-08-17', 400, 'out_of_stock', '2026-08-17T04:00:00.000Z');
+	return {
+		db,
+		close: () => {
+			db.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	};
+}
 
 describe('deriveListingBrand', () => {
 	it('maps known AIB first-tokens to canonical display names', () => {

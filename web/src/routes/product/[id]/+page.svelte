@@ -6,7 +6,8 @@
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import { formatAud, formatDate, formatRelative, titleCase } from '$lib/formats';
 	import { generationTierLabel } from '$lib/tiers';
-	import type { ProductHistory } from '$lib/server/repos';
+	import { MIN_HISTORY_POINTS } from '$lib/constants';
+	import { type ProductHistory } from '$lib/server/repos';
 
 	let { data }: { data: ProductHistory } = $props();
 
@@ -64,10 +65,17 @@ label:
 	);
 	const totalPoints = $derived(series.reduce((acc, s) => acc + s.points.length, 0));
 
+	// The band spans the product's entire history, so these are all-time
+	// extremes (not a 90-day window).
 	const bandLows = $derived(band ? band.low.filter((v): v is number => v !== null) : []);
 	const bandHighs = $derived(band ? band.high.filter((v): v is number => v !== null) : []);
-	const ninetyDayLow = $derived(bandLows.length ? Math.min(...bandLows) : null);
-	const ninetyDayHigh = $derived(bandHighs.length ? Math.max(...bandHighs) : null);
+	const allTimeLow = $derived(bandLows.length ? Math.min(...bandLows) : null);
+	const allTimeHigh = $derived(bandHighs.length ? Math.max(...bandHighs) : null);
+	const avg30 = $derived(
+		data.stats.avg30 !== null && data.stats.avg30Points >= MIN_HISTORY_POINTS
+			? data.stats.avg30
+			: null
+	);
 </script>
 
 <svelte:head>
@@ -94,11 +102,14 @@ label:
 					value={generationTierLabel(product.brand, product.category, product.generation_tier) ?? product.generation_tier}
 				/>
 			{/if}
-			{#if ninetyDayLow !== null}
-				<Chip label="90d low" value={formatAud(ninetyDayLow)} />
+			{#if allTimeLow !== null}
+				<Chip label="All-time low" value={formatAud(allTimeLow)} />
 			{/if}
-			{#if ninetyDayHigh !== null}
-				<Chip label="90d high" value={formatAud(ninetyDayHigh)} />
+			{#if allTimeHigh !== null}
+				<Chip label="All-time high" value={formatAud(allTimeHigh)} />
+			{/if}
+			{#if avg30 !== null}
+				<Chip label="30d avg" value={formatAud(avg30)} />
 			{/if}
 			<Chip label="Listings" value={String(series.length)} />
 			<Chip label="History span" value={span} />

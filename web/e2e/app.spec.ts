@@ -1,9 +1,100 @@
 ﻿import { test, expect, type Page } from '@playwright/test';
+import Database from 'better-sqlite3';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 async function goto(page: Page, path: string) {
 	await page.goto(path);
 	// Wait for Svelte to finish hydrating so click/select handlers are attached
 	await page.waitForLoadState('networkidle');
+}
+
+// Mirrors the server-side deal rule (products/+page.server.ts) against the
+// seeded e2e.db so the assertion holds for both the real data/ directory and
+// the synthetic fallback: the current cheapest in-stock price must be below
+// the average of the per-day cheapest in-stock price over the trailing 30
+// days, with at least 3 days of history.
+function expectedDeals(): { dealIds: number[]; nonDealId: number | null } {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		const rows = db
+			.prepare(
+				`WITH latest AS (
+					SELECT s.*
+					FROM price_snapshots s
+					JOIN (
+						SELECT retailer_listing_id, MAX(snapshot_date) AS max_date
+						FROM price_snapshots
+						GROUP BY retailer_listing_id
+					) m ON m.retailer_listing_id = s.retailer_listing_id
+					  AND m.max_date = s.snapshot_date
+				),
+				day_min AS (
+					SELECT l.product_id, s.snapshot_date, MIN(s.price_aud) AS price
+					FROM retailer_listings l
+					JOIN price_snapshots s ON s.retailer_listing_id = l.id
+					WHERE s.stock_status = 'in_stock'
+					  AND lower(l.variant_name) NOT LIKE '%bundle%'
+					  AND lower(l.variant_name) NOT LIKE '%combo%'
+					  AND lower(l.listing_url) NOT LIKE '%bundle%'
+					  AND lower(l.listing_url) NOT LIKE '%bdl-%'
+					  AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-30 days')
+					GROUP BY l.product_id, s.snapshot_date
+				),
+				stats AS (
+					SELECT product_id, AVG(price) AS avg30, COUNT(*) AS points
+					FROM day_min
+					GROUP BY product_id
+				),
+				cheapest AS (
+					SELECT l.product_id, MIN(lat.price_aud) AS price
+					FROM retailer_listings l
+					JOIN latest lat ON lat.retailer_listing_id = l.id
+					WHERE l.status = 'active'
+					  AND lower(l.variant_name) NOT LIKE '%bundle%'
+					  AND lower(l.variant_name) NOT LIKE '%combo%'
+					  AND lower(l.listing_url) NOT LIKE '%bundle%'
+					  AND lower(l.listing_url) NOT LIKE '%bdl-%'
+					  AND lat.stock_status = 'in_stock'
+					GROUP BY l.product_id
+				)
+				SELECT c.product_id AS id
+				FROM cheapest c
+				JOIN stats s ON s.product_id = c.product_id
+				WHERE s.points >= 3
+				  AND c.price < s.avg30
+				ORDER BY c.product_id`
+			)
+			.all() as Array<{ id: number }>;
+		const dealIds = rows.map((r) => r.id);
+		const inStockIds = (
+			db
+				.prepare(
+					`WITH latest AS (
+						SELECT s.*
+						FROM price_snapshots s
+						JOIN (
+							SELECT retailer_listing_id, MAX(snapshot_date) AS max_date
+							FROM price_snapshots
+							GROUP BY retailer_listing_id
+						) m ON m.retailer_listing_id = s.retailer_listing_id
+						  AND m.max_date = s.snapshot_date
+					)
+					SELECT DISTINCT l.product_id AS id
+					FROM retailer_listings l
+					JOIN latest lat ON lat.retailer_listing_id = l.id
+					WHERE l.status = 'active' AND lat.stock_status = 'in_stock'
+					ORDER BY l.product_id`
+				)
+				.all() as Array<{ id: number }>
+		).map((r) => r.id);
+		const nonDealId = inStockIds.find((id) => !dealIds.includes(id)) ?? null;
+		return { dealIds, nonDealId };
+	} finally {
+		db.close();
+	}
 }
 
 test.describe('navigation & layout', () => {
@@ -269,6 +360,27 @@ await toggle.click();
 		await expect(card.locator('table svg').first()).toBeVisible();
 		expect(await card.locator('table svg polyline').count()).toBeGreaterThan(0);
 	});
+
+	test('flags products whose cheapest in-stock price is below the 30-day average', async ({
+		page
+	}) => {
+		await goto(page, '/products');
+		const { dealIds, nonDealId } = expectedDeals();
+		expect(dealIds.length).toBeGreaterThan(0);
+		// Exactly the expected products carry a Deal badge.
+		await expect(page.getByText('Deal', { exact: true })).toHaveCount(dealIds.length);
+		for (const id of dealIds) {
+			await expect(
+				page.locator('article', { has: page.locator(`a[href="/product/${id}"]`) })
+			).toContainText('Deal');
+		}
+		// An in-stock product that is NOT a deal must not be flagged.
+		if (nonDealId !== null) {
+			await expect(
+				page.locator('article', { has: page.locator(`a[href="/product/${nonDealId}"]`) })
+			).not.toContainText('Deal');
+		}
+	});
 });
 
 test.describe('command palette', () => {
@@ -455,10 +567,13 @@ await goto(page, '/product/1');
 		await expect(page.locator('.chart-skeleton')).toHaveCount(0);
 	});
 
-	test('shows 90-day low/high chips on the product page', async ({ page }) => {
+	test('shows all-time low/high and 30-day average chips on the product page', async ({
+		page
+	}) => {
 		await goto(page, '/product/1');
-		await expect(page.getByText('90d low', { exact: true })).toBeVisible();
-		await expect(page.getByText('90d high', { exact: true })).toBeVisible();
+		await expect(page.getByText('All-time low', { exact: true })).toBeVisible();
+		await expect(page.getByText('All-time high', { exact: true })).toBeVisible();
+		await expect(page.getByText('30d avg', { exact: true })).toBeVisible();
 	});
 
 	test('shows when the product was last updated', async ({ page }) => {
