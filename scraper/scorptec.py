@@ -364,12 +364,66 @@ def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, A
     return results, matched_watchlist_ids, all_scraped
 
 
+def _term_matches_only_variants(term: str, name_lower: str) -> bool:
+    """Return True when ``term`` appears in ``name_lower`` only as the prefix
+    of a longer variant code (e.g. 'ryzen 9 9900' inside 'ryzen 9 9900x', or
+    'core ultra 5 245' inside 'core ultra 5 245k').
+
+    A standalone occurrence — end of string, punctuation, a directly-following
+    digit like '12gb', or a space followed by a long descriptor word like
+    'processor' or 'windforce' — makes this return False.
+
+    Mirrors the variant-substring guard used by the PCCG matcher, so the
+    unmatched-product analysis doesn't cry wolf over a base model that the
+    retailer simply doesn't carry (it only stocks the X/X3D/K variant).
+
+    Args:
+        term: Lowercased search term, e.g. 'ryzen 9 9900'.
+        name_lower: Lowercased scraped product name.
+
+    Returns:
+        True if every occurrence of ``term`` is inside a longer variant code.
+    """
+    start = 0
+    while True:
+        pos = name_lower.find(term, start)
+        if pos == -1:
+            break
+        after = pos + len(term)
+        p = after
+        while p < len(name_lower) and name_lower[p] == " ":
+            p += 1
+        if p >= len(name_lower) or not name_lower[p].isalnum():
+            # End of string or followed by punctuation: a standalone identifier.
+            return False
+        if p > after and name_lower[p].isdigit():
+            # '5070 12gb' — spec figures after the model, still the same product.
+            return False
+        if p > after:
+            word_end = p
+            while word_end < len(name_lower) and name_lower[word_end].isalnum():
+                word_end += 1
+            if word_end - p >= 6:
+                # '5070 windforce' — a descriptor word, not a variant suffix.
+                return False
+        # Directly-attached alnum ('9900' + 'x') or a short word after a space
+        # ('5070 ti') — a longer variant code. Keep scanning for a real match.
+        start = after
+    return True
+
+
 def analyze_unmatched(
     watchlist: List[WatchlistProduct],
     matched_ids: Set[int],
     all_scraped: Dict[str, List[Dict[str, Any]]],
 ) -> Tuple[List[str], List[Tuple[str, str, Optional[str]]]]:
     """Analyze why products weren't matched.
+
+    An unmatched product whose search term never appears in any scraped name
+    is likely delisted. A term that appears only inside a longer variant code
+    (e.g. 'ryzen 9 9900' inside a '9900x' listing) means the base model isn't
+    stocked — informative, but not a matching bug. Only a term present as a
+    genuine standalone match that still didn't pair is a real matching issue.
 
     Args:
         watchlist: List of watchlist product dicts.
@@ -383,32 +437,40 @@ def analyze_unmatched(
 
     likely_delist: List[str] = []
     possible_stocked: List[Tuple[str, str, Optional[str]]] = []
+    variant_only: List[Tuple[str, str, Optional[str]]] = []
 
     for i, wp in enumerate(watchlist):
         if i in matched_ids:
             continue
 
         primary = wp["search_terms"][0] if wp["search_terms"] else ""
-        found_anywhere = False
-        matching_scraped: Optional[str] = None
+        if not primary:
+            continue
 
+        matching_names: List[str] = []
         for cat_key, scraped in all_scraped.items():
             for s in scraped:
                 if primary in s["name"].lower():
-                    found_anywhere = True
-                    matching_scraped = s["name"][:80]
-                    break
-            if found_anywhere:
-                break
+                    matching_names.append(s["name"][:80])
 
-        if found_anywhere:
-            possible_stocked.append((wp["model"], primary, matching_scraped))
-        else:
+        if not matching_names:
             likely_delist.append(wp["model"])
+            continue
+
+        if all(_term_matches_only_variants(primary, n.lower()) for n in matching_names):
+            variant_only.append((wp["model"], primary, matching_names[0]))
+        else:
+            possible_stocked.append((wp["model"], primary, matching_names[0]))
 
     logger.info("\nLikely delisted at Scorptec (%d products):", len(likely_delist))
     for m in likely_delist:
         logger.info("  - %s", m)
+
+    if variant_only:
+        logger.info("\nOnly stocked as a different variant (%d products):", len(variant_only))
+        for model, primary, scraped_name in variant_only:
+            logger.info("  - %s", model)
+            logger.info("    '%s' found only inside: '%s'", primary, scraped_name)
 
     if possible_stocked:
         logger.info("\nPossibly stocked but matching issue (%d products):", len(possible_stocked))

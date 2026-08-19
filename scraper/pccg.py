@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -196,15 +197,20 @@ def _retry_wait(retry_after: str | None, attempt: int) -> float:
     """Compute the backoff delay in seconds for a 429 response.
 
     Algolia/Cloudflare-fronted 429s often carry a ``Retry-After`` header;
-    prefer it over the fixed formula when present. Falls back to
-    ``ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)`` otherwise.
+    prefer it over the fixed formula when present — but cap it so a
+    pathological header can't stall the whole run. Falls back to a jittered
+    linear backoff (``ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)``)
+    otherwise; the ±10% jitter stops a burst of retries from re-colliding in
+    lockstep.
     """
     if retry_after:
         try:
-            return float(retry_after)
+            ceiling = ALGOLIA_RATE_LIMIT_WAIT_SECONDS * ALGOLIA_MAX_RETRIES * 4
+            return min(float(retry_after), ceiling)
         except (TypeError, ValueError):
             pass
-    return ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1)
+    base = min(ALGOLIA_RATE_LIMIT_WAIT_SECONDS * (attempt + 1), ALGOLIA_BACKOFF_MAX_SECONDS)
+    return base * random.uniform(0.9, 1.1)
 
 
 def _log_api_status_error(r: Any) -> None:

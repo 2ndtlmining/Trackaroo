@@ -255,6 +255,16 @@ def main(argv: Optional[List[str]] = None) -> None:
             from notify_discord import run as run_notify
             run_notify()
 
+        # Pipeline-issue alert: the digest is gated on a clean run, so any
+        # scraper failure or health error gets its own Discord message.
+        from notify_discord import send_alert
+        alert_lines = [
+            f"- Scraper **{name.title()}** failed" for name, ok in results.items() if not ok
+        ]
+        alert_lines += [f"- Health check error: {r}" for r in failed]
+        if alert_lines:
+            send_alert(alert_lines)
+
     # ── Backup (optional) ───────────────────────────────────────────
     if args.backup and not args.dry_run and not args.scrape_only:
         from backup_db import backup_database

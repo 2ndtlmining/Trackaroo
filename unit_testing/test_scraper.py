@@ -531,3 +531,95 @@ class TestPCCGPagination:
         sig = inspect.signature(algolia_batch_search)
         assert "queries" in sig.parameters
         assert "category_filter" in sig.parameters
+
+
+# ── Variant-only term detection (analyze_unmatched) ─────────────────
+
+
+class TestTermMatchesOnlyVariants:
+    """The unmatched-analysis variant detector must tell a real possible match
+    apart from a base model that only shows up inside a longer variant code."""
+
+    def _check(self, term, name):
+        from scraper.scorptec import _term_matches_only_variants
+        return _term_matches_only_variants(term, name)
+
+    def test_9900_inside_9900x_is_variant_only(self):
+        assert self._check("ryzen 9 9900", "amd ryzen 9 9900x processor")
+
+    def test_9900_inside_9900x3d_is_variant_only(self):
+        assert self._check("ryzen 9 9900", "amd ryzen 9 9900x3d processor")
+
+    def test_plain_9900_is_standalone(self):
+        assert not self._check("ryzen 9 9900", "amd ryzen 9 9900 processor")
+
+    def test_245_inside_245k_is_variant_only(self):
+        assert self._check("core ultra 5 245", "intel core ultra 5 245k desktop processor")
+
+    def test_14700k_inside_14700kf_is_variant_only(self):
+        assert self._check("core i7 14700k", "intel core i7 14700kf processor")
+
+    def test_descriptor_word_after_space_is_standalone(self):
+        assert not self._check("rtx 5070", "gigabyte rtx 5070 windforce oc 12gb")
+
+    def test_short_word_after_space_is_variant(self):
+        assert self._check("rtx 5070", "gigabyte rtx 5070 ti windforce oc 16gb")
+
+    def test_vram_digits_after_space_is_standalone(self):
+        assert not self._check("rtx 5070", "gigabyte rtx 5070 12gb")
+
+    def test_term_at_end_of_name_is_standalone(self):
+        assert not self._check("core i5 13400f", "intel core i5 13400f")
+
+    def test_punctuation_after_term_is_standalone(self):
+        assert not self._check("rtx 5090", "rtx 5090, 32gb")
+
+
+class TestAnalyzeUnmatchedClassification:
+    """analyze_unmatched must separate variant-only stocking from real
+    matching issues and delisting."""
+
+    def test_variant_only_is_not_reported_as_matching_issue(self, caplog):
+        from scraper.scorptec import analyze_unmatched
+        watchlist = [
+            {"model": "Ryzen 9 9900", "category": "cpu", "search_terms": ["ryzen 9 9900"]},
+            {"model": "Ryzen 5 5600", "category": "cpu", "search_terms": ["ryzen 5 5600"]},
+        ]
+        all_scraped = {
+            "cpu_amd_am5_9000": [{"name": "AMD Ryzen 9 9900X Processor", "price_aud": 799.0}],
+            "cpu_amd_am4": [{"name": "AMD Ryzen 5 5600", "price_aud": 189.0}],
+        }
+        with caplog.at_level("INFO", logger="scraper.scorptec"):
+            delisted, possible = analyze_unmatched(watchlist, {1}, all_scraped)
+
+        assert delisted == []
+        assert possible == []  # 9900 term only appears inside 9900x — not a bug
+        assert "Only stocked as a different variant (1 products)" in caplog.text
+        assert "Ryzen 9 9900" in caplog.text
+
+    def test_genuine_standalone_term_is_still_a_matching_issue(self, caplog):
+        from scraper.scorptec import analyze_unmatched
+        watchlist = [
+            {"model": "Ryzen 5 5600", "category": "cpu", "search_terms": ["ryzen 5 5600"]},
+        ]
+        all_scraped = {
+            "cpu_amd_am4": [{"name": "AMD Ryzen 5 5600 Processor", "price_aud": 189.0}],
+        }
+        delisted, possible = analyze_unmatched(watchlist, set(), all_scraped)
+
+        assert delisted == []
+        assert len(possible) == 1
+        assert possible[0][0] == "Ryzen 5 5600"
+
+    def test_term_not_found_anywhere_is_delisted(self, caplog):
+        from scraper.scorptec import analyze_unmatched
+        watchlist = [
+            {"model": "Ryzen 5 5500", "category": "cpu", "search_terms": ["ryzen 5 5500"]},
+        ]
+        all_scraped = {
+            "cpu_amd_am4": [{"name": "AMD Ryzen 5 5600", "price_aud": 189.0}],
+        }
+        delisted, possible = analyze_unmatched(watchlist, set(), all_scraped)
+
+        assert delisted == ["Ryzen 5 5500"]
+        assert possible == []

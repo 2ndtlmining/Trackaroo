@@ -14,6 +14,7 @@ Configuration (env, optional — see .env.example):
 
     DISCORD_WEBHOOK_GPU        Webhook URL for the GPU digest channel
     DISCORD_WEBHOOK_CPU        Webhook URL for the CPU digest channel
+    DISCORD_WEBHOOK_ALERT      Webhook URL for pipeline-failure alerts (optional)
     TRACKAROO_PUBLIC_BASE_URL  Optional public base URL of the web app, used to
                                add a "Trackaroo page" link next to the retailer
                                link. Omit (or leave blank) for retailer links only.
@@ -46,6 +47,7 @@ LOGGER = logging.getLogger(__name__)
 # Match the app's dark-theme tokens in web/src/app.css.
 UP_COLOR = 0xF87171    # --up   (price increased — coral/red)
 DOWN_COLOR = 0x34D399  # --down (price decreased — teal/green)
+ALERT_COLOR = 0xFB923C  # orange — pipeline issues
 
 CATEGORY_LABELS = {"cpu": "CPU", "gpu": "GPU"}
 RETAILER_LABELS = {"scorptec": "Scorptec", "pccg": "PCCG", "mwave": "MWave"}
@@ -186,6 +188,38 @@ def send_embed(webhook_url: str, embed: dict) -> None:
         resp.raise_for_status()
     except requests.RequestException as e:  # noqa: BLE001 - notify failures must not break the pipeline
         LOGGER.error("Discord webhook failed: %s", e)
+
+
+def send_alert(lines: List[str], dry_run: bool = False) -> int:
+    """Send a pipeline-issue alert to ``DISCORD_WEBHOOK_ALERT``, if configured.
+
+    The daily digest is gated on a clean run (see run_daily.py), so scraper
+    failures and health-check errors need their own channel. Never raises —
+    a webhook error is logged, not thrown, and with no webhook set it is a
+    no-op.
+
+    Args:
+        lines: Bullet lines describing what failed.
+        dry_run: Print the embed instead of posting it.
+
+    Returns:
+        1 if an alert was sent/printed, 0 if no webhook was configured.
+    """
+    load_dotenv()
+    webhook = os.environ.get("DISCORD_WEBHOOK_ALERT")
+    if not webhook:
+        return 0
+    embed = {
+        "title": "Trackaroo alert — pipeline issue",
+        "color": ALERT_COLOR,
+        "description": "\n".join(lines).rstrip(),
+    }
+    if dry_run:
+        print(json.dumps(embed, indent=2))
+    else:
+        send_embed(webhook, embed)
+    LOGGER.info("Discord alert sent (dry_run=%s)", dry_run)
+    return 1
 
 
 def run(db_path: Optional[str] = None, dry_run: bool = False, test: bool = False) -> int:

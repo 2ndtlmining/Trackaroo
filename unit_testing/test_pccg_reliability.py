@@ -132,10 +132,20 @@ def test_retry_wait_uses_header_when_present(monkeypatch):
     assert _retry_wait("10", 0) == 10.0
 
 
-def test_retry_wait_falls_back_to_formula(monkeypatch):
+def test_retry_wait_caps_a_pathological_retry_after(monkeypatch):
+    """An absurd Retry-After must not stall the run — capped at a ceiling."""
     monkeypatch.setattr("scraper.pccg.ALGOLIA_RATE_LIMIT_WAIT_SECONDS", 5.0)
-    assert _retry_wait(None, 0) == 5.0
-    assert _retry_wait(None, 2) == 15.0
+    monkeypatch.setattr("scraper.pccg.ALGOLIA_MAX_RETRIES", 3)
+    assert _retry_wait("3600", 0) == 60.0  # 5 * 3 * 4
+
+
+def test_retry_wait_falls_back_to_jittered_formula(monkeypatch):
+    monkeypatch.setattr("scraper.pccg.ALGOLIA_RATE_LIMIT_WAIT_SECONDS", 5.0)
+    monkeypatch.setattr("scraper.pccg.ALGOLIA_BACKOFF_MAX_SECONDS", 20.0)
+    w0 = _retry_wait(None, 0)
+    w2 = _retry_wait(None, 2)
+    assert 4.5 <= w0 <= 5.5
+    assert 13.5 <= w2 <= 16.5
 
 
 def test_batch_search_prefers_retry_after(monkeypatch):

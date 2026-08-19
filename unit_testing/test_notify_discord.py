@@ -23,6 +23,7 @@ from notify_discord import (  # noqa: E402
     load_dotenv,
     query_digest_rows,
     run,
+    send_alert,
     send_embed,
 )
 
@@ -292,6 +293,66 @@ class TestSendEmbed:
 
         monkeypatch.setattr("notify_discord.requests.post", fake_post)
         send_embed("https://hook/gpu", {"title": "t"})  # must not raise
+        assert "Discord webhook failed" in caplog.text
+
+
+# ── send_alert ──────────────────────────────────────────────────────
+
+class TestSendAlert:
+    """Pipeline-issue alerts go to DISCORD_WEBHOOK_ALERT and never raise."""
+
+    def test_noop_without_webhook(self, monkeypatch):
+        monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
+        monkeypatch.delenv("DISCORD_WEBHOOK_ALERT", raising=False)
+        posts = []
+        monkeypatch.setattr(
+            "notify_discord.requests.post", lambda *a, **k: posts.append(1) or _OkResponse()
+        )
+        assert send_alert(["- boom"]) == 0
+        assert posts == []
+
+    def test_sends_alert_embed_when_configured(self, monkeypatch):
+        monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
+        monkeypatch.setenv("DISCORD_WEBHOOK_ALERT", "https://hook/alert")
+        captured = {}
+
+        def fake_post(url, json=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            return _OkResponse()
+
+        monkeypatch.setattr("notify_discord.requests.post", fake_post)
+        lines = ["- Scraper **PCCG** failed", "- Health check error: thing (ERROR): boom"]
+        assert send_alert(lines) == 1
+
+        assert captured["url"] == "https://hook/alert"
+        embed = captured["json"]["embeds"][0]
+        assert embed["title"] == "Trackaroo alert — pipeline issue"
+        assert embed["color"] == 0xFB923C
+        assert "**PCCG**" in embed["description"]
+        assert "boom" in embed["description"]
+
+    def test_dry_run_prints_without_posting(self, monkeypatch, capsys):
+        monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
+        monkeypatch.setenv("DISCORD_WEBHOOK_ALERT", "https://hook/alert")
+        posts = []
+        monkeypatch.setattr(
+            "notify_discord.requests.post", lambda *a, **k: posts.append(1) or _OkResponse()
+        )
+
+        assert send_alert(["- Scraper **Scorptec** failed"], dry_run=True) == 1
+        assert posts == []
+        assert "pipeline issue" in capsys.readouterr().out
+
+    def test_swallows_webhook_errors(self, monkeypatch, caplog):
+        monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
+        monkeypatch.setenv("DISCORD_WEBHOOK_ALERT", "https://hook/alert")
+
+        def fake_post(url, json=None, timeout=None):
+            raise requests.RequestException("boom")
+
+        monkeypatch.setattr("notify_discord.requests.post", fake_post)
+        assert send_alert(["- boom"]) == 1  # still counted as attempted
         assert "Discord webhook failed" in caplog.text
 
 
