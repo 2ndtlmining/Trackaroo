@@ -585,11 +585,12 @@ describe('BrandGroupedListings', () => {
 			selected: new Set<number>(),
 			onToggleListing: () => {}
 		});
-		expect(body).not.toContain('Ventus');
-		expect(body).not.toContain('Show on chart');
+		// Rows stay mounted for the height transition but collapse to 0fr
+		expect(body).toContain('grid-rows-[0fr]');
+		expect(body).not.toContain('grid-rows-[1fr]');
 	});
 
-	it('expands a group on header click and renders listing rows', async () => {
+	it('expands a group on header click and animates the listing rows in', async () => {
 		const target = document.createElement('div');
 		const comp = mount(BrandGroupedListings, {
 			target,
@@ -597,8 +598,30 @@ describe('BrandGroupedListings', () => {
 		});
 		(target.querySelector('button[aria-expanded]') as HTMLElement).click();
 		await tick();
+		expect(target.innerHTML).toContain('grid-rows-[1fr]');
 		expect(target.innerHTML).toContain('Ventus');
 		expect(target.innerHTML).toContain('Show on chart');
+		unmount(comp);
+	});
+
+	it('expands and collapses every group with the bulk controls', async () => {
+		const target = document.createElement('div');
+		const comp = mount(BrandGroupedListings, {
+			target,
+			props: { series: BGL_SERIES, productBrand: 'NVIDIA', selected: new Set<number>(), onToggleListing: () => {} }
+		});
+		const clickButton = (label: string) => {
+			([...target.querySelectorAll('button')]
+				.find((b) => b.textContent === label) as HTMLButtonElement).click();
+		};
+		clickButton('Expand all');
+		await tick();
+		expect(target.querySelectorAll('button[aria-expanded="true"]').length).toBe(2);
+		expect((target.innerHTML.match(/grid-rows-\[1fr\]/g) ?? []).length).toBe(2);
+		clickButton('Collapse all');
+		await tick();
+		expect(target.querySelectorAll('button[aria-expanded="true"]').length).toBe(0);
+		expect((target.innerHTML.match(/grid-rows-\[1fr\]/g) ?? []).length).toBe(0);
 		unmount(comp);
 	});
 

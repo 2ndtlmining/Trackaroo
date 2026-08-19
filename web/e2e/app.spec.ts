@@ -441,6 +441,17 @@ await goto(page, '/product/1');
 		await expect(page.getByRole('heading', { name: 'Retailer listings' })).toBeVisible();
 	});
 
+	test('chart skeleton resolves once the chart mounts client-side', async ({ page }) => {
+		// The server-rendered HTML ships the skeleton (the chart can only
+		// draw after hydration)...
+		const res = await page.request.get('/product/1');
+		expect(res.status()).toBe(200);
+		expect(await res.text()).toContain('chart-skeleton');
+		// ...and it is gone once uPlot has mounted.
+		await goto(page, '/product/1');
+		await expect(page.locator('.chart-skeleton')).toHaveCount(0);
+	});
+
 	test('shows 90-day low/high chips on the product page', async ({ page }) => {
 		await goto(page, '/product/1');
 		await expect(page.getByText('90d low', { exact: true })).toBeVisible();

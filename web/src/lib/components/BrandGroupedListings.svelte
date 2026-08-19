@@ -125,43 +125,49 @@
 							{expanded.has(group.brand) ? '▴' : '▾'}
 						</span>
 					</button>
-					{#if expanded.has(group.brand)}
-						<ul class="divide-y divide-border border-t border-border">
-							{#each group.listings as listing (listing.listingId)}
-								<li class="flex items-center justify-between gap-3 px-3 py-2.5">
-									<a
-										href={listing.listingUrl}
-										target="_blank"
-										rel="noopener noreferrer"
-										class="min-w-0 flex-1"
-									>
-										<span class="block truncate font-medium text-text" title={titleCase(listing.variantName) || undefined}>
-											{titleCase(listing.variantName) || `${listing.retailer} listing`}
-										</span>
-										<span class="text-xs text-text-muted">{dateRange(listing)}</span>
-									</a>
-									<div class="shrink-0 text-right">
-										{#if listing.latestPrice !== null}
-											<span class="num block text-text">{formatAud(listing.latestPrice)}</span>
-											<span class="inline-block"><StockBadge stock={listing.latestStock} /></span>
-										{:else}
-											<span class="text-xs text-text-muted">—</span>
-										{/if}
-									</div>
-									<button
-										type="button"
-										aria-pressed={listing.selected}
-										onclick={() => onToggleListing(listing.listingId)}
-										class="shrink-0 rounded-md border border-border px-2 py-1 text-xs {listing.selected
-											? 'border-accent bg-accent/10 font-medium text-accent'
-											: 'bg-surface text-text-muted hover:text-text'}"
-									>
-										{listing.selected ? 'On chart' : 'Show on chart'}
-									</button>
-								</li>
-							{/each}
-						</ul>
-					{/if}
+					<div
+						class="brand-group-body grid transition-[grid-template-rows] duration-300 ease-out {expanded.has(group.brand)
+							? 'grid-rows-[1fr]'
+							: 'grid-rows-[0fr]'}"
+					>
+						<div class="min-h-0 overflow-hidden" inert={!expanded.has(group.brand)}>
+							<ul class="divide-y divide-border border-t border-border">
+								{#each group.listings as listing (listing.listingId)}
+									<li class="flex items-center justify-between gap-3 px-3 py-2.5">
+										<a
+											href={listing.listingUrl}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="min-w-0 flex-1"
+										>
+											<span class="block truncate font-medium text-text" title={titleCase(listing.variantName) || undefined}>
+												{titleCase(listing.variantName) || `${listing.retailer} listing`}
+											</span>
+											<span class="text-xs text-text-muted">{dateRange(listing)}</span>
+										</a>
+										<div class="shrink-0 text-right">
+											{#if listing.latestPrice !== null}
+												<span class="num block text-text">{formatAud(listing.latestPrice)}</span>
+												<span class="inline-block"><StockBadge stock={listing.latestStock} /></span>
+											{:else}
+												<span class="text-xs text-text-muted">—</span>
+											{/if}
+										</div>
+										<button
+											type="button"
+											aria-pressed={listing.selected}
+											onclick={() => onToggleListing(listing.listingId)}
+											class="shrink-0 rounded-md border border-border px-2 py-1 text-xs {listing.selected
+												? 'border-accent bg-accent/10 font-medium text-accent'
+												: 'bg-surface text-text-muted hover:text-text'}"
+										>
+											{listing.selected ? 'On chart' : 'Show on chart'}
+										</button>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					</div>
 				</div>
 			{/each}
 		</div>

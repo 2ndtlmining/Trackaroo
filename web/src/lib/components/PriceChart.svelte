@@ -31,6 +31,7 @@
 	let chartEl: HTMLDivElement;
 	let u: uPlot | null = null;
 	let tooltipEl: HTMLDivElement | null = null;
+	let chartReady = $state(false);
 	let resizeObserver: ResizeObserver | null = null;
 	let themeObserver: MutationObserver | null = null;
 
@@ -218,6 +219,7 @@
 			buildData(),
 			chartEl
 		);
+		chartReady = true;
 
 		if (!resizeObserver) {
 			resizeObserver = new ResizeObserver(() => {
@@ -247,6 +249,7 @@
 			u.destroy();
 			u = null;
 		}
+		chartReady = false;
 	}
 
 	// Reactive rebuild: buildData/buildSeries read the current props, so this
@@ -269,4 +272,17 @@
 	bind:this={chartEl}
 	class="relative w-full overflow-hidden rounded-md border border-border bg-surface"
 	aria-label="Price history chart"
-></div>
+>
+	{#if !chartReady}
+		<div class="chart-skeleton" role="status" aria-label="Loading price history">
+			<div class="skeleton-bar" style="height: 42%"></div>
+			<div class="skeleton-bar" style="height: 68%"></div>
+			<div class="skeleton-bar" style="height: 55%"></div>
+			<div class="skeleton-bar" style="height: 80%"></div>
+			<div class="skeleton-bar" style="height: 61%"></div>
+			<div class="skeleton-bar" style="height: 74%"></div>
+			<div class="skeleton-bar" style="height: 48%"></div>
+			<div class="skeleton-bar" style="height: 66%"></div>
+		</div>
+	{/if}
+</div>
