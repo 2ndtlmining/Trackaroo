@@ -42,8 +42,10 @@ sync):
 - **Intel** (`intel-processors` CSVs): `codename` ← `Code Name` (Arrow Lake), `process_nm` ← `Lithography(nm)`, `memory_speed_mhz` ← `Max Memory Speed(MHz)`, `memory_channels` ← `Max Memory Channels`, `memory_types` ← `Memory Types`, `integrated_graphics` ← `Integrated Graphics`, and `cache_l3_mb` ← `Cache(MB)` (Intel "Smart Cache" equals TechPowerUp's L3 for the desktop watchlist).
 - **AMD** (first-party amd.com): `codename` ← `Former Codename` (socket tag stripped, e.g. "Granite Ridge"), `l1_cache_kb` ← `L1 Cache`, `l2_cache_mb` ← `L2 Cache`, `memory_speed_mhz` ← highest data rate in `Max Memory Speed`, `memory_channels` ← `Memory Channels`, `memory_types` ← `System Memory Type` (DDR5), `integrated_graphics` ← `Graphics Model`.
 
-**Known gaps:** GPU launch MSRP is **not present in the dataset** (stays NULL);
-a handful of OEM-only SKUs have no amd.com page. Specs refresh on a **weekly,
+**Known gaps:** GPU launch MSRPs come from the curated `db/launch_msrp.json`
+mapping (applied by `backfill_msrp.py` on every container boot — the spec
+sources don't publish pricing); a handful of OEM-only SKUs have no amd.com page
+and stay unmatched. Specs refresh on a **weekly,
 best-effort** schedule (container default: Sunday 03:00 via `SPEC_SYNC_DOW` /
 `SPEC_SYNC_HOUR`; bare host: `0 3 * * 0` crontab). Re-running `sync_specs.py`
 is always safe — rows are never deleted, conflicts are reported not overwritten,
@@ -64,11 +66,11 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 408 tests across 19 modules via pytest |
+| **Regression tests** | ✅ Complete | 461 tests across 20 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
-| **Frontend tests** | ✅ Complete | 193 vitest + 46 Playwright e2e (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 204 vitest + 48 Playwright e2e (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
@@ -168,10 +170,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (193 vitest)
+# Run frontend unit tests (204 vitest)
 npm test
 
-# Run browser e2e regression tests (46 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (48 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -253,7 +255,7 @@ Trackaroo/
 │   ├── cpu_pccg_10_August_2026.json
 │   └── gpu_pccg_10_August_2026.json
 │
-├── unit_testing/       # Python regression tests (408 via pytest)
+├── unit_testing/       # Python regression tests (461 via pytest)
 │   ├── conftest.py             # shared pytest fixtures (in-memory DB)
 │   ├── test_seed.py            # seed + schema tests
 │   ├── test_matching.py        # product matching tests
@@ -272,7 +274,8 @@ Trackaroo/
 │   ├── test_config.py          # config.py env-override tests
 │   ├── test_specs_schema.py    # specs table DDL + migration tests
 │   ├── test_specs_matching.py  # spec name normalization + matching tests
-│   └── test_sync_specs.py      # sync_specs.py fetch/parse/upsert tests
+│   ├── test_sync_specs.py      # sync_specs.py fetch/parse/upsert tests
+│   └── test_notify_discord.py  # Discord digest: pairing, movers, embeds, POST, routing, gating
 │
 └── web/                # Phase 3 frontend (SvelteKit, adapter-node)
     ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot band chart), SpecPanel, CheapestCarousel, ProductCard, BrandGroupedListings, CommandPalette (Ctrl+K), Sparkline, …
@@ -281,8 +284,8 @@ Trackaroo/
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 193 vitest regression tests (9 suites)
-    ├── e2e/                    # 46 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── test/                   # 204 vitest regression tests (9 suites)
+    ├── e2e/                    # 48 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```

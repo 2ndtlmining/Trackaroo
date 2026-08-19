@@ -185,10 +185,14 @@ volume, so the scoring is identical either way.
 > **First run:** the pipeline scrapes live retailer sites, so the dashboard
 > populates over the first minutes.
 
-Environment: set `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` (and any
-`TRACKAROO_*` overrides) in the crontab's environment or a `.env` read by the
-shell wrapper (the scripts read `os.environ` directly — they do not load a
-`.env` file themselves).
+Environment: the scrapers need **no keys** — Scorptec is plain HTML scraping
+and PCCG uses its own public read-only Algolia key baked in as the default
+(`scraper/pccg.py`; `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` are optional
+overrides only). Set any `TRACKAROO_*` overrides (and the Discord webhook
+vars, see "Daily Discord digest") in the crontab's environment or a `.env`
+read by the shell wrapper (the scripts read `os.environ` directly — they do
+not load a `.env` file themselves; `notify_discord.py` is the exception and
+loads one).
 
 To run a scrape manually (from anywhere):
 
