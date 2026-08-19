@@ -439,6 +439,9 @@ await goto(page, '/product/1');
 		await expect(page.getByText('History span', { exact: true })).toBeVisible();
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'Retailer listings' })).toBeVisible();
+		// Product 1 is an Intel current-gen chip — the Generation chip shows the
+		// friendly architecture name, not the raw tier code.
+		await expect(page.getByText('Core Ultra 200 (Arrow Lake)')).toBeVisible();
 	});
 
 	test('chart skeleton resolves once the chart mounts client-side', async ({ page }) => {

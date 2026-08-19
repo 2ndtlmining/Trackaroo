@@ -5,6 +5,7 @@
 	import BrandGroupedListings from '$lib/components/BrandGroupedListings.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import { formatAud, formatDate, formatRelative, titleCase } from '$lib/formats';
+	import { generationTierLabel } from '$lib/tiers';
 	import type { ProductHistory } from '$lib/server/repos';
 
 	let { data }: { data: ProductHistory } = $props();
@@ -88,7 +89,10 @@ label:
 				<Chip label="Category" value={product.category} />
 			{/if}
 			{#if product.generation_tier}
-				<Chip label="Generation" value={product.generation_tier} />
+				<Chip
+					label="Generation"
+					value={generationTierLabel(product.brand, product.category, product.generation_tier) ?? product.generation_tier}
+				/>
 			{/if}
 			{#if ninetyDayLow !== null}
 				<Chip label="90d low" value={formatAud(ninetyDayLow)} />
