@@ -303,6 +303,32 @@ Preview without sending:
 python check_alerts.py --dry-run   # print what would fire
 ```
 
+## Delisted-listing check
+
+`run_daily.py` also runs the **delisted-listing check** after a successful
+Scorptec scrape (best-effort — a failure never breaks the run). Because the
+Scorptec scraper only reads category-grid pages, a delisted product vanishes
+from the grid and its last `in_stock` snapshot stays the latest forever.
+`check_delisted.py` re-fetches the product page of every active, tracked
+Scorptec listing that produced no snapshot for today and marks it `delisted`
+only on a positive signal — a 404/410 response or the site's "No Longer
+Available" marker. A fetch failure or unrecognised page is left untouched, so
+a transient network issue can never delist a live product. The dashboard then
+shows a "Delisted" badge instead of a price + stock badge and excludes the
+stale price from the group price range.
+
+Tuning (both optional, see `.env.example`):
+
+- `TRACKAROO_SCORPTEC_DELIST_CHECK_MAX` — per-run fetch cap (default 100)
+- `TRACKAROO_SCORPTEC_DELIST_PAGE_DELAY` — inter-fetch delay in seconds
+  (default 1.5 — a burst of product-page requests gets CDN-throttled)
+
+Preview without writing:
+
+```bash
+python check_delisted.py --dry-run   # print what would be marked
+```
+
 ## Config reference
 
 Every knob is overridable via environment — see `config.py` and `.env.example`

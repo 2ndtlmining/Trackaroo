@@ -66,12 +66,13 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 522 tests across 21 modules via pytest |
+| **Regression tests** | ✅ Complete | 545 tests across 22 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines, "Deal" badges), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), product-page "since tracked" chips (all-time low/high + 30-day average), price-drop & restock alerts panel on the product page, command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
-| **Frontend tests** | ✅ Complete | 231 vitest + 51 Playwright e2e (with a `goto()` hydration helper) |
+| **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
+| **Frontend tests** | ✅ Complete | 234 vitest + 52 Playwright e2e (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
@@ -107,6 +108,10 @@ python notify_discord.py --test
 # Preview (or run) price-drop & restock alerts standalone
 python check_alerts.py --dry-run
 python check_alerts.py
+
+# Preview (or run) the delisted-listing check standalone
+python check_delisted.py --dry-run
+python check_delisted.py
 
 # Query latest prices
 python query.py
@@ -175,10 +180,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (231 vitest)
+# Run frontend unit tests (234 vitest)
 npm test
 
-# Run browser e2e regression tests (51 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (52 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -227,9 +232,10 @@ Trackaroo/
 ├── DECISIONS.md        # rationale for key choices
 ├── FRONTEND_IMPROVEMENTS.md  # frontend/UX improvement implementation brief
 │
-├── run_daily.py        # one-command daily scraper + ingest runner (health checks + Discord digest + price alerts)
+├── run_daily.py        # one-command daily scraper + ingest runner (health checks + Discord digest + price alerts + delisted check)
 ├── notify_discord.py   # daily Discord digest of biggest CPU/GPU moves (top 3 up/down per category)
 ├── check_alerts.py     # price-drop & restock alerts (Discord/SMTP/webhook delivery, best-effort)
+├── check_delisted.py   # re-check stale Scorptec listings; mark delisted on positive 404/410 or "No Longer Available"
 ├── health_checks.py    # validate JSON output + DB state after each run
 ├── seed.py             # populate products table from watchlist.csv
 ├── ingest.py           # read JSON snapshots → write to DB
@@ -264,7 +270,7 @@ Trackaroo/
 │   ├── cpu_pccg_10_August_2026.json
 │   └── gpu_pccg_10_August_2026.json
 │
-├── unit_testing/       # Python regression tests (522 via pytest)
+├── unit_testing/       # Python regression tests (545 via pytest)
 │   ├── conftest.py             # shared pytest fixtures (in-memory DB)
 │   ├── test_seed.py            # seed + schema tests
 │   ├── test_matching.py        # product matching tests
@@ -286,7 +292,8 @@ Trackaroo/
 │   ├── test_specs_matching.py  # spec name normalization + matching tests
 │   ├── test_sync_specs.py      # sync_specs.py fetch/parse/upsert tests
 │   ├── test_notify_discord.py  # Discord digest: pairing, movers, embeds, POST, routing, gating
-│   └── test_check_alerts.py    # price alerts: evaluation matrix, message, delivery stubs, CLI
+│   ├── test_check_alerts.py    # price alerts: evaluation matrix, message, delivery stubs, CLI
+│   └── test_check_delisted.py  # delisted check: page classification, fetch retries, selection, marking
 │
 └── web/                # Phase 3 frontend (SvelteKit, adapter-node)
     ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot band chart), SpecPanel, CheapestCarousel, ProductCard, BrandGroupedListings, CommandPalette (Ctrl+K), Sparkline, PriceAlerts, …
@@ -295,8 +302,8 @@ Trackaroo/
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 231 vitest regression tests (10 suites)
-    ├── e2e/                    # 51 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── test/                   # 234 vitest regression tests (10 suites)
+    ├── e2e/                    # 52 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```

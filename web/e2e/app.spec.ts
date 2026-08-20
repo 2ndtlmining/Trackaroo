@@ -652,6 +652,20 @@ test.describe('product detail grouped listings', () => {
 		const groups = page.getByRole('button', { name: /· .*listing/ });
 		expect(await groups.count()).toBeGreaterThan(0);
 	});
+
+	test('shows a Delisted badge for a delisted listing, not a stale in-stock price', async ({ page }) => {
+		await openGpuProduct(page);
+
+		await expect(page.getByRole('heading', { name: 'Retailer listings' })).toBeVisible();
+		const xfx = page.getByRole('button', { name: /^XFX/ });
+		await expect(xfx).toBeVisible();
+		await xfx.click();
+		// The seeded delisted listing (stale in_stock snapshot) must read
+		// "Delisted" — its last price must not be presented as buyable.
+		const delistedRow = page.locator('li').filter({ has: page.getByText('Delisted', { exact: true }) });
+		await expect(delistedRow).toContainText('XFX Delisted Demo 16GB');
+		await expect(delistedRow.locator('span.num')).toHaveCount(0);
+	});
 });
 
 test.describe('product detail specs', () => {

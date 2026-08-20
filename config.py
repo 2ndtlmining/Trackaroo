@@ -177,6 +177,11 @@ SCORPTEC_PAGE_DELAY = _env_float("TRACKAROO_SCORPTEC_PAGE_DELAY", 0.5)
 # Safety cap on pagination per category (avoids infinite loops on a
 # misbehaving pagination link).
 SCORPTEC_MAX_PAGES = _env_int("TRACKAROO_SCORPTEC_MAX_PAGES", 20)
+# Per-run cap on how many stale listing pages check_delisted.py will fetch.
+SCORPTEC_DELIST_CHECK_MAX = _env_int("TRACKAROO_SCORPTEC_DELIST_CHECK_MAX", 100)
+# Slower gap between delisted-check fetches than grid scraping: a burst of
+# product-page requests gets throttled (403/429) by the CDN.
+SCORPTEC_DELIST_PAGE_DELAY = _env_float("TRACKAROO_SCORPTEC_DELIST_PAGE_DELAY", 1.5)
 
 # ── Algolia pagination tuning (PCCG) ──────────────────────────────────
 ALGOLIA_HITS_PER_PAGE = _env_int("TRACKAROO_ALGOLIA_HITS_PER_PAGE", 20)

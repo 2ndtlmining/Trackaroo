@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { formatAud, formatDate, titleCase } from '$lib/formats';
+	import Badge from './Badge.svelte';
 	import StockBadge from './StockBadge.svelte';
 	import { buildBrandGroups, toListingDisplays, type ListingDisplay } from '$lib/listingsPanel';
 	import type { Series } from '$lib/server/repos';
@@ -146,7 +147,9 @@
 											<span class="text-xs text-text-muted">{dateRange(listing)}</span>
 										</a>
 										<div class="shrink-0 text-right">
-											{#if listing.latestPrice !== null}
+											{#if listing.delisted}
+												<span class="inline-block"><Badge tone="stale" label="Delisted" /></span>
+											{:else if listing.latestPrice !== null}
 												<span class="num block text-text">{formatAud(listing.latestPrice)}</span>
 												<span class="inline-block"><StockBadge stock={listing.latestStock} /></span>
 											{:else}

@@ -238,6 +238,26 @@ export function seedE2eDb(dbPath = DB_PATH) {
 
 	insertAll();
 
+	// Deterministic delisted listing for the product-detail panel: a stale
+	// in-stock snapshot on a status='delisted' listing must render as a
+	// "Delisted" badge, never as buyable. Attached to the RTX 5060 Ti, which
+	// exists in both the synthetic fixture and the live scrape data.
+	const delistedTarget = db
+		.prepare("SELECT id FROM products WHERE category = 'gpu' AND model = 'GeForce RTX 5060 Ti' LIMIT 1")
+		.get();
+	if (delistedTarget) {
+		const delistedInfo = db
+			.prepare(
+				`INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status)
+				 VALUES (?, 'scorptec', 'XFX Delisted Demo 16GB', '/p/delisted-demo-sct', 'delisted')`
+			)
+			.run(delistedTarget.id);
+		db.prepare(
+			`INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at)
+			 VALUES (?, '2026-08-10', 699, 'in_stock', '2026-08-10T04:00:00.000Z')`
+		).run(Number(delistedInfo.lastInsertRowid));
+	}
+
 	// Deterministic spec rows so the product page spec panel is testable:
 	// product 1 (Core Ultra 5 245, CPU) and the first GPU product.
 	const firstProduct = db.prepare('SELECT id FROM products LIMIT 1').get();

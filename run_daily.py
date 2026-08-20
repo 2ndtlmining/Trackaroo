@@ -244,6 +244,19 @@ def main(argv: Optional[List[str]] = None) -> None:
         if not errors and not warnings:
             LOGGER.info("\nDB health: all %d checks passed", ok_count)
 
+    # ── Delisted listing check (Scorptec) ───────────────────
+    # Products delisted from the Scorptec grid never get a new snapshot, so
+    # their last (often in_stock) one stays latest forever. Fetch the product
+    # pages of listings missing from today's scrape and mark confirmed
+    # delistings. Gated on a successful Scorptec scrape (a failed scrape would
+    # make every listing look stale). Best-effort: never breaks the run.
+    if results.get("scorptec") and not args.dry_run:
+        try:
+            from check_delisted import run as run_delisted
+            run_delisted()
+        except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
+            LOGGER.error("Delisted check failed: %s", e)
+
     # ── Discord digest (optional) ──────────────────────────────────────
     # Only on a real full run with passing health checks: a partial or
     # unchecked scrape shouldn't celebrate moves that may be artifacts.

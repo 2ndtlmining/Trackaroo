@@ -14,7 +14,12 @@ function snapshot(date: string, price: number, stock: string): SnapshotRow {
 	};
 }
 
-function series(id: number, variant: string | null, points: SnapshotRow[]): Series {
+function series(
+	id: number,
+	variant: string | null,
+	points: SnapshotRow[],
+	status: ListingRow['status'] = 'active'
+): Series {
 	const listing: ListingRow = {
 		id,
 		product_id: 1,
@@ -22,7 +27,7 @@ function series(id: number, variant: string | null, points: SnapshotRow[]): Seri
 		variant_name: variant,
 		retailer_sku: null,
 		listing_url: `https://example.com/${id}`,
-		status: 'active',
+		status,
 		first_seen_at: '2026-08-09T04:00:00.000Z',
 		last_seen_at: '2026-08-17T04:00:00.000Z',
 		last_snapshot_at: '2026-08-17T04:00:00.000Z'
@@ -81,6 +86,19 @@ describe('toListingDisplays', () => {
 		expect(displays[0].firstSeen).toBe('2026-08-16');
 		expect(displays[0].lastSeen).toBe('2026-08-17');
 	});
+
+	it('flags delisted listings and forces inStock false despite a stale in_stock snapshot', () => {
+		const delisted = [
+			series(10, 'XFX Radeon RX 7900XT', [snapshot('2026-08-10', 1049, 'in_stock')], 'delisted'),
+			series(11, 'MSI GeForce RTX 5060 Ventus 2X OC 8GB', [snapshot('2026-08-17', 619, 'in_stock')])
+		];
+		const displays = toListingDisplays(delisted, GPU_PRODUCT_BRAND, new Set());
+		expect(displays[0].delisted).toBe(true);
+		expect(displays[0].inStock).toBe(false);
+		expect(displays[0].latestStock).toBe('in_stock');
+		expect(displays[1].delisted).toBe(false);
+		expect(displays[1].inStock).toBe(true);
+	});
 });
 
 describe('priceRange', () => {
@@ -90,6 +108,24 @@ describe('priceRange', () => {
 		expect(priceRange([displays[0]])).toEqual({ min: 619, max: 619 });
 		const unpriced = { ...displays[0], latestPrice: null };
 		expect(priceRange([unpriced])).toEqual({ min: null, max: null });
+	});
+
+	it('skips delisted listings so their stale price never skews the range', () => {
+		const delisted = toListingDisplays(
+			[series(10, 'XFX Radeon RX 7900XT', [snapshot('2026-08-10', 1049, 'in_stock')], 'delisted')],
+			GPU_PRODUCT_BRAND,
+			new Set()
+		);
+		expect(priceRange(delisted)).toEqual({ min: null, max: null });
+		const mixed = [
+			...toListingDisplays(
+				[series(11, 'MSI GeForce RTX 5060 Ventus 2X OC 8GB', [snapshot('2026-08-17', 619, 'in_stock')])],
+				GPU_PRODUCT_BRAND,
+				new Set()
+			),
+			...delisted
+		];
+		expect(priceRange(mixed)).toEqual({ min: 619, max: 619 });
 	});
 });
 
@@ -131,5 +167,20 @@ describe('buildBrandGroups', () => {
 	it('hides groups with no matching listings', () => {
 		const groups = buildBrandGroups(base, GPU_PRODUCT_BRAND, { query: 'does-not-exist', inStockOnly: false }, new Set());
 		expect(groups.length).toBe(0);
+	});
+
+	it('excludes delisted listings from in-stock counts and the in-stock filter', () => {
+		const withDelisted = [
+			series(10, 'XFX Radeon RX 7900XT', [snapshot('2026-08-10', 1049, 'in_stock')], 'delisted'),
+			series(11, 'MSI GeForce RTX 5060 Ventus 2X OC 8GB', [snapshot('2026-08-17', 619, 'in_stock')])
+		];
+		const groups = buildBrandGroups(withDelisted, GPU_PRODUCT_BRAND, { query: '', inStockOnly: false }, new Set());
+		const xfx = groups.find((g) => g.brand === 'XFX')!;
+		expect(xfx.inStockCount).toBe(0);
+		const msi = groups.find((g) => g.brand === 'MSI')!;
+		expect(msi.inStockCount).toBe(1);
+
+		const filtered = buildBrandGroups(withDelisted, GPU_PRODUCT_BRAND, { query: '', inStockOnly: true }, new Set());
+		expect(filtered.flatMap((g) => g.listings).map((l) => l.listingId)).toEqual([11]);
 	});
 });
