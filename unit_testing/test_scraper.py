@@ -533,6 +533,90 @@ class TestPCCGPagination:
         assert "category_filter" in sig.parameters
 
 
+# ── Scorptec: out-of-stock variants keep snapshots ──────────────────
+
+
+class TestScorptecSavesAllVariants:
+    """An out-of-stock variant must stay in the results even when another
+    variant of the same model is in stock (matches PCCG's behaviour)."""
+
+    def test_oos_variant_saved_alongside_in_stock(self, monkeypatch):
+        from scraper.scorptec import scrape_scorptec
+        watchlist = [
+            {
+                "model": "GeForce RTX 5060 Ti",
+                "category": "gpu",
+                "brand": "NVIDIA",
+                "gen_tier": "current",
+                "search_terms": ["rtx 5060 ti"],
+            },
+        ]
+        scraped = [
+            {
+                "name": "asus dual geforce rtx 5060 ti 8gb gddr7 oc edition",
+                "full_description": "ASUS Dual GeForce RTX 5060 Ti 8GB",
+                "price_aud": 749.0,
+                "stock_status": "out_of_stock",
+                "url": "https://www.scorptec.com.au/product/graphics-cards/nvidia/117353-dual-rtx5060ti-o8g",
+                "retailer_sku": "117353",
+            },
+            {
+                "name": "palit geforce rtx 5060 ti dual 8g",
+                "full_description": "Palit GeForce RTX 5060 Ti Dual 8G",
+                "price_aud": 749.0,
+                "stock_status": "in_stock",
+                "url": "https://www.scorptec.com.au/product/graphics-cards/nvidia/117192-ne7506t019p1-gb2062d",
+                "retailer_sku": "117192",
+            },
+        ]
+
+        def _fake_scrape(url, category_path="", max_pages=None):
+            if category_path == "graphics-cards/nvidia":
+                return scraped
+            return []
+
+        monkeypatch.setattr("scraper.scorptec.scrape_all_pages", _fake_scrape)
+        results, matched, _ = scrape_scorptec(watchlist)
+
+        assert len(results) == 2
+        assert {r["stock_status"] for r in results} == {"in_stock", "out_of_stock"}
+        assert 0 in matched
+
+    def test_all_out_of_stock_still_saved(self, monkeypatch):
+        from scraper.scorptec import scrape_scorptec
+        watchlist = [
+            {
+                "model": "GeForce RTX 5080",
+                "category": "gpu",
+                "brand": "NVIDIA",
+                "gen_tier": "current",
+                "search_terms": ["rtx 5080"],
+            },
+        ]
+        scraped = [
+            {
+                "name": "palit geforce rtx 5080 gamingpro v1, 16gb",
+                "full_description": "Palit GeForce RTX 5080 GamingPro V1 16GB",
+                "price_aud": 1999.0,
+                "stock_status": "out_of_stock",
+                "url": "https://www.scorptec.com.au/product/graphics-cards/nvidia/118318",
+                "retailer_sku": "118318",
+            },
+        ]
+
+        def _fake_scrape(url, category_path="", max_pages=None):
+            if category_path == "graphics-cards/nvidia":
+                return scraped
+            return []
+
+        monkeypatch.setattr("scraper.scorptec.scrape_all_pages", _fake_scrape)
+        results, matched, _ = scrape_scorptec(watchlist)
+
+        assert len(results) == 1
+        assert results[0]["stock_status"] == "out_of_stock"
+        assert 0 in matched
+
+
 # ── Variant-only term detection (analyze_unmatched) ─────────────────
 
 

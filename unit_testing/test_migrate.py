@@ -31,6 +31,8 @@ from migrate import (
     migrate_add_specs_columns,
     migrate_add_specs_table,
     migrate_add_variant_name,
+    migrate_backfill_retailer_sku,
+    migrate_merge_duplicate_listings,
 )
 
 LEGACY_SCHEMA = """
@@ -320,6 +322,163 @@ class TestMigratePriceAlertsTable:
             # Second run must skip cleanly, not fail on the existing table.
             migrate_add_price_alerts_table(conn)
             assert check_table_exists(conn, "price_alerts") is True
+        finally:
+            conn.close()
+
+
+def _seed_dup_db(tmp_path):
+    """A DB with duplicate listings forked by a Scorptec URL slug rewrite.
+
+    Listing 1 (short URL) has older snapshots; listing 2 (slug URL) has the
+    freshest snapshot. Both share the numeric key 116356.
+    """
+    path = tmp_path / "dup.db"
+    conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.executescript(LEGACY_SCHEMA)
+    # Emulate the post-migration state the merge expects (variant_name present).
+    conn.execute("ALTER TABLE retailer_listings ADD COLUMN variant_name TEXT")
+    conn.execute(
+        "INSERT INTO products (category, brand, model, generation_tier, tracked) "
+        "VALUES ('gpu', 'NVIDIA', 'GeForce RTX 3050', 'current', 1)"
+    )
+    conn.execute(
+        "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+        "VALUES (1, 'scorptec', 'https://www.scorptec.com.au/product/graphics-cards/nvidia/116356', 'active')"
+    )
+    conn.execute(
+        "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+        "VALUES (1, 'scorptec', 'https://www.scorptec.com.au/product/graphics-cards/nvidia/116356-ne63050018je-1072f', 'active')"
+    )
+    conn.execute(
+        "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) "
+        "VALUES (1, '2026-08-12', 379.0, 'in_stock', '2026-08-12T18:00:00Z')"
+    )
+    conn.execute(
+        "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) "
+        "VALUES (1, '2026-08-13', 379.0, 'in_stock', '2026-08-13T18:00:00Z')"
+    )
+    conn.execute(
+        "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) "
+        "VALUES (2, '2026-08-21', 269.0, 'in_stock', '2026-08-21T18:00:00Z')"
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+class TestMigrateBackfillSku:
+    """retailer_sku backfill from the stable numeric URL key."""
+
+    def test_backfills_matching_rows(self, tmp_path):
+        path = _seed_dup_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_backfill_retailer_sku(conn)
+            rows = {
+                r[0]: r[1]
+                for r in conn.execute("SELECT id, retailer_sku FROM retailer_listings").fetchall()
+            }
+            assert rows[1] == "116356"
+            assert rows[2] == "116356"
+        finally:
+            conn.close()
+
+    def test_dry_run_makes_no_change(self, tmp_path):
+        path = _seed_dup_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_backfill_retailer_sku(conn, dry_run=True)
+            rows = conn.execute(
+                "SELECT retailer_sku FROM retailer_listings"
+            ).fetchall()
+            assert all(r[0] is None for r in rows)
+        finally:
+            conn.close()
+
+    def test_skips_rows_without_a_key(self, tmp_path):
+        path = _make_legacy_db(tmp_path)  # URL 'products/9800x3d' has no numeric key
+        conn = get_connection(path)
+        try:
+            migrate_backfill_retailer_sku(conn)
+            row = conn.execute("SELECT retailer_sku FROM retailer_listings WHERE id = 1").fetchone()
+            assert row[0] is None
+        finally:
+            conn.close()
+
+
+class TestMigrateMergeDuplicates:
+    """Duplicate listing rows (URL slug forks) merge into one survivor."""
+
+    def test_merges_duplicates(self, tmp_path):
+        path = _seed_dup_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_merge_duplicate_listings(conn)
+            rows = conn.execute(
+                "SELECT id, status, listing_url FROM retailer_listings ORDER BY id"
+            ).fetchall()
+            # One row stays active (the freshest — slug URL), one is retired.
+            assert len(rows) == 2
+            by_id = {r[0]: (r[1], r[2]) for r in rows}
+            assert by_id[1][0] == "stale"
+            assert by_id[2][0] == "active"
+            # All three snapshots now live on the survivor (id 2).
+            snaps = conn.execute(
+                "SELECT snapshot_date FROM price_snapshots WHERE retailer_listing_id = 2 ORDER BY snapshot_date"
+            ).fetchall()
+            assert [s[0] for s in snaps] == ["2026-08-12", "2026-08-13", "2026-08-21"]
+            # Survivor timestamps restored to the newest snapshot.
+            survivor = conn.execute(
+                "SELECT last_snapshot_at FROM retailer_listings WHERE id = 2"
+            ).fetchone()[0]
+            assert survivor == "2026-08-21T18:00:00Z"
+        finally:
+            conn.close()
+
+    def test_idempotent_second_run(self, tmp_path):
+        path = _seed_dup_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_merge_duplicate_listings(conn)
+            migrate_merge_duplicate_listings(conn)  # second run: no groups left
+            active = conn.execute(
+                "SELECT COUNT(*) FROM retailer_listings WHERE status = 'active'"
+            ).fetchone()[0]
+            assert active == 1
+        finally:
+            conn.close()
+
+    def test_dry_run_makes_no_change(self, tmp_path):
+        path = _seed_dup_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_merge_duplicate_listings(conn, dry_run=True)
+            active = conn.execute(
+                "SELECT COUNT(*) FROM retailer_listings WHERE status = 'active'"
+            ).fetchone()[0]
+            assert active == 2  # nothing merged
+            snaps = conn.execute("SELECT COUNT(*) FROM price_snapshots").fetchone()[0]
+            assert snaps == 3
+        finally:
+            conn.close()
+
+    def test_distinct_keys_are_left_alone(self, tmp_path):
+        path = _seed_dup_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            # Add a second, unrelated listing with its own key.
+            conn.execute(
+                "INSERT INTO retailer_listings (product_id, retailer, retailer_sku, listing_url, status) "
+                "VALUES (1, 'scorptec', NULL, 'https://www.scorptec.com.au/product/graphics-cards/nvidia/117192-ne7506t019p1-gb2062d', 'active')"
+            )
+            conn.commit()
+            migrate_merge_duplicate_listings(conn)
+            # The unrelated listing is untouched and still active.
+            row = conn.execute(
+                "SELECT status FROM retailer_listings WHERE listing_url LIKE '%117192%'"
+            ).fetchone()
+            assert row[0] == "active"
         finally:
             conn.close()
 

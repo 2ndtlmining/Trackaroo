@@ -24,6 +24,7 @@ from ingest import (
     is_snapshot_file,
     find_or_create_product,
     find_or_create_listing,
+    extract_listing_key,
     ingest_file,
 )
 
@@ -113,6 +114,44 @@ class TestFindOrCreateProduct:
 
 # ── Listing find-or-create tests ────────────────────────────────────
 
+class TestExtractListingKey:
+    """Stable numeric listing keys for slug-rewrite dedup."""
+
+    def test_scorptec_short_url(self):
+        assert extract_listing_key(
+            "scorptec", "https://www.scorptec.com.au/product/graphics-cards/nvidia/116356"
+        ) == "116356"
+
+    def test_scorptec_slug_url(self):
+        assert extract_listing_key(
+            "scorptec",
+            "https://www.scorptec.com.au/product/graphics-cards/nvidia/116356-ne63050018je-1072f",
+        ) == "116356"
+
+    def test_scorptec_socket_path_slug_url(self):
+        assert extract_listing_key(
+            "scorptec",
+            "https://www.scorptec.com.au/product/cpu/intel-socket-1700/105937-bx8071514900k",
+        ) == "105937"
+
+    def test_scorptec_four_digit_is_not_a_key(self):
+        # Model numbers like '5090' are not listing keys.
+        assert extract_listing_key(
+            "scorptec", "https://scorptec.com.au/products/5090-gigabyte"
+        ) is None
+
+    def test_pccg_id_and_slug(self):
+        assert extract_listing_key(
+            "pccg", "https://www.pccasegear.com/products/69245/asus-geforce-rtx-5060-ti"
+        ) == "69245"
+
+    def test_pccg_id_only(self):
+        assert extract_listing_key("pccg", "https://www.pccasegear.com/products/123") == "123"
+
+    def test_unrecognised_retailer_has_no_key(self):
+        assert extract_listing_key("mwave", "https://mwave.com.au/product/abc") is None
+
+
 class TestFindOrCreateListing:
     """Test retailer listing lookup and creation."""
 
@@ -177,6 +216,63 @@ class TestFindOrCreateListing:
         find_or_create_listing(db, pid, "scorptec", url, variant_name="GIGABYTE AORUS RTX 5090")
         variant = db.execute("SELECT variant_name FROM retailer_listings WHERE id = ?", (lid,)).fetchone()[0]
         assert variant == "GIGABYTE AORUS RTX 5090"
+
+    def test_scorptec_slug_rewrite_reuses_listing(self, db):
+        """A URL slug rewrite must reuse the existing row, not fork a duplicate."""
+        pid = self._create_product(db)
+        short = "https://www.scorptec.com.au/product/graphics-cards/nvidia/116356"
+        slug = "https://www.scorptec.com.au/product/graphics-cards/nvidia/116356-ne63050018je-1072f"
+        lid1 = find_or_create_listing(db, pid, "scorptec", short)
+        lid2 = find_or_create_listing(db, pid, "scorptec", slug)
+        assert lid1 == lid2
+        assert db.execute("SELECT COUNT(*) FROM retailer_listings").fetchone()[0] == 1
+        # The row adopted the new URL and stored the key.
+        row = db.execute("SELECT listing_url, retailer_sku FROM retailer_listings WHERE id = ?", (lid2,)).fetchone()
+        assert row[0] == slug
+        assert row[1] == "116356"
+
+    def test_pccg_slug_rewrite_reuses_listing(self, db):
+        pid = self._create_product(db)
+        bare = "https://www.pccasegear.com/products/69245"
+        slugged = "https://www.pccasegear.com/products/69245/asus-geforce-rtx-5060-ti"
+        lid1 = find_or_create_listing(db, pid, "pccg", bare)
+        lid2 = find_or_create_listing(db, pid, "pccg", slugged)
+        assert lid1 == lid2
+        assert db.execute("SELECT COUNT(*) FROM retailer_listings").fetchone()[0] == 1
+
+    def test_slug_rewrite_prefers_active_row(self, db):
+        """A merged duplicate (status='stale') is not resurrected by a rewrite."""
+        pid = self._create_product(db)
+        active_url = "https://www.scorptec.com.au/product/graphics-cards/nvidia/116356-ne63050018je-1072f"
+        stale_url = "https://www.scorptec.com.au/product/graphics-cards/nvidia/116356"
+        lid_active = find_or_create_listing(db, pid, "scorptec", active_url)
+        # Simulate a pre-fix duplicate row (URL slug fork) directly in SQL —
+        # the new dedup would merge it into the active row instead.
+        db.execute(
+            "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+            "VALUES (?, ?, ?, 'stale')",
+            (pid, "scorptec", stale_url),
+        )
+        lid_stale = db.execute(
+            "SELECT id FROM retailer_listings WHERE listing_url = ?", (stale_url,)
+        ).fetchone()[0]
+        assert lid_active != lid_stale
+        # A brand-new URL form for the same key must reuse the active row.
+        new_url = "https://www.scorptec.com.au/product/graphics-cards/nvidia/116356-ne63050018je"
+        lid = find_or_create_listing(db, pid, "scorptec", new_url)
+        assert lid == lid_active
+        status = db.execute("SELECT status FROM retailer_listings WHERE id = ?", (lid_stale,)).fetchone()[0]
+        assert status == "stale"  # dup stays retired
+
+    def test_distinct_keys_create_distinct_listings(self, db):
+        """Different SKUs stay separate even when URL shapes match."""
+        pid = self._create_product(db)
+        url_a = "https://www.scorptec.com.au/product/graphics-cards/nvidia/116356"
+        url_b = "https://www.scorptec.com.au/product/graphics-cards/nvidia/117192-ne7506t019p1-gb2062d"
+        lid_a = find_or_create_listing(db, pid, "scorptec", url_a)
+        lid_b = find_or_create_listing(db, pid, "scorptec", url_b)
+        assert lid_a != lid_b
+        assert db.execute("SELECT COUNT(*) FROM retailer_listings").fetchone()[0] == 2
 
     def test_does_not_overwrite_existing_variant_name(self, db):
         """An existing variant_name is not overwritten."""

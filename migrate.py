@@ -12,6 +12,8 @@ Applies additive migrations:
 - Creates the specs table (external product spec data, see sync_specs.py).
 - Creates the price_alerts table (user "tell me when to buy" alerts,
   see check_alerts.py).
+- Backfills retailer_sku from the URL key and merges duplicate listing rows
+  forked by retailer URL slug rewrites (see migrate_merge_duplicate_listings).
 
 Usage:
     python migrate.py              # Apply all pending migrations
@@ -24,9 +26,10 @@ import logging
 import sqlite3
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from config import DB_PATH
+from ingest import extract_listing_key
 
 LOGGER = logging.getLogger(__name__)
 
@@ -257,6 +260,156 @@ def migrate_add_specs_columns(conn: sqlite3.Connection, dry_run: bool = False) -
     LOGGER.info("  [OK] specs columns added: %s", ", ".join(missing))
 
 
+def migrate_backfill_retailer_sku(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Backfill retailer_listings.retailer_sku from the URL key where it's NULL.
+
+    ``retailer_sku`` is now stored on insert; older rows predate that. Deriving
+    it from the stable numeric URL key (Scorptec/PCCG) lets the key-based dedup
+    in ``ingest.find_or_create_listing`` identify those rows going forward.
+    """
+    rows = conn.execute(
+        "SELECT id, retailer, listing_url FROM retailer_listings WHERE retailer_sku IS NULL"
+    ).fetchall()
+    updates = []
+    for rid, retailer, url in rows:
+        key = extract_listing_key(retailer, url)
+        if key:
+            updates.append((rid, key))
+
+    if not updates:
+        LOGGER.info("  [SKIP] no listings missing retailer_sku")
+        return
+
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would backfill retailer_sku on %d listings", len(updates))
+        return
+
+    for rid, key in updates:
+        conn.execute("UPDATE retailer_listings SET retailer_sku = ? WHERE id = ?", (key, rid))
+    conn.commit()
+    LOGGER.info("  [OK] Backfilled retailer_sku on %d listings", len(updates))
+
+
+def _latest_scraped_at(conn: sqlite3.Connection, listing_id: int) -> Optional[str]:
+    """Return the most recent snapshot scraped_at for a listing, or None."""
+    row = conn.execute(
+        "SELECT MAX(scraped_at) FROM price_snapshots WHERE retailer_listing_id = ?",
+        (listing_id,),
+    ).fetchone()
+    return row[0]
+
+
+def migrate_merge_duplicate_listings(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Merge duplicate retailer_listings rows forked by retailer URL slug rewrites.
+
+    Retailers rewrite URL slugs over time (Scorptec ``/116356`` vs
+    ``/116356-ne63050018je-1072f``; PCCG ``/products/69245`` vs
+    ``/products/69245/...``). Ingest versions that keyed only on the exact URL
+    created a second listing row for the same physical product. This merges
+    each such group into one survivor: price snapshots are moved over (one per
+    date), the survivor keeps the most-recently-scraped URL, and the absorbed
+    rows are marked ``status='stale'`` (rows are never deleted).
+
+    Idempotent: a second run finds no group with more than one row.
+
+    Args:
+        conn: Open SQLite connection.
+        dry_run: When True, only preview what would change without writing.
+    """
+    # The merge reads variant_name, which only exists after the column
+    # migration — on a pre-migration DB there is nothing to merge yet.
+    if not check_column_exists(conn, "retailer_listings", "variant_name"):
+        LOGGER.info("  [SKIP] variant_name column missing (run earlier migrations first)")
+        return
+
+    rows = conn.execute(
+        "SELECT id, retailer, retailer_sku, listing_url, variant_name, status FROM retailer_listings"
+    ).fetchall()
+
+    # Only groups with more than one ACTIVE row need merging. A group with one
+    # active row plus retired (stale/delisted) rows was already merged on an
+    # earlier run — the absorbed rows stay retired, so a re-run is a true no-op.
+    active_by_key: Dict[Tuple[str, str], List[Tuple[int, str, Optional[str]]]] = {}
+    for rid, retailer, sku, url, variant, status in rows:
+        if status != "active":
+            continue
+        key = sku or extract_listing_key(retailer, url)
+        if not key:
+            continue
+        active_by_key.setdefault((retailer, key), []).append((rid, url, variant))
+
+    groups = {k: v for k, v in active_by_key.items() if len(v) > 1}
+    if not groups:
+        LOGGER.info("  [SKIP] no duplicate listings to merge")
+        return
+
+    merged_groups = 0
+    for (retailer, key), group in sorted(groups.items()):
+        if len(group) < 2:
+            continue
+
+        def _weight(item: Tuple[int, str, Optional[str]]) -> Tuple[str, int, int]:
+            rid, _, _ = item
+            return (_latest_scraped_at(conn, rid) or "", rid, 0)
+
+        survivor = max(group, key=_weight)
+        survivor_id = survivor[0]
+        dupes = [g for g in group if g[0] != survivor_id]
+
+        if dry_run:
+            LOGGER.info(
+                "  [DRY-RUN] Would merge %d duplicate(s) of %s key %s into listing %d",
+                len(dupes), retailer, key, survivor_id,
+            )
+            continue
+
+        for dup_id, dup_url, dup_variant in dupes:
+            # Move snapshots that the survivor doesn't already have (preserving
+            # their original scraped_at so the trigger keeps real timestamps).
+            conn.execute(
+                """INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at)
+                   SELECT ?, snapshot_date, price_aud, stock_status, scraped_at
+                   FROM price_snapshots
+                   WHERE retailer_listing_id = ? AND snapshot_date NOT IN (
+                       SELECT snapshot_date FROM price_snapshots WHERE retailer_listing_id = ?
+                   )""",
+                (survivor_id, dup_id, survivor_id),
+            )
+            # Absorb a more recent URL and any missing variant name.
+            if (_latest_scraped_at(conn, dup_id) or "") > (_latest_scraped_at(conn, survivor_id) or ""):
+                conn.execute(
+                    "UPDATE retailer_listings SET listing_url = ? WHERE id = ?",
+                    (dup_url, survivor_id),
+                )
+            if not survivor[2] and dup_variant:
+                conn.execute(
+                    "UPDATE retailer_listings SET variant_name = ? WHERE id = ?",
+                    (dup_variant, survivor_id),
+                )
+            conn.execute(
+                "UPDATE retailer_listings SET status = 'stale' WHERE id = ? AND status != 'stale'",
+                (dup_id,),
+            )
+            LOGGER.info("  [MIGRATE] Merged listing %d into %d (%s key %s)", dup_id, survivor_id, retailer, key)
+
+        # Restore accurate timestamps on the survivor (the merge moves older
+        # snapshots too, and the trigger overwrites last_* on each insert).
+        latest = _latest_scraped_at(conn, survivor_id)
+        if latest:
+            conn.execute(
+                "UPDATE retailer_listings SET last_snapshot_at = ?, last_seen_at = ? WHERE id = ?",
+                (latest, latest, survivor_id),
+            )
+        conn.execute(
+            "UPDATE retailer_listings SET retailer_sku = ? WHERE id = ?",
+            (key, survivor_id),
+        )
+        merged_groups += 1
+
+    conn.commit()
+    LOGGER.info("  [OK] Merged %d duplicate listing group(s)", merged_groups)
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -284,6 +437,12 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: Create price_alerts table
         migrate_add_price_alerts_table(conn, dry_run=args.dry_run)
+
+        # Migration: Backfill retailer_sku (key-based dedup anchor)
+        migrate_backfill_retailer_sku(conn, dry_run=args.dry_run)
+
+        # Migration: Merge duplicate listings forked by URL slug rewrites
+        migrate_merge_duplicate_listings(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify

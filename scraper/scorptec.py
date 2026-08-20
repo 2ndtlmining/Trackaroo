@@ -343,23 +343,18 @@ def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, A
                     all_matches[i].append(match_dict)
                     break  # One match per scraped product (avoid duplicate matches)
 
-    # Save ALL in-stock variants for each watchlist item
+    # Save ALL matched variants for each watchlist item — regardless of stock
+    # state. An out-of-stock variant's price history still matters, and this
+    # matches PCCG's behaviour (see scrape_category). Without it, an OOS card
+    # whose sibling variant is buyable would quietly stop receiving snapshots.
     results: List[Dict[str, Any]] = []
     matched_watchlist_ids: Set[int] = set()
     for i, matches in all_matches.items():
         if not matches:
             continue
-        # Keep only in-stock variants
-        in_stock = [m for m in matches if m["stock_status"] == "in_stock"]
-        if in_stock:
-            results.extend(in_stock)
-            matched_watchlist_ids.add(i)
-            logger.info("%s: %d in-stock variants saved", watchlist[i]["model"], len(in_stock))
-        else:
-            # All out of stock — still save them for reference
-            results.extend(matches)
-            matched_watchlist_ids.add(i)
-            logger.info("%s: %d variants found (all out of stock)", watchlist[i]["model"], len(matches))
+        results.extend(matches)
+        matched_watchlist_ids.add(i)
+        logger.info("%s: %d variants saved", watchlist[i]["model"], len(matches))
 
     return results, matched_watchlist_ids, all_scraped
 

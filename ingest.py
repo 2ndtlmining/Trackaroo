@@ -23,7 +23,7 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from config import DATA_DIR, DB_PATH, DB_DATE_FORMAT, FILE_DATE_FORMAT, SCHEMA_PATH
 
@@ -40,6 +40,36 @@ _SNAPSHOT_FILENAME_RE = re.compile(r"^(?:cpu|gpu)_(?:scorptec|pccg)_\d{1,2}_\w+_
 def is_snapshot_file(filename: str) -> bool:
     """True if the filename follows the snapshot naming convention."""
     return bool(_SNAPSHOT_FILENAME_RE.match(filename))
+
+
+# Retailers rewrite URL slugs over time (Scorptec: '/{sku}' vs
+# '/{sku}-{model-slug}'; PCCG: '/products/{id}' vs '/products/{id}/{slug}').
+# The numeric SKU/id at the end of the path is stable across those rewrites,
+# so it is the reliable identity for a listing — matching on it stops a slug
+# change from forking a duplicate listing row. Scorptec SKUs are 5-6 digits
+# (a shorter digit run is a model number, not a listing key); PCCG ids are 5+.
+_LISTING_KEY_PATTERNS: Dict[str, str] = {
+    "scorptec": r"/(\d{5,7})(?:-[^/]*)?$",
+    "pccg": r"/products/(\d+)(?:/|$)",
+}
+
+
+def extract_listing_key(retailer: str, url: str) -> Optional[str]:
+    """Extract a retailer's stable numeric listing key from a product URL.
+
+    Args:
+        retailer: Retailer name ('scorptec'/'pccg').
+        url: Full listing URL.
+
+    Returns:
+        The stable numeric SKU/id, or None when the URL carries no extractable
+        key (then the listing can only be identified by its exact URL).
+    """
+    pattern = _LISTING_KEY_PATTERNS.get(retailer)
+    if not pattern:
+        return None
+    m = re.search(pattern, url)
+    return m.group(1) if m else None
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
@@ -135,6 +165,46 @@ def find_or_create_product(
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
+def _find_listing_by_key(
+    conn: sqlite3.Connection,
+    retailer: str,
+    key: str,
+    active_only: bool = False,
+) -> Optional[Tuple[int, str]]:
+    """Find an existing listing row for ``key``.
+
+    New rows store ``retailer_sku`` (= the key); older rows predate that and
+    are matched by extracting the key from their URL. ``active_only`` prefers
+    live rows so a previously-merged duplicate isn't resurrected by a slug
+    rewrite.
+
+    Args:
+        conn: Open SQLite connection.
+        retailer: Retailer name.
+        key: Stable numeric listing key.
+        active_only: When True, only consider active listings.
+
+    Returns:
+        (listing_id, variant_name) tuple, or None.
+    """
+    status_sql = " AND status = 'active'" if active_only else ""
+    row = conn.execute(
+        f"SELECT id, variant_name FROM retailer_listings WHERE retailer = ? AND retailer_sku = ?{status_sql}",
+        (retailer, key),
+    ).fetchone()
+    if row:
+        return (row[0], row[1])
+
+    rows = conn.execute(
+        f"SELECT id, variant_name, listing_url FROM retailer_listings WHERE retailer = ? AND retailer_sku IS NULL{status_sql}",
+        (retailer,),
+    ).fetchall()
+    for rid, rname, rurl in rows:
+        if extract_listing_key(retailer, rurl) == key:
+            return (rid, rname)
+    return None
+
+
 def find_or_create_listing(
     conn: sqlite3.Connection,
     product_id: int,
@@ -147,6 +217,11 @@ def find_or_create_listing(
 
     Each unique URL at a retailer gets its own listing. This allows tracking
     multiple variants of the same product (e.g., GIGABYTE, ASUS, Zotac 5090).
+
+    When the exact URL is new but an existing listing for the same retailer
+    carries the same stable numeric key (Scorptec/PCCG rewrite URL slugs over
+    time, e.g. '/116356' vs '/116356-ne63050018je-1072f'), the existing row is
+    reused and adopts the new URL rather than forking a duplicate listing.
 
     Args:
         conn: Open SQLite connection.
@@ -173,15 +248,43 @@ def find_or_create_listing(
                     "UPDATE retailer_listings SET variant_name = ? WHERE id = ?",
                     (variant_name, row[0]),
                 )
+        # We're scraping this exact URL live right now — if it had been retired
+        # (e.g. a delisted listing that was relisted), reactivate it.
+        if not dry_run:
+            conn.execute(
+                "UPDATE retailer_listings SET status = 'active' WHERE id = ? AND status != 'active'",
+                (row[0],),
+            )
         return row[0]
+
+    # Fallback: reuse an existing listing whose URL key matches (a slug
+    # rewrite of a listing we already track). Prefer an active row so a
+    # merged duplicate isn't resurrected.
+    key = extract_listing_key(retailer, url)
+    if key:
+        key_row = _find_listing_by_key(conn, retailer, key, active_only=True)
+        if not key_row:
+            key_row = _find_listing_by_key(conn, retailer, key)
+        if key_row:
+            if not dry_run:
+                conn.execute(
+                    "UPDATE retailer_listings SET listing_url = ?, retailer_sku = ?, status = 'active' WHERE id = ?",
+                    (url, key, key_row[0]),
+                )
+                if variant_name and not key_row[1]:
+                    conn.execute(
+                        "UPDATE retailer_listings SET variant_name = ? WHERE id = ?",
+                        (variant_name, key_row[0]),
+                    )
+            return key_row[0]
 
     if dry_run:
         return None  # Don't create in dry-run mode
 
     conn.execute(
-        """INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status)
-           VALUES (?, ?, ?, ?, 'active')""",
-        (product_id, retailer, variant_name, url),
+        """INSERT INTO retailer_listings (product_id, retailer, variant_name, retailer_sku, listing_url, status)
+           VALUES (?, ?, ?, ?, ?, 'active')""",
+        (product_id, retailer, variant_name, key, url),
     )
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
