@@ -136,3 +136,34 @@ class TestRunDailyMain:
         monkeypatch.setattr(run_daily, "DATA_DIR", tmp_path)
         with pytest.raises(SystemExit):
             run_daily.main(["--dry-run", "--no-health"])
+
+    def test_alerts_failure_does_not_break_run(self, monkeypatch, tmp_path):
+        """A failing alerts step (e.g. missing price_alerts table) must not crash the daily run."""
+        import run_daily
+
+        def fake_init_db(path):
+            conn = sqlite3.connect(":memory:")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+            conn.commit()
+            return conn
+
+        def boom(*a, **k):
+            raise RuntimeError("no such table: price_alerts")
+
+        monkeypatch.setattr(run_daily, "run_scraper", lambda *a, **k: True)
+        monkeypatch.setattr(run_daily, "init_db", fake_init_db)
+        monkeypatch.setattr(run_daily, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            run_daily, "ingest_today", lambda conn, dry_run=False: {"inserted": 0, "skipped": 0, "errors": 0}
+        )
+        monkeypatch.setattr(run_daily, "check_json_files", lambda *a, **k: [])
+        monkeypatch.setattr(run_daily, "check_db_freshness", lambda *a, **k: [])
+        monkeypatch.setattr(run_daily, "check_today_coverage", lambda *a, **k: [])
+        monkeypatch.setattr(run_daily, "check_match_count_anomalies", lambda *a, **k: [])
+        monkeypatch.setattr("check_delisted.run", lambda *a, **k: None)
+        monkeypatch.setattr("notify_discord.run", lambda *a, **k: None)
+        monkeypatch.setattr("notify_discord.send_alert", lambda *a, **k: None)
+        monkeypatch.setattr("check_alerts.run", boom)
+
+        run_daily.main([])
