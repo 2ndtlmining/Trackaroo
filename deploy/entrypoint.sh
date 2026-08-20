@@ -10,7 +10,6 @@
 set -e
 
 : "${RUN_INTERVAL_HOURS:=24}"
-: "${BACKUP_KEEP:=14}"
 
 log() {
     echo "[trackaroo-cron] $(date '+%Y-%m-%d %H:%M:%S') $1"
@@ -23,7 +22,7 @@ trackaroo-bootstrap-data
 
 run_pipeline() {
     log "Starting daily pipeline..."
-    python run_daily.py --backup "${BACKUP_KEEP}"
+    python run_daily.py
     log "Pipeline finished (exit $?)."
 }
 

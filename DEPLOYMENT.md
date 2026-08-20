@@ -46,7 +46,7 @@ Logs: `docker logs -f trackaroo`
 | Setting | Default | Override |
 |---|---|---|
 | Pipeline cadence | 24h | `-e RUN_INTERVAL_HOURS=6` |
-| Backups retained | 14 | `-e BACKUP_KEEP=30` |
+| Backups retained | 14 | `-e TRACKAROO_BACKUP_KEEP=30` |
 | Dashboard port | 3000 | `-p 8080:3000` |
 | Spec-sync day | Sunday (0) | `-e SPEC_SYNC_DOW=1` (Mon) … `6` (Sat) |
 | Spec-sync hour | 03:00 | `-e SPEC_SYNC_HOUR=12` |
@@ -78,12 +78,13 @@ adapter-node server). Defaults:
 | Setting | Default | Override |
 |---|---|---|
 | Cron cadence | 24h | `RUN_INTERVAL_HOURS=6 docker compose up ...` |
-| Backups retained | 14 | `BACKUP_KEEP=30` |
+| Backups retained | 14 | `TRACKAROO_BACKUP_KEEP=30` |
 | Dashboard host port | 3000 | `PORT_TRACKAROO=8080` |
 
-The `cron` service runs `run_daily.py --backup $KEEP` every interval via
-`deploy/entrypoint.sh`. It is safe to run the same image one-shot from a host
-crontab instead (see Option B).
+The `cron` service runs `run_daily.py` every interval via
+`deploy/entrypoint.sh`; every real full run backs up the DB automatically
+(retention via `TRACKAROO_BACKUP_KEEP`, opt out with `--no-backup`). It is
+safe to run the same image one-shot from a host crontab instead (see Option B).
 
 Data lives in the named volume `trackaroo-data` (`/data` in both containers):
 
@@ -97,7 +98,7 @@ Data lives in the named volume `trackaroo-data` (`/data` in both containers):
 
 > **First run:** the DB is created empty and seeded the first time ingestion
 > runs. To seed from the watchlist first, run the seed step once:
-> `docker compose run --rm cron sh -c "python seed.py && python run_daily.py --backup 14"`.
+> `docker compose run --rm cron sh -c "python seed.py && python run_daily.py"`.
 
 ### Volume backup
 
@@ -117,7 +118,7 @@ location), so this works from any working directory.
 # /etc/cron.d/trackaroo   (or: crontab -e)
 # Run every day at 06:30. The pipeline scrapes, ingests, health-checks,
 # and keeps the 14 most recent DB backups.
-30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --backup 14 >> /var/log/trackaroo_daily.log 2>&1
+30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py >> /var/log/trackaroo_daily.log 2>&1
 ```
 
 ### Weekly spec sync (separate, best-effort)
@@ -156,7 +157,7 @@ a few hours after the main daily run without any guard logic — it either picks
 up the missing PCCG data or exits quietly:
 
 ```cron
-30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --backup 14 >> /var/log/trackaroo_daily.log 2>&1
+30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py >> /var/log/trackaroo_daily.log 2>&1
 30 12 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --pccg >> /var/log/trackaroo_pccg_retry.log 2>&1
 30 18 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --pccg >> /var/log/trackaroo_pccg_retry.log 2>&1
 ```
@@ -197,7 +198,7 @@ loads one).
 To run a scrape manually (from anywhere):
 
 ```bash
-cd /opt/trackaroo && python run_daily.py --backup 14
+cd /opt/trackaroo && python run_daily.py
 python backup_db.py          # standalone backup, keeps 14
 python backup_db.py --keep 30 --backup-dir /mnt/nas/trackaroo
 ```
@@ -258,7 +259,7 @@ Webhooks → New Webhook, copy the URL) and pass them to the pipeline:
 - Option B (host cron): put the vars in a repo-root `.env` (gitignored) —
   `notify_discord.py` loads it automatically — or export them in the crontab:
   ```cron
-  30 6 * * * cd /opt/trackaroo && /usr/bin/env DISCORD_WEBHOOK_GPU=... DISCORD_WEBHOOK_CPU=... python3 run_daily.py --backup 14 >> /var/log/trackaroo_daily.log 2>&1
+  30 6 * * * cd /opt/trackaroo && /usr/bin/env DISCORD_WEBHOOK_GPU=... DISCORD_WEBHOOK_CPU=... python3 run_daily.py >> /var/log/trackaroo_daily.log 2>&1
   ```
 
 Both webhooks are optional — with neither set the digest is a no-op, and a

@@ -165,5 +165,6 @@ class TestRunDailyMain:
         monkeypatch.setattr("notify_discord.run", lambda *a, **k: None)
         monkeypatch.setattr("notify_discord.send_alert", lambda *a, **k: None)
         monkeypatch.setattr("check_alerts.run", boom)
+        monkeypatch.setattr("backup_db.backup_database", lambda **k: None)
 
         run_daily.main([])

@@ -164,8 +164,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--scrape-only", action="store_true", help="Scrape but don't ingest")
     parser.add_argument("--no-health", action="store_true", help="Skip health checks")
     parser.add_argument("--no-notify", action="store_true", help="Skip the Discord digest")
-    parser.add_argument("--backup", type=int, metavar="KEEP", nargs="?", const=BACKUP_KEEP,
-                        help="Back up the DB after ingestion (optionally: how many backups to keep)")
+    parser.add_argument("--no-backup", action="store_true", help="Skip the automatic DB backup")
     args = parser.parse_args(argv)
 
     # Determine which scrapers to run
@@ -290,11 +289,14 @@ def main(argv: Optional[List[str]] = None) -> None:
             except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
                 LOGGER.error("Price alerts check failed: %s", e)
 
-    # ── Backup (optional) ───────────────────────────────────────────
-    if args.backup and not args.dry_run and not args.scrape_only:
+    # ── Backup (automatic) ──────────────────────────────────────────
+    # A real full run always snapshots the DB first (keeps the last
+    # BACKUP_KEEP days) so today's data is never lost. Opt out via
+    # --no-backup. Skips on dry-run / scrape-only (nothing was written).
+    if not args.no_backup and not args.dry_run and not args.scrape_only:
         from backup_db import backup_database
         LOGGER.info("\n%s\nBacking up database:\n%s", "=" * 60, "=" * 60)
-        backup_database(keep=args.backup)
+        backup_database(keep=BACKUP_KEEP)
 
 
 if __name__ == "__main__":

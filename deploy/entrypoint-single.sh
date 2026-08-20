@@ -11,7 +11,7 @@
 #
 # Knobs (env):
 #   RUN_INTERVAL_HOURS   Pipeline cadence (default 24)
-#   BACKUP_KEEP          Backups to retain (default 14)
+#   TRACKAROO_BACKUP_KEEP  DB backups to retain (default 14; automatic)
 #   PORT                 Dashboard listen port (default 3000)
 #   HOST                 Dashboard bind host (default 0.0.0.0)
 #   TRACKAROO_DB         SQLite db path (default /data/trackaroo.db)
@@ -31,7 +31,6 @@
 set -e
 
 : "${RUN_INTERVAL_HOURS:=24}"
-: "${BACKUP_KEEP:=14}"
 : "${SPEC_SYNC_DOW:=0}"
 : "${SPEC_SYNC_HOUR:=3}"
 # Zero-pad the hour so it compares cleanly against `date +%H` ("03" not "3").
@@ -43,7 +42,7 @@ log() {
 
 run_pipeline() {
     log "Starting daily pipeline..."
-    python run_daily.py --backup "${BACKUP_KEEP}" && log "Pipeline finished." || log "Pipeline finished with errors (retrying next interval)."
+    python run_daily.py && log "Pipeline finished." || log "Pipeline finished with errors (retrying next interval)."
 }
 
 run_spec_sync() {
