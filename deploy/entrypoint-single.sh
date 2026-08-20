@@ -21,6 +21,9 @@
 #   DISCORD_WEBHOOK_CPU  Discord webhook for the CPU digest (optional)
 #   TRACKAROO_PUBLIC_BASE_URL  Public dashboard URL, adds Trackaroo links to
 #                        the Discord digest (optional)
+#   TRACKAROO_DISCORD_WEBHOOK_URL / TRACKAROO_SMTP_* / TRACKAROO_ALERT_WEBHOOK_URL
+#                        Price-alert delivery (check_alerts.py) — all optional,
+#                        see .env.example
 #
 # A single pipeline iteration can be run and then exit with RUN_ONCE=1
 # (used for one-shot `docker run` from a host crontab).

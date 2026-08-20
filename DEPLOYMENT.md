@@ -274,6 +274,35 @@ python notify_discord.py --dry-run   # print the exact embeds
 python notify_discord.py --test      # send one static sample embed per webhook
 ```
 
+## Price alerts
+
+`run_daily.py` also evaluates the user-set **price-drop & restock alerts**
+(after a successful run, with the same clean-run gating as the digest).
+`check_alerts.py` checks each `price_alerts` row against the two latest
+snapshots per listing: a price-drop alert fires when the cheapest in-stock
+price is ≤ the target **and** strictly below the last-notified price (a
+sustained breach doesn't spam; a further drop re-fires); a restock alert fires
+on an out→in transition with a 24h cooldown. Price takes precedence in the
+same run; cooldown columns advance only after a successful delivery.
+
+Delivery is stdlib-only and best-effort (never raises — a failure is logged,
+never fails the run), per the alert's `channel`:
+
+- `discord` → `TRACKAROO_DISCORD_WEBHOOK_URL`
+- `email` → `TRACKAROO_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM/TO`
+- `webhook` → `TRACKAROO_ALERT_WEBHOOK_URL` (generic JSON POST)
+
+These are deliberately distinct from the digest's `DISCORD_WEBHOOK_*` vars.
+Pass them the same way as the digest (compose forwards them in
+`docker-compose.yml`; host cron via a repo-root `.env` or the crontab env).
+All are optional — with none set, alert delivery is a no-op.
+
+Preview without sending:
+
+```bash
+python check_alerts.py --dry-run   # print what would fire
+```
+
 ## Config reference
 
 Every knob is overridable via environment — see `config.py` and `.env.example`

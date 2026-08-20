@@ -265,6 +265,13 @@ def main(argv: Optional[List[str]] = None) -> None:
         if alert_lines:
             send_alert(alert_lines)
 
+        # ── Price-drop & restock alerts (optional) ────────────────────
+        # Same clean-run gating as the digest: a partial or unhealthy scrape
+        # shouldn't fire "buy now" alerts built on garbage data.
+        if not failed:
+            from check_alerts import run as run_alerts
+            run_alerts()
+
     # ── Backup (optional) ───────────────────────────────────────────
     if args.backup and not args.dry_run and not args.scrape_only:
         from backup_db import backup_database

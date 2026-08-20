@@ -10,6 +10,8 @@ Applies additive migrations:
 - Adds the variant_name column to retailer_listings (backfilled from
   scraped_name data where available).
 - Creates the specs table (external product spec data, see sync_specs.py).
+- Creates the price_alerts table (user "tell me when to buy" alerts,
+  see check_alerts.py).
 
 Usage:
     python migrate.py              # Apply all pending migrations
@@ -147,6 +149,46 @@ SPECS_EXTRA_COLUMNS = {
 }
 
 
+PRICE_ALERTS_TABLE_SQL = """
+CREATE TABLE price_alerts (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id          INTEGER NOT NULL REFERENCES products(id),
+    target_price        REAL    NOT NULL,             -- AUD. fires when cheapest in-stock <= this
+    channel             TEXT    NOT NULL DEFAULT 'discord'
+                        CHECK (channel IN ('discord', 'email', 'webhook')),
+    notify_on_restock   INTEGER NOT NULL DEFAULT 0,   -- 0/1. also fire when an OOS product returns
+    active              INTEGER NOT NULL DEFAULT 1,   -- 0/1. 0 = paused (kept for history)
+    last_notified_at    TEXT,                          -- ISO8601 UTC. set when the alert last fired
+    last_notified_price REAL,                          -- price at the last firing (cooldown dedup)
+    created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (product_id, channel)
+)
+"""
+
+
+def migrate_add_price_alerts_table(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Create the price_alerts table (additive, create-if-missing).
+
+    Args:
+        conn: Open SQLite connection.
+        dry_run: When True, only preview what would change without writing.
+    """
+    if check_table_exists(conn, "price_alerts"):
+        LOGGER.info("  [SKIP] price_alerts table already exists")
+        return
+
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would create price_alerts table")
+        return
+
+    LOGGER.info("  [MIGRATE] Creating price_alerts table...")
+    conn.execute(PRICE_ALERTS_TABLE_SQL)
+    conn.execute("CREATE INDEX idx_price_alerts_product ON price_alerts (product_id)")
+    conn.execute("CREATE INDEX idx_price_alerts_active ON price_alerts (active)")
+    conn.commit()
+    LOGGER.info("  [OK] price_alerts table created")
+
+
 def migrate_add_specs_table(conn: sqlite3.Connection, dry_run: bool = False) -> None:
     """Create the specs table (additive, create-if-missing).
 
@@ -240,6 +282,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         # Migration: Widen specs with TechPowerUp-grade columns
         migrate_add_specs_columns(conn, dry_run=args.dry_run)
 
+        # Migration: Create price_alerts table
+        migrate_add_price_alerts_table(conn, dry_run=args.dry_run)
+
         if not args.dry_run:
             # Verify
             if check_column_exists(conn, "retailer_listings", "variant_name"):
@@ -252,6 +297,12 @@ def main(argv: Optional[List[str]] = None) -> None:
                 LOGGER.info("  [OK] specs table is present")
             else:
                 LOGGER.error("  [ERROR] specs table is missing")
+                sys.exit(1)
+
+            if check_table_exists(conn, "price_alerts"):
+                LOGGER.info("  [OK] price_alerts table is present")
+            else:
+                LOGGER.error("  [ERROR] price_alerts table is missing")
                 sys.exit(1)
 
             # Show current state

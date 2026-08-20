@@ -66,11 +66,12 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 479 tests across 20 modules via pytest |
+| **Regression tests** | ✅ Complete | 522 tests across 21 modules via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
-| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines, "Deal" badges), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), product-page "since tracked" chips (all-time low/high + 30-day average), command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
-| **Frontend tests** | ✅ Complete | 226 vitest + 50 Playwright e2e (with a `goto()` hydration helper) |
+| **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines, "Deal" badges), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), product-page "since tracked" chips (all-time low/high + 30-day average), price-drop & restock alerts panel on the product page, command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
+| **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
+| **Frontend tests** | ✅ Complete | 231 vitest + 51 Playwright e2e (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
 
 ## Quick start
@@ -102,6 +103,10 @@ python health_checks.py --db-only
 # Preview or send the daily Discord digest standalone
 python notify_discord.py --dry-run
 python notify_discord.py --test
+
+# Preview (or run) price-drop & restock alerts standalone
+python check_alerts.py --dry-run
+python check_alerts.py
 
 # Query latest prices
 python query.py
@@ -155,7 +160,7 @@ two-service split is also kept for those who prefer it — see
 
 ## Frontend (`web/`)
 
-SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard (sortable table — click a column header for ▲/▼ price/change/freshness sorting), `/products` (card grid grouped by product — each card shows a cheapest-in-stock trend sparkline, expandable variant listings with inline 7-day trend sparklines, compare checkboxes), `/compare?ids=` (side-by-side specs + per-retailer best prices for 2–4 same-category products), `/movers` (24h/7d/30d, sortable by window/abs-pct/price *and* clickable ▲/▼ column headers, per-row trend sparklines), `/product/[id]` (meta + uPlot history chart with low/high band and 90-day chips + brand-grouped listings panel + spec panel). A global **command palette** (Ctrl/Cmd+K) searches the tracked products from any page and jumps straight to a product (or offers a quick "Compare A vs B" when exactly two match); each result shows its snapshot-count badge. Retailer variant names are display-cased (`titleCase()` — e.g. `rtx`→`RTX`, `5600x`→`5600X`) at render time; the stored data stays raw.
+SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard (sortable table — click a column header for ▲/▼ price/change/freshness sorting), `/products` (card grid grouped by product — each card shows a cheapest-in-stock trend sparkline, expandable variant listings with inline 7-day trend sparklines, compare checkboxes), `/compare?ids=` (side-by-side specs + per-retailer best prices for 2–4 same-category products), `/movers` (24h/7d/30d, sortable by window/abs-pct/price *and* clickable ▲/▼ column headers, per-row trend sparklines), `/product/[id]` (meta + uPlot history chart with low/high band and all-time/30d-avg chips + brand-grouped listings panel + spec panel + a **price alerts** panel to arm "tell me under $X" / restock alerts). A global **command palette** (Ctrl/Cmd+K) searches the tracked products from any page and jumps straight to a product (or offers a quick "Compare A vs B" when exactly two match); each result shows its snapshot-count badge. Retailer variant names are display-cased (`titleCase()` — e.g. `rtx`→`RTX`, `5600x`→`5600X`) at render time; the stored data stays raw.
 
 ```bash
 cd web
@@ -170,10 +175,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (226 vitest)
+# Run frontend unit tests (231 vitest)
 npm test
 
-# Run browser e2e regression tests (50 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (51 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -185,13 +190,16 @@ Point it at a different DB file with `TRACKAROO_DB=/path/to/trackaroo.db`. The d
 products ────── retailer_listings ────── price_snapshots
 (canonical)    (per retailer)           (daily snapshot, append-only)
      │
-     └──────── specs (per product, from external datasets via sync_specs.py)
+     ├── specs (per product, from external datasets via sync_specs.py)
+     │
+     └── price_alerts (per product × channel, user-set target price / restock notify)
 ```
 
 - **products** — canonical identity (category, brand, model, generation tier)
 - **retailer_listings** — a specific retailer's page for a product variant (e.g., GIGABYTE, ASUS, Zotac 5090 each get their own listing with `variant_name`)
 - **price_snapshots** — one row per listing per day. Never updated or deleted.
 - **specs** — one row per canonical product, sourced from the external spec datasets above (fetched weekly by `sync_specs.py`). Fetched only on the product detail page — never joined into list/index queries.
+- **price_alerts** — one row per product × channel (`UNIQUE(product_id, channel)`): target price, optional restock notify, and cooldown columns (`last_notified_at` / `last_notified_price`) that advance only after a successful delivery.
 
 The DB runs in `WAL` mode (set by the ingestion writers), so the frontend can read it while the daily cron job writes — no lock errors. Rows are never deleted. Products that roll out of scope are marked `tracked=0`. See [SPEC.md §7a](SPEC.md#7a-data-retention-policy) for the full retention policy.
 
@@ -219,8 +227,9 @@ Trackaroo/
 ├── DECISIONS.md        # rationale for key choices
 ├── FRONTEND_IMPROVEMENTS.md  # frontend/UX improvement implementation brief
 │
-├── run_daily.py        # one-command daily scraper + ingest runner (health checks + Discord digest)
+├── run_daily.py        # one-command daily scraper + ingest runner (health checks + Discord digest + price alerts)
 ├── notify_discord.py   # daily Discord digest of biggest CPU/GPU moves (top 3 up/down per category)
+├── check_alerts.py     # price-drop & restock alerts (Discord/SMTP/webhook delivery, best-effort)
 ├── health_checks.py    # validate JSON output + DB state after each run
 ├── seed.py             # populate products table from watchlist.csv
 ├── ingest.py           # read JSON snapshots → write to DB
@@ -255,11 +264,12 @@ Trackaroo/
 │   ├── cpu_pccg_10_August_2026.json
 │   └── gpu_pccg_10_August_2026.json
 │
-├── unit_testing/       # Python regression tests (479 via pytest)
+├── unit_testing/       # Python regression tests (522 via pytest)
 │   ├── conftest.py             # shared pytest fixtures (in-memory DB)
 │   ├── test_seed.py            # seed + schema tests
 │   ├── test_matching.py        # product matching tests
 │   ├── test_schema.py          # SQLite schema tests
+│   ├── test_migrate.py         # migrate.py: legacy-DB migrations (variant_name, specs, price_alerts) + main()
 │   ├── test_ingest.py          # ingestion + pipeline tests
 │   ├── test_scraper.py         # scraper data quality tests
 │   ├── test_pccg_reliability.py  # PCCG 429/rate-limit reliability tests
@@ -275,17 +285,18 @@ Trackaroo/
 │   ├── test_specs_schema.py    # specs table DDL + migration tests
 │   ├── test_specs_matching.py  # spec name normalization + matching tests
 │   ├── test_sync_specs.py      # sync_specs.py fetch/parse/upsert tests
-│   └── test_notify_discord.py  # Discord digest: pairing, movers, embeds, POST, routing, gating
+│   ├── test_notify_discord.py  # Discord digest: pairing, movers, embeds, POST, routing, gating
+│   └── test_check_alerts.py    # price alerts: evaluation matrix, message, delivery stubs, CLI
 │
 └── web/                # Phase 3 frontend (SvelteKit, adapter-node)
-    ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot band chart), SpecPanel, CheapestCarousel, ProductCard, BrandGroupedListings, CommandPalette (Ctrl+K), Sparkline, …
+    ├── src/lib/components/     # Badge, StatTile, PriceChange, Filters, Header, LatestListingTable, PriceChart (uPlot band chart), SpecPanel, CheapestCarousel, ProductCard, BrandGroupedListings, CommandPalette (Ctrl+K), Sparkline, PriceAlerts, …
     ├── src/lib/branding.ts     # client-safe AIB brand derivation (grouped listings)
     ├── src/lib/listingsPanel.ts # pure grouped-listings logic (search, filters, sort)
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 226 vitest regression tests (10 suites)
-    ├── e2e/                    # 50 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── test/                   # 231 vitest regression tests (10 suites)
+    ├── e2e/                    # 51 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```

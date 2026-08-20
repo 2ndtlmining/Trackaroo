@@ -4,13 +4,13 @@ Monorepo: Python scraper + ingest at the repo root, SvelteKit frontend in `web/`
 
 ## Commands (run from `web/`)
 
-- **Unit tests**: `npm test` (Vitest, 226 tests, ~2s)
+- **Unit tests**: `npm test` (Vitest, 231 tests, ~2s)
 - **Watch mode**: `npm run test:watch`
 - **E2E tests**: `npm run test:e2e` (Playwright, Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
   - `e2e.db`, `test-results/`, and `playwright-report/` are gitignored and regenerated on each run.
 - **Type + Svelte check**: `npm run check` (svelte-check, must report 0 errors)
-- **Full validation before finishing a task**: backend `python -m pytest -q` (479 tests, run from the repo root), then from `web/`: `npm run check`, `npm test`, then `npm run test:e2e`.
+- **Full validation before finishing a task**: backend `python -m pytest -q` (522 tests, run from the repo root), then from `web/`: `npm run check`, `npm test`, then `npm run test:e2e`.
 - **Build**: `npm run build` (svelte-kit sync + vite build; run if a change affects the production build).
 
 ## Docker (from the repo root, NOT `web/`)
@@ -42,6 +42,7 @@ Monorepo: Python scraper + ingest at the repo root, SvelteKit frontend in `web/`
   }
   ```
   Do **not** call `page.goto(...)` directly in specs; use `goto(page, path)` (and `await page.waitForLoadState('networkidle')` after `page.reload()`).
+- **Full-navigation server actions**: some actions are plain HTML POST forms (e.g. the product-page price-alert create/delete), which trigger a full page navigation rather than a client-side update — wait for `networkidle` after submitting before asserting on the reloaded page.
 - Keep the suite deterministic: it asserts against fixed seeded data, so assertions must not depend on scraped-live data.
 - Keep the suite fast (goal ≲ 60s). Avoid artificial `waitForTimeout` sleeps.
 
@@ -49,3 +50,5 @@ Monorepo: Python scraper + ingest at the repo root, SvelteKit frontend in `web/`
 
 - Never commit secrets or `.env` values. `.env.example` is the template.
 - Generated/regenerable files (`web/e2e/e2e.db`, Playwright artifacts) must stay gitignored.
+- Client Svelte components must not import **runtime values** from `$lib/server/...` (server-only modules) — it breaks client hydration ("An impossible situation occurred"). Shared constants live in `web/src/lib/constants.ts`.
+- `web/src/lib/server/db.ts` `getDb()` is read-only; write paths (e.g. alert create/delete) use `getWriteDb()`.

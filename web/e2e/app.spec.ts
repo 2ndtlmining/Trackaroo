@@ -700,3 +700,31 @@ test.describe('product detail specs', () => {
 		await expect(page.getByText('180 W')).toBeVisible();
 	});
 });
+
+test.describe('price alerts', () => {
+	test('arms an alert from the product page and deletes it again', async ({ page }) => {
+		await goto(page, '/product/1');
+
+		// The alert section is present but starts with no armed alerts.
+		await expect(page.getByRole('heading', { name: 'Price alerts' })).toBeVisible();
+		await expect(page.getByText('My alerts')).toHaveCount(0);
+
+		// Arm an email alert under $500 with restock notification.
+		await page.getByLabel('Target price in AUD').fill('500');
+		await page.getByLabel('Notification channel').selectOption('email');
+		await page.getByLabel('Notify on restock').check();
+		await page.getByRole('button', { name: 'Create alert' }).click();
+		// Plain form POST -> 303 redirect back to the product page.
+		await page.waitForLoadState('networkidle');
+
+		await expect(page.getByText('My alerts')).toBeVisible();
+		await expect(page.getByText('Under $500')).toBeVisible();
+		await expect(page.getByText('· email')).toBeVisible();
+		await expect(page.getByText('· restock')).toBeVisible();
+
+		// Deleting the alert removes it from the list.
+		await page.getByRole('button', { name: 'Delete alert' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByText('My alerts')).toHaveCount(0);
+	});
+});

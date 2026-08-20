@@ -6,6 +6,7 @@ Covers:
 - get_connection (missing DB -> SystemExit; WAL + FK pragmas applied)
 - migrate_add_variant_name (adds column; dry-run no-op; idempotent skip)
 - migrate_add_specs_table (creates table + index; dry-run no-op; idempotent skip)
+- migrate_add_price_alerts_table (creates table + indexes; dry-run no-op; idempotent skip)
 - main() end-to-end on a legacy DB (dry-run vs full run)
 
 The legacy schema below is the pre-12-Aug-2026 shape: retailer_listings
@@ -26,6 +27,7 @@ from migrate import (
     check_table_exists,
     get_connection,
     main,
+    migrate_add_price_alerts_table,
     migrate_add_specs_columns,
     migrate_add_specs_table,
     migrate_add_variant_name,
@@ -278,6 +280,50 @@ class TestMigrateSpecsColumns:
             conn.close()
 
 
+class TestMigratePriceAlertsTable:
+    """The price_alerts table migration."""
+
+    def test_creates_table_and_indexes(self, tmp_path):
+        path = _make_legacy_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_add_price_alerts_table(conn)
+            assert check_table_exists(conn, "price_alerts") is True
+            idx = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' "
+                "AND name IN ('idx_price_alerts_product', 'idx_price_alerts_active')"
+            ).fetchall()
+            assert {r[0] for r in idx} == {"idx_price_alerts_product", "idx_price_alerts_active"}
+            # Channel CHECK constraint must reject unknown channels.
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute(
+                    "INSERT INTO price_alerts (product_id, target_price, channel) "
+                    "VALUES (1, 100.0, 'sms')"
+                )
+        finally:
+            conn.close()
+
+    def test_dry_run_makes_no_change(self, tmp_path):
+        path = _make_legacy_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_add_price_alerts_table(conn, dry_run=True)
+            assert check_table_exists(conn, "price_alerts") is False
+        finally:
+            conn.close()
+
+    def test_idempotent_when_table_present(self, tmp_path):
+        path = _make_legacy_db(tmp_path)
+        conn = get_connection(path)
+        try:
+            migrate_add_price_alerts_table(conn)
+            # Second run must skip cleanly, not fail on the existing table.
+            migrate_add_price_alerts_table(conn)
+            assert check_table_exists(conn, "price_alerts") is True
+        finally:
+            conn.close()
+
+
 class TestMain:
     """End-to-end main() on a legacy DB file."""
 
@@ -303,10 +349,11 @@ class TestMain:
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )]
             assert "specs" not in tables
+            assert "price_alerts" not in tables
         finally:
             conn.close()
 
-    def test_full_run_applies_both_migrations(self, tmp_path, monkeypatch):
+    def test_full_run_applies_all_migrations(self, tmp_path, monkeypatch):
         path = self._point_at_legacy_db(monkeypatch, tmp_path)
         main([])
 
@@ -318,5 +365,6 @@ class TestMain:
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )]
             assert "specs" in tables
+            assert "price_alerts" in tables
         finally:
             conn.close()

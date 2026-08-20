@@ -4,12 +4,13 @@
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import BrandGroupedListings from '$lib/components/BrandGroupedListings.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
+	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
 	import { formatAud, formatDate, formatRelative, titleCase } from '$lib/formats';
 	import { generationTierLabel } from '$lib/tiers';
 	import { MIN_HISTORY_POINTS } from '$lib/constants';
-	import { type ProductHistory } from '$lib/server/repos';
+	import { type ProductHistory, type AlertRow } from '$lib/server/repos';
 
-	let { data }: { data: ProductHistory } = $props();
+	let { data }: { data: ProductHistory & { alerts: AlertRow[] } } = $props();
 
 	const product = $derived(data.product);
 	const series = $derived(data.series);
@@ -148,6 +149,8 @@ label:
 			No price history recorded for this product yet.
 		</div>
 	{/if}
+
+	<PriceAlerts alerts={data.alerts} />
 
 	{#if data.specs}
 		<SpecPanel spec={data.specs} />

@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openDatabase, type DB } from '../src/lib/server/db';
 import {
+	deleteAlert,
 	deriveListingBrand,
 	getCheapestPerModel,
 	getComparisonData,
@@ -11,6 +12,7 @@ import {
 	getMovers,
 	getPriceBand,
 	getPriceExtremes,
+	getProductAlerts,
 	getProductDealStats,
 	getProductHistory,
 	getProductIndex,
@@ -18,7 +20,8 @@ import {
 	getProductStats,
 	getSparklines,
 	getSummary,
-	groupListingsByProduct
+	groupListingsByProduct,
+	upsertAlert
 } from '../src/lib/server/repos';
 import { MIN_HISTORY_POINTS } from '../src/lib/constants';
 import { createSeededDb, DATA_DIR, SCHEMA_PATH, parseDateFromFilename, type SeededDb } from './helpers/seed';
@@ -988,3 +991,89 @@ describe('getProductSparklines', () => {
 		}
 	});
 });
+
+describe('price alerts repo', () => {
+	let mini: { db: DB; close: () => void };
+
+	beforeEach(() => {
+		mini = createMiniAlertsDb();
+	});
+
+	afterEach(() => {
+		mini.close();
+	});
+
+	it('upsertAlert inserts a new active alert', () => {
+		upsertAlert(mini.db, 1, 999, 'discord', true);
+		const rows = getProductAlerts(mini.db, 1);
+		expect(rows.length).toBe(1);
+		expect(rows[0]).toMatchObject({
+			product_id: 1,
+			target_price: 999,
+			channel: 'discord',
+			notify_on_restock: 1,
+			active: 1
+		});
+		expect(rows[0].last_notified_at).toBeNull();
+		expect(rows[0].last_notified_price).toBeNull();
+	});
+
+	it('upsertAlert re-arms an existing (product, channel) instead of duplicating', () => {
+		upsertAlert(mini.db, 1, 999, 'discord', true);
+		upsertAlert(mini.db, 1, 899, 'discord', false);
+		const rows = getProductAlerts(mini.db, 1);
+		expect(rows.length).toBe(1);
+		expect(rows[0].target_price).toBe(899);
+		expect(rows[0].notify_on_restock).toBe(0);
+		expect(rows[0].active).toBe(1);
+	});
+
+	it('upsertAlert allows one alert per channel per product', () => {
+		upsertAlert(mini.db, 1, 999, 'discord', false);
+		upsertAlert(mini.db, 1, 999, 'email', false);
+		upsertAlert(mini.db, 1, 999, 'webhook', false);
+		expect(getProductAlerts(mini.db, 1).length).toBe(3);
+	});
+
+	it('deleteAlert removes only the targeted alert', () => {
+		upsertAlert(mini.db, 1, 999, 'discord', false);
+		upsertAlert(mini.db, 1, 999, 'email', false);
+		const [discord] = getProductAlerts(mini.db, 1);
+		deleteAlert(mini.db, discord.id);
+		const remaining = getProductAlerts(mini.db, 1);
+		expect(remaining.length).toBe(1);
+		expect(remaining[0].channel).toBe('email');
+	});
+
+	it('getProductAlerts returns only that product, ordered by channel', () => {
+		upsertAlert(mini.db, 1, 999, 'webhook', false);
+		upsertAlert(mini.db, 1, 999, 'discord', false);
+		upsertAlert(mini.db, 2, 599, 'discord', false);
+		const rows = getProductAlerts(mini.db, 1);
+		expect(rows.length).toBe(2);
+		expect(rows.map((r) => r.channel)).toEqual(['discord', 'webhook']);
+		expect(getProductAlerts(mini.db, 2).length).toBe(1);
+		expect(getProductAlerts(mini.db, 999_999)).toEqual([]);
+	});
+});
+
+// Two CPU products with no snapshots — alert CRUD does not need price history.
+function createMiniAlertsDb(): { db: DB; close: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-alerts-'));
+	const file = path.join(dir, 'alerts.db');
+	const db = openDatabase(file, { readonly: false, fileMustExist: false });
+	db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 7600', 'current', 1)"
+	).run();
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 8600', 'current', 1)"
+	).run();
+	return {
+		db,
+		close: () => {
+			db.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	};
+}

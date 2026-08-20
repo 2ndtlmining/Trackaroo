@@ -21,3 +21,5 @@ export interface ListingFilters {
 }
 
 export type ListingSort = 'price-asc' | 'price-desc';
+
+export type AlertChannel = 'discord' | 'email' | 'webhook';

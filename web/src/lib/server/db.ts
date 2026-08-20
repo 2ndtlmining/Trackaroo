@@ -113,3 +113,25 @@ export function closeDb(): void {
 		cached = null;
 	}
 }
+
+// The dashboard is read-only by default (getDb), but user actions such as
+// arming a price alert need to write. This is a separate read-write connection
+// to the same file — WAL mode keeps it safe alongside the read connection and
+// the pipeline's writer. It requires the DB file to already exist (the web
+// never creates the database).
+let writeCached: DB | null = null;
+
+export function getWriteDb(): DB {
+	if (!writeCached) {
+		const file = process.env.TRACKAROO_DB ?? DEFAULT_DB_PATH;
+		writeCached = openDatabase(file, { readonly: false, fileMustExist: true });
+	}
+	return writeCached;
+}
+
+export function closeWriteDb(): void {
+	if (writeCached) {
+		writeCached.close();
+		writeCached = null;
+	}
+}

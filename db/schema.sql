@@ -141,3 +141,28 @@ CREATE TABLE specs (
 );
 
 CREATE INDEX idx_specs_product ON specs (product_id);
+
+-- ─────────────────────────────────────────────────────────────
+-- price_alerts: user-configured "tell me when to buy" alerts.
+-- An alert fires when the product's cheapest in-stock price drops to or
+-- below target_price (and optionally when an out-of-stock product returns).
+-- One alert per (product, channel) — re-arming the same channel updates the
+-- existing row rather than stacking duplicates. Cooldown state (last_notified_*)
+-- is maintained by check_alerts.py so a sustained breach doesn't spam.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE price_alerts (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id          INTEGER NOT NULL REFERENCES products(id),
+    target_price        REAL    NOT NULL,             -- AUD. fires when cheapest in-stock <= this
+    channel             TEXT    NOT NULL DEFAULT 'discord'
+                        CHECK (channel IN ('discord', 'email', 'webhook')),
+    notify_on_restock   INTEGER NOT NULL DEFAULT 0,   -- 0/1. also fire when an OOS product returns
+    active              INTEGER NOT NULL DEFAULT 1,   -- 0/1. 0 = paused (kept for history)
+    last_notified_at    TEXT,                          -- ISO8601 UTC. set when the alert last fired
+    last_notified_price REAL,                          -- price at the last firing (cooldown dedup)
+    created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (product_id, channel)
+);
+
+CREATE INDEX idx_price_alerts_product ON price_alerts (product_id);
+CREATE INDEX idx_price_alerts_active ON price_alerts (active);
