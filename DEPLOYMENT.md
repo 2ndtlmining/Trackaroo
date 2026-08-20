@@ -250,19 +250,20 @@ A partial or unchecked scrape never celebrates moves that may be artifacts.
 `--no-notify` opts out; dry runs, `--scrape-only`, and `--no-health` skip it
 automatically.
 
-Set up a webhook per channel in Discord (Server Settings → Integrations →
-Webhooks → New Webhook, copy the URL) and pass them to the pipeline:
+Set up a webhook in Discord (Server Settings → Integrations → Webhooks → New
+Webhook, copy the URL) and pass it to the pipeline. Both CPU and GPU moves
+go to the same webhook:
 
-- Option C (single image): `-e DISCORD_WEBHOOK_GPU=… -e DISCORD_WEBHOOK_CPU=…`
-- Option A (compose): export the vars on the host or in a `.env`; the cron
-  service forwards them (see `docker-compose.yml`).
-- Option B (host cron): put the vars in a repo-root `.env` (gitignored) —
-  `notify_discord.py` loads it automatically — or export them in the crontab:
+- Option C (single image): `-e DISCORD_WEBHOOK_URL=…`
+- Option A (compose): export the var on the host or in a `.env`; the cron
+  service forwards it (see `docker-compose.yml`).
+- Option B (host cron): put the var in a repo-root `.env` (gitignored) —
+  `notify_discord.py` loads it automatically — or export it in the crontab:
   ```cron
-  30 6 * * * cd /opt/trackaroo && /usr/bin/env DISCORD_WEBHOOK_GPU=... DISCORD_WEBHOOK_CPU=... python3 run_daily.py >> /var/log/trackaroo_daily.log 2>&1
+  30 6 * * * cd /opt/trackaroo && /usr/bin/env DISCORD_WEBHOOK_URL=... python3 run_daily.py >> /var/log/trackaroo_daily.log 2>&1
   ```
 
-Both webhooks are optional — with neither set the digest is a no-op, and a
+The webhook is optional — with it unset the digest is a no-op, and a
 webhook failure is logged without failing the run. Embed colours match the
 dashboard tokens (`#F87171` up / `#34D399` down); the per-product link goes to
 the retailer listing. `TRACKAROO_PUBLIC_BASE_URL` (optional) additionally
@@ -293,7 +294,7 @@ never fails the run), per the alert's `channel`:
 - `email` → `TRACKAROO_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM/TO`
 - `webhook` → `TRACKAROO_ALERT_WEBHOOK_URL` (generic JSON POST)
 
-These are deliberately distinct from the digest's `DISCORD_WEBHOOK_*` vars.
+These are deliberately distinct from the digest's `DISCORD_WEBHOOK_URL` var.
 Pass them the same way as the digest (compose forwards them in
 `docker-compose.yml`; host cron via a repo-root `.env` or the crontab env).
 All are optional — with none set, alert delivery is a no-op.

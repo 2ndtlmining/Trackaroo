@@ -1,8 +1,8 @@
 """
 Discord digest for Trackaroo.
 
-Sends a short daily summary of the biggest GPU/CPU price moves to one or two
-Discord webhooks. Designed to run from run_daily.py after ingest + health
+Sends a short daily summary of the biggest GPU/CPU price moves to a single
+Discord webhook. Designed to run from run_daily.py after ingest + health
 checks pass, or standalone for a manual send / preview.
 
 Embeds mirror the dashboard's two hex tokens (--up #F87171, --down #34D399)
@@ -12,14 +12,13 @@ previous available snapshot (same listing, not a fixed window).
 
 Configuration (env, optional — see .env.example):
 
-    DISCORD_WEBHOOK_GPU        Webhook URL for the GPU digest channel
-    DISCORD_WEBHOOK_CPU        Webhook URL for the CPU digest channel
-    DISCORD_WEBHOOK_ALERT      Webhook URL for pipeline-failure alerts (optional)
+    DISCORD_WEBHOOK_URL       Webhook URL for the CPU+GPU digest channel
+    DISCORD_WEBHOOK_ALERT     Webhook URL for pipeline-failure alerts (optional)
     TRACKAROO_PUBLIC_BASE_URL  Optional public base URL of the web app, used to
                                add a "Trackaroo page" link next to the retailer
                                link. Omit (or leave blank) for retailer links only.
 
-Both webhooks are optional; with neither set the module is a no-op. Secrets
+The webhook is optional; with it unset the module is a no-op. Secrets
 never fail the daily run — a webhook error is logged, not raised.
 
 Usage:
@@ -225,15 +224,14 @@ def send_alert(lines: List[str], dry_run: bool = False) -> int:
 def run(db_path: Optional[str] = None, dry_run: bool = False, test: bool = False) -> int:
     """Load config, build the digest and send it. Returns the embed count."""
     load_dotenv()
-    gpu_webhook = os.environ.get("DISCORD_WEBHOOK_GPU")
-    cpu_webhook = os.environ.get("DISCORD_WEBHOOK_CPU")
+    webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
     public_base_url = os.environ.get("TRACKAROO_PUBLIC_BASE_URL", "").rstrip("/")
 
     if test:
-        return _send_test_embeds(gpu_webhook, cpu_webhook, dry_run)
+        return _send_test_embed(webhook_url, dry_run)
 
-    if not gpu_webhook and not cpu_webhook:
-        LOGGER.info("No Discord webhooks configured — skipping digest.")
+    if not webhook_url:
+        LOGGER.info("No Discord webhook configured — skipping digest.")
         return 0
 
     conn = sqlite3.connect(db_path or str(DB_PATH))
@@ -245,36 +243,31 @@ def run(db_path: Optional[str] = None, dry_run: bool = False, test: bool = False
     digests = build_digest(rows)
     sent = 0
     for key, products in digests.items():
-        category = key.split(":")[0]
-        webhook = gpu_webhook if category == "gpu" else cpu_webhook
         embed = build_embed(key, products, public_base_url)
         if dry_run:
             print(f"# {key}")
             print(json.dumps(embed, indent=2))
-        elif webhook:
-            send_embed(webhook, embed)
+        else:
+            send_embed(webhook_url, embed)
         sent += 1
     LOGGER.info("Discord digest: %d embeds (dry_run=%s)", sent, dry_run)
     return sent
 
 
-def _send_test_embeds(gpu_webhook: Optional[str], cpu_webhook: Optional[str], dry_run: bool) -> int:
+def _send_test_embed(webhook_url: Optional[str], dry_run: bool) -> int:
     sample = {
         "title": "Test — Trackaroo digest",
         "color": UP_COLOR,
         "description": "**AMD Ryzen 7 9800X3D**\n$549 → $599 (+9.1%) · Scorptec\n[View on Scorptec](https://example.com)",
     }
-    sent = 0
-    for webhook in (gpu_webhook, cpu_webhook):
-        if not webhook:
-            continue
-        if dry_run:
-            print(json.dumps(sample, indent=2))
-        else:
-            send_embed(webhook, sample)
-        sent += 1
-    LOGGER.info("Discord test: %d sample embed(s) sent (dry_run=%s)", sent, dry_run)
-    return sent
+    if not webhook_url:
+        return 0
+    if dry_run:
+        print(json.dumps(sample, indent=2))
+    else:
+        send_embed(webhook_url, sample)
+    LOGGER.info("Discord test: 1 sample embed sent (dry_run=%s)", dry_run)
+    return 1
 
 
 def main(argv: Optional[List[str]] = None) -> None:

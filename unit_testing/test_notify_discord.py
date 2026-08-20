@@ -113,26 +113,26 @@ class TestLoadDotenv:
     def test_loads_key_value_pairs(self, tmp_path, monkeypatch):
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "DISCORD_WEBHOOK_GPU=https://hook/gpu\n"
+            "DISCORD_WEBHOOK_URL=https://hook/digest\n"
             "# a comment\n"
-            "DISCORD_WEBHOOK_CPU=\"https://hook/cpu\"\n"
+            "DISCORD_WEBHOOK_ALERT=\"https://hook/alert\"\n"
             "\n"
             "TRACKAROO_PUBLIC_BASE_URL=https://x.example/\n"
         )
-        monkeypatch.delenv("DISCORD_WEBHOOK_GPU", raising=False)
-        monkeypatch.delenv("DISCORD_WEBHOOK_CPU", raising=False)
+        monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+        monkeypatch.delenv("DISCORD_WEBHOOK_ALERT", raising=False)
         monkeypatch.delenv("TRACKAROO_PUBLIC_BASE_URL", raising=False)
         load_dotenv(env_file)
-        assert os_environ("DISCORD_WEBHOOK_GPU") == "https://hook/gpu"
-        assert os_environ("DISCORD_WEBHOOK_CPU") == "https://hook/cpu"
+        assert os_environ("DISCORD_WEBHOOK_URL") == "https://hook/digest"
+        assert os_environ("DISCORD_WEBHOOK_ALERT") == "https://hook/alert"
         assert os_environ("TRACKAROO_PUBLIC_BASE_URL") == "https://x.example/"
 
     def test_real_env_wins_over_dotenv(self, tmp_path, monkeypatch):
         env_file = tmp_path / ".env"
-        env_file.write_text("DISCORD_WEBHOOK_GPU=https://from-file\n")
-        monkeypatch.setenv("DISCORD_WEBHOOK_GPU", "https://from-env")
+        env_file.write_text("DISCORD_WEBHOOK_URL=https://from-file\n")
+        monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://from-env")
         load_dotenv(env_file)
-        assert os_environ("DISCORD_WEBHOOK_GPU") == "https://from-env"
+        assert os_environ("DISCORD_WEBHOOK_URL") == "https://from-env"
 
     def test_missing_file_is_noop(self, tmp_path):
         load_dotenv(tmp_path / "does-not-exist.env")  # should not raise
@@ -370,24 +370,22 @@ class TestRun:
         conn.close()
         return db_path
 
-    def test_noop_without_webhooks(self, monkeypatch, db_path):
+    def test_noop_without_webhook(self, monkeypatch, db_path):
         monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
-        monkeypatch.delenv("DISCORD_WEBHOOK_GPU", raising=False)
-        monkeypatch.delenv("DISCORD_WEBHOOK_CPU", raising=False)
+        monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
         posts = []
         monkeypatch.setattr("notify_discord.requests.post", lambda *a, **k: posts.append(1) or _OkResponse())
         assert run(db_path=str(db_path)) == 0
         assert posts == []
 
-    def test_routes_categories_to_their_webhooks(self, monkeypatch, db_path):
+    def test_sends_all_categories_to_the_single_webhook(self, monkeypatch, db_path):
         conn = sqlite3.connect(str(db_path))
         _seed_listing(conn, category="gpu", brand="NVIDIA", model="RTX 5070", snapshots=[("2026-08-10", 999, "in_stock"), ("2026-08-11", 1049, "in_stock")])
         _seed_listing(conn, category="cpu", model="CPU Up", url="https://x.com/2", snapshots=[("2026-08-10", 100, "in_stock"), ("2026-08-11", 110, "in_stock")])
         conn.close()
 
         monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
-        monkeypatch.setenv("DISCORD_WEBHOOK_GPU", "https://hook/gpu")
-        monkeypatch.setenv("DISCORD_WEBHOOK_CPU", "https://hook/cpu")
+        monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://hook/digest")
         posts = []
         monkeypatch.setattr(
             "notify_discord.requests.post",
@@ -397,7 +395,7 @@ class TestRun:
         count = run(db_path=str(db_path))
         assert count == 2
         urls = {u for u, _ in posts}
-        assert urls == {"https://hook/gpu", "https://hook/cpu"}
+        assert urls == {"https://hook/digest"}
         titles = {j["embeds"][0]["title"] for _, j in posts}
         assert "GPU price ups" in titles
         assert "CPU price ups" in titles
@@ -408,7 +406,7 @@ class TestRun:
         conn.close()
 
         monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
-        monkeypatch.setenv("DISCORD_WEBHOOK_GPU", "https://hook/gpu")
+        monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://hook/digest")
         posts = []
         monkeypatch.setattr("notify_discord.requests.post", lambda *a, **k: posts.append(1) or _OkResponse())
 
@@ -417,10 +415,9 @@ class TestRun:
         assert "GPU price ups" in out
         assert posts == []
 
-    def test_test_mode_sends_sample_to_each_webhook(self, monkeypatch, db_path):
+    def test_test_mode_sends_sample_to_the_webhook(self, monkeypatch, db_path):
         monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
-        monkeypatch.setenv("DISCORD_WEBHOOK_GPU", "https://hook/gpu")
-        monkeypatch.setenv("DISCORD_WEBHOOK_CPU", "https://hook/cpu")
+        monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://hook/digest")
         posts = []
         monkeypatch.setattr(
             "notify_discord.requests.post",
@@ -428,8 +425,8 @@ class TestRun:
         )
 
         count = run(db_path=str(db_path), test=True)
-        assert count == 2
-        assert {u for u, _ in posts} == {"https://hook/gpu", "https://hook/cpu"}
+        assert count == 1
+        assert {u for u, _ in posts} == {"https://hook/digest"}
         assert all("Test — Trackaroo digest" in j["embeds"][0]["title"] for _, j in posts)
 
 
