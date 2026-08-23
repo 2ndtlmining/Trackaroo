@@ -2,6 +2,7 @@
 // Kept separate from productHeadline.ts — this answers "which offers do we
 // show", that one answers "is this price any good".
 import type { ListingDisplay } from './listingsPanel';
+import { RETAILER_OPTIONS } from './filters';
 
 export type { ListingDisplay };
 
@@ -29,4 +30,34 @@ export function sortOffers(offers: ListingDisplay[]): ListingDisplay[] {
 		if (b.latestPrice === null) return -1;
 		return a.latestPrice - b.latestPrice;
 	});
+}
+
+export interface FacetOption {
+	value: string;
+	label: string;
+	count: number;
+}
+
+const RETAILER_LABELS = new Map(RETAILER_OPTIONS.map((o) => [o.value as string, o.label]));
+
+// Brand is already a display string (derived by deriveListingBrand); retailer
+// is a slug that needs its label. An unknown slug falls back to itself so a
+// newly-added retailer shows up rather than rendering blank.
+function facetLabel(key: 'retailer' | 'brand', value: string): string {
+	if (key === 'brand') return value;
+	return RETAILER_LABELS.get(value) ?? value;
+}
+
+export function facetCounts(
+	offers: ListingDisplay[],
+	key: 'retailer' | 'brand'
+): FacetOption[] {
+	const counts = new Map<string, number>();
+	for (const o of offers) {
+		const value = o[key];
+		counts.set(value, (counts.get(value) ?? 0) + 1);
+	}
+	return [...counts.entries()]
+		.map(([value, count]) => ({ value, label: facetLabel(key, value), count }))
+		.sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 }

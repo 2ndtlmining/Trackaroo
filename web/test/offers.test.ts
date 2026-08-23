@@ -53,3 +53,47 @@ describe('sortOffers', () => {
 		expect(input.map((r) => r.listingId)).toEqual([1, 2]);
 	});
 });
+
+import { facetCounts } from '../src/lib/offers';
+import { RETAILER_OPTIONS } from '../src/lib/filters';
+
+describe('facetCounts', () => {
+	it('counts offers per value, most common first', () => {
+		const rows = [
+			offer({ listingId: 1, retailer: 'scorptec' }),
+			offer({ listingId: 2, retailer: 'pccg' }),
+			offer({ listingId: 3, retailer: 'scorptec' })
+		];
+		expect(facetCounts(rows, 'retailer')).toEqual([
+			{ value: 'scorptec', label: 'Scorptec', count: 2 },
+			{ value: 'pccg', label: 'PCCG', count: 1 }
+		]);
+	});
+
+	it('labels retailers from RETAILER_OPTIONS and falls back to the raw slug', () => {
+		const known = RETAILER_OPTIONS[0];
+		const rows = [offer({ retailer: known.value }), offer({ listingId: 2, retailer: 'newshop' })];
+		const counts = facetCounts(rows, 'retailer');
+		expect(counts.find((c) => c.value === known.value)?.label).toBe(known.label);
+		expect(counts.find((c) => c.value === 'newshop')?.label).toBe('newshop');
+	});
+
+	it('uses the brand string as its own label', () => {
+		const rows = [offer({ brand: 'ASUS' }), offer({ listingId: 2, brand: 'MSI' })];
+		expect(facetCounts(rows, 'brand').map((c) => c.label)).toEqual(['ASUS', 'MSI']);
+	});
+
+	it('breaks count ties alphabetically so ordering is stable', () => {
+		const rows = [offer({ brand: 'ZOTAC' }), offer({ listingId: 2, brand: 'ASUS' })];
+		expect(facetCounts(rows, 'brand').map((c) => c.value)).toEqual(['ASUS', 'ZOTAC']);
+	});
+
+	it('returns one entry when every offer shares a value, so the caller can hide the row', () => {
+		const rows = [offer({ brand: 'ASUS' }), offer({ listingId: 2, brand: 'ASUS' })];
+		expect(facetCounts(rows, 'brand')).toHaveLength(1);
+	});
+
+	it('returns an empty array for no offers', () => {
+		expect(facetCounts([], 'brand')).toEqual([]);
+	});
+});
