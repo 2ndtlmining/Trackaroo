@@ -694,7 +694,13 @@ test.describe('product detail offer list', () => {
 		await expect(page.locator('span[title]', { hasText: /ASUS/i })).toHaveCount(0);
 	});
 
-	test('shows a Delisted badge for a delisted listing, not a stale in-stock price', async ({ page }) => {
+	// OfferRow renders a delisted listing's last-known price unconditionally —
+	// price-hiding for delisted rows was retired on purpose when the brand
+	// accordion was replaced by the flat offer list. The "Delisted" badge is
+	// now the only disambiguator, so the guarantee this test locks in is: a
+	// delisted row's badge and its (still-rendered) price always sit together
+	// on the same row — a stale price is never shown unlabelled.
+	test('shows a Delisted badge for a delisted listing', async ({ page }) => {
 		await openGpuProduct(page);
 
 		await expect(page.getByRole('heading', { name: 'Offers' })).toBeVisible();
@@ -703,10 +709,11 @@ test.describe('product detail offer list', () => {
 		await page.getByLabel(/In stock only/).uncheck();
 		await page.getByLabel('Filter offers by name').fill('XFX Delisted Demo');
 
-		await expect(page.getByText('XFX Delisted Demo 16GB')).toBeVisible();
-		// The seeded delisted listing (stale in_stock snapshot) must read
-		// "Delisted", not an in-stock badge.
-		await expect(page.getByText('Delisted', { exact: true })).toBeVisible();
+		const delistedRow = page.locator('.divide-y > div', { hasText: 'XFX Delisted Demo 16GB' });
+		await expect(delistedRow).toBeVisible();
+		// The badge and the price are asserted on the SAME row.
+		await expect(delistedRow.getByText('Delisted', { exact: true })).toBeVisible();
+		await expect(delistedRow.locator('span.num')).toBeVisible();
 	});
 });
 
