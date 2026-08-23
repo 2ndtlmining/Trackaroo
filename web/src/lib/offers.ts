@@ -61,3 +61,64 @@ export function facetCounts(
 		.map(([value, count]) => ({ value, label: facetLabel(key, value), count }))
 		.sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 }
+
+// Flattening the accordions removed repetition but not volume: 50 listings is
+// still 50 rows. These two defaults are what actually shorten the page.
+export const OFFER_PAGE_SIZE = 8;
+
+export interface OfferFilters {
+	inStockOnly: boolean;
+	retailer: string | null;
+	brand: string | null;
+	query: string;
+}
+
+export interface OfferView {
+	visible: ListingDisplay[];
+	// Offers matching the active filters (the expander's total).
+	matched: number;
+	// Offers before any filtering (the "of 31" in "18 of 31").
+	total: number;
+	inStockCount: number;
+	showExpander: boolean;
+	// Whether the stock filter actually ran. False when forced off.
+	stockFilterApplied: boolean;
+	// The product has no in-stock offers at all, so the stock filter was
+	// ignored to avoid rendering an empty page for a product that has prices.
+	stockFilterForcedOff: boolean;
+}
+
+export function buildOfferView(
+	offers: ListingDisplay[],
+	filters: OfferFilters,
+	expanded: boolean
+): OfferView {
+	const total = offers.length;
+	const inStockCount = offers.filter((o) => o.inStock).length;
+
+	const stockFilterForcedOff = filters.inStockOnly && inStockCount === 0 && total > 0;
+	const stockFilterApplied = filters.inStockOnly && !stockFilterForcedOff;
+
+	const q = filters.query.trim().toLowerCase();
+	const matchedOffers = offers.filter((o) => {
+		if (stockFilterApplied && !o.inStock) return false;
+		if (filters.retailer && o.retailer !== filters.retailer) return false;
+		if (filters.brand && o.brand !== filters.brand) return false;
+		if (q) {
+			const haystack = `${o.variantName ?? ''} ${o.retailer}`.toLowerCase();
+			if (!haystack.includes(q)) return false;
+		}
+		return true;
+	});
+
+	const sorted = sortOffers(matchedOffers);
+	return {
+		visible: expanded ? sorted : sorted.slice(0, OFFER_PAGE_SIZE),
+		matched: sorted.length,
+		total,
+		inStockCount,
+		showExpander: sorted.length > OFFER_PAGE_SIZE,
+		stockFilterApplied,
+		stockFilterForcedOff
+	};
+}
