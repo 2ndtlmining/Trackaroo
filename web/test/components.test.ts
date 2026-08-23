@@ -975,3 +975,98 @@ describe('OfferList', () => {
 		expect(html).toContain('No listings');
 	});
 });
+
+import PriceRangeBar from '../src/lib/components/PriceRangeBar.svelte';
+
+describe('PriceRangeBar', () => {
+	it('describes itself in words for assistive tech', () => {
+		const html = renderComponent(PriceRangeBar, {
+			low: 1249,
+			high: 1689,
+			current: 1469,
+			position: 0.5
+		});
+		expect(html).toContain('role="img"');
+		expect(html).toContain('$1,249');
+		expect(html).toContain('$1,689');
+		expect(html).toContain('$1,469');
+	});
+
+	it('places the marker at the given position', () => {
+		const html = renderComponent(PriceRangeBar, {
+			low: 1000,
+			high: 2000,
+			current: 1250,
+			position: 0.25
+		});
+		expect(html).toContain('25%');
+	});
+
+	it('degrades to a plain text line when a bar would be meaningless', () => {
+		const html = renderComponent(PriceRangeBar, {
+			low: 1299,
+			high: 1299,
+			current: 1299,
+			position: null
+		});
+		expect(html).not.toContain('role="img"');
+		expect(html).toContain('$1,299');
+	});
+});
+
+import ProductHeadline from '../src/lib/components/ProductHeadline.svelte';
+import type { Headline } from '../src/lib/productHeadline';
+
+function headline(overrides: Partial<Headline> = {}): Headline {
+	return {
+		currentPrice: 1299,
+		currentRetailer: 'scorptec',
+		allTimeLow: 1249,
+		allTimeHigh: 1689,
+		avg30: 1400,
+		vsAvg30Pct: -7.2,
+		vsAllTimeLowPct: 4.0,
+		rangePosition: 0.11,
+		...overrides
+	};
+}
+
+describe('ProductHeadline', () => {
+	const base = { listingCount: 6, snapshotCount: 47, span: '12 Mar – 23 Aug 2026' };
+
+	it('leads with the current cheapest price and its retailer', () => {
+		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
+		expect(html).toContain('$1,299');
+		expect(html).toContain('Scorptec');
+	});
+
+	it('shows both deltas with arrows, not colour alone', () => {
+		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
+		expect(html).toContain('▼');
+		expect(html).toContain('vs 30d avg');
+		expect(html).toContain('above all-time low');
+	});
+
+	it('demotes provenance to one muted line', () => {
+		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
+		expect(html).toContain('6 listings');
+		expect(html).toContain('47 snapshots');
+		expect(html).toContain('12 Mar – 23 Aug 2026');
+	});
+
+	it('says there is no in-stock price rather than printing a bare dash', () => {
+		const html = renderComponent(ProductHeadline, {
+			headline: headline({ currentPrice: null, currentRetailer: null, rangePosition: null }),
+			...base
+		});
+		expect(html).toContain('No in-stock listings');
+	});
+
+	it('omits the 30-day delta when history is too thin', () => {
+		const html = renderComponent(ProductHeadline, {
+			headline: headline({ avg30: null, vsAvg30Pct: null }),
+			...base
+		});
+		expect(html).not.toContain('vs 30d avg');
+	});
+});
