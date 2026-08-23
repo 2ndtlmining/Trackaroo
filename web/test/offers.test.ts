@@ -169,6 +169,7 @@ describe('buildOfferView volume control', () => {
 		];
 		const view = buildOfferView(rows, { ...NO_FILTERS, retailer: 'pccg' }, false);
 		expect(view.matched).toBe(10);
+		expect(view.visible).toHaveLength(OFFER_PAGE_SIZE);
 		expect(view.visible.every((o) => o.retailer === 'pccg')).toBe(true);
 	});
 

@@ -100,6 +100,15 @@ export function buildOfferView(
 	const stockFilterApplied = filters.inStockOnly && !stockFilterForcedOff;
 
 	const q = filters.query.trim().toLowerCase();
+	// Filter first, then sort, then cap. This order is contractual: filtering
+	// before capping ensures the expander's total matches the filtered set, so
+	// the "N of M" label never contradicts the expander state. On the stock
+	// axis, this ordering is further reinforced by offerTier sorting all
+	// in-stock rows ahead of out-of-stock rows, making cap-then-filter
+	// mathematically indistinguishable. The retailer-facet test discriminates
+	// the two approaches (cap-then-filter would leave ~4 rows after filtering
+	// the cap's mix to a single retailer); that test is the one that actually
+	// pins the ordering.
 	const matchedOffers = offers.filter((o) => {
 		if (stockFilterApplied && !o.inStock) return false;
 		if (filters.retailer && o.retailer !== filters.retailer) return false;
