@@ -546,11 +546,10 @@ await goto(page, '/product/1');
 		await expect(page.locator('h1').first()).toBeVisible();
 		// Product 1 is an Intel chip — the header shows its brand logo
 		await expect(page.locator('svg[aria-label="Intel"]').first()).toBeVisible();
-		await expect(page.getByText('Category', { exact: true })).toBeVisible();
-		await expect(page.getByText('Listings', { exact: true })).toBeVisible();
-		await expect(page.getByText('History span', { exact: true })).toBeVisible();
+		// The headline's provenance line states listing/snapshot counts and span.
+		await expect(page.getByText(/\d+ listings? · \d+ snapshots? ·/)).toBeVisible();
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'Retailer listings' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Offers' })).toBeVisible();
 		// Product 1 is an Intel current-gen chip — the Generation chip shows the
 		// friendly architecture name, not the raw tier code.
 		await expect(page.getByText('Core Ultra 200 (Arrow Lake)')).toBeVisible();
@@ -567,13 +566,16 @@ await goto(page, '/product/1');
 		await expect(page.locator('.chart-skeleton')).toHaveCount(0);
 	});
 
-	test('shows all-time low/high and 30-day average chips on the product page', async ({
+	test('shows all-time low/high and the vs-30d-average delta on the product page', async ({
 		page
 	}) => {
 		await goto(page, '/product/1');
+		// Labels on the price-range bar.
 		await expect(page.getByText('All-time low', { exact: true })).toBeVisible();
 		await expect(page.getByText('All-time high', { exact: true })).toBeVisible();
-		await expect(page.getByText('30d avg', { exact: true })).toBeVisible();
+		// The headline's vs-30d-average delta, next to the current price (offer
+		// rows also show a per-row vs-30d-avg delta, so scope to the first match).
+		await expect(page.getByText(/vs 30d avg/).first()).toBeVisible();
 	});
 
 	test('shows when the product was last updated', async ({ page }) => {
@@ -588,35 +590,81 @@ await goto(page, '/product/1');
 	});
 });
 
-test.describe('product detail grouped listings', () => {
+test.describe('product detail offer list', () => {
 	async function openGpuProduct(page: Page) {
 		await goto(page, '/products?category=gpu');
 		const card = page.locator('article').filter({ hasText: 'RTX 5060 Ti' }).first();
 		await card.locator('a').first().click();
 	}
 
-	test('groups GPU listings by AIB brand with in-stock counts', async ({ page }) => {
-		await openGpuProduct(page);
+	test('product page leads with the cheapest price and caps the offer list', async ({ page }) => {
+		await goto(page, '/product/1');
 
-		await expect(page.getByRole('heading', { name: 'Retailer listings' })).toBeVisible();
-		await expect(page.getByLabel('Price history chart')).toBeVisible();
+		// In-stock-only is the default and states what it hides.
+		await expect(page.getByText(/In stock only \(\d+ of \d+\)/)).toBeVisible();
 
-		// The RTX 5060 Ti has multiple AIB variants in the seed data
-		const groups = page.getByRole('button', { name: /· .*listing/ });
-		expect(await groups.count()).toBeGreaterThan(1);
-		await expect(groups.first()).toContainText(/in stock/);
+		// Every offer row shows its retailer and links out.
+		const firstOffer = page.locator('a', { hasText: 'View →' }).first();
+		await expect(firstOffer).toHaveAttribute('rel', 'noopener noreferrer');
+		await expect(firstOffer).toHaveAttribute('target', '_blank');
 	});
 
-	test('expands a brand group and toggles a listing onto the chart', async ({ page }) => {
+	test('offer list expander reveals the full list', async ({ page }) => {
+		// The RTX 5060 Ti is seeded (both from live data/ and the synthetic
+		// fallback — see e2e/seed.mjs) with more than 8 in-stock offers, so the
+		// expander is unconditionally present here, unlike on /product/1 whose
+		// live-scraped listing count varies day to day.
+		await openGpuProduct(page);
+		const expander = page.getByRole('button', { name: /Show all \d+ offers/ });
+		await expect(expander).toBeVisible();
+
+		const before = await page.locator('a', { hasText: 'View →' }).count();
+		await expander.click();
+		expect(await page.locator('a', { hasText: 'View →' }).count()).toBeGreaterThan(before);
+	});
+
+	test('the "In stock only" checkbox actually filters the offer list', async ({ page }) => {
 		await openGpuProduct(page);
 
-		const group = page.getByRole('button', { name: /· .*listing/ }).first();
-		await group.click();
-		const showButton = page.getByRole('button', { name: 'Show on chart' }).first();
-		await expect(showButton).toBeVisible();
+		// Expand first so the row count reflects the filter, not the 8-row cap.
+		await page.getByRole('button', { name: /Show all \d+ offers/ }).click();
+		const checkbox = page.getByLabel(/In stock only/);
+		await expect(checkbox).toBeChecked();
+		const before = await page.locator('a', { hasText: 'View →' }).count();
 
-		await showButton.click();
-		await expect(page.getByRole('button', { name: 'On chart' }).first()).toBeVisible();
+		await checkbox.uncheck();
+		const after = await page.locator('a', { hasText: 'View →' }).count();
+		expect(after).toBeGreaterThan(before);
+	});
+
+	test('a facet chip click narrows the offer list', async ({ page }) => {
+		await openGpuProduct(page);
+		await page.getByRole('button', { name: /Show all \d+ offers/ }).click();
+		const before = await page.locator('a', { hasText: 'View →' }).count();
+
+		// The RTX 5060 Ti is seeded across both retailers.
+		const pccgChip = page.getByRole('button', { name: /^PCCG/ });
+		await expect(pccgChip).toBeVisible();
+		await expect(pccgChip).toHaveAttribute('aria-pressed', 'false');
+
+		await pccgChip.click();
+		await expect(pccgChip).toHaveAttribute('aria-pressed', 'true');
+		const after = await page.locator('a', { hasText: 'View →' }).count();
+		expect(after).toBeLessThan(before);
+	});
+
+	test('the "Chart" toggle on an offer row registers the click', async ({ page }) => {
+		await goto(page, '/product/1');
+		// Scoped by the toggle's stable layout class rather than its text —
+		// clicking flips the button's own label ("Chart" -> "On chart"), which
+		// would otherwise shift a text-based `.first()` query onto the next row.
+		const chartToggle = page.locator('button.order-5').first();
+		await expect(chartToggle).toBeVisible();
+		await expect(chartToggle).toHaveAttribute('aria-pressed', 'false');
+
+		await chartToggle.click();
+		await expect(chartToggle).toHaveAttribute('aria-pressed', 'true');
+		await expect(chartToggle).toHaveText('On chart');
 		// The chart must survive the overlay toggle (reactive rebuild).
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
 	});
@@ -636,35 +684,29 @@ test.describe('product detail grouped listings', () => {
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
 	});
 
-	test('search narrows the brand groups', async ({ page }) => {
+	test('search narrows the offer list by name', async ({ page }) => {
 		await openGpuProduct(page);
 
-		await page.getByLabel('Filter listings by name').fill('msi');
-		await expect(page.getByRole('button', { name: /MSI/ })).toBeVisible();
-		await expect(page.getByRole('button', { name: /ASUS/ })).toHaveCount(0);
-	});
-
-	test('the in-stock only filter hides out-of-stock groups', async ({ page }) => {
-		await openGpuProduct(page);
-
-		await page.getByLabel('In stock only').check();
-		// Every visible group header still advertises an in-stock count
-		const groups = page.getByRole('button', { name: /· .*listing/ });
-		expect(await groups.count()).toBeGreaterThan(0);
+		await page.getByLabel('Filter offers by name').fill('msi');
+		// Scope to offer-row titles (`title` attribute), not the brand facet
+		// chips, which always list every brand regardless of the search text.
+		await expect(page.locator('span[title]', { hasText: /MSI/i }).first()).toBeVisible();
+		await expect(page.locator('span[title]', { hasText: /ASUS/i })).toHaveCount(0);
 	});
 
 	test('shows a Delisted badge for a delisted listing, not a stale in-stock price', async ({ page }) => {
 		await openGpuProduct(page);
 
-		await expect(page.getByRole('heading', { name: 'Retailer listings' })).toBeVisible();
-		const xfx = page.getByRole('button', { name: /^XFX/ });
-		await expect(xfx).toBeVisible();
-		await xfx.click();
+		await expect(page.getByRole('heading', { name: 'Offers' })).toBeVisible();
+		// The delisted listing is never in stock, so it is hidden by the
+		// in-stock-only default; turn that off before searching for it.
+		await page.getByLabel(/In stock only/).uncheck();
+		await page.getByLabel('Filter offers by name').fill('XFX Delisted Demo');
+
+		await expect(page.getByText('XFX Delisted Demo 16GB')).toBeVisible();
 		// The seeded delisted listing (stale in_stock snapshot) must read
-		// "Delisted" — its last price must not be presented as buyable.
-		const delistedRow = page.locator('li').filter({ has: page.getByText('Delisted', { exact: true }) });
-		await expect(delistedRow).toContainText('XFX Delisted Demo 16GB');
-		await expect(delistedRow.locator('span.num')).toHaveCount(0);
+		// "Delisted", not an in-stock badge.
+		await expect(page.getByText('Delisted', { exact: true })).toBeVisible();
 	});
 });
 

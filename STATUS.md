@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-23
+**Last updated:** 2026-08-24
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,14 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-08-24** — Product page rebuilt around a flat, cheapest-first offer list
+  (`OfferList`) replacing the brand→retailer accordion, plus a price-led
+  headline with an all-time range bar. In-stock-only is the default and the
+  list caps at 8 offers with a "Show all N" expander. Implements stage 1 of
+  `docs/superpowers/specs/2026-08-23-price-first-ia-design.md`; E2E coverage
+  (facet chips, expander, in-stock filter, chart toggle) added in
+  `web/e2e/app.spec.ts`.
 
 ### 23-Aug-2026 — JSON backup integrity, missed-day recovery, Docker persistence
 
