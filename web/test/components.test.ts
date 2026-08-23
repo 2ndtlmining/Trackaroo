@@ -15,6 +15,7 @@ import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
 import Sparkline from '../src/lib/components/Sparkline.svelte';
 import OfferRow from '../src/lib/components/OfferRow.svelte';
 import FacetChips from '../src/lib/components/FacetChips.svelte';
+import OfferList from '../src/lib/components/OfferList.svelte';
 import { offer as offerRow } from './helpers/offers';
 import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
@@ -890,5 +891,87 @@ describe('FacetChips', () => {
 			onSelect: () => {}
 		});
 		expect(html).toContain('aria-pressed="true"');
+	});
+});
+
+function snap(date: string, price: number, stock: string): SnapshotRow {
+	return {
+		id: 1,
+		retailer_listing_id: 1,
+		snapshot_date: date,
+		price_aud: price,
+		stock_status: stock as SnapshotRow['stock_status'],
+		scraped_at: `${date}T04:00:00.000Z`
+	};
+}
+
+function ser(id: number, variant: string, price: number, stock = 'in_stock'): Series {
+	const listing: ListingRow = {
+		id,
+		product_id: 1,
+		retailer: 'scorptec',
+		variant_name: variant,
+		retailer_sku: `SKU${id}`,
+		listing_url: `https://example.com/${id}`,
+		status: 'active',
+		first_seen_at: '2026-03-12T04:00:00.000Z',
+		last_seen_at: '2026-08-23T04:00:00.000Z',
+		last_snapshot_at: '2026-08-23T04:00:00.000Z'
+	};
+	return { listing, points: [snap('2026-08-23', price, stock)] };
+}
+
+describe('OfferList', () => {
+	const base = {
+		productBrand: 'NVIDIA',
+		avg30: 1400,
+		selected: new Set<number>(),
+		onToggleListing: () => {}
+	};
+
+	it('shows at most 8 offers and an expander stating the true total', () => {
+		const series = Array.from({ length: 12 }, (_, i) =>
+			ser(i + 1, `ASUS Card ${i + 1}`, 1000 + i)
+		);
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).toContain('Show all 12 offers');
+	});
+
+	it('renders no expander when there are 8 or fewer offers', () => {
+		const series = Array.from({ length: 8 }, (_, i) => ser(i + 1, `ASUS Card ${i + 1}`, 1000 + i));
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).not.toContain('Show all');
+	});
+
+	it('defaults to in-stock only and says what it is hiding', () => {
+		const series = [
+			ser(1, 'ASUS In Stock', 1299, 'in_stock'),
+			ser(2, 'ASUS Sold Out', 999, 'out_of_stock')
+		];
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).toContain('1 of 2');
+		expect(html).toContain('ASUS In Stock');
+		expect(html).not.toContain('ASUS Sold Out');
+	});
+
+	it('shows everything when nothing is in stock, rather than an empty list', () => {
+		const series = [
+			ser(1, 'ASUS Sold Out', 1299, 'out_of_stock'),
+			ser(2, 'MSI Sold Out', 1199, 'out_of_stock')
+		];
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).toContain('ASUS Sold Out');
+		expect(html).toContain('MSI Sold Out');
+	});
+
+	it('puts the cheapest in-stock offer first', () => {
+		const series = [ser(1, 'ASUS Pricey', 1499), ser(2, 'MSI Cheap', 1099)];
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html.indexOf('MSI Cheap')).toBeLessThan(html.indexOf('ASUS Pricey'));
+	});
+
+	it('renders an empty state when there are no listings at all', () => {
+		const html = renderComponent(OfferList, { ...base, series: [] });
+		expect(html).toContain('No listings');
 	});
 });
