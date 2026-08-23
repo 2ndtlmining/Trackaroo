@@ -2,7 +2,7 @@
 	import { formatAud, formatDate, titleCase } from '$lib/formats';
 	import Badge from './Badge.svelte';
 	import StockBadge from './StockBadge.svelte';
-	import { buildBrandGroups, toListingDisplays, type ListingDisplay } from '$lib/listingsPanel';
+	import { buildBrandGroups, type ListingDisplay } from '$lib/listingsPanel';
 	import type { Series } from '$lib/server/repos';
 
 	let {

@@ -192,7 +192,9 @@
 			No movers match the current filters.
 		</div>
 	{:else}
-		<div class="overflow-x-auto rounded-md border border-border">
+		<!-- Desktop: full table. Below md it would scroll horizontally, hiding the
+		     change column that is the whole point of this page. -->
+		<div class="hidden overflow-x-auto rounded-md border border-border md:block">
 			<table class="w-full border-collapse text-sm">
 				<thead>
 					<tr class="border-b border-border text-left text-xs text-text-muted">
@@ -275,5 +277,48 @@
 				</tbody>
 			</table>
 		</div>
+
+		<!-- Mobile: one card per mover. -->
+		<ul class="space-y-2 md:hidden">
+			{#each ordered as m (m.listingId)}
+				<li class="rounded-md border border-border bg-surface p-3">
+					<div class="flex items-start justify-between gap-3">
+						<div class="min-w-0">
+							<a
+								href="/product/{m.productId}"
+								class="block truncate text-sm font-medium no-underline hover:no-underline"
+							>{m.model}</a>
+							<p
+								class="mt-0.5 truncate text-xs text-text-muted"
+								title={titleCase(m.variantName) || undefined}
+							>
+								{m.retailer} · {titleCase(m.variantName).split(',')[0].trim() || '—'}
+							</p>
+						</div>
+						<p class="num shrink-0 text-right text-sm text-text">{formatAud(m.newPrice)}</p>
+					</div>
+
+					<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+						{#if m.notEnoughHistory}
+							<Badge tone="neutral" label="Not enough history" />
+						{:else if m.change === null}
+							<span class="text-text-muted">—</span>
+						{:else}
+							<PriceChange
+								direction={direction(m)}
+								label="{m.change > 0 ? '+' : ''}{formatSignedAud(m.change)} ({pctLabel(m)})"
+							/>
+						{/if}
+						<span class="num text-text-muted">
+							from {m.oldPrice === null ? '—' : formatAud(m.oldPrice)}
+						</span>
+						<span class="num text-text-muted">{m.historyPoints} pts</span>
+						{#if hasTrend}
+							<span class="ml-auto"><Sparkline points={m.sparkline} /></span>
+						{/if}
+					</div>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 </div>

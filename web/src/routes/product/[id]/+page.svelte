@@ -5,12 +5,19 @@
 	import BrandGroupedListings from '$lib/components/BrandGroupedListings.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
+	import type { AlertChannel } from '$lib/types';
 	import { formatAud, formatDate, formatRelative, titleCase } from '$lib/formats';
 	import { generationTierLabel } from '$lib/tiers';
 	import { MIN_HISTORY_POINTS } from '$lib/constants';
 	import { type ProductHistory, type AlertRow } from '$lib/server/repos';
 
-	let { data }: { data: ProductHistory & { alerts: AlertRow[] } } = $props();
+	let {
+		data,
+		form
+	}: {
+		data: ProductHistory & { alerts: AlertRow[] };
+		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
+	} = $props();
 
 	const product = $derived(data.product);
 	const series = $derived(data.series);
@@ -150,7 +157,7 @@ label:
 		</div>
 	{/if}
 
-	<PriceAlerts alerts={data.alerts} />
+	<PriceAlerts alerts={data.alerts} {form} />
 
 	{#if data.specs}
 		<SpecPanel spec={data.specs} />

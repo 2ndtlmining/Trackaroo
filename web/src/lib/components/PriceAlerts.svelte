@@ -3,7 +3,14 @@
 	import type { AlertRow } from '$lib/server/repos';
 	import type { AlertChannel } from '$lib/types';
 
-	let { alerts }: { alerts: AlertRow[] } = $props();
+	let {
+		alerts,
+		form = null
+	}: {
+		alerts: AlertRow[];
+		/** fail() payload from the create action — re-renders the message inline. */
+		form?: { error?: string; target_price?: string; channel?: AlertChannel } | null;
+	} = $props();
 
 	const CHANNELS: { value: AlertChannel; label: string }[] = [
 		{ value: 'discord', label: 'Discord' },
@@ -28,6 +35,9 @@
 				step="1"
 				required
 				aria-label="Target price in AUD"
+				aria-invalid={form?.error ? 'true' : undefined}
+				aria-describedby={form?.error ? 'alert-error' : undefined}
+				value={form?.target_price ?? ''}
 				placeholder="0"
 				class="h-8 w-24 rounded-md border border-border bg-surface px-2 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
 			/>
@@ -38,7 +48,7 @@
 			class="h-8 rounded-md border border-border bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none"
 		>
 			{#each CHANNELS as opt}
-				<option value={opt.value}>{opt.label}</option>
+				<option value={opt.value} selected={form?.channel === opt.value}>{opt.label}</option>
 			{/each}
 		</select>
 		<label
@@ -60,6 +70,10 @@
 			Create alert
 		</button>
 	</form>
+
+	{#if form?.error}
+		<p id="alert-error" role="alert" class="mt-2 text-sm text-down">{form.error}</p>
+	{/if}
 
 	{#if alerts.length > 0}
 		<div class="mt-4 border-t border-border pt-3">

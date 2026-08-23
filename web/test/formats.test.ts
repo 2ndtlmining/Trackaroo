@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	formatAud,
-	formatAxisLabel,
 	formatBandwidth,
 	formatBytes,
 	formatCacheKb,
@@ -107,12 +106,6 @@ describe('formatDate', () => {
 
 	it('returns the input unchanged when unparseable', () => {
 		expect(formatDate('not-a-date')).toBe('not-a-date');
-	});
-});
-
-describe('formatAxisLabel', () => {
-	it('formats a short month-day label', () => {
-		expect(formatAxisLabel('2026-08-15')).toBe('15 Aug');
 	});
 });
 

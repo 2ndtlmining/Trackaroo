@@ -98,7 +98,9 @@
 		No listings match the current filters.
 	</div>
 {:else}
-	<div class="overflow-x-auto rounded-md border border-border">
+	<!-- Desktop: the full table. Below md it would need horizontal scrolling,
+	     which hides the price and change columns behind a swipe. -->
+	<div class="hidden overflow-x-auto rounded-md border border-border md:block">
 		<table class="w-full border-collapse text-sm">
 			<thead>
 				<tr class="border-b border-border text-left text-xs text-text-muted">
@@ -203,4 +205,42 @@
 			</tbody>
 		</table>
 	</div>
+
+	<!-- Mobile: one card per listing, so every field stays visible. -->
+	<ul class="space-y-2 md:hidden">
+		{#each visibleRows as row (row.listingId)}
+			<li class="rounded-md border border-border bg-surface p-3">
+				<div class="flex items-start justify-between gap-3">
+					<div class="min-w-0">
+						{#if !compact}
+							<a
+								href="/product/{row.productId}"
+								class="block truncate text-sm font-medium no-underline hover:no-underline"
+							>
+								{row.model}<span class="ml-1 text-xs text-text-muted">{row.brand}</span>
+							</a>
+						{/if}
+						<p class="mt-0.5 truncate text-xs text-text-muted" title={row.variantName ?? undefined}>
+							{row.retailer} · {truncatedVariant(row.variantName)}
+						</p>
+					</div>
+					<p class="num shrink-0 text-right text-sm {isStale(row) ? 'text-text-muted' : 'text-text'}">
+						{formatAud(row.latestPrice)}
+					</p>
+				</div>
+
+				<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+					<StockBadge stock={row.latestStock} />
+					{#if !compact}
+						<Badge tone="neutral" label={row.category.toUpperCase()} />
+					{/if}
+					<PriceChange direction={changeInfo(row).direction} label={changeInfo(row).label} />
+					<span class="num text-text-muted">{freshness(row)}</span>
+					{#if hasTrend}
+						<span class="ml-auto"><Sparkline points={row.sparkline} /></span>
+					{/if}
+				</div>
+			</li>
+		{/each}
+	</ul>
 {/if}

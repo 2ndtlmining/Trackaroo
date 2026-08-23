@@ -18,6 +18,9 @@
 	let query = $state('');
 	let highlight = $state(0);
 	let inputEl = $state<HTMLInputElement | undefined>();
+	let dialogEl = $state<HTMLElement | undefined>();
+	// Whatever had focus before the palette opened, so it can be handed back.
+	let previouslyFocused: HTMLElement | null = null;
 
 	$effect(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -34,9 +37,42 @@
 		if (open) {
 			query = '';
 			highlight = 0;
+			previouslyFocused = document.activeElement as HTMLElement | null;
 			inputEl?.focus();
+		} else {
+			// Returning focus to the trigger is what makes the dialog usable by
+			// keyboard: without it, focus falls back to <body> and the next Tab
+			// starts from the top of the page.
+			previouslyFocused?.focus?.();
+			previouslyFocused = null;
 		}
 	});
+
+	/**
+	 * Keep Tab inside the dialog while it is open.
+	 *
+	 * The palette renders over the page but the page behind it stays in the tab
+	 * order, so tabbing walked out of the modal and left a keyboard user typing
+	 * into a search box they could no longer see.
+	 */
+	function trapTab(event: KeyboardEvent) {
+		if (event.key !== 'Tab' || !dialogEl) return;
+		const focusable = dialogEl.querySelectorAll<HTMLElement>(
+			'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+		);
+		if (focusable.length === 0) return;
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		const active = document.activeElement;
+
+		if (event.shiftKey && active === first) {
+			event.preventDefault();
+			last.focus();
+		} else if (!event.shiftKey && active === last) {
+			event.preventDefault();
+			first.focus();
+		}
+	}
 
 	const q = $derived(query.trim().toLowerCase());
 
@@ -113,9 +149,12 @@
 			onclick={onClose}
 		></button>
 		<div
+			bind:this={dialogEl}
 			role="dialog"
 			aria-modal="true"
 			aria-label="Search products"
+			tabindex="-1"
+			onkeydown={trapTab}
 			class="relative w-full max-w-md overflow-hidden rounded-md border border-border-strong bg-surface shadow-xl"
 		>
 			<div class="flex items-center gap-2 border-b border-border px-3 py-2.5">

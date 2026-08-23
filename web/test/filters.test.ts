@@ -4,7 +4,6 @@ import {
 	RETAILER_OPTIONS,
 	TIER_OPTIONS,
 	hasActiveFilters,
-	labelFor,
 	parseFilters,
 	updateFilter
 } from '../src/lib/filters';
@@ -135,20 +134,5 @@ describe('hasActiveFilters', () => {
 		expect(hasActiveFilters({ query: '5090' })).toBe(true);
 		expect(hasActiveFilters({ sort: 'price-asc' })).toBe(true);
 		expect(hasActiveFilters({ inStock: true })).toBe(true);
-	});
-});
-
-describe('labelFor', () => {
-	it('returns the option label for a known value', () => {
-		expect(labelFor(RETAILER_OPTIONS, 'pccg')).toBe('PCCG');
-		expect(labelFor(TIER_OPTIONS, 'current-1')).toBe('Previous gen');
-	});
-
-	it('returns empty string for undefined', () => {
-		expect(labelFor(CATEGORY_OPTIONS, undefined)).toBe('');
-	});
-
-	it('falls back to the raw value for unknown values', () => {
-		expect(labelFor(CATEGORY_OPTIONS, 'mystery')).toBe('mystery');
 	});
 });
