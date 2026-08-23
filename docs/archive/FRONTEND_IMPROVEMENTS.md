@@ -1,6 +1,6 @@
 # Trackaroo Frontend Improvements — Implementation Brief
 
-**Context for whoever implements this:** Trackaroo is a self-hosted AU CPU/GPU price tracker. Backend (scraper, SQLite schema, ingestion) is fully built — see `STATUS.md`, `SPEC.md`, `SCOPE_RULES.md`, `DECISIONS.md` in the repo root for full context; read those first if you haven't. This doc covers frontend/UX improvements only. The current dashboard (screenshot reviewed) is a plain data table — functional, but doesn't help the user *find deals*, which is the actual product goal per `SPEC.md` §4.
+**Context for whoever implements this:** Trackaroo is a self-hosted AU CPU/GPU price tracker. Backend (scraper, SQLite schema, ingestion) is fully built — see `../../STATUS.md`, `../ARCHITECTURE.md` (Part 1), `../ARCHITECTURE.md` (Part 2), `../ARCHITECTURE.md` (Part 3) in the repo root for full context; read those first if you haven't. This doc covers frontend/UX improvements only. The current dashboard (screenshot reviewed) is a plain data table — functional, but doesn't help the user *find deals*, which is the actual product goal per `../ARCHITECTURE.md` (Part 1) §4.
 
 **Read this whole doc before implementing anything** — items reference each other (e.g. the sparklines use the same price-history data the movers views already query).
 
@@ -33,9 +33,9 @@ Also compute, per listing, alongside deal_score:
 **Problem:** you said it yourself — no visual identity. For GPUs/CPUs, people recognize products by box art and cooler shroud design as much as by name text. A text-only row is much slower to scan than one with a thumbnail.
 
 **Implementation:**
-- Add `image_url` column to `retailer_listings` (schema migration — add a `DECISIONS.md` entry when you do this, per existing project convention)
+- Add `image_url` column to `retailer_listings` (schema migration — add a `../ARCHITECTURE.md` (Part 3) entry when you do this, per existing project convention)
 - Capture the image URL during scraping — Scorptec and PCCG product listings/API responses include image URLs already; just parse and store them alongside price
-- **Recommendation: hotlink, don't rehost.** Reference the retailer's own image URL directly in the `<img src>` rather than downloading and re-serving the image yourself. This keeps you consistent with the project's existing politeness/ToS principle (`SPEC.md` §10) — displaying a linked product image for identification is materially different from copying and redistributing retailer assets. Add a fallback placeholder icon (generic GPU/CPU silhouette by category) for rows where the image fails to load.
+- **Recommendation: hotlink, don't rehost.** Reference the retailer's own image URL directly in the `<img src>` rather than downloading and re-serving the image yourself. This keeps you consistent with the project's existing politeness/ToS principle (`../ARCHITECTURE.md` (Part 1) §10) — displaying a linked product image for identification is materially different from copying and redistributing retailer assets. Add a fallback placeholder icon (generic GPU/CPU silhouette by category) for rows where the image fails to load.
 
 ## 3. Switch the Products view from table rows to cards
 
@@ -92,7 +92,7 @@ GROUP BY p.id
 ORDER BY p.model; -- or by a defined tier/performance order if you want the carousel in a specific sequence (5090 → 5080 → ...)
 ```
 
-**Ordering note:** sorting alphabetically by model name won't give you 5090 → 5080 → 5070 Ti in the right order (string sort puts "5070" before "5080" before "5090" incorrectly relative to tier ranking desired... actually numeric sort works here since they're numeric substrings, but mixing NVIDIA/AMD or adding suffixes like "Ti"/"XT" will break a naive sort). Recommend adding an explicit `sort_rank` or `tier_rank` field to `products` (or deriving it from `SCOPE_RULES.md`'s per-model performance tier) so the carousel always renders in a sensible high-to-low order rather than relying on string/numeric sorting of the model name.
+**Ordering note:** sorting alphabetically by model name won't give you 5090 → 5080 → 5070 Ti in the right order (string sort puts "5070" before "5080" before "5090" incorrectly relative to tier ranking desired... actually numeric sort works here since they're numeric substrings, but mixing NVIDIA/AMD or adding suffixes like "Ti"/"XT" will break a naive sort). Recommend adding an explicit `sort_rank` or `tier_rank` field to `products` (or deriving it from `../ARCHITECTURE.md` (Part 2)'s per-model performance tier) so the carousel always renders in a sensible high-to-low order rather than relying on string/numeric sorting of the model name.
 
 **Out of stock handling:** if a model has zero in-stock listings across both retailers on a given day, either omit it from the carousel that day or show it greyed out with "out of stock everywhere" — don't silently show a stale price from a delisted/out-of-stock listing as if it's currently available.
 
@@ -104,7 +104,7 @@ ORDER BY p.model; -- or by a defined tier/performance order if you want the caro
 
 **Problem:** the "7-day change" column currently just says "New listing" for everything (expected, given the DB is one day old) — but even once history builds up, a text badge ("+5%" / "−12%") is less immediately scannable than a shape.
 
-**Implementation:** a small inline sparkline (uPlot, already in the planned stack per `SPEC.md` §12) per row/card showing the last 7–30 days of price. Color the line red/green based on net direction. This becomes one of the highest-value additions once there's real history — it's the fastest way for a human eye to spot "this just dropped."
+**Implementation:** a small inline sparkline (uPlot, already in the planned stack per `../ARCHITECTURE.md` (Part 1) §12) per row/card showing the last 7–30 days of price. Color the line red/green based on net direction. This becomes one of the highest-value additions once there's real history — it's the fastest way for a human eye to spot "this just dropped."
 
 ## 6. Priority order
 
@@ -118,4 +118,4 @@ Item 5 (sparklines) needed real price history to matter; the carousel (item 4, n
 
 ## 7. Documentation note
 
-If any of these result in schema changes (item 2's `image_url` column is the only one that clearly does), update `db/schema.sql`, add an entry to `DECISIONS.md` explaining the addition, and note progress in `STATUS.md` — consistent with how the rest of this project has been maintained.
+If any of these result in schema changes (item 2's `image_url` column is the only one that clearly does), update `db/schema.sql`, add an entry to `../ARCHITECTURE.md` (Part 3) explaining the addition, and note progress in `../../STATUS.md` — consistent with how the rest of this project has been maintained.

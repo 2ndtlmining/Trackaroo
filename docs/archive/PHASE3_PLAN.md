@@ -1,15 +1,15 @@
 # Phase 3 — Frontend Build Plan (handoff doc)
 
-Single-file plan so any model can build the Trackaroo frontend without re-deriving this session. Read `README.md`, `STATUS.md`, `SPEC.md`, `SCOPE_RULES.md`, `DECISIONS.md`, `db/schema.sql`, and `query.py` for full context; this file is the executable plan.
+Single-file plan so any model can build the Trackaroo frontend without re-deriving this session. Read `../../README.md`, `../../STATUS.md`, `../ARCHITECTURE.md` (Part 1), `../ARCHITECTURE.md` (Part 2), `../ARCHITECTURE.md` (Part 3), `db/schema.sql`, and `query.py` for full context; this file is the executable plan.
 
 **Status (2026-08-14):** Backend complete, 226 tests green. Frontend not started. Plan finalized with user; decisions below are locked.
 
-**Superseded (2026-08-15):** all of M0–M5 are done — the frontend is built, tested (117 vitest + 28 Playwright e2e) and shipped. This file is kept as the historical handoff record; see `STATUS.md` for the current state.
+**Superseded (2026-08-15):** all of M0–M5 are done — the frontend is built, tested (117 vitest + 28 Playwright e2e) and shipped. This file is kept as the historical handoff record; see `../../STATUS.md` for the current state.
 
 ## Locked decisions
 
 - **Stack:** SvelteKit + TypeScript + Tailwind v4 in `web/`, `adapter-node` (matches Proxmox/FluxTracker deploy later).
-- **DB access:** read-only via better-sqlite3 from server routes. Open with `PRAGMA busy_timeout=5000`, **NEVER toggle journal mode** (WAL is set by Python writers; a mode change on read takes an exclusive lock → `database is locked` — see DECISIONS.md). `node:sqlite` is the documented fallback if the native build fails. No API layer, no ORM, no schema changes.
+- **DB access:** read-only via better-sqlite3 from server routes. Open with `PRAGMA busy_timeout=5000`, **NEVER toggle journal mode** (WAL is set by Python writers; a mode change on read takes an exclusive lock → `database is locked` — see ../ARCHITECTURE.md (Part 3)). `node:sqlite` is the documented fallback if the native build fails. No API layer, no ORM, no schema changes.
 - **Charts:** uPlot (~8kb, zero default theme). Tooltip/crosshair hand-rolled and token-styled.
 - **Chart series:** all price lines in the one accent hue; variants distinguished by line style (solid/dashed/dotted).
 - **Deal signal (SPEC §9.4):** deferred — revisit once listings have real history depth.
@@ -56,4 +56,4 @@ Single-file plan so any model can build the Trackaroo frontend without re-derivi
 
 ### M5 — Tests & docs
 17. vitest: repo queries + load functions on temp DB from `data/*.json`; component smoke tests.
-18. Update `README.md`, `STATUS.md`, `DECISIONS.md` (chart lib, theme strategy, DB path).
+18. Update `../../README.md`, `../../STATUS.md`, `../ARCHITECTURE.md` (Part 3) (chart lib, theme strategy, DB path).
