@@ -826,9 +826,9 @@ describe('PriceRangeBar', () => {
 			position: 0.5
 		});
 		expect(html).toContain('role="img"');
-		expect(html).toContain('$1,249');
-		expect(html).toContain('$1,689');
-		expect(html).toContain('$1,469');
+		// Verify aria-label specifically contains all three prices in the correct order
+		// (current, then low, then high) as specified in the component
+		expect(html).toMatch(/aria-label="[^"]*\$1,469[^"]*\$1,249[^"]*\$1,689[^"]*"/);
 	});
 
 	it('places the marker at the given position', () => {
@@ -884,6 +884,9 @@ describe('ProductHeadline', () => {
 		expect(html).toContain('▼');
 		expect(html).toContain('vs 30d avg');
 		expect(html).toContain('above all-time low');
+		// Verify actual percentages match the fixture values (not hardcoded)
+		expect(html).toContain('−7.2%');
+		expect(html).toContain('+4.0%');
 	});
 
 	it('demotes provenance to one muted line', () => {
