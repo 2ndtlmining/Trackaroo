@@ -11,9 +11,12 @@ import LatestListingTable from '../src/lib/components/LatestListingTable.svelte'
 import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
 import BrandGroupedListings from '../src/lib/components/BrandGroupedListings.svelte';
-	import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
-	import Sparkline from '../src/lib/components/Sparkline.svelte';
-	import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint } from '../src/lib/server/repos';
+import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
+import Sparkline from '../src/lib/components/Sparkline.svelte';
+import OfferRow from '../src/lib/components/OfferRow.svelte';
+import FacetChips from '../src/lib/components/FacetChips.svelte';
+import { offer as offerRow } from './helpers/offers';
+import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
 
 function renderComponent(Component: unknown, props: Record<string, unknown> = {}): string {
@@ -786,5 +789,106 @@ describe('Sparkline', () => {
 	it('labels the trend with the start and end prices', () => {
 		const body = renderComponent(Sparkline, { points: sparkline([299, 330]) });
 		expect(body).toContain('$299 → $330');
+	});
+});
+
+describe('OfferRow', () => {
+	it('shows the price, brand and retailer on every row', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).toContain('$1,299');
+		expect(html).toContain('ASUS');
+		expect(html).toContain('Scorptec');
+	});
+
+	it('links out to the retailer with a safe target', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).toContain('href="https://example.com/1"');
+		expect(html).toContain('rel="noopener noreferrer"');
+	});
+
+	it('shows a down-arrow delta with a signed number when below the 30-day average', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow({ latestPrice: 1288 }), avg30: 1400 });
+		expect(html).toContain('▼');
+		expect(html).toContain('vs 30d avg');
+	});
+
+	it('shows an up arrow when above the average', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow({ latestPrice: 1500 }), avg30: 1400 });
+		expect(html).toContain('▲');
+	});
+
+	it('says so plainly when there is not enough history, rather than showing a number', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: null });
+		expect(html).toContain('Not enough history');
+		expect(html).not.toContain('vs 30d avg');
+	});
+
+	it('marks a delisted offer and omits its stock badge', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow({ delisted: true, inStock: false }),
+			avg30: 1400
+		});
+		expect(html).toContain('Delisted');
+	});
+
+	it('renders no price for an offer that has never had one', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow({ latestPrice: null, inStock: false, latestStock: 'unknown' }),
+			avg30: 1400
+		});
+		expect(html).toContain('—');
+	});
+});
+
+describe('FacetChips', () => {
+	const twoOptions = [
+		{ value: 'scorptec', label: 'Scorptec', count: 4 },
+		{ value: 'pccg', label: 'PCCG', count: 3 }
+	];
+
+	it('renders a chip per option with its count, plus an All chip', () => {
+		const html = renderComponent(FacetChips, {
+			label: 'Retailer',
+			options: twoOptions,
+			selected: null,
+			allCount: 7,
+			onSelect: () => {}
+		});
+		expect(html).toContain('Scorptec');
+		expect(html).toContain('4');
+		expect(html).toContain('All');
+	});
+
+	it('renders nothing when there is only one value to choose from', () => {
+		const html = renderComponent(FacetChips, {
+			label: 'Brand',
+			options: [{ value: 'ASUS', label: 'ASUS', count: 5 }],
+			selected: null,
+			allCount: 5,
+			onSelect: () => {}
+		});
+		expect(html.replace(/<!--.*?-->/g, '').trim()).toBe('');
+	});
+
+	it('renders nothing for no options', () => {
+		const html = renderComponent(FacetChips, {
+			label: 'Brand',
+			options: [],
+			selected: null,
+			allCount: 0,
+			onSelect: () => {}
+		});
+		expect(html.replace(/<!--.*?-->/g, '').trim()).toBe('');
+	});
+
+	it('marks the selected chip with aria-pressed for assistive tech', () => {
+		const html = renderComponent(FacetChips, {
+			label: 'Retailer',
+			options: twoOptions,
+			selected: 'pccg',
+			allCount: 7,
+			onSelect: () => {}
+		});
+		expect(html).toContain('aria-pressed="true"');
 	});
 });
