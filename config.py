@@ -199,3 +199,82 @@ AMD_FETCH_DELAY_SECONDS = _env_float("TRACKAROO_AMD_FETCH_DELAY", 1.0)
 # ── Spec coverage tuning (health_checks.py check_spec_coverage) ──────
 SPEC_COVERAGE_MIN_PCT = _env_float("TRACKAROO_SPEC_COVERAGE_MIN_PCT", 80.0)
 SPEC_STALE_THRESHOLD_DAYS = _env_int("TRACKAROO_SPEC_STALE_THRESHOLD_DAYS", 14)
+
+
+# ── Logging ───────────────────────────────────────────────────────────
+# Every entry point used to configure logging to stdout only, so a native run
+# left no trace once the terminal closed and a failed overnight scrape could
+# not be diagnosed after the fact. setup_logging() adds a date-stamped file
+# alongside the console output.
+#
+# A plain FileHandler in append mode (not RotatingFileHandler) is deliberate:
+# run_daily.py launches the scrapers as separate processes that log to the same
+# file, and concurrent rotation from several processes corrupts the log. Old
+# files are pruned by date instead.
+LOG_DIR = _env_path("TRACKAROO_LOG_DIR", BASE_DIR / "logs")
+LOG_KEEP_DAYS = _env_int("TRACKAROO_LOG_KEEP_DAYS", 30)
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+
+def prune_logs(log_dir=None, keep_days=None):
+    """Delete log files older than ``keep_days``. Never raises."""
+    import time
+
+    log_dir = log_dir or LOG_DIR
+    keep_days = LOG_KEEP_DAYS if keep_days is None else keep_days
+    cutoff = time.time() - keep_days * 86400
+    try:
+        for path in log_dir.glob("trackaroo-*.log"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def setup_logging(level=None, log_dir=None):
+    """Configure console + file logging for a Trackaroo entry point.
+
+    Safe to call from any process and more than once: handlers are only added
+    to a root logger that doesn't have them yet, so a subprocess scraper and
+    its parent both log to the same daily file without duplicating output.
+
+    Args:
+        level: Logging level (default INFO).
+        log_dir: Directory for log files (default TRACKAROO_LOG_DIR or ./logs).
+
+    Returns:
+        The path being logged to, or None if the file could not be opened.
+    """
+    import logging
+    from datetime import date
+
+    level = logging.INFO if level is None else level
+    root = logging.getLogger()
+    root.setLevel(level)
+
+    formatter = logging.Formatter(LOG_FORMAT)
+
+    if not any(isinstance(h, logging.StreamHandler)
+               and not isinstance(h, logging.FileHandler) for h in root.handlers):
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        root.addHandler(console)
+
+    if any(isinstance(h, logging.FileHandler) for h in root.handlers):
+        return None  # Already attached (repeat call)
+
+    target = (log_dir or LOG_DIR) / f"trackaroo-{date.today().isoformat()}.log"
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(target, encoding="utf-8")
+    except OSError:
+        # A read-only or missing volume must never stop the pipeline running.
+        return None
+
+    file_handler.setFormatter(formatter)
+    root.addHandler(file_handler)
+    prune_logs(log_dir or LOG_DIR)
+    return target

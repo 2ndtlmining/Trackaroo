@@ -33,8 +33,10 @@ from config import (
     FILE_DATE_FORMAT,
     PCCG_COOLDOWN_FILE,
     PCCG_COOLDOWN_HOURS,
+    setup_logging,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
+from scraper.snapshot_io import build_snapshot, save_snapshot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -591,10 +593,7 @@ def scrape_category(
 
 def main() -> None:
     """Run the PCCG scraper to collect price data for all watchlist products."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    setup_logging()
     LOGGER.info("Loading watchlist...")
     watchlist = load_watchlist()
     LOGGER.info("  %d products", len(watchlist))
@@ -653,19 +652,15 @@ def main() -> None:
             if any(wp["model"] == m and wp["category"] == category for wp in watchlist)
         ]
         output_file = DATA_DIR / f"{category}_pccg_{today}.json"
-        output_data = {
-            "retailer": "pccg",
-            "scrape_date": today,
-            "category": category,
-            "total_watchlist": len(watchlist),
-            "matched": len(cat_results),
-            "unmatched_count": len(cat_unmatched),
-            "unmatched_models": cat_unmatched,
-            "products": cat_results,
-        }
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(output_data, f, indent=2, ensure_ascii=False)
-        LOGGER.info("Saved: %s", output_file)
+        output_data = build_snapshot(
+            retailer="pccg",
+            scrape_date=today,
+            category=category,
+            total_watchlist=len(watchlist),
+            products=cat_results,
+            unmatched_models=cat_unmatched,
+        )
+        save_snapshot(output_file, output_data)
 
 
 if __name__ == "__main__":

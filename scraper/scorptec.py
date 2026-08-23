@@ -5,7 +5,6 @@ Usage: python -m scraper.scorptec
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 from datetime import date
@@ -22,8 +21,10 @@ from config import (
     SCORPTEC_PAGE_DELAY,
     SCORPTEC_RETRY_DELAY,
     SCORPTEC_TIMEOUT_SECONDS,
+    setup_logging,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
+from scraper.snapshot_io import build_snapshot, save_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -477,10 +478,7 @@ def analyze_unmatched(
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    setup_logging()
     logger.info("Loading watchlist...")
     watchlist = load_watchlist()
     logger.info("  %d products in watchlist", len(watchlist))
@@ -515,19 +513,15 @@ def main() -> None:
         ("gpu", gpu_results, gpu_unmatched),
     ]:
         output_file = DATA_DIR / f"{category}_scorptec_{today}.json"
-        output_data = {
-            "retailer": "scorptec",
-            "scrape_date": today,
-            "category": category,
-            "total_watchlist": len(watchlist),
-            "matched": len(products),
-            "unmatched_count": len(unmatched),
-            "unmatched_models": unmatched,
-            "products": products,
-        }
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(output_data, f, indent=2, ensure_ascii=False)
-        logger.info("\nSaved to: %s", output_file)
+        output_data = build_snapshot(
+            retailer="scorptec",
+            scrape_date=today,
+            category=category,
+            total_watchlist=len(watchlist),
+            products=products,
+            unmatched_models=unmatched,
+        )
+        save_snapshot(output_file, output_data)
 
 
 if __name__ == "__main__":

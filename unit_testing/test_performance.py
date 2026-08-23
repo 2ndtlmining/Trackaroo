@@ -104,7 +104,7 @@ class TestBulkQueryPerformance:
         Guards against a future migration dropping/renaming an index, which
         would silently turn the frontend's most common query into a full scan.
         (Full covering index for price_aud is a documented, measured
-        non-issue at this scale — see DECISIONS.md.)
+        non-issue at this scale — see docs/ARCHITECTURE.md (Part 3).)
         """
         _build_synthetic_db(db_path)
         conn = get_connection(db_path)

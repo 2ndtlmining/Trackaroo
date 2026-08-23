@@ -2,7 +2,7 @@
 Health checks for the Trackaroo price tracker.
 
 Validates scraped JSON output and database state after each scrape/ingest cycle.
-Implements the resilience requirement from SPEC.md §8:
+Implements the resilience requirement from docs/ARCHITECTURE.md (Part 1) §8:
 
     "each scrape run should validate its own output (e.g. 'did we get a plausible
     number of products for this category?') and log/alert if a retailer returns
@@ -23,7 +23,7 @@ import json
 import logging
 import sqlite3
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -40,6 +40,7 @@ from config import (
     SPEC_COVERAGE_MIN_PCT,
     SPEC_STALE_THRESHOLD_DAYS,
     STALE_THRESHOLD_DAYS,
+    setup_logging,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -283,7 +284,7 @@ def check_today_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
 
     Goal: make "Scorptec ingested, PCCG missing for today" a named,
     expected-shape warning instead of something only visible by reading scrape
-    logs. Backed by the cooldown mechanism (IMPROVEMENT_16_Aug_V1.md §10.3/10.4):
+    logs. Backed by the cooldown mechanism (docs/archive/IMPROVEMENT_16_Aug_V1.md §10.3/10.4):
     a recent PCCG circuit-breaker trip legitimately skips today's PCCG scrape,
     so this check surfaces the gap as a warning rather than an error.
 
@@ -652,6 +653,239 @@ def check_spec_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
     return results
 
 
+# ── JSON/DB parity ──────────────────────────────────────────────────
+
+def check_json_db_parity(
+    target_date: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> list[CheckResult]:
+    """Verify the JSON snapshots can still rebuild the DB for a given date.
+
+    The files in ``data/`` are the project's backup: the DB is regenerable from
+    them via ``ingest.py``. That only holds while every snapshot in the DB has a
+    matching product entry on disk. It stopped holding once — a rate-limited
+    PCCG re-run overwrote a complete file with an empty one, stranding 165
+    snapshots in the DB alone (19-Aug and 21-Aug 2026).
+
+    ``scraper/snapshot_io.py`` prevents the overwrite and ``export_snapshots.py``
+    repairs a divergence; this check is what notices one.
+
+    Listings are compared on their stable SKU key, not the raw URL, because
+    retailers rewrite slugs and the same listing legitimately appears under
+    different URLs across files.
+
+    Args:
+        target_date: Date as YYYY-MM-DD. Defaults to today.
+        db_path: Path to the SQLite database. Defaults to db/trackaroo.db.
+
+    Returns:
+        List of CheckResult objects, one per (category, retailer) group.
+    """
+    from ingest import extract_listing_key
+
+    results: list[CheckResult] = []
+
+    if db_path is None:
+        db_path = DB_PATH
+    if not db_path.exists():
+        return results  # Missing DB is reported by check_db_freshness
+
+    db_date = target_date or date.today().strftime(DB_DATE_FORMAT)
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+    except sqlite3.Error:
+        return results
+
+    try:
+        rows = conn.execute("""
+            SELECT p.category, rl.retailer, rl.listing_url
+            FROM price_snapshots ps
+            JOIN retailer_listings rl ON rl.id = ps.retailer_listing_id
+            JOIN products p ON p.id = rl.product_id
+            WHERE ps.snapshot_date = ?
+        """, (db_date,)).fetchall()
+    except sqlite3.Error:
+        return results
+    finally:
+        conn.close()
+
+    if not rows:
+        return results  # No data for this date; other checks cover that
+
+    groups: dict = {}
+    for category, retailer, url in rows:
+        key = extract_listing_key(retailer, url) or url
+        groups.setdefault((category, retailer), set()).add(key)
+
+    stamp = datetime.strptime(db_date, DB_DATE_FORMAT).strftime(FILE_DATE_FORMAT)
+
+    for (category, retailer), db_keys in sorted(groups.items()):
+        name = f"json_db_parity_{retailer}_{category}"
+        path = DATA_DIR / f"{category}_{retailer}_{stamp}.json"
+
+        try:
+            with open(path, encoding="utf-8") as f:
+                products = json.load(f).get("products", [])
+        except (OSError, ValueError):
+            results.append(CheckResult(
+                name, CheckResult.ERROR,
+                f"{path.name} missing or unreadable, but the DB holds "
+                f"{len(db_keys)} snapshot(s) for {db_date} — the JSON backup "
+                f"cannot rebuild this day. Run: python export_snapshots.py --repair",
+            ))
+            continue
+
+        json_keys = {
+            extract_listing_key(retailer, p.get("url", "")) or p.get("url", "")
+            for p in products
+        }
+        missing = db_keys - json_keys
+
+        if missing:
+            results.append(CheckResult(
+                name, CheckResult.ERROR,
+                f"{path.name} is missing {len(missing)} of {len(db_keys)} "
+                f"listing(s) held in the DB — the JSON backup is incomplete. "
+                f"Run: python export_snapshots.py --repair",
+            ))
+        else:
+            results.append(CheckResult(
+                name, CheckResult.OK,
+                f"{path.name}: all {len(db_keys)} DB snapshot(s) present in JSON",
+            ))
+
+    return results
+
+
+# ── Missing day detection ───────────────────────────────────────────
+
+def check_missing_days(db_path: Optional[Path] = None) -> list[CheckResult]:
+    """Flag calendar gaps in the snapshot history.
+
+    The pipeline is meant to run daily, but a skipped run leaves no trace: the
+    dashboard simply shows the previous day as "latest" and nothing complains.
+    16-Aug and 23-Aug 2026 were both lost that way. Reporting gaps makes a
+    missed day visible on the next successful run.
+
+    Only gaps strictly inside the recorded range are reported — a run before
+    tracking began is not a gap.
+
+    Args:
+        db_path: Path to the SQLite database. Defaults to db/trackaroo.db.
+
+    Returns:
+        A single CheckResult summarising the gaps, or an empty list if the DB
+        is unavailable or holds too little history to judge.
+    """
+    results: list[CheckResult] = []
+
+    if db_path is None:
+        db_path = DB_PATH
+    if not db_path.exists():
+        return results
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+    except sqlite3.Error:
+        return results
+
+    try:
+        dates = [
+            datetime.strptime(row[0], DB_DATE_FORMAT).date()
+            for row in conn.execute(
+                "SELECT DISTINCT snapshot_date FROM price_snapshots ORDER BY snapshot_date"
+            )
+        ]
+    except (sqlite3.Error, ValueError):
+        return results
+    finally:
+        conn.close()
+
+    if len(dates) < 2:
+        return results
+
+    present = set(dates)
+    span = (dates[-1] - dates[0]).days + 1
+    missing = [
+        dates[0] + timedelta(days=offset)
+        for offset in range(span)
+        if dates[0] + timedelta(days=offset) not in present
+    ]
+
+    if not missing:
+        results.append(CheckResult(
+            "missing_days", CheckResult.OK,
+            f"No gaps across {span} day(s) of history "
+            f"({dates[0].isoformat()} to {dates[-1].isoformat()})",
+        ))
+    else:
+        shown = ", ".join(d.isoformat() for d in missing[:5])
+        more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
+        results.append(CheckResult(
+            "missing_days", CheckResult.WARNING,
+            f"{len(missing)} day(s) with no snapshots between "
+            f"{dates[0].isoformat()} and {dates[-1].isoformat()}: {shown}{more}",
+        ))
+
+    return results
+
+
+
+# ── Scraper cooldown state ──────────────────────────────────────────
+
+def check_scraper_cooldown() -> list[CheckResult]:
+    """Report an active PCCG circuit-breaker cooldown.
+
+    When Algolia rate-limits the PCCG scraper hard enough to trip the circuit
+    breaker, the scraper writes a cooldown file and the *next* few runs skip
+    PCCG entirely and exit 0. That is deliberate (hammering a throttling API
+    makes it worse), but it means a missing PCCG day looks identical to a
+    silent failure. This names the cause and says when scraping resumes, so
+    "PCCG has no data today" is explainable rather than mysterious.
+
+    Returns:
+        A single CheckResult describing the cooldown, or an empty list when no
+        cooldown file exists (the normal case).
+    """
+    from config import PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS
+
+    if not PCCG_COOLDOWN_FILE.exists():
+        return []
+
+    try:
+        with open(PCCG_COOLDOWN_FILE, encoding="utf-8") as f:
+            payload = json.load(f)
+        tripped_at = datetime.fromisoformat(payload["tripped_at"])
+        reason = payload.get("reason", "unknown")
+    except (OSError, ValueError, KeyError, TypeError):
+        return [CheckResult(
+            "scraper_cooldown_pccg", CheckResult.WARNING,
+            f"PCCG cooldown file {PCCG_COOLDOWN_FILE.name} exists but is unreadable",
+        )]
+
+    if tripped_at.tzinfo is None:
+        tripped_at = tripped_at.replace(tzinfo=timezone.utc)
+    expires_at = tripped_at + timedelta(hours=PCCG_COOLDOWN_HOURS)
+    remaining = (expires_at - datetime.now(timezone.utc)).total_seconds()
+
+    if remaining <= 0:
+        return [CheckResult(
+            "scraper_cooldown_pccg", CheckResult.OK,
+            f"PCCG cooldown expired at {expires_at.isoformat(timespec='seconds')}; "
+            f"the next run will scrape normally",
+        )]
+
+    return [CheckResult(
+        "scraper_cooldown_pccg", CheckResult.WARNING,
+        f"PCCG scraping paused ({reason}) since "
+        f"{tripped_at.isoformat(timespec='seconds')} — resumes in "
+        f"{remaining / 3600:.1f}h at {expires_at.isoformat(timespec='seconds')}. "
+        f"Missing PCCG data for today is expected until then.",
+    )]
+
+
+
 # ── Aggregate runner ────────────────────────────────────────────────
 
 def run_all_checks(
@@ -699,6 +933,27 @@ def run_all_checks(
     for r in match_results:
         LOGGER.info("  %s", r)
 
+    # JSON/DB parity — can the JSON backup still rebuild this day?
+    LOGGER.info("\n--- JSON/DB Parity ---")
+    parity_results = check_json_db_parity(db_path=db_path)
+    all_results.extend(parity_results)
+    for r in parity_results:
+        LOGGER.info("  %s", r)
+
+    # Missing days — did a scheduled run get skipped?
+    LOGGER.info("\n--- Missing Days ---")
+    gap_results = check_missing_days(db_path)
+    all_results.extend(gap_results)
+    for r in gap_results:
+        LOGGER.info("  %s", r)
+
+    # Scraper cooldown — explains an expected missing retailer
+    cooldown_results = check_scraper_cooldown()
+    all_results.extend(cooldown_results)
+    for r in cooldown_results:
+        LOGGER.info("  %s", r)
+
+
     # Price anomalies
     LOGGER.info("\n--- Price Anomalies ---")
     price_results = check_price_anomalies(db_path)
@@ -727,10 +982,7 @@ def run_all_checks(
 def main(argv: Optional[List[str]] = None) -> None:
     import argparse
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    setup_logging()
     parser = argparse.ArgumentParser(description="Trackaroo health checks")
     parser.add_argument("--json-only", action="store_true",
                         help="Only validate JSON files")
