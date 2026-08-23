@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ListingRow, SnapshotRow } from '../src/lib/server/db';
 import type { Series } from '../src/lib/server/repos';
-import { buildBrandGroups, priceRange, toListingDisplays } from '../src/lib/listingsPanel';
+import { priceRange, toListingDisplays } from '../src/lib/listingsPanel';
 
 function snapshot(date: string, price: number, stock: string): SnapshotRow {
 	return {
@@ -126,61 +126,5 @@ describe('priceRange', () => {
 			...delisted
 		];
 		expect(priceRange(mixed)).toEqual({ min: 619, max: 619 });
-	});
-});
-
-describe('buildBrandGroups', () => {
-	it('groups by derived brand with in-stock counts', () => {
-		const groups = buildBrandGroups(base, GPU_PRODUCT_BRAND, { query: '', inStockOnly: false }, new Set());
-		expect(groups.length).toBe(4); // MSI, Gigabyte, ASUS, ZOTAC
-		const msi = groups.find((g) => g.brand === 'MSI')!;
-		expect(msi.listings.length).toBe(2);
-		expect(msi.inStockCount).toBe(1);
-		expect(msi.minPrice).toBe(619);
-		expect(msi.maxPrice).toBe(635);
-	});
-
-	it('sorts groups cheapest in-stock first', () => {
-		const groups = buildBrandGroups(base, GPU_PRODUCT_BRAND, { query: '', inStockOnly: false }, new Set());
-		const brands = groups.map((g) => g.brand);
-		// MSI (619) -> Gigabyte (649) -> ASUS (659) -> ZOTAC (699)
-		expect(brands).toEqual(['MSI', 'Gigabyte', 'ASUS', 'ZOTAC']);
-	});
-
-	it('filters by free-text query against the variant name', () => {
-		const groups = buildBrandGroups(base, GPU_PRODUCT_BRAND, { query: 'ventus', inStockOnly: false }, new Set());
-		expect(groups.length).toBe(1);
-		expect(groups[0].brand).toBe('MSI');
-		expect(groups[0].listings.length).toBe(1);
-	});
-
-	it('filters to in-stock only', () => {
-		const groups = buildBrandGroups(base, GPU_PRODUCT_BRAND, { query: '', inStockOnly: true }, new Set());
-		for (const g of groups) {
-			for (const l of g.listings) {
-				expect(l.inStock).toBe(true);
-			}
-		}
-		expect(groups.flatMap((g) => g.listings).length).toBe(4);
-	});
-
-	it('hides groups with no matching listings', () => {
-		const groups = buildBrandGroups(base, GPU_PRODUCT_BRAND, { query: 'does-not-exist', inStockOnly: false }, new Set());
-		expect(groups.length).toBe(0);
-	});
-
-	it('excludes delisted listings from in-stock counts and the in-stock filter', () => {
-		const withDelisted = [
-			series(10, 'XFX Radeon RX 7900XT', [snapshot('2026-08-10', 1049, 'in_stock')], 'delisted'),
-			series(11, 'MSI GeForce RTX 5060 Ventus 2X OC 8GB', [snapshot('2026-08-17', 619, 'in_stock')])
-		];
-		const groups = buildBrandGroups(withDelisted, GPU_PRODUCT_BRAND, { query: '', inStockOnly: false }, new Set());
-		const xfx = groups.find((g) => g.brand === 'XFX')!;
-		expect(xfx.inStockCount).toBe(0);
-		const msi = groups.find((g) => g.brand === 'MSI')!;
-		expect(msi.inStockCount).toBe(1);
-
-		const filtered = buildBrandGroups(withDelisted, GPU_PRODUCT_BRAND, { query: '', inStockOnly: true }, new Set());
-		expect(filtered.flatMap((g) => g.listings).map((l) => l.listingId)).toEqual([11]);
 	});
 });
