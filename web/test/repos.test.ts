@@ -7,6 +7,7 @@ import {
 	deleteAlert,
 	deriveListingBrand,
 	getCheapestPerModel,
+	getCategoryCounts,
 	getComparisonData,
 	getDealCandidates,
 	getLatestListings,
@@ -18,6 +19,7 @@ import {
 	getProductIndex,
 	getProductSparklines,
 	getProductStats,
+	getRetailerFreshness,
 	getSparklines,
 	getSummary,
 	groupListingsByProduct,
@@ -1132,5 +1134,28 @@ describe('getDealCandidates', () => {
 		const models = getDealCandidates(fixture.db).map((r) => r.model);
 		expect(models).not.toContain('RTX SoldOut');
 		expect(models).not.toContain('Ryzen Untracked');
+	});
+});
+
+describe('getRetailerFreshness', () => {
+	it('returns the latest snapshot date per retailer', () => {
+		const rows = getRetailerFreshness(db);
+		expect(rows.length).toBeGreaterThan(0);
+		for (const row of rows) {
+			expect(['scorptec', 'pccg']).toContain(row.retailer);
+			expect(row.latestSnapshotDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		}
+	});
+
+	it('orders retailers deterministically by slug', () => {
+		const slugs = getRetailerFreshness(db).map((r) => r.retailer);
+		expect([...slugs].sort()).toEqual(slugs);
+	});
+});
+
+describe('getCategoryCounts', () => {
+	it('counts tracked products per category', () => {
+		const counts = getCategoryCounts(db);
+		expect((counts.get('gpu') ?? 0) + (counts.get('cpu') ?? 0)).toBeGreaterThan(0);
 	});
 });

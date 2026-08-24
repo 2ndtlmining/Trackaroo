@@ -374,6 +374,35 @@ export function getHeaderStats(db: DB): HeaderStats {
 	};
 }
 
+export interface RetailerFreshness {
+	retailer: Retailer;
+	latestSnapshotDate: string | null;
+}
+
+// Per-retailer currency for the homepage health strip. Deliberately DB-only:
+// distinguishing an intended circuit-breaker pause from real staleness would
+// require reading data/pccg_cooldown.json, coupling the web app to the
+// pipeline's file layout (spec §5 defers this).
+export function getRetailerFreshness(db: DB): RetailerFreshness[] {
+	const rows = db
+		.prepare(
+			`SELECT l.retailer AS retailer, MAX(s.snapshot_date) AS latest
+			 FROM retailer_listings l
+			 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+			 GROUP BY l.retailer
+			 ORDER BY l.retailer ASC`
+		)
+		.all() as Array<{ retailer: Retailer; latest: string | null }>;
+	return rows.map((r) => ({ retailer: r.retailer, latestSnapshotDate: r.latest }));
+}
+
+export function getCategoryCounts(db: DB): Map<Category, number> {
+	const rows = db
+		.prepare('SELECT category, COUNT(*) AS n FROM products WHERE tracked = 1 GROUP BY category')
+		.all() as Array<{ category: Category; n: number }>;
+	return new Map(rows.map((r) => [r.category, r.n]));
+}
+
 export function getSummary(db: DB): Summary {
 	const tracked = db.prepare('SELECT COUNT(*) AS n FROM products WHERE tracked = 1').get() as {
 		n: number;
