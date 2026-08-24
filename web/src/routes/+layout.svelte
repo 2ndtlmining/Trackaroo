@@ -33,7 +33,7 @@
 </a>
 
 <div class="flex min-h-screen flex-col">
-	<Header stats={data.stats} onOpenSearch={() => (paletteOpen = true)} />
+	<Header onOpenSearch={() => (paletteOpen = true)} />
 	<main id="main" class="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
 		<StaleDataBanner latestSnapshotDate={data.stats.latestSnapshotDate} />
 		{@render children()}

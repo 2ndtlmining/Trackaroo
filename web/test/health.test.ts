@@ -50,12 +50,17 @@ describe('retailerHealth', () => {
 		expect(row.text).toBe('1 day behind');
 	});
 
-	it('falls back to the slug for an unknown retailer, so a new one is visible', () => {
+	it('labels a retailer that has a scraper planned but no data yet', () => {
+		const [row] = retailerHealth([{ retailer: 'mwave', latestSnapshotDate: '2026-08-25' }], NOW);
+		expect(row.label).toBe('MWave');
+	});
+
+	it('falls back to the slug for a retailer missing from the registry entirely', () => {
 		const [row] = retailerHealth(
-			[{ retailer: 'mwave' as never, latestSnapshotDate: '2026-08-25' }],
+			[{ retailer: 'someshop' as never, latestSnapshotDate: '2026-08-25' }],
 			NOW
 		);
-		expect(row.label).toBe('mwave');
+		expect(row.label).toBe('someshop');
 	});
 
 	it('reports a retailer that has never reported', () => {

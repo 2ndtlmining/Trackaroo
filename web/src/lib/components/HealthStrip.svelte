@@ -1,17 +1,20 @@
 <script lang="ts">
-	import { formatDate } from '$lib/formats';
+	import { formatBytes, formatDate } from '$lib/formats';
 	import type { RetailerHealth } from '$lib/health';
 
 	let {
 		retailers,
 		latestSnapshotDate,
 		snapshotDays,
-		snapshotCount
+		snapshotCount,
+		dbSizeBytes = 0
 	}: {
 		retailers: RetailerHealth[];
 		latestSnapshotDate: string | null;
 		snapshotDays: number;
 		snapshotCount: number;
+		// Moved out of the header (spec §6) — this is the stats' honest home.
+		dbSizeBytes?: number;
 	} = $props();
 
 	// A cooling-down retailer currently reads as stale (spec §5 defers reading
@@ -44,6 +47,9 @@
 			<p class="text-xs text-text-muted">
 				<span class="num">{snapshotDays}</span> days ·
 				<span class="num">{numberFormat.format(snapshotCount)}</span> snapshots
+				{#if dbSizeBytes > 0}
+					· <span class="num">{formatBytes(dbSizeBytes)}</span>
+				{/if}
 			</p>
 		</div>
 		<div class="mt-2 flex flex-wrap items-center gap-1.5">
