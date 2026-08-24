@@ -809,3 +809,37 @@ test.describe('price alerts', () => {
 		await expect(page.getByText('My alerts')).toHaveCount(0);
 	});
 });
+
+test.describe('deals', () => {
+	test('ranks the deepest discount first and links to the product page', async ({ page }) => {
+		await goto(page, '/deals');
+		const rows = page.getByTestId('below-average-list').locator('a[href^="/product/"]');
+		await expect(rows.first()).toHaveText('E2E Deal Demo GPU');
+	});
+
+	test('lists an at-all-time-low product in its own anchored section', async ({ page }) => {
+		await goto(page, '/deals');
+		const section = page.locator('#all-time-low');
+		await expect(section).toBeVisible();
+		await expect(section.getByText('E2E Deal Demo GPU')).toBeVisible();
+	});
+
+	test('excludes products without enough history to have an average', async ({ page }) => {
+		await goto(page, '/deals');
+		await expect(page.getByText('E2E Thin History GPU')).toHaveCount(0);
+	});
+
+	test('filtering by retailer narrows the list via the URL', async ({ page }) => {
+		await goto(page, '/deals');
+		await page.getByRole('button', { name: /^PCCG/ }).click();
+		await expect(page).toHaveURL(/retailer=pccg/);
+		await expect(
+			page.getByTestId('below-average-list').getByText('E2E Deal Demo GPU')
+		).toHaveCount(0);
+	});
+
+	test('filtering by category to CPUs hides the GPU fixture', async ({ page }) => {
+		await goto(page, '/deals?category=cpu');
+		await expect(page.getByText('E2E Deal Demo GPU')).toHaveCount(0);
+	});
+});

@@ -285,6 +285,60 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		).run(Number(delistedInfo.lastInsertRowid));
 	}
 
+	// Deterministic /deals fixtures. The seed builds from the live data/
+	// directory when it has files, so real scraped prices cannot be asserted
+	// on. These two products are synthetic and pinned:
+	//
+	//   E2E Deal Demo GPU  — today's price is 90% below its 30-day average and
+	//     equal to its all-time low, so it must rank FIRST in both sections.
+	//     Real hardware does not swing 90% in a month, which is what makes the
+	//     ordering assertion safe against live data.
+	//   E2E Thin History GPU — 40% below its 2-day average, but only 2 days of
+	//     history, so MIN_HISTORY_POINTS must exclude it from both sections.
+	//
+	// Snapshots are anchored to the DB's own latest date so the fixtures are
+	// always "today" regardless of which scrape files were loaded.
+	const latestRow = db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get();
+	if (latestRow && latestRow.d) {
+		const dayBefore = (n) => db.prepare('SELECT date(?, ?) AS d').get(latestRow.d, `-${n} days`).d;
+
+		const addDealFixture = (model, url, history) => {
+			const productInfo = db
+				.prepare(
+					`INSERT INTO products (category, brand, model, generation_tier, tracked)
+					 VALUES ('gpu', 'NVIDIA', ?, 'current', 1)`
+				)
+				.run(model);
+			const listingInfo = db
+				.prepare(
+					`INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status)
+					 VALUES (?, 'scorptec', ?, ?, 'active')`
+				)
+				.run(Number(productInfo.lastInsertRowid), `${model} Variant`, url);
+			const listingId = Number(listingInfo.lastInsertRowid);
+			for (const [daysAgo, price] of history) {
+				const date = dayBefore(daysAgo);
+				db.prepare(
+					`INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at)
+					 VALUES (?, ?, ?, 'in_stock', ?)`
+				).run(listingId, date, price, `${date}T04:00:00.000Z`);
+			}
+		};
+
+		// [daysAgo, price] — day 0 is the latest snapshot date.
+		addDealFixture('E2E Deal Demo GPU', '/p/e2e-deal-demo', [
+			[4, 1000],
+			[3, 1000],
+			[2, 1000],
+			[1, 1000],
+			[0, 100]
+		]);
+		addDealFixture('E2E Thin History GPU', '/p/e2e-thin-history', [
+			[1, 1000],
+			[0, 600]
+		]);
+	}
+
 	// Deterministic spec rows so the product page spec panel is testable:
 	// product 1 (Core Ultra 5 245, CPU) and the first GPU product.
 	const firstProduct = db.prepare('SELECT id FROM products LIMIT 1').get();
