@@ -116,7 +116,7 @@ label:
 	</div>
 
 	{#if hasChartData}
-		<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+		<div class="space-y-4">
 			<PriceChart
 				series={overlays}
 				band={band}
