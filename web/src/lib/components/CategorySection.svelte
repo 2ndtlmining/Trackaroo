@@ -39,7 +39,7 @@
 	</header>
 
 	<div class="grid gap-px bg-border md:grid-cols-3">
-		<div class="bg-surface">
+		<div class="bg-surface" data-testid="top-deals">
 			<h3 class="px-3 pt-2.5 text-xs font-medium text-text-muted">Top deals</h3>
 			{#if deals.length > 0}
 				<div class="divide-y divide-border">
@@ -57,7 +57,7 @@
 			{/if}
 		</div>
 
-		<div class="bg-surface">
+		<div class="bg-surface" data-testid="biggest-drops">
 			<h3 class="px-3 pt-2.5 text-xs font-medium text-text-muted">Biggest drops (7d)</h3>
 			{#if drops.length > 0}
 				<div class="divide-y divide-border">
@@ -72,7 +72,7 @@
 			{/if}
 		</div>
 
-		<div class="bg-surface">
+		<div class="bg-surface" data-testid="biggest-rises">
 			<h3 class="px-3 pt-2.5 text-xs font-medium text-text-muted">Biggest rises (7d)</h3>
 			{#if rises.length > 0}
 				<div class="divide-y divide-border">

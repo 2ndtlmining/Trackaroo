@@ -163,148 +163,114 @@ test('respects a stored light theme on load', async ({ page }) => {
 	});
 });
 
-test.describe('dashboard', () => {
-	test('renders the cheapest-deals carousel with a GPU/CPU toggle', async ({ page }) => {
+test.describe('homepage dashboard', () => {
+	test('shows a data-health strip naming each retailer and its age', async ({ page }) => {
 		await goto(page, '/');
-		await expect(page.getByText('Cheapest deals')).toBeVisible();
-
-		const gpuTab = page.getByRole('tab', { name: 'GPU' });
-		await expect(gpuTab).toBeVisible();
-		await expect(gpuTab).toHaveAttribute('aria-selected', 'true');
-
-		const firstCard = page.getByRole('listitem').first();
-		await expect(firstCard).toBeVisible();
-		await expect(firstCard).toContainText('$');
-
-		await page.getByRole('tab', { name: 'CPU' }).click();
-		await expect(page.getByRole('tab', { name: 'CPU' })).toHaveAttribute('aria-selected', 'true');
-		await expect(page.getByRole('tab', { name: 'GPU' })).toHaveAttribute('aria-selected', 'false');
-		await expect(page.getByRole('listitem').first()).toBeVisible();
+		const strip = page.getByLabel('Data health');
+		await expect(strip).toBeVisible();
+		await expect(strip.getByText('Scorptec')).toBeVisible();
+		await expect(strip.getByText('PCCG')).toBeVisible();
 	});
 
-	test('flags deal cards at their 90-day low', async ({ page }) => {
+	test('renders a GPU and a CPU section with links through to the category', async ({ page }) => {
 		await goto(page, '/');
-		// The seeded data has several models whose current price equals the
-		// lowest in-stock price over the available history.
-		await expect(page.getByText('90d low').first()).toBeVisible();
-		await expect(page.getByText('90d low').first()).toHaveAttribute(
-			'title',
-			'Lowest price in the last 90 days'
+		await expect(page.getByRole('link', { name: 'All GPUs →' })).toHaveAttribute(
+			'href',
+			'/products?category=gpu'
+		);
+		await expect(page.getByRole('link', { name: 'All CPUs →' })).toHaveAttribute(
+			'href',
+			'/products?category=cpu'
 		);
 	});
 
-	test('renders the four stat tiles from the seeded data', async ({ page }) => {
+	test('surfaces the seeded deal fixture in the GPU top-deals column', async ({ page }) => {
 		await goto(page, '/');
-		await expect(page.getByText('Tracked products')).toBeVisible();
-		await expect(page.getByText('Listings today')).toBeVisible();
-		await expect(page.getByText('Retailers', { exact: true })).toBeVisible();
-		await expect(page.getByText('Biggest mover (24h)')).toBeVisible();
+		await expect(
+			page
+				.getByLabel('GPUs')
+				.getByTestId('top-deals')
+				.getByRole('link', { name: 'E2E Deal Demo GPU' })
+		).toBeVisible();
 	});
 
-	test('renders a populated listings table', async ({ page }) => {
+	// A deal and a mover are different questions (spec §5): the fixture is both
+	// cheap versus its own average AND the biggest recent drop, so it must
+	// legitimately appear in both columns rather than being deduplicated.
+	test('lists the same product as a deal and as a drop, because they differ', async ({ page }) => {
 		await goto(page, '/');
-		const table = page.locator('table');
-		await expect(table).toBeVisible();
-		// Seeded data has both CPU and GPU rows across both retailers
-await expect(table.getByRole('columnheader', { name: 'Model' })).toBeVisible();
-		await expect(table.getByRole('columnheader', { name: 'Price' })).toBeVisible();
-		await expect(table.getByRole('columnheader', { name: 'Trend' })).toBeVisible();
-		await expect(table.locator('tbody tr').first()).toBeVisible();
-		await expect(table.locator('tbody svg').first()).toBeVisible();
-		expect(await table.locator('tbody svg polyline').count()).toBeGreaterThan(0);
+		const gpus = page.getByLabel('GPUs');
+		await expect(
+			gpus.getByTestId('top-deals').getByRole('link', { name: 'E2E Deal Demo GPU' })
+		).toBeVisible();
+		await expect(
+			gpus.getByTestId('biggest-drops').getByRole('link', { name: 'E2E Deal Demo GPU' })
+		).toBeVisible();
 	});
 
-	test('column headers sort the table via the tri-state cycle', async ({ page }) => {
+	test('no longer renders the filter-and-sort listing table', async ({ page }) => {
 		await goto(page, '/');
-		const priceHeader = page.getByRole('button', { name: /^Price/ });
-		await expect(priceHeader).toBeVisible();
-		// unsorted -> ascending -> descending -> unsorted
-		await priceHeader.click();
-		await expect(priceHeader).toContainText('▲');
-		await priceHeader.click();
-		await expect(priceHeader).toContainText('▼');
-		await priceHeader.click();
-		await expect(priceHeader).not.toContainText('▲');
-		await expect(priceHeader).not.toContainText('▼');
+		await expect(page.getByRole('table')).toHaveCount(0);
 	});
 
-	test('filters the table by category via the URL', async ({ page }) => {
+	test('shows both mover columns for each category', async ({ page }) => {
 		await goto(page, '/');
-		const categorySelect = page.getByLabel('Filter by category');
-		await categorySelect.selectOption('gpu');
-		await expect(page).toHaveURL(/\/\?category=gpu/);
+		await expect(page.getByLabel('GPUs').getByText('Biggest drops (7d)')).toBeVisible();
+		await expect(page.getByLabel('GPUs').getByText('Biggest rises (7d)')).toBeVisible();
+	});
+});
 
-		const firstRow = page.locator('tbody tr').first();
-		await expect(firstRow).toContainText('GPU');
+// Filters.svelte moved off the homepage with the listing table (spec §5) and is
+// now used only by /products, so its coverage moves here rather than being lost.
+test.describe('products page filters', () => {
+	test('filters by category via the URL', async ({ page }) => {
+		await goto(page, '/products');
+		await page.getByLabel('Filter by category').selectOption('gpu');
+		await expect(page).toHaveURL(/category=gpu/);
+		expect(await page.locator('article').count()).toBeGreaterThan(0);
 	});
 
-	test('filters the table by retailer via the URL', async ({ page }) => {
-		await goto(page, '/');
-		const retailerSelect = page.getByLabel('Filter by retailer');
-		await retailerSelect.selectOption('scorptec');
-		await expect(page).toHaveURL(/\/\?retailer=scorptec/);
-
-		const rows = page.locator('tbody tr');
-		await expect(rows.first()).toBeVisible();
-		const retailerCells = rows.locator('td').nth(2);
-		const count = await retailerCells.count();
-		expect(count).toBeGreaterThan(0);
-		for (let i = 0; i < count; i += 1) {
-			await expect(retailerCells.nth(i)).toHaveText('scorptec');
-		}
+	test('filters by retailer via the URL', async ({ page }) => {
+		await goto(page, '/products');
+		await page.getByLabel('Filter by retailer').selectOption('scorptec');
+		await expect(page).toHaveURL(/retailer=scorptec/);
 	});
 
 	test('filters by generation tier via the URL', async ({ page }) => {
-		await goto(page, '/');
-		const tierSelect = page.getByLabel('Filter by generation tier');
-		await tierSelect.selectOption('current-2');
-		await expect(page).toHaveURL(/\/\?tier=current-2/);
-		await expect(page.locator('tbody tr').first()).toBeVisible();
+		await goto(page, '/products');
+		await page.getByLabel('Filter by generation tier').selectOption('current-2');
+		await expect(page).toHaveURL(/tier=current-2/);
 	});
 
-	test('search narrows the table to matching models', async ({ page }) => {
-		await goto(page, '/');
-		const searchBox = page.getByLabel('Search by model');
-		await searchBox.fill('5600');
-		await expect(page).toHaveURL(/\/\?q=5600/);
-		const rows = page.locator('tbody tr');
-		await expect(rows.first()).toBeVisible();
-		const count = await rows.count();
-		expect(count).toBeGreaterThan(0);
-		const text = await rows.first().textContent();
-		expect(text).toContain('5600');
+	test('search narrows the grid to matching models', async ({ page }) => {
+		await goto(page, '/products');
+		await page.getByLabel('Search by model').fill('5600');
+		await expect(page).toHaveURL(/q=5600/);
+		await expect(page.locator('article').first()).toContainText('5600');
 	});
 
-	test('sort by price ascending orders cheapest first', async ({ page }) => {
-		await goto(page, '/?category=gpu');
+	test('sort by price reorders the grid', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
 		const sortSelect = page.getByLabel('Sort by price');
 		await sortSelect.selectOption('price-asc');
-		await expect(page).toHaveURL(/\/\?category=gpu&sort=price-asc/);
-		const firstCell = page.locator('tbody tr td').nth(4).first();
-		await expect(firstCell).toBeVisible();
-		const first = await firstCell.textContent();
+		await expect(page).toHaveURL(/sort=price-asc/);
+		const first = await page.locator('article').first().textContent();
 		await sortSelect.selectOption('price-desc');
-		await expect(page).toHaveURL(/\/\?category=gpu&sort=price-desc/);
-		await expect(firstCell).not.toHaveText(first ?? '');
+		await expect(page).toHaveURL(/sort=price-desc/);
+		await expect(page.locator('article').first()).not.toHaveText(first ?? '');
+	});
+
+	test('in-stock filter keeps the grid populated and sets the query string', async ({ page }) => {
+		await goto(page, '/products');
+		await page.getByLabel('In stock only').check();
+		await expect(page).toHaveURL(/in_stock=1/);
+		expect(await page.locator('article').count()).toBeGreaterThan(0);
 	});
 
 	test('clear filters removes the query string', async ({ page }) => {
-		await goto(page, '/?category=gpu');
+		await goto(page, '/products?category=gpu');
 		await page.getByRole('button', { name: 'Clear filters' }).click();
-		await expect(page).toHaveURL('/');
-		await expect(page.getByText('Tracked products')).toBeVisible();
-	});
-
-	test('in-stock filter keeps only in-stock rows', async ({ page }) => {
-		await goto(page, '/');
-		await page.getByLabel('In stock only').check();
-		await expect(page).toHaveURL(/\/\?in_stock=1/);
-		const rows = page.locator('tbody tr');
-		const count = await rows.count();
-		expect(count).toBeGreaterThan(0);
-		for (let i = 0; i < count; i += 1) {
-			await expect(rows.nth(i)).toContainText('In stock');
-		}
+		await expect(page).toHaveURL('/products');
 	});
 });
 
