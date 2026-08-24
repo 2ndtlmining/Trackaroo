@@ -9,18 +9,27 @@
 	let {
 		offer,
 		avg30,
-		onToggleChart
+		onToggleChart,
+		titleOverride,
+		detailHref
 	}: {
 		offer: ListingDisplay;
 		avg30: number | null;
 		onToggleChart?: (listingId: number) => void;
+		// /deals renders one row per product, so the row shows the model name
+		// and links to the product page. The product page passes neither and
+		// keeps the variant-name title with only the outbound retailer link.
+		titleOverride?: string;
+		detailHref?: string;
 	} = $props();
 
 	const retailerLabel = $derived(
 		RETAILER_OPTIONS.find((o) => o.value === offer.retailer)?.label ?? offer.retailer
 	);
 
-	const title = $derived(titleCase(offer.variantName) || `${retailerLabel} listing`);
+	const title = $derived(
+		titleOverride ?? (titleCase(offer.variantName) || `${retailerLabel} listing`)
+	);
 
 	// Null whenever the average is untrustworthy (see MIN_HISTORY_POINTS) or the
 	// offer has no price — the row then states that instead of showing a number.
@@ -37,7 +46,15 @@
 	</div>
 
 	<div class="order-2 min-w-0 flex-1 basis-full sm:basis-auto">
-		<span class="block truncate text-sm font-medium text-text" title={title}>{title}</span>
+		{#if detailHref}
+			<a
+				href={detailHref}
+				class="block truncate text-sm font-medium text-text no-underline hover:underline"
+				title={title}>{title}</a
+			>
+		{:else}
+			<span class="block truncate text-sm font-medium text-text" title={title}>{title}</span>
+		{/if}
 		<span class="flex items-center gap-1.5 text-xs text-text-muted">
 			<BrandIcon brand={offer.brand} size={12} />
 			{offer.brand} · {retailerLabel}
