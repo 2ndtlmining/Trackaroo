@@ -2,6 +2,7 @@
 	import PriceRangeBar from './PriceRangeBar.svelte';
 	import { RETAILER_OPTIONS } from '$lib/filters';
 	import { formatAud, formatPct } from '$lib/formats';
+	import { deltaPresentation } from '$lib/offers';
 	import type { Headline } from '$lib/productHeadline';
 
 	let {
@@ -30,10 +31,13 @@
 			<span class="num text-3xl font-semibold text-text">{formatAud(headline.currentPrice)}</span>
 			<span class="flex flex-wrap items-center gap-x-3 text-sm">
 				{#if headline.vsAvg30Pct !== null}
-					<span class={headline.vsAvg30Pct < 0 ? 'text-down' : 'text-up'}>
-						{headline.vsAvg30Pct < 0 ? '▼' : '▲'}
+					{@const d = deltaPresentation(headline.vsAvg30Pct)}
+					<span class={d.class}>
+						{d.arrow}
 						{formatPct(headline.vsAvg30Pct)} vs 30d avg
 					</span>
+				{:else}
+					<span class="text-text-muted">Not enough history</span>
 				{/if}
 				{#if headline.vsAllTimeLowPct !== null && headline.vsAllTimeLowPct > 0}
 					<span class="text-text-muted">
@@ -49,6 +53,13 @@
 		{/if}
 	{:else}
 		<p class="text-sm text-text-muted">No in-stock listings right now.</p>
+		{#if headline.allTimeLow !== null && headline.allTimeHigh !== null}
+			<p class="text-sm text-text-muted">
+				All-time low <span class="num font-medium text-text">{formatAud(headline.allTimeLow)}</span>
+				<span class="mx-1">·</span>
+				All-time high <span class="num font-medium text-text">{formatAud(headline.allTimeHigh)}</span>
+			</p>
+		{/if}
 	{/if}
 
 	{#if headline.allTimeLow !== null && headline.allTimeHigh !== null && headline.currentPrice !== null}
