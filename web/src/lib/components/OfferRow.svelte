@@ -4,7 +4,7 @@
 	import StockBadge from './StockBadge.svelte';
 	import { RETAILER_OPTIONS } from '$lib/filters';
 	import { formatAud, formatPct, formatRelative, titleCase } from '$lib/formats';
-	import type { ListingDisplay } from '$lib/offers';
+	import { deltaPresentation, deltaVsAvg30, type ListingDisplay } from '$lib/offers';
 
 	let {
 		offer,
@@ -24,11 +24,7 @@
 
 	// Null whenever the average is untrustworthy (see MIN_HISTORY_POINTS) or the
 	// offer has no price — the row then states that instead of showing a number.
-	const deltaPct = $derived(
-		offer.latestPrice !== null && avg30 !== null && avg30 !== 0
-			? ((offer.latestPrice - avg30) / avg30) * 100
-			: null
-	);
+	const deltaPct = $derived(deltaVsAvg30(offer.latestPrice, avg30));
 </script>
 
 <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 hover:bg-surface-hover">
@@ -53,8 +49,9 @@
 
 	<div class="order-3 shrink-0 text-xs">
 		{#if deltaPct !== null}
-			<span class={deltaPct < 0 ? 'text-down' : deltaPct > 0 ? 'text-up' : 'text-text-muted'}>
-				{deltaPct < 0 ? '▼' : deltaPct > 0 ? '▲' : '·'}
+			{@const d = deltaPresentation(deltaPct)}
+			<span class={d.class}>
+				{d.arrow}
 				{formatPct(deltaPct)} vs 30d avg
 			</span>
 		{:else}

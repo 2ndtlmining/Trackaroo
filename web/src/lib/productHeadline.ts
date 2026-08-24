@@ -2,7 +2,7 @@
 // deltas that answer "is now a good time to buy". Separate from offers.ts,
 // which decides which rows to show.
 import { MIN_HISTORY_POINTS } from './constants';
-import type { ListingDisplay } from './offers';
+import { deltaVsAvg30, type ListingDisplay } from './offers';
 import type { PriceBandPoint, ProductStats } from './server/repos';
 
 export interface Headline {
@@ -45,10 +45,7 @@ export function buildHeadline(
 	const avg30 =
 		stats.avg30 !== null && stats.avg30Points >= MIN_HISTORY_POINTS ? stats.avg30 : null;
 
-	const vsAvg30Pct =
-		currentPrice !== null && avg30 !== null && avg30 !== 0
-			? ((currentPrice - avg30) / avg30) * 100
-			: null;
+	const vsAvg30Pct = deltaVsAvg30(currentPrice, avg30);
 
 	const vsAllTimeLowPct =
 		currentPrice !== null && allTimeLow !== null && allTimeLow !== 0

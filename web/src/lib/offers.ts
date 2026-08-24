@@ -19,6 +19,28 @@ export function offerTier(o: ListingDisplay): OfferTier {
 	return o.inStock ? 'in_stock' : 'out_of_stock';
 }
 
+// Percent delta of `price` vs a base (the 30-day average, on both the offer
+// row and the headline). One formula, shared, so the two surfaces can never
+// disagree about the same number — see productHeadline.ts and OfferRow.
+export function deltaVsAvg30(price: number | null, avg30: number | null): number | null {
+	if (price === null || avg30 === null || avg30 === 0) return null;
+	return ((price - avg30) / avg30) * 100;
+}
+
+export interface DeltaPresentation {
+	arrow: '▼' | '▲' | '·';
+	class: 'text-down' | 'text-up' | 'text-text-muted';
+}
+
+// The three-way treatment for a price delta: below average is good (down,
+// green), above is bad (up, red), and exactly zero is neither — it must
+// never render as a rise. Shared by OfferRow and ProductHeadline.
+export function deltaPresentation(pct: number): DeltaPresentation {
+	if (pct < 0) return { arrow: '▼', class: 'text-down' };
+	if (pct > 0) return { arrow: '▲', class: 'text-up' };
+	return { arrow: '·', class: 'text-text-muted' };
+}
+
 // Cheapest in-stock first. Tiers never interleave: an out-of-stock $999 above
 // an in-stock $1,099 would misrepresent what is actually buyable.
 export function sortOffers(offers: ListingDisplay[]): ListingDisplay[] {
@@ -88,6 +110,31 @@ export interface OfferView {
 	stockFilterForcedOff: boolean;
 }
 
+export interface StockFilterResult {
+	offers: ListingDisplay[];
+	// Whether the stock filter actually ran. False when forced off.
+	applied: boolean;
+	// The set has no in-stock offers at all, so the filter was ignored to
+	// avoid rendering an empty page for a product that has prices.
+	forcedOff: boolean;
+}
+
+// Isolates just the stock-only step (not retailer/brand/query). Callers that
+// need "what's actually selectable right now" — the facet chip counts — must
+// see this same subset, or a chip's count promises rows a click can't
+// produce. Also the one place the auto-disable rule is decided, so
+// buildOfferView and the facet counts can never disagree about it.
+export function applyStockFilter(
+	offers: ListingDisplay[],
+	inStockOnly: boolean
+): StockFilterResult {
+	const total = offers.length;
+	const inStockCount = offers.filter((o) => o.inStock).length;
+	const forcedOff = inStockOnly && inStockCount === 0 && total > 0;
+	const applied = inStockOnly && !forcedOff;
+	return { offers: applied ? offers.filter((o) => o.inStock) : offers, applied, forcedOff };
+}
+
 export function buildOfferView(
 	offers: ListingDisplay[],
 	filters: OfferFilters,
@@ -95,9 +142,10 @@ export function buildOfferView(
 ): OfferView {
 	const total = offers.length;
 	const inStockCount = offers.filter((o) => o.inStock).length;
-
-	const stockFilterForcedOff = filters.inStockOnly && inStockCount === 0 && total > 0;
-	const stockFilterApplied = filters.inStockOnly && !stockFilterForcedOff;
+	const { applied: stockFilterApplied, forcedOff: stockFilterForcedOff } = applyStockFilter(
+		offers,
+		filters.inStockOnly
+	);
 
 	const q = filters.query.trim().toLowerCase();
 	// Filter first, then sort, then cap. This order is contractual: filtering

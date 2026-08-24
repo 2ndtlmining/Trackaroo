@@ -2,7 +2,7 @@
 	import FacetChips from './FacetChips.svelte';
 	import OfferRow from './OfferRow.svelte';
 	import { toListingDisplays } from '$lib/listingsPanel';
-	import { buildOfferView, facetCounts, type OfferFilters } from '$lib/offers';
+	import { applyStockFilter, buildOfferView, facetCounts, type OfferFilters } from '$lib/offers';
 	import type { Series } from '$lib/server/repos';
 
 	let {
@@ -31,8 +31,32 @@
 	const offers = $derived(toListingDisplays(series, productBrand, selected));
 	const filters = $derived<OfferFilters>({ inStockOnly, retailer, brand, query });
 	const view = $derived(buildOfferView(offers, filters, expanded));
-	const retailerFacets = $derived(facetCounts(offers, 'retailer'));
-	const brandFacets = $derived(facetCounts(offers, 'brand'));
+
+	// Facet counts reflect the stock-filtered set, not the raw offer list — the
+	// checkbox default hides out-of-stock rows, so a chip's count (and the
+	// "All N" total) must agree with what clicking it actually produces.
+	// Computed independently of the retailer/brand chips themselves so every
+	// chip in a row still shows its own count regardless of which one (if any)
+	// is currently selected.
+	const stockFiltered = $derived(applyStockFilter(offers, inStockOnly).offers);
+	const retailerFacets = $derived(facetCounts(stockFiltered, 'retailer'));
+	const brandFacets = $derived(facetCounts(stockFiltered, 'brand'));
+	const allCount = $derived(stockFiltered.length);
+
+	// A facet row hides itself once it has one option left (FacetChips), which
+	// the stock filter can now trigger. If the chip a visitor had selected is
+	// one that just vanished, the selection must clear too — otherwise the
+	// list stays filtered by a control that is no longer on screen.
+	$effect(() => {
+		if (retailer !== null && !retailerFacets.some((o) => o.value === retailer)) {
+			retailer = null;
+		}
+	});
+	$effect(() => {
+		if (brand !== null && !brandFacets.some((o) => o.value === brand)) {
+			brand = null;
+		}
+	});
 </script>
 
 <div class="overflow-hidden rounded-md border border-border">
@@ -43,7 +67,7 @@
 			label="Retailer"
 			options={retailerFacets}
 			selected={retailer}
-			allCount={offers.length}
+			{allCount}
 			onSelect={(v) => {
 				retailer = v;
 				expanded = false;
@@ -53,7 +77,7 @@
 			label="Brand"
 			options={brandFacets}
 			selected={brand}
-			allCount={offers.length}
+			{allCount}
 			onSelect={(v) => {
 				brand = v;
 				expanded = false;
@@ -76,6 +100,16 @@
 			{/if}
 		</div>
 	</div>
+
+	<!--
+		Chip and checkbox filters re-render the list client-side with no
+		navigation. Sighted users see the rows change; a screen-reader user got
+		no announcement at all, so this states the new result count — same
+		pattern as the aria-live regions on /products and / (+page.svelte).
+	-->
+	<p aria-live="polite" class="sr-only">
+		{view.matched} {view.matched === 1 ? 'offer' : 'offers'} match the current filters.
+	</p>
 
 	{#if view.stockFilterForcedOff}
 		<p class="border-b border-border bg-surface px-3 py-2 text-xs text-text-muted">
