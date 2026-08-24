@@ -433,3 +433,10 @@ class TestRun:
 def os_environ(key):
     import os
     return os.environ.get(key)
+
+def test_retailer_labels_cover_all_six_planned_retailers():
+    """The digest prints raw slugs for any retailer missing a label."""
+    from notify_discord import RETAILER_LABELS
+
+    for slug in ("scorptec", "pccg", "mwave", "umart", "centrecom", "ple"):
+        assert slug in RETAILER_LABELS, f"{slug} would print as a raw slug"

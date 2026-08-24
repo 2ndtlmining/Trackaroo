@@ -7,7 +7,11 @@ export const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
 
 export const RETAILER_OPTIONS: { value: Retailer; label: string }[] = [
 	{ value: 'scorptec', label: 'Scorptec' },
-	{ value: 'pccg', label: 'PCCG' }
+	{ value: 'pccg', label: 'PCCG' },
+	{ value: 'mwave', label: 'MWave' },
+	{ value: 'umart', label: 'Umart' },
+	{ value: 'centrecom', label: 'Centre Com' },
+	{ value: 'ple', label: 'PLE' }
 ];
 
 export const TIER_OPTIONS: { value: GenerationTier; label: string }[] = [

@@ -49,7 +49,16 @@ DOWN_COLOR = 0x34D399  # --down (price decreased — teal/green)
 ALERT_COLOR = 0xFB923C  # orange — pipeline issues
 
 CATEGORY_LABELS = {"cpu": "CPU", "gpu": "GPU"}
-RETAILER_LABELS = {"scorptec": "Scorptec", "pccg": "PCCG", "mwave": "MWave"}
+# All six planned retailers. A slug missing here prints raw in the digest, so
+# labels ship ahead of the scrapers (see docs/ARCHITECTURE.md, six-retailer prep).
+RETAILER_LABELS = {
+    "scorptec": "Scorptec",
+    "pccg": "PCCG",
+    "mwave": "MWave",
+    "umart": "Umart",
+    "centrecom": "Centre Com",
+    "ple": "PLE",
+}
 
 DIGEST_SQL = """
 WITH ranked AS (

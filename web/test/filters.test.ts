@@ -55,15 +55,20 @@ describe('parseFilters', () => {
 	});
 
 	it('accepts every option value from the option lists', () => {
-		for (const opt of [...CATEGORY_OPTIONS, ...RETAILER_OPTIONS, ...TIER_OPTIONS]) {
+		// Dispatch by the list an option came from, not by hardcoded slugs —
+		// the old version sent any unrecognised slug to `tier`, so adding a
+		// retailer made this fail for a reason that had nothing to do with it.
+		const cases: Array<{ key: 'category' | 'retailer' | 'tier'; value: string }> = [
+			...CATEGORY_OPTIONS.map((o) => ({ key: 'category' as const, value: o.value as string })),
+			...RETAILER_OPTIONS.map((o) => ({ key: 'retailer' as const, value: o.value as string })),
+			...TIER_OPTIONS.map((o) => ({ key: 'tier' as const, value: o.value as string }))
+		];
+		for (const { key, value } of cases) {
 			const params = new URLSearchParams();
-			if (opt.value === 'cpu' || opt.value === 'gpu') params.set('category', opt.value);
-			else if (opt.value === 'scorptec' || opt.value === 'pccg')
-				params.set('retailer', opt.value);
-			else params.set('tier', opt.value);
+			params.set(key, value);
 			const parsed = parseFilters(params);
-			const value = parsed.category ?? parsed.retailer ?? parsed.generation_tier;
-			expect(value).toBe(opt.value);
+			const parsedValue = parsed.category ?? parsed.retailer ?? parsed.generation_tier;
+			expect(parsedValue).toBe(value);
 		}
 	});
 });
@@ -134,5 +139,28 @@ describe('hasActiveFilters', () => {
 		expect(hasActiveFilters({ query: '5090' })).toBe(true);
 		expect(hasActiveFilters({ sort: 'price-asc' })).toBe(true);
 		expect(hasActiveFilters({ inStock: true })).toBe(true);
+	});
+});
+
+describe('six-retailer readiness', () => {
+	it('offers all six retailers, Scorptec and PCCG first', () => {
+		expect(RETAILER_OPTIONS.map((o) => o.value)).toEqual([
+			'scorptec',
+			'pccg',
+			'mwave',
+			'umart',
+			'centrecom',
+			'ple'
+		]);
+	});
+
+	it('accepts a new retailer slug from the URL', () => {
+		const filters = parseFilters(new URLSearchParams('retailer=mwave'));
+		expect(filters.retailer).toBe('mwave');
+	});
+
+	it('still rejects an unknown slug', () => {
+		const filters = parseFilters(new URLSearchParams('retailer=nope'));
+		expect(filters.retailer).toBeUndefined();
 	});
 });
