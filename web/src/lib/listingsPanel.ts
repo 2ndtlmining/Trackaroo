@@ -19,19 +19,6 @@ export interface ListingDisplay {
 	selected: boolean;
 }
 
-export interface BrandGroup {
-	brand: string;
-	listings: ListingDisplay[];
-	inStockCount: number;
-	minPrice: number | null;
-	maxPrice: number | null;
-}
-
-export interface PanelFilters {
-	query: string;
-	inStockOnly: boolean;
-}
-
 // One display row per retailer listing, derived from the detail-page series.
 export function toListingDisplays(
 	series: Series[],
@@ -69,56 +56,4 @@ export function priceRange(listings: ListingDisplay[]): { min: number | null; ma
 		if (max === null || l.latestPrice > max) max = l.latestPrice;
 	}
 	return { min, max };
-}
-
-// Groups listings by derived brand, applies the free-text/in-stock filters,
-// and sorts groups cheapest-in-stock first (groups with nothing in stock sink
-// to the end, then alphabetical).
-export function buildBrandGroups(
-	series: Series[],
-	productBrand: string,
-	filters: PanelFilters,
-	selected: ReadonlySet<number>
-): BrandGroup[] {
-	const displays = toListingDisplays(series, productBrand, selected);
-	const q = filters.query.trim().toLowerCase();
-
-	const visible = displays.filter((d) => {
-		if (filters.inStockOnly && !d.inStock) return false;
-		if (q) {
-			const haystack = `${d.variantName ?? ''} ${d.retailer}`.toLowerCase();
-			if (!haystack.includes(q)) return false;
-		}
-		return true;
-	});
-
-	const byBrand = new Map<string, ListingDisplay[]>();
-	for (const d of visible) {
-		const list = byBrand.get(d.brand);
-		if (list) list.push(d);
-		else byBrand.set(d.brand, [d]);
-	}
-
-	const groups: BrandGroup[] = [];
-	for (const [brand, listings] of byBrand) {
-		const { min, max } = priceRange(listings);
-		groups.push({
-			brand,
-			listings,
-			inStockCount: listings.filter((l) => l.inStock).length,
-			minPrice: min,
-			maxPrice: max
-		});
-	}
-
-	groups.sort((a, b) => {
-		if (a.minPrice === null && b.minPrice === null) {
-			return a.brand.localeCompare(b.brand);
-		}
-		if (a.minPrice === null) return 1;
-		if (b.minPrice === null) return -1;
-		return a.minPrice - b.minPrice || a.brand.localeCompare(b.brand);
-	});
-
-	return groups;
 }

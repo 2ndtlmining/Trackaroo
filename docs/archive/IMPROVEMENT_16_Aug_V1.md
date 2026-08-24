@@ -2,13 +2,13 @@
 
 **Status:** Implemented (16-Aug-2026) — all of §3–§9 (spec data + product-page panel) and §10 (PCCG reliability) are built, tested, and shipped. Deviations from this plan are recorded in the "Implementation outcome" section below.
 **Priority:** Additive only. Price tracking remains the site's primary function and nothing in this doc may slow down, block, or risk the daily price pipeline.
-**Audience:** This doc is written so a local model with no other context can implement it directly against the existing Trackaroo repo. It assumes familiarity with README.md, SPEC.md, SCOPE_RULES.md, and DECISIONS.md — read those first if not already loaded.
+**Audience:** This doc is written so a local model with no other context can implement it directly against the existing Trackaroo repo. It assumes familiarity with README.md, ../ARCHITECTURE.md (Part 1), ../ARCHITECTURE.md (Part 2), and ../ARCHITECTURE.md (Part 3) — read those first if not already loaded.
 
 ## Implementation outcome (16-Aug-2026)
 
 All §11 open questions were resolved with the user before/during the build:
 
-- **CPU source:** the plan's Option A (`felixsteinke/cpu-spec-dataset`) was **rejected** — AGPL-3.0 license and missing current-generation parts. Final sources: Intel — `toUpperCase78/intel-processors` raw CSVs on GitHub; AMD — first-party `amd.com` product pages (polite fetch, browser user-agent, 1s delay). Rationale in DECISIONS.md.
+- **CPU source:** the plan's Option A (`felixsteinke/cpu-spec-dataset`) was **rejected** — AGPL-3.0 license and missing current-generation parts. Final sources: Intel — `toUpperCase78/intel-processors` raw CSVs on GitHub; AMD — first-party `amd.com` product pages (polite fetch, browser user-agent, 1s delay). Rationale in ../ARCHITECTURE.md (Part 3).
 - **Matching:** exact normalized matching only — no fuzzy layer was needed. Coverage against the real watchlist: Intel 25/25, AMD 24/28 (4 OEM-only SKUs have no public page, by design), GPU 46/47 (RX 9070 XTX is absent from the dataset, by design).
 - **One `specs` row per canonical product** (chip level, not per AIB variant), as recommended in §11.3.
 - **Circuit breaker / cooldown:** 3 consecutive failed batches trips the breaker (`TRACKAROO_ALGOLIA_CIRCUIT_BREAKER`), 4-hour cooldown (`TRACKAROO_PCCG_COOLDOWN_HOURS`) — both env-tunable per §11.4.
@@ -94,7 +94,7 @@ CREATE TABLE specs (
 ```
 
 Notes:
-- `core_count` is intentionally shared between GPU shading-unit count and CPU physical-core count rather than having two columns — document this clearly in SPEC.md if adopted, or split into `gpu_core_count` / `cpu_core_count` if that reads as too overloaded. Local model's call; either is fine, but pick one and be consistent with naming elsewhere in schema.sql.
+- `core_count` is intentionally shared between GPU shading-unit count and CPU physical-core count rather than having two columns — document this clearly in ../ARCHITECTURE.md (Part 1) if adopted, or split into `gpu_core_count` / `cpu_core_count` if that reads as too overloaded. Local model's call; either is fine, but pick one and be consistent with naming elsewhere in schema.sql.
 - `raw_json` exists so that when you want a new field later (e.g. RT core count, PCIe gen) you don't need a schema migration to get at it — it's already in the row. Extract it into a proper column only once you're using it in a query, not speculatively.
 - No foreign key to `retailer_listings` or `price_snapshots`. Specs describe the canonical product, not a retailer's page for it.
 
@@ -200,7 +200,7 @@ Some tracked products won't have a confident match (§4.2 step 7). In that case 
 
 - `run_daily.py`, the scraper modules, `ingest.py`, `health_checks.py` — no modifications.
 - `price_snapshots` / `retailer_listings` schema — no modifications.
-- `watchlist.csv` / `SCOPE_RULES.md` generation-window rule — out of scope for this doc. (A follow-up idea, discussed separately, is using the spec dataset to auto-suggest watchlist changes when a new generation launches — deliberately not included here; this doc is scoped to spec display only, not scope automation, to keep this change reviewable and low-risk.)
+- `watchlist.csv` / `../ARCHITECTURE.md` (Part 2) generation-window rule — out of scope for this doc. (A follow-up idea, discussed separately, is using the spec dataset to auto-suggest watchlist changes when a new generation launches — deliberately not included here; this doc is scoped to spec display only, not scope automation, to keep this change reviewable and low-risk.)
 - Main price list / index page — no new joins, no new columns rendered there.
 
 ## 9. Rollout order
@@ -209,7 +209,7 @@ Some tracked products won't have a confident match (§4.2 step 7). In that case 
 2. Build `sync_specs.py` for GPU only first (source already decided), get matching working and validated against the real watchlist, with tests.
 3. Add CPU to `sync_specs.py` once the source is confirmed.
 4. Ship the product-page spec panel (§7) once spec data exists in the DB for a meaningful share of tracked products.
-5. Update README.md's documentation-reading-order / data-sources section and DECISIONS.md with the rationale captured in this doc (GitHub-JSON-over-scraping, decoupled weekly sync, no-overwrite matching).
+5. Update README.md's documentation-reading-order / data-sources section and ../ARCHITECTURE.md (Part 3) with the rationale captured in this doc (GitHub-JSON-over-scraping, decoupled weekly sync, no-overwrite matching).
 
 ## 10. PCCG reliability — fixing the recurring 429 hard-rate-limit issue
 

@@ -1,5 +1,5 @@
 """
-Tests for the PCCG reliability fixes (IMPROVEMENT_16_Aug_V1.md §10/11.1–11.6).
+Tests for the PCCG reliability fixes (docs/archive/IMPROVEMENT_16_Aug_V1.md §10/11.1–11.6).
 
 Covers:
 - Infinite-loop fix: retries exhausted on 429 must terminate (not loop forever)

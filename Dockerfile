@@ -1,15 +1,27 @@
 # Trackaroo — all-in-one image (Python pipeline + SvelteKit dashboard).
 #
+# One container runs everything: it serves the dashboard on :3000 and runs the
+# daily scrape → ingest → mirror → health-check → backup pipeline. There is no
+# docker-compose — plain `docker run` is the supported way to run this.
+#
 # Build from the repo root (not web/):
 #   docker build -t trackaroo .
-# Run:
-#   docker run -d --name trackaroo -p 3000:3000 \
-#     -v trackaroo-data:/data \
-#     trackaroo
 #
-# The single runtime container seeds/uses the SQLite DB in /data, serves the
-# dashboard on :3000, and runs the scrape→ingest→backup pipeline every
-# RUN_INTERVAL_HOURS (default 24). No docker-compose required.
+# Run, mapping the DB and snapshots onto the host so data outlives the
+# container (bash/Linux; see README.md for the PowerShell form):
+#   docker run -d --name trackaroo -p 3000:3000 --restart unless-stopped --env-file .env -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" trackaroo
+#
+# Those two mounts matter: without them the SQLite DB and the JSON snapshots
+# live in the container's writable layer and are destroyed by `docker rm`.
+#
+# One-shot pipeline run (no scheduler; exits when the run finishes):
+#   docker run --rm -e RUN_ONCE=1 -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" trackaroo
+#
+# Pipeline only, no dashboard (override the entrypoint):
+#   docker run -d --name trackaroo-pipeline -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" --entrypoint /usr/bin/tini trackaroo -- /usr/local/bin/trackaroo-entrypoint-pipeline
+#
+# Dashboard only, no pipeline:
+#   docker run -d --name trackaroo-web -p 3000:3000 -v "$(pwd)/db:/app/db" --entrypoint /usr/bin/tini trackaroo -- node web/build/index.js
 
 # ── Stage 1: build the SvelteKit frontend ──────────────────────────────────
 FROM node:24-bookworm-slim AS web
@@ -33,20 +45,24 @@ FROM python:3.12-slim
 
 # Tini gives the container a sane init; bash keeps the entrypoint simple.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tini bash \
+    && apt-get install -y --no-install-recommends tini bash tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Node runtime binary (matchest the node:24 stage the frontend was built with).
 COPY --from=web /usr/local/bin/node /usr/local/bin/node
 
+# TZ matters for correctness, not cosmetics: the scrapers stamp snapshots with
+# date.today(), so a UTC container running at 07:40 AEST would file the data
+# under the previous day and silently fork the history.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
-    TRACKAROO_DATA_DIR=/data \
-    TRACKAROO_DB=/data/trackaroo.db \
-    TRACKAROO_BACKUP_DIR=/data/backups
+    TZ=Australia/Melbourne \
+    TRACKAROO_DATA_DIR=/app/data \
+    TRACKAROO_DB=/app/db/trackaroo.db \
+    TRACKAROO_BACKUP_DIR=/app/db/backups
 
 WORKDIR /app
 
@@ -69,8 +85,9 @@ COPY --from=web /app/web/build ./web/build
 COPY --from=web /app/web/package.json ./web/package.json
 COPY --from=web /app/web/svelte.config.js ./web/svelte.config.js
 
-# The DB lives on a mounted volume; the code just needs the dir to exist.
-RUN mkdir -p /data
+# db/ and data/ are bind-mounted (or volume-mounted) at runtime; the code just
+# needs the dirs to exist so an unmounted `docker run` still works.
+RUN mkdir -p /app/db/backups /app/data
 
 EXPOSE 3000
 

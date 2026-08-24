@@ -107,13 +107,6 @@ export function getDb(): DB {
 	return cached;
 }
 
-export function closeDb(): void {
-	if (cached) {
-		cached.close();
-		cached = null;
-	}
-}
-
 // The dashboard is read-only by default (getDb), but user actions such as
 // arming a price alert need to write. This is a separate read-write connection
 // to the same file — WAL mode keeps it safe alongside the read connection and
@@ -127,11 +120,4 @@ export function getWriteDb(): DB {
 		writeCached = openDatabase(file, { readonly: false, fileMustExist: true });
 	}
 	return writeCached;
-}
-
-export function closeWriteDb(): void {
-	if (writeCached) {
-		writeCached.close();
-		writeCached = null;
-	}
 }

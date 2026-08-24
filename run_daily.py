@@ -27,12 +27,25 @@ from typing import Any, Dict, List, Optional
 from config import (
     BACKUP_KEEP,
     DATA_DIR,
+    DB_DATE_FORMAT,
     DB_PATH,
     FILE_DATE_FORMAT,
     SCRAPER_GAP_SECONDS,
     SCRAPER_TIMEOUT_SECONDS,
+    setup_logging,
 )
-from health_checks import CheckResult, check_db_freshness, check_json_files, check_match_count_anomalies, check_today_coverage
+from health_checks import (
+    CheckResult,
+    check_db_freshness,
+    check_json_db_parity,
+    check_json_files,
+    check_match_count_anomalies,
+    check_missing_days,
+    check_scraper_cooldown,
+    check_price_anomalies,
+    check_spec_coverage,
+    check_today_coverage,
+)
 from ingest import init_db
 
 LOGGER = logging.getLogger(__name__)
@@ -153,10 +166,7 @@ def notify_enabled(args: argparse.Namespace) -> bool:
 
 
 def main(argv: Optional[List[str]] = None) -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    setup_logging()
     parser = argparse.ArgumentParser(description="Daily scrape-and-ingest runner")
     parser.add_argument("--scorptec", action="store_true", help="Only run Scorptec scraper")
     parser.add_argument("--pccg", action="store_true", help="Only run PCCG scraper")
@@ -227,6 +237,27 @@ def main(argv: Optional[List[str]] = None) -> None:
     finally:
         conn.close()
 
+    # ── Mirror the DB back out to JSON ──────────────────────────────
+    # data/*.json is the backup the DB is rebuilt from, so it must hold every
+    # snapshot the DB does. A scrape that partially fails (or one whose result
+    # was diverted by the no-downgrade guard in scraper/snapshot_io.py) leaves
+    # JSON short. Re-exporting today's date from the DB closes that gap on
+    # every run, so the invariant "JSON can rebuild the DB" always holds.
+    # Best-effort: a mirror failure must never break the daily run.
+    if not args.dry_run:
+        try:
+            from export_snapshots import run as run_export
+            totals = run_export(dates=[date.today().strftime(DB_DATE_FORMAT)],
+                                repair_only=True)
+            if totals["recovered"]:
+                LOGGER.warning(
+                    "JSON backup was short by %d snapshot(s) — repaired %d file(s).",
+                    totals["recovered"], totals["written"],
+                )
+        except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
+            LOGGER.error("JSON mirror failed: %s", e)
+
+
     # ── Health check: validate DB state after ingestion ───
     db_results: List[CheckResult] = []
     if not args.no_health and not args.scrape_only:
@@ -234,6 +265,11 @@ def main(argv: Optional[List[str]] = None) -> None:
             check_db_freshness(DB_PATH)
             + check_today_coverage(DB_PATH)
             + check_match_count_anomalies(DB_PATH)
+            + check_price_anomalies(DB_PATH)
+            + check_spec_coverage(DB_PATH)
+            + check_json_db_parity(db_path=DB_PATH)
+            + check_missing_days(DB_PATH)
+            + check_scraper_cooldown()
         )
         _report_results(db_results, "DB validation")
 
@@ -274,6 +310,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             f"- Scraper **{name.title()}** failed" for name, ok in results.items() if not ok
         ]
         alert_lines += [f"- Health check error: {r}" for r in failed]
+        # A missed run leaves no other trace, so surface calendar gaps too.
+        alert_lines += [
+            f"- {r.message}"
+            for r in db_results
+            if r.check_name == "missing_days" and r.status == CheckResult.WARNING
+        ]
         if alert_lines:
             send_alert(alert_lines)
 

@@ -10,11 +10,15 @@ import Chip from '../src/lib/components/Chip.svelte';
 import LatestListingTable from '../src/lib/components/LatestListingTable.svelte';
 import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
-import BrandGroupedListings from '../src/lib/components/BrandGroupedListings.svelte';
-	import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
-	import Sparkline from '../src/lib/components/Sparkline.svelte';
-	import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint } from '../src/lib/server/repos';
+import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
+import Sparkline from '../src/lib/components/Sparkline.svelte';
+import OfferRow from '../src/lib/components/OfferRow.svelte';
+import FacetChips from '../src/lib/components/FacetChips.svelte';
+import OfferList from '../src/lib/components/OfferList.svelte';
+import { offer as offerRow } from './helpers/offers';
+import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
+import type { Retailer } from '../src/lib/types';
 
 function renderComponent(Component: unknown, props: Record<string, unknown> = {}): string {
 	const target = document.createElement('div');
@@ -531,166 +535,6 @@ describe('CommandPalette', () => {
 	});
 });
 
-function snapshot(date: string, price: number, stock: string): SnapshotRow {
-	return {
-		id: 1,
-		retailer_listing_id: 1,
-		snapshot_date: date,
-		price_aud: price,
-		stock_status: stock as SnapshotRow['stock_status'],
-		scraped_at: `${date}T04:00:00.000Z`
-	};
-}
-
-function listingSeries(id: number, variant: string, points: SnapshotRow[]): Series {
-	const listing: ListingRow = {
-		id,
-		product_id: 1,
-		retailer: 'scorptec',
-		variant_name: variant,
-		retailer_sku: null,
-		listing_url: `https://example.com/${id}`,
-		status: 'active',
-		first_seen_at: '2026-08-09T04:00:00.000Z',
-		last_seen_at: '2026-08-17T04:00:00.000Z',
-		last_snapshot_at: '2026-08-17T04:00:00.000Z'
-	};
-	return { listing, points };
-}
-
-const BGL_SERIES = [
-	listingSeries(1, 'MSI GeForce RTX 5060 Ventus 2X OC 8GB', [
-		snapshot('2026-08-17', 619, 'in_stock')
-	]),
-	listingSeries(2, 'MSI GeForce RTX 5060 Shadow 2X OC 8GB', [
-		snapshot('2026-08-17', 635, 'out_of_stock')
-	]),
-	listingSeries(3, 'Gigabyte GeForce RTX 5060 Windforce OC 8GB', [
-		snapshot('2026-08-17', 649, 'in_stock')
-	])
-];
-
-describe('BrandGroupedListings', () => {
-	it('renders group headers with price ranges and in-stock counts', () => {
-		const body = renderComponent(BrandGroupedListings, {
-			series: BGL_SERIES,
-			productBrand: 'NVIDIA',
-			selected: new Set<number>(),
-			onToggleListing: () => {}
-		});
-		expect(body).toContain('Retailer listings');
-		expect(body).toContain('MSI · $619–$635 · 2 listings · 1 in stock');
-		expect(body).toContain('Gigabyte · $649 · 1 listing · 1 in stock');
-	});
-
-	it('shows the expand/collapse-all control when more than one group exists', () => {
-		const body = renderComponent(BrandGroupedListings, {
-			series: BGL_SERIES,
-			productBrand: 'NVIDIA',
-			selected: new Set<number>(),
-			onToggleListing: () => {}
-		});
-		expect(body).toContain('Expand all');
-	});
-
-	it('keeps listing rows collapsed by default', () => {
-		const body = renderComponent(BrandGroupedListings, {
-			series: BGL_SERIES,
-			productBrand: 'NVIDIA',
-			selected: new Set<number>(),
-			onToggleListing: () => {}
-		});
-		// Rows stay mounted for the height transition but collapse to 0fr
-		expect(body).toContain('grid-rows-[0fr]');
-		expect(body).not.toContain('grid-rows-[1fr]');
-	});
-
-	it('expands a group on header click and animates the listing rows in', async () => {
-		const target = document.createElement('div');
-		const comp = mount(BrandGroupedListings, {
-			target,
-			props: { series: BGL_SERIES, productBrand: 'NVIDIA', selected: new Set<number>(), onToggleListing: () => {} }
-		});
-		(target.querySelector('button[aria-expanded]') as HTMLElement).click();
-		await tick();
-		expect(target.innerHTML).toContain('grid-rows-[1fr]');
-		expect(target.innerHTML).toContain('Ventus');
-		expect(target.innerHTML).toContain('Show on chart');
-		unmount(comp);
-	});
-
-	it('expands and collapses every group with the bulk controls', async () => {
-		const target = document.createElement('div');
-		const comp = mount(BrandGroupedListings, {
-			target,
-			props: { series: BGL_SERIES, productBrand: 'NVIDIA', selected: new Set<number>(), onToggleListing: () => {} }
-		});
-		const clickButton = (label: string) => {
-			([...target.querySelectorAll('button')]
-				.find((b) => b.textContent === label) as HTMLButtonElement).click();
-		};
-		clickButton('Expand all');
-		await tick();
-		expect(target.querySelectorAll('button[aria-expanded="true"]').length).toBe(2);
-		expect((target.innerHTML.match(/grid-rows-\[1fr\]/g) ?? []).length).toBe(2);
-		clickButton('Collapse all');
-		await tick();
-		expect(target.querySelectorAll('button[aria-expanded="true"]').length).toBe(0);
-		expect((target.innerHTML.match(/grid-rows-\[1fr\]/g) ?? []).length).toBe(0);
-		unmount(comp);
-	});
-
-	it('filters groups via the search input', async () => {
-		const target = document.createElement('div');
-		const comp = mount(BrandGroupedListings, {
-			target,
-			props: { series: BGL_SERIES, productBrand: 'NVIDIA', selected: new Set<number>(), onToggleListing: () => {} }
-		});
-		const input = target.querySelector('input[aria-label="Filter listings by name"]') as HTMLInputElement;
-		input.value = 'windforce';
-		input.dispatchEvent(new Event('input'));
-		await tick();
-		expect(target.innerHTML).toContain('Gigabyte · $649 · 1 listing · 1 in stock');
-		expect(target.innerHTML).not.toContain('MSI');
-		unmount(comp);
-	});
-
-	it('shows the empty state when no listings match', async () => {
-		const target = document.createElement('div');
-		const comp = mount(BrandGroupedListings, {
-			target,
-			props: { series: BGL_SERIES, productBrand: 'NVIDIA', selected: new Set<number>(), onToggleListing: () => {} }
-		});
-		const input = target.querySelector('input[aria-label="Filter listings by name"]') as HTMLInputElement;
-		input.value = 'does-not-exist';
-		input.dispatchEvent(new Event('input'));
-		await tick();
-		expect(target.innerHTML).toContain('No listings match the current filters.');
-		// Matches the standard empty-state panel treatment used elsewhere
-		expect(target.innerHTML).toContain('rounded-md border border-border bg-surface px-4 py-8');
-		unmount(comp);
-	});
-
-	it('calls onToggleListing with the listing id when toggling onto the chart', async () => {
-		const target = document.createElement('div');
-		const onToggleListing = vi.fn();
-		const comp = mount(BrandGroupedListings, {
-			target,
-			props: {
-				series: BGL_SERIES,
-				productBrand: 'NVIDIA',
-				selected: new Set<number>(),
-				onToggleListing
-			}
-		});
-		(target.querySelector('button[aria-expanded]') as HTMLElement).click();
-		await tick();
-		(target.querySelectorAll('button[aria-pressed]')[0] as HTMLButtonElement).click();
-		expect(onToggleListing).toHaveBeenCalledWith(1);
-		unmount(comp);
-	});
-});
-
 function cheapestListing(overrides: Partial<CheapestListing> = {}): CheapestListing {
 	return {
 		productId: 1,
@@ -786,5 +630,411 @@ describe('Sparkline', () => {
 	it('labels the trend with the start and end prices', () => {
 		const body = renderComponent(Sparkline, { points: sparkline([299, 330]) });
 		expect(body).toContain('$299 → $330');
+	});
+});
+
+describe('OfferRow', () => {
+	it('shows the price, brand and retailer on every row', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).toContain('$1,299');
+		expect(html).toContain('ASUS');
+		expect(html).toContain('Scorptec');
+	});
+
+	it('links out to the retailer with a safe target', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).toContain('href="https://example.com/1"');
+		expect(html).toContain('rel="noopener noreferrer"');
+	});
+
+	it('shows a down-arrow delta with a signed number when below the 30-day average', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow({ latestPrice: 1288 }), avg30: 1400 });
+		expect(html).toContain('▼');
+		expect(html).toContain('vs 30d avg');
+	});
+
+	it('shows an up arrow when above the average', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow({ latestPrice: 1500 }), avg30: 1400 });
+		expect(html).toContain('▲');
+	});
+
+	it('renders a flat price as neutral, never a rise — no arrow, no directional colour', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow({ latestPrice: 189 }), avg30: 189 });
+		expect(html).not.toContain('▲');
+		expect(html).not.toContain('▼');
+		expect(html).not.toContain('text-up');
+		expect(html).not.toContain('text-down');
+		expect(html).toContain('·');
+		expect(html).toContain('vs 30d avg');
+	});
+
+	it('says so plainly when there is not enough history, rather than showing a number', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: null });
+		expect(html).toContain('Not enough history');
+		expect(html).not.toContain('vs 30d avg');
+	});
+
+	it('marks a delisted offer and omits its stock badge', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow({ delisted: true, inStock: false }),
+			avg30: 1400
+		});
+		expect(html).toContain('Delisted');
+	});
+
+	it('renders no price for an offer that has never had one', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow({ latestPrice: null, inStock: false, latestStock: 'unknown' }),
+			avg30: 1400
+		});
+		expect(html).toContain('—');
+	});
+});
+
+describe('FacetChips', () => {
+	const twoOptions = [
+		{ value: 'scorptec', label: 'Scorptec', count: 4 },
+		{ value: 'pccg', label: 'PCCG', count: 3 }
+	];
+
+	it('renders a chip per option with its count, plus an All chip', () => {
+		const html = renderComponent(FacetChips, {
+			label: 'Retailer',
+			options: twoOptions,
+			selected: null,
+			allCount: 7,
+			onSelect: () => {}
+		});
+		expect(html).toContain('Scorptec');
+		expect(html).toContain('4');
+		expect(html).toContain('All');
+	});
+
+	it('renders nothing when there is only one value to choose from', () => {
+		const html = renderComponent(FacetChips, {
+			label: 'Brand',
+			options: [{ value: 'ASUS', label: 'ASUS', count: 5 }],
+			selected: null,
+			allCount: 5,
+			onSelect: () => {}
+		});
+		expect(html.replace(/<!--.*?-->/g, '').trim()).toBe('');
+	});
+
+	it('renders nothing for no options', () => {
+		const html = renderComponent(FacetChips, {
+			label: 'Brand',
+			options: [],
+			selected: null,
+			allCount: 0,
+			onSelect: () => {}
+		});
+		expect(html.replace(/<!--.*?-->/g, '').trim()).toBe('');
+	});
+
+	it('marks the selected chip with aria-pressed for assistive tech', () => {
+		const html = renderComponent(FacetChips, {
+			label: 'Retailer',
+			options: twoOptions,
+			selected: 'pccg',
+			allCount: 7,
+			onSelect: () => {}
+		});
+		expect(html).toContain('aria-pressed="true"');
+	});
+});
+
+function snap(date: string, price: number, stock: string): SnapshotRow {
+	return {
+		id: 1,
+		retailer_listing_id: 1,
+		snapshot_date: date,
+		price_aud: price,
+		stock_status: stock as SnapshotRow['stock_status'],
+		scraped_at: `${date}T04:00:00.000Z`
+	};
+}
+
+function ser(
+	id: number,
+	variant: string,
+	price: number,
+	stock = 'in_stock',
+	retailer: Retailer = 'scorptec'
+): Series {
+	const listing: ListingRow = {
+		id,
+		product_id: 1,
+		retailer,
+		variant_name: variant,
+		retailer_sku: `SKU${id}`,
+		listing_url: `https://example.com/${id}`,
+		status: 'active',
+		first_seen_at: '2026-03-12T04:00:00.000Z',
+		last_seen_at: '2026-08-23T04:00:00.000Z',
+		last_snapshot_at: '2026-08-23T04:00:00.000Z'
+	};
+	return { listing, points: [snap('2026-08-23', price, stock)] };
+}
+
+describe('OfferList', () => {
+	const base = {
+		productBrand: 'NVIDIA',
+		avg30: 1400,
+		selected: new Set<number>(),
+		onToggleListing: () => {}
+	};
+
+	it('shows at most 8 offers and an expander stating the true total', () => {
+		const series = Array.from({ length: 12 }, (_, i) =>
+			ser(i + 1, `ASUS Card ${i + 1}`, 1000 + i)
+		);
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).toContain('Show all 12 offers');
+	});
+
+	it('renders no expander when there are 8 or fewer offers', () => {
+		const series = Array.from({ length: 8 }, (_, i) => ser(i + 1, `ASUS Card ${i + 1}`, 1000 + i));
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).not.toContain('Show all');
+	});
+
+	it('defaults to in-stock only and says what it is hiding', () => {
+		const series = [
+			ser(1, 'ASUS In Stock', 1299, 'in_stock'),
+			ser(2, 'ASUS Sold Out', 999, 'out_of_stock')
+		];
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).toContain('1 of 2');
+		expect(html).toContain('ASUS In Stock');
+		expect(html).not.toContain('ASUS Sold Out');
+	});
+
+	it('shows everything when nothing is in stock, rather than an empty list', () => {
+		const series = [
+			ser(1, 'ASUS Sold Out', 1299, 'out_of_stock'),
+			ser(2, 'MSI Sold Out', 1199, 'out_of_stock')
+		];
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).toContain('ASUS Sold Out');
+		expect(html).toContain('MSI Sold Out');
+	});
+
+	it('puts the cheapest in-stock offer first', () => {
+		const series = [ser(1, 'ASUS Pricey', 1499), ser(2, 'MSI Cheap', 1099)];
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html.indexOf('MSI Cheap')).toBeLessThan(html.indexOf('ASUS Pricey'));
+	});
+
+	it('renders an empty state when there are no listings at all', () => {
+		const html = renderComponent(OfferList, { ...base, series: [] });
+		expect(html).toContain('No listings');
+	});
+
+	it('computes facet counts and the "All" count over the stock-filtered set, not the raw list', () => {
+		const series = [
+			ser(1, 'ASUS PCCG A', 700, 'in_stock', 'pccg'),
+			ser(2, 'ASUS PCCG B', 710, 'in_stock', 'pccg'),
+			ser(3, 'MSI SCT A', 690, 'in_stock', 'scorptec'),
+			ser(4, 'MSI SCT B', 695, 'out_of_stock', 'scorptec'),
+			ser(5, 'MSI SCT C', 699, 'out_of_stock', 'scorptec')
+		];
+		const html = renderComponent(OfferList, { ...base, series });
+		// 3 in stock (2 pccg + 1 scorptec); the two out-of-stock rows are
+		// hidden by the default filter and must not inflate the counts, or a
+		// chip's count promises rows a click on it cannot produce.
+		expect(html).toMatch(/All\s*<span class="num">3<\/span>/);
+		expect(html).toMatch(/PCCG\s*<span class="num">2<\/span>/);
+		expect(html).toMatch(/Scorptec\s*<span class="num">1<\/span>/);
+	});
+
+	it('never offers a facet chip for a retailer with zero in-stock offers — clicking it would dead-end into an empty list', () => {
+		const series = [
+			ser(1, 'ASUS PCCG A', 700, 'in_stock', 'pccg'),
+			ser(2, 'ASUS PCCG B', 710, 'in_stock', 'pccg'),
+			ser(3, 'ASUS PCCG C', 720, 'in_stock', 'pccg'),
+			ser(4, 'MSI SCT A', 690, 'out_of_stock', 'scorptec'),
+			ser(5, 'MSI SCT B', 695, 'out_of_stock', 'scorptec')
+		];
+		const html = renderComponent(OfferList, { ...base, series });
+		// All PCCG offers are in stock and all Scorptec offers are not — with
+		// the default in-stock-only filter there is only one retailer left to
+		// choose from, so the whole facet row hides itself rather than
+		// offering a "Scorptec" chip that renders no rows when clicked.
+		expect(html).not.toContain('Scorptec');
+	});
+
+	it('resets a selected chip when its facet option disappears, rather than leaving the list filtered by an invisible control', async () => {
+		const series = [
+			ser(1, 'ASUS PCCG A', 700, 'in_stock', 'pccg'),
+			ser(2, 'ASUS PCCG B', 710, 'in_stock', 'pccg'),
+			ser(3, 'ASUS PCCG C', 720, 'in_stock', 'pccg'),
+			ser(4, 'MSI SCT A', 690, 'out_of_stock', 'scorptec'),
+			ser(5, 'MSI SCT B', 695, 'out_of_stock', 'scorptec'),
+			ser(6, 'MSI SCT C', 699, 'out_of_stock', 'scorptec')
+		];
+		const target = document.createElement('div');
+		const comp = mount(OfferList, { target, props: { ...base, series } });
+
+		// Turn the stock filter off so both retailer chips are visible.
+		const checkbox = target.querySelector('input[type="checkbox"]') as HTMLInputElement;
+		checkbox.checked = false;
+		checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+		await tick();
+
+		const scorptecChip = Array.from(target.querySelectorAll('button')).find((b) =>
+			b.textContent?.trim().startsWith('Scorptec')
+		) as HTMLButtonElement;
+		expect(scorptecChip).toBeTruthy();
+		scorptecChip.click();
+		await tick();
+		expect(scorptecChip.getAttribute('aria-pressed')).toBe('true');
+
+		// Turn the stock filter back on: every Scorptec offer is out of stock,
+		// so the Scorptec chip — and the whole facet row — disappears. The
+		// reset effect fires off the back of that render, so give it a second
+		// tick to settle.
+		checkbox.checked = true;
+		checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+		await tick();
+		await tick();
+
+		expect(target.innerHTML).not.toContain('No listings match the current filters');
+		expect(target.innerHTML).toContain('ASUS PCCG A');
+
+		unmount(comp);
+	});
+
+	it('announces the visible offer count via aria-live when filters change', () => {
+		const series = [ser(1, 'ASUS A', 700, 'in_stock'), ser(2, 'ASUS B', 710, 'in_stock')];
+		const html = renderComponent(OfferList, { ...base, series });
+		expect(html).toMatch(/aria-live="polite"[^>]*>\s*2\s*offers match the current filters\./);
+	});
+});
+
+import PriceRangeBar from '../src/lib/components/PriceRangeBar.svelte';
+
+describe('PriceRangeBar', () => {
+	it('describes itself in words for assistive tech', () => {
+		const html = renderComponent(PriceRangeBar, {
+			low: 1249,
+			high: 1689,
+			current: 1469,
+			position: 0.5
+		});
+		expect(html).toContain('role="img"');
+		// Verify aria-label specifically contains all three prices in the correct order
+		// (current, then low, then high) as specified in the component
+		expect(html).toMatch(/aria-label="[^"]*\$1,469[^"]*\$1,249[^"]*\$1,689[^"]*"/);
+	});
+
+	it('places the marker at the given position', () => {
+		const html = renderComponent(PriceRangeBar, {
+			low: 1000,
+			high: 2000,
+			current: 1250,
+			position: 0.25
+		});
+		expect(html).toContain('25%');
+	});
+
+	it('degrades to a plain text line when a bar would be meaningless', () => {
+		const html = renderComponent(PriceRangeBar, {
+			low: 1299,
+			high: 1299,
+			current: 1299,
+			position: null
+		});
+		expect(html).not.toContain('role="img"');
+		expect(html).toContain('$1,299');
+	});
+});
+
+import ProductHeadline from '../src/lib/components/ProductHeadline.svelte';
+import type { Headline } from '../src/lib/productHeadline';
+
+function headline(overrides: Partial<Headline> = {}): Headline {
+	return {
+		currentPrice: 1299,
+		currentRetailer: 'scorptec',
+		allTimeLow: 1249,
+		allTimeHigh: 1689,
+		avg30: 1400,
+		vsAvg30Pct: -7.2,
+		vsAllTimeLowPct: 4.0,
+		rangePosition: 0.11,
+		...overrides
+	};
+}
+
+describe('ProductHeadline', () => {
+	const base = { listingCount: 6, snapshotCount: 47, span: '12 Mar – 23 Aug 2026' };
+
+	it('leads with the current cheapest price and its retailer', () => {
+		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
+		expect(html).toContain('$1,299');
+		expect(html).toContain('Scorptec');
+	});
+
+	it('shows both deltas with arrows, not colour alone', () => {
+		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
+		expect(html).toContain('▼');
+		expect(html).toContain('vs 30d avg');
+		expect(html).toContain('above all-time low');
+		// Verify actual percentages match the fixture values (not hardcoded)
+		expect(html).toContain('−7.2%');
+		expect(html).toContain('+4.0%');
+	});
+
+	it('demotes provenance to one muted line', () => {
+		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
+		expect(html).toContain('6 listings');
+		expect(html).toContain('47 snapshots');
+		expect(html).toContain('12 Mar – 23 Aug 2026');
+	});
+
+	it('says there is no in-stock price rather than printing a bare dash', () => {
+		const html = renderComponent(ProductHeadline, {
+			headline: headline({ currentPrice: null, currentRetailer: null, rangePosition: null }),
+			...base
+		});
+		expect(html).toContain('No in-stock listings');
+	});
+
+	it('still shows the all-time low and high when nothing is in stock', () => {
+		const html = renderComponent(ProductHeadline, {
+			headline: headline({ currentPrice: null, currentRetailer: null, rangePosition: null }),
+			...base
+		});
+		expect(html).toContain('No in-stock listings');
+		expect(html).toContain('$1,249');
+		expect(html).toContain('$1,689');
+		// The range bar needs a current position to place its marker, so it
+		// must stay hidden — but the two figures must not vanish with it.
+		expect(html).not.toContain('role="img"');
+	});
+
+	it('says so plainly, rather than going silent, when history is too thin for the 30-day delta', () => {
+		const html = renderComponent(ProductHeadline, {
+			headline: headline({ avg30: null, vsAvg30Pct: null }),
+			...base
+		});
+		expect(html).not.toContain('vs 30d avg');
+		expect(html).toContain('Not enough history');
+	});
+
+	it('renders a flat price as neutral, never a rise — no arrow, no directional colour', () => {
+		const html = renderComponent(ProductHeadline, {
+			// vsAllTimeLowPct nulled out — it renders its own unrelated arrow —
+			// so this test isolates the vs-30d-avg delta this fix is about.
+			headline: headline({ vsAvg30Pct: 0, vsAllTimeLowPct: null }),
+			...base
+		});
+		expect(html).not.toContain('▲');
+		expect(html).not.toContain('▼');
+		expect(html).not.toContain('class="text-up"');
+		expect(html).not.toContain('class="text-down"');
+		expect(html).toContain('0.0%');
+		expect(html).toContain('vs 30d avg');
 	});
 });

@@ -52,6 +52,15 @@
 		<div class="mb-3">
 			<Filters brands={data.brands} />
 		</div>
+		<!--
+			Changing a filter re-renders the table via a server round-trip. Sighted
+			users see the rows change; a screen-reader user got no announcement at
+			all, so this states the new result count.
+		-->
+		<p aria-live="polite" class="sr-only">
+			{data.listings.length}
+			{data.listings.length === 1 ? 'listing' : 'listings'} match the current filters.
+		</p>
 		<LatestListingTable rows={data.listings} />
 	</div>
 </div>

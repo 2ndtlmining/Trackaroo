@@ -50,6 +50,15 @@
 		<div class="mb-3">
 			<Filters brands={data.brands} />
 		</div>
+		<!--
+			Changing a filter re-renders the grid via a server round-trip. Sighted
+			users see the cards change; a screen-reader user got no announcement at
+			all, so this states the new result count.
+		-->
+		<p aria-live="polite" class="sr-only">
+			{data.groups.length}
+			{data.groups.length === 1 ? 'product' : 'products'} match the current filters.
+		</p>
 		{#if data.groups.length === 0}
 			<div
 				class="rounded-md border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted"

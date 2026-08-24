@@ -77,8 +77,3 @@ export function hasActiveFilters(filters: ListingFilters): boolean {
 			filters.inStock
 	);
 }
-
-export function labelFor(options: readonly { value: string; label: string }[], value: string | undefined): string {
-	if (!value) return '';
-	return options.find((o) => o.value === value)?.label ?? value;
-}

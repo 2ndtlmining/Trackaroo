@@ -737,30 +737,6 @@ export interface CheapestListing {
 	avg30Points: number;
 }
 
-// Lowest/highest in-stock price for a product over the trailing window,
-// anchored to the latest snapshot day so results are deterministic regardless
-// of wall-clock. Excludes CPU+motherboard bundles like the band query.
-export function getPriceExtremes(
-	db: DB,
-	productId: number,
-	days = 90
-): { low: number | null; high: number | null } {
-	const row = db
-		.prepare(
-			`SELECT
-				MIN(s.price_aud) AS low,
-				MAX(s.price_aud) AS high
-			FROM retailer_listings l
-			JOIN price_snapshots s ON s.retailer_listing_id = l.id
-			WHERE l.product_id = ?
-			  AND s.stock_status = 'in_stock'
-			  AND ${notBundle('l')}
-			  AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)`
-		)
-		.get(productId, `-${days} days`) as { low: number | null; high: number | null };
-	return { low: row.low, high: row.high };
-}
-
 export function getCheapestPerModel(db: DB, category: Category): CheapestListing[] {
 	const rows = db
 		.prepare(

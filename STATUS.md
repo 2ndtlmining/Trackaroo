@@ -1,310 +1,187 @@
 # Project Status
 
-**Last updated:** 2026-08-21 (21-Aug: **fresh full daily run + alerts-step crash fix** — full `run_daily.py` run: both scrapers OK, 312 snapshots for 21-Aug ingested (idempotent re-run skipped all), all 7 health checks green, delisted check 28 checked / 0 delisted / 24 active / 4 unknown (429-throttled, left untouched by design), Discord digest sent, exit 0. **Bug found & fixed:** on a pre-20-Aug live DB (no `price_alerts` table), the alerts step at the end of `run_daily.py` raised `no such table: price_alerts` and crashed the whole run after all data work had succeeded — `run_alerts()` is now wrapped in try/except (best-effort, matching the delisted-check pattern; +1 `test_cli.py` regression test) and `python migrate.py` created the `price_alerts` table in the live DB. **Backup is now automatic** — `run_daily.py --backup N` was replaced by an opt-out (`--no-backup`); every real full run backs up the DB (keep = `TRACKAROO_BACKUP_KEEP`, default 14); deploy entrypoints + compose updated. **Scorptec URL-slug-rewrite duplicate listings fixed** — `ingest.find_or_create_listing` now keys on the stable numeric SKU (`extract_listing_key`: Scorptec `/\d{5,7}(-slug)?$`, PCCG `/products/\d+`) so a URL format change (e.g. `/116356` → `/116356-ne63050018je-1072f`, `/cpu/intel-socket-1700/…` → `/cpu/intel/…`) reuses the existing row instead of forking a duplicate; `retailer_sku` is now stored + backfilled. **`scrape_scorptec` now snapshots out-of-stock variants** (matches PCCG) instead of dropping them when a sibling is in stock. **New `migrate.py` migrations** backfill `retailer_sku` (351 rows) and merge the 12 pre-existing duplicate groups (snapshots consolidated onto one survivor per key, absorbed rows marked `status='stale'`, idempotent). Live verification: re-scrape + re-ingest → the previously-missing OOS variants got 21-Aug snapshots (GPU matched 155 → 287), and zero new duplicate rows were created. Regression: pytest **566** (was 546).)
+**Last updated:** 2026-08-25
 
-Prior update (20-Aug): **Last updated:** 2026-08-20 (20-Aug: **Delisted-listing detection — "why is this still in stock?"** — the Scorptec scraper only reads category-grid pages, so a delisted product vanishes from the grid and its last `in_stock` snapshot stays the latest forever, and the dashboard keeps showing a stale "In stock" badge. New `check_delisted.py` (repo root, stdlib only): re-fetches the product page of every active, tracked Scorptec listing that produced no snapshot for today (i.e. missing from the latest grid scrape) and classifies it — a 404/410 or the site's "No Longer Available" marker means `delisted`, a normal 200 means `active`, and anything else (network failure, throttled 403/429 after retries, unrecognised page) is `unknown` and left **untouched** — only a positive delisting signal ever marks a listing, so a transient failure can never delist a live product. Confirmed delistings are set to `retailer_listings.status = 'delisted'`. The dashboard now renders a "Delisted" badge for such listings (instead of a price + stock badge), forces them out of the in-stock count, and excludes their stale price from the group price range / cheapest-first sort. Wired into `run_daily.py` after a successful Scorptec scrape (best-effort, never breaks the run). Env: `TRACKAROO_SCORPTEC_DELIST_CHECK_MAX` (per-run fetch cap, default 100) + `TRACKAROO_SCORPTEC_DELIST_PAGE_DELAY` (inter-fetch delay, default 1.5s — a burst of product-page requests gets CDN-throttled). Regression: pytest **545** (was 522) / svelte-check 0 / vitest **234** (was 231) / e2e **52** (was 51) / build green.)
+**Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
+backup integrity.
 
-Prior update (20-Aug): **Last updated:** 2026-08-20 (20-Aug: **Price-drop & restock alerts — "tell me when to buy"** — new `price_alerts` table (`UNIQUE(product_id, channel)`) + `check_alerts.py`: a price-drop alert fires when the cheapest in-stock price is ≤ target and strictly below the last-notified price (a sustained breach doesn't spam; a further drop re-fires); a restock alert fires on an out→in transition with a 24h cooldown; price takes precedence in the same run; cooldown columns advance only after successful delivery. Delivery is stdlib-only and best-effort (never raises): Discord (`TRACKAROO_DISCORD_WEBHOOK_URL`), SMTP (`TRACKAROO_SMTP_*`), generic webhook (`TRACKAROO_ALERT_WEBHOOK_URL`) — deliberately distinct from the digest's `DISCORD_WEBHOOK_*` vars. Wired into `run_daily.py` after a healthy ingest. Product-page "Price alerts" panel (arm with target price + channel + restock toggle, list, delete) via a dedicated write DB connection. Regression: pytest **522** (was 479) / svelte-check 0 / vitest **231** (was 226) / e2e **51** (was 50) / build green.)
+> **History note (23-Aug-2026):** this file used to open with a chain of nested
+> "Prior update" paragraphs — one of them a single 7,685-character line — that
+> had grown to 106 KB and was effectively unreadable. The full original is kept
+> verbatim at [`docs/archive/STATUS-history-to-2026-08-21.md`](docs/archive/STATUS-history-to-2026-08-21.md).
+> Everything below is the structured content, unchanged. Add new work to
+> **Recent changes** as a dated bullet — do not start another nested chain.
 
-Prior update (20-Aug): **Last updated:** 2026-08-20 (20-Aug: **UX quick wins — "since tracked" chips + deal badges** — product-page chips relabelled "90d low/high" → "All-time low/high" (the price band is unwindowed, so they were always all-time extremes — a latent mislabel) + a new "30d avg" chip (average of the per-day cheapest in-stock price over the trailing 30 days, shown only with ≥3 days of history); a green "Deal" badge on `/products` cards and the dashboard carousel when the current cheapest in-stock price is below that 30-day average. New `getProductStats`/`getProductDealStats` in `repos.ts`. **Latent bug fixed:** `MIN_HISTORY_POINTS` was imported as a runtime value from the server-only `$lib/server/repos` into two client components, breaking client hydration ("An impossible situation occurred"); the constant now lives in a shared `web/src/lib/constants.ts`. Regression: pytest 479 / svelte-check 0 / vitest **226** (was 212) / e2e **50** (real + synthetic) / build green.)
+## Recent changes
 
-Prior update (19-Aug): **Last updated:** 2026-08-19 (19-Aug: **brand icons + UI polish + Discord digest** — `simple-icons` AMD/NVIDIA/Intel marks in the header, product cards, compare headers + footer trademark line; product-page "Updated X ago" freshness, unified card heights + consistent empty-state styling; new `notify_discord.py` daily digest of the biggest CPU/GPU price moves, gated on a fully healthy run and disabled by `--no-notify` — see Active Issues. Regression: pytest 461 / svelte-check 0 / vitest 204 / e2e 48 / build green.)
+- **2026-08-25** — Daily run recovered manually (the container was not running,
+  so the 04:00 schedule never fired). 373 snapshots ingested for 25-Aug:
+  Scorptec 36 CPU / 283 GPU, PCCG 21 CPU / **33 GPU**. PCCG rate-limited its GPU
+  pass hard; a gentler-paced retry (`TRACKAROO_BATCH_SIZE=8`,
+  `TRACKAROO_BATCH_DELAY=3.0`) matched zero and tripped the 429 circuit breaker
+  (4h cooldown). `snapshot_io` **refused to overwrite** the good 33-product file
+  with the empty result and parked it at
+  `gpu_pccg_25_August_2026.partial-060913.json` — the backup guarantee working
+  as designed. PCCG GPU for 25-Aug is therefore short ~67 listings.
+  Branch `hardening/json-backup-docker-ux` merged to `main`. Full regression:
+  pytest **611** / svelte-check 0 / vitest **301** / e2e **54**.
 
-Prior update (18-Aug follow-up): **Last updated:** 2026-08-18 (18-Aug follow-up: **spec coverage/staleness health checks + full re-sync + source investigation** — `health_checks.py` gained `check_spec_coverage()` (coverage vs `SPEC_COVERAGE_MIN_PCT` default 80%, staleness vs `SPEC_STALE_THRESHOLD_DAYS` default 14; WARNINGs only, wired into `run_all_checks` and `--db-only`; config `TRACKAROO_SPEC_COVERAGE_MIN_PCT` / `TRACKAROO_SPEC_STALE_THRESHOLD_DAYS`). Real DB: `spec_coverage OK 95/100 (95%)`, `spec_staleness OK (0 days)`. **Full `sync_specs.py` re-run: 0 new / 95 unchanged / 0 conflicts** — and **Ryzen 7 7800X3D now has a spec row** (spec_id 82, amd.com; previously unmatched). **TechPowerUp API investigated: no official API exists** (forum thread is a scraper wrapper; TPU sits behind Cloudflare bot checks — scraping ruled out per DECISIONS.md). **No RX 9070 XTX exists** — AMD RDNA 4 is 9070/9070 XT only; the watchlist's 32GB "9070 XTX" (watchlist.csv:114) is a rumored/phantom SKU, **kept as-is by user decision** (will never match retailer/spec sources). **4 AMD CPUs (Ryzen 5 5500/5600, 5700X, Ryzen 9 9900) deliberately left unmatched** (no amd.com page; Wikipedia has no per-SKU infoboxes for them; curated-dataset offer declined — coverage stays 95%). → **pytest 408 / vitest 193 / e2e 46 / svelte-check 0 errors / build green**. Prior session (18-Aug spec-enrichment session: **specs widened to TechPowerUp-grade detail** — `schema.sql`/`migrate.py` specs now 34 columns: `gpu_die`, `bus_interface`, `memory_bandwidth_gbps`, `memory_clock_mhz`, `process_nm`, `foundry`, `codename`, `l1_cache_kb`, `l2_cache_mb`, `memory_speed_mhz`, `memory_channels`, `memory_types`, `integrated_graphics` (numeric fields REAL — a TEXT column returned strings to better-sqlite3 and 500'd the panel; caught in live verification, typed migration + type assertion in tests). `sync_specs.py` parsers emit the fields AND new idempotent `backfill_specs_extra()` re-derives them from each row's verbatim `raw_json` after every sync (Intel `Cache(MB)` → `cache_l3_mb`, matches TPU L3 for desktop). Frontend: `SpecRow`, `SpecPanel` + compare rows (GPU die/Bandwidth/Bus interface/Memory clock/Process/L2; CPU Codename/Memory support/Max memory speed/Channels/L1·L2/Lithography/Integrated graphics); new `formatBandwidth`/`formatProcess`/`formatCacheKb`/`formatCacheMb`/`formatMhz`. Real DB migrated (backup `trackaroo_2026-08-18_125659.db`), 95/95 rows backfilled, verified live: RTX 5090 (GB202, PCIe 5.0 x16, 1.79 TB/s, 1750 MHz, TSMC 5 nm, 96 MB L2), Ryzen 9 9950X (Granite Ridge, L1 1280 KB/L2 16 MB/L3 64 MB, DDR5-5600, 2 ch, iGPU), Core Ultra 9 285K (Arrow Lake, 3 nm, DDR5-6400, 36 MB L3). Known gaps: GPU launch MSRP **not in the dataset** (NULL). → **pytest 408 / vitest 193 / e2e 46 / svelte-check 0 errors / build green**. Prior session (18-Aug Round-3 enhancements session: **all 6 items from `TRACKAROO_ENHANCEMENTS_ROUND3.md` landed** — §1 command-palette search results show a snapshot-count badge (`getProductIndex` LEFT-JOINs a `COUNT` into `ProductIndexEntry.snapshotCount`; zero-history results de-emphasised); §2 dashboard + movers tables gained **tri-state sortable column headers** (new pure `web/src/lib/tableSort.ts` `sortRows`/`nextSortDir`; Model/Price/7-day-change/Freshness on `/`, Old/New/Change/Points on `/movers` — a separate layer on top of the existing movers sort/window controls); §3 specs verification → **confirmed healthy, no code change needed** (95 rows, 0 orphans, 95/100 products have spec rows, all fully populated for the screenshot products; `SpecPanel` + compare `rowDefs` correct — the empty look was a stale Docker DB, not a bug); §4/§5 PriceChart root cause (uPlot built once in `onMount`, never redrawn on prop change) **fixed** — the chart now destroys + re-creates its uPlot instance in a `$effect` whenever the series/band/cheapest-in-stock inputs change, fixing both "chart doesn't update when navigating" AND "Show on chart" doing nothing; §6 display-only **`titleCase()`** in `formats.ts` (accepts `string | null`; acronym allowlist `rtx/gtx/oc/rgb/argb/xt/xtx/amd/asus/evga/zotac/msi` + unit-prefix rule `gddr7`→`GDDR7`/`8gb`→`8GB` + digit-suffix rule `5600x`→`5600X`/`7800x3d`→`7800X3D`; mixed-case tokens untouched; `ti` stays "Ti") applied at every variant-name render site (grouped listings, dashboard table, movers, carousel, product-page chart overlay) — DB `variant_name` untouched → **188 vitest / 46 e2e**; full regression green — pytest 391 / vitest 188 / e2e 46 / svelte-check 0 errors / build green. Prior session (18-Aug card-sparkline session: **unexpanded product cards now show a trend sparkline** — new `getProductSparklines` in `repos.ts` (cheapest in-stock price per day per product, one windowed query like `getSparklines`), attached per `ProductGroup` in `/products` `+page.server.ts`; `Sparkline.svelte` prop generalized to `PricePoint[]` (new light interface; `SparklinePoint` stays assignable); card renders it on the price row (and on the "No in-stock listings" row when history exists), gated on ≥2 points so history-less cards stay clean; +3 vitest `getProductSparklines` (empty input / cheapest-per-day-ascending / window bound) + 3 ProductCard render tests (history → polyline, no-in-stock + history → polyline, empty → none); e2e card-grid test now asserts an unexpanded card shows a sparkline → **177 vitest / 42 e2e**; full regression green — pytest 391 / vitest 177 / e2e 42 / svelte-check 0 errors / build green. Prior session (18-Aug UI follow-up): **sparklines extended to the dashboard + movers tables** — `getSparklines` attached in `/` and `/movers` `+page.server.ts` (movers use the selected 24h/7d/30d window); **temporary `/troubleshooting` + `/api/health` scaffolding deleted** — `getCoverageSummary` + Coverage types + `isoAddDays`/`daysBetween` removed from `repos.ts`, routes deleted, 3 vitest (`getCoverageSummary`) + 2 e2e (view + health JSON) dropped, dashboard/movers sparkline assertions added to existing e2e → **171 vitest / 42 e2e**; full regression green — pytest 391 / vitest 171 / e2e 42 / svelte-check 0 errors / build green. Prior session (18-Aug, UI additions): command palette (Ctrl/Cmd+K) — `getProductIndex` loaded once in the root layout, client-side substring filter over the ~100 tracked products, ↑/↓ + Enter navigation to `/product/[id]`, quick "Compare A vs B" row when exactly two match; inline 7-day trend sparklines — `getSparklines` (single query per page, windowed on the DB max date) attached per listing on `/products`, new `Sparkline.svelte` (24px SVG polyline, up=red / down=green matching the Change column, dash when <2 points), Trend column between Price and Stock in `LatestListingTable`; +10 vitest (2 `getProductIndex`, 3 `getSparklines`, 5 `Sparkline`) + 4 e2e (palette open/navigate, Escape, quick compare, sparkline column) → **174 vitest / 44 e2e**. Prior session (18-Aug, bug fixes): 18-Aug data scraped + ingested live — both retailers, 306 snapshots, all 7 health checks green; `TRACKAROO_BUGS_AND_TROUBLESHOOTING.md` findings fixed — `getComparisonData` per-listing `LATEST_CTE` (retailer that missed a day still reports its real price), category-aware compare rows, specs table confirmed healthy (95 rows, 0 orphans), PCCG cooldown confirmed as designed (breaker + 4h window, env-tunable); temporary `/troubleshooting` view + `/api/health` added then removed this session once confirmed settled. Prior session (17-Aug): weekly spec-sync scheduling in the single-image entrypoint, hardcoded-values → `TRACKAROO_*` config knobs (391 pytest), regression coverage pass (migrate + Scorptec pagination), feature-suggestions §2–§4 + §6 shipped)
+- **2026-08-24** — Product page rebuilt around a flat, cheapest-first offer list
+  (`OfferList`) replacing the brand→retailer accordion, plus a price-led
+  headline with an all-time range bar. In-stock-only is the default and the
+  list caps at 8 offers with a "Show all N" expander. Implements stage 1 of
+  `docs/superpowers/specs/2026-08-23-price-first-ia-design.md`; E2E coverage
+  (facet chips, expander, in-stock filter, chart toggle) added in
+  `web/e2e/app.spec.ts`.
+
+### 23-Aug-2026 — JSON backup integrity, missed-day recovery, Docker persistence
+
+**Data recovered.** 23-Aug had no data at all; both retailers were scraped and
+441 snapshots ingested (321 Scorptec + 120 PCCG). PCCG needed a second attempt —
+the first tripped its 429 circuit breaker.
+
+**The JSON backup was not a backup.** Both scrapers wrote snapshots with a plain
+`open(path, "w")`: non-atomic, and unconditional. A rate-limited PCCG re-run that
+matched zero products had overwritten the complete file taken earlier the same
+day. The DB survived (ingest is idempotent per `(listing, date)`); the JSON did
+not. **165 snapshots existed in the DB alone** (54 on 19-Aug, 111 on 21-Aug) and
+could not have been rebuilt from `data/`.
+
+- New `scraper/snapshot_io.py` — `save_snapshot()` writes via a temp file plus
+  `os.replace()` (atomic), and **refuses to replace a snapshot with a smaller
+  one**, parking the weaker result in a `.partial-HHMMSS.json` sidecar. Both
+  scrapers now share it, replacing two duplicated write blocks.
+- New `export_snapshots.py` — rebuilds `data/*.json` from the DB in the exact
+  scraper envelope. `--repair` recovered all 165 orphaned snapshots.
+- `run_daily.py` mirrors the DB back out to JSON after every ingest, so the
+  invariant *JSON can rebuild the DB* now holds continuously.
+- Verified by rebuilding a scratch DB from `data/` alone: it matches the live DB
+  except for 70 snapshots attached to `status='stale'` duplicate listing rows,
+  none of which is the only record for its SKU+date — the rebuild is *more*
+  correct, not lossy.
+
+**Health checks.** `check_price_anomalies` and `check_spec_coverage` existed but
+were never wired into `run_daily.py`; they are now. Three new checks:
+`check_json_db_parity` (can JSON still rebuild this day?), `check_missing_days`
+(was a run skipped?), `check_scraper_cooldown` (is a retailer deliberately
+paused, and until when?). Missing days now raise a Discord pipeline alert.
+
+**Ingest resilience.** A malformed record used to propagate out of
+`ingest_file` and abort the whole file; per-product handling now catches
+`KeyError`/`TypeError`/`ValueError` too, counts the row, and continues.
+
+**Logging.** Every entry point logged to stdout only, so a native run left no
+trace once the terminal closed. `config.setup_logging()` adds a date-stamped
+`logs/trackaroo-YYYY-MM-DD.log` (plain append handler — the scrapers are
+separate processes sharing the file, so rotation would corrupt it) with
+`TRACKAROO_LOG_KEEP_DAYS` pruning.
+
+**Docker: single image, plain `docker run`, data mapped.** The running
+container had **no volume mounted** — everything it scraped lived in its
+writable layer and died with `docker rm` — and ran on UTC, stamping snapshots a
+day early. `docker-compose.yml` has been **removed**; the supported way to run
+Trackaroo is now one `docker run` against the all-in-one image, mapping
+`./db → /app/db` and `./data → /app/data` so the container and native runs
+share one DB and one set of JSON snapshots. The image installs `tzdata` and
+pins `TZ=Australia/Melbourne`. Verified live: container reports AEST,
+`date.today()` matches the host, both mounts resolve to the repo directories,
+SQLite reads *and writes* work over the Windows bind mount in WAL mode, and the
+data survived a full `stop`/`rm`/rebuild cycle. Both entrypoints replaced the
+drifting `sleep ${RUN_INTERVAL_HOURS}h` loop with a wall-clock `RUN_AT_HOUR`
+(default 04:00) plus a boot catch-up run when today has no data — restarts can
+no longer shift or skip a day. The committed Algolia key defaults went with the
+compose file.
+
+**Dashboard UX.** Six gaps closed, highest-value first:
+
+- **Stale-data banner** — every figure on the dashboard reads as current whether
+  the pipeline ran this morning or stopped a week ago. A banner now states the
+  gap ("Data is 4 days behind — most recent snapshot is 19 Aug 2026"), muted at
+  one day (normal before the morning run) and error-toned from two. A separate
+  message covers an empty DB.
+- **Error pages** — there was no `+error.svelte` and no `hooks.server.ts`, so a
+  404, a malformed `/compare` URL, or a missing `trackaroo.db` rendered
+  SvelteKit's unstyled default with no way back. Both added; the handler logs
+  the real error server-side and maps SQLite failures to actionable messages
+  ("run `python migrate.py`").
+- **Alert form** — invalid input called `error(400)`, which replaced the whole
+  product page. It now returns `fail(400, …)` and renders the message inline,
+  preserving what was typed.
+- **Navigation feedback** — every filter/sort/window control is a server
+  round-trip with no indicator. A top progress bar driven by `$navigating`
+  fills the gap (and respects `prefers-reduced-motion`).
+- **Mobile** — the app had 7 breakpoint utilities in total and every table fell
+  back to horizontal scroll, hiding price and change behind a swipe. Both
+  `LatestListingTable` (dashboard + product cards) and `/movers` now render a
+  card per row below `md`, with the table kept for `md` and up.
+- **Accessibility** — skip-to-content link; a global `:focus-visible` ring
+  (several inputs used `focus:outline-none` with only a 1px border change);
+  focus trap and focus restore in the command palette, which previously let Tab
+  walk out of the open modal and dropped focus to `<body>` on close; `aria-live`
+  result counts on the dashboard and `/products`, so a filter change is
+  announced rather than silently re-rendering.
+
+**Repo cleanup.** Root markdown went from 11 files to 4. `SPEC.md`,
+`SCOPE_RULES.md` and `DECISIONS.md` merged verbatim into
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) as Parts 1–3; implemented plans
+archived to `docs/archive/`; the unbuilt RAM plan moved to
+`docs/proposals/`. Removed orphaned bytecode, `web/webdev.log`, three empty
+directories, and six unused frontend exports (`closeDb`, `closeWriteDb`,
+`formatAxisLabel`, `labelFor`, `getPriceExtremes`, plus an unused import);
+`ThemeToggle.svelte` now uses the shared `toggleTheme()` it had been
+duplicating. New `CLAUDE.md` carries the agent conventions.
+
+**Regression:** pytest **611** (was 566; +45) / svelte-check 0 errors /
+vitest **239** (234 minus 6 for the deleted functions, plus 11 for staleness) /
+Playwright e2e **52** / production build green.
+
+---
+
 **Git repo:** https://github.com/2ndtlmining/Trackaroo
 **Current phase:** Phase 5 — frontend/UX improvements program + PCCG reliability (see Active Issues below).
 
-## Active Issues
+## Changelog
 
-### ✅ COMPLETE: Discord digest consolidated to one webhook (21-Aug-2026)
-- The digest previously used `DISCORD_WEBHOOK_GPU` / `DISCORD_WEBHOOK_CPU`, and with only the GPU one configured the CPU movers were computed but never delivered. Per user decision, CPU and GPU embeds now go to a **single webhook** `DISCORD_WEBHOOK_URL` (compose passes it through; `.env.example` / `DEPLOYMENT.md` / `deploy/entrypoint-single.sh` header updated; live `.env` renamed). `run()`/`_send_test_embed()` simplified; `--test` sends one sample. Verified live via `--dry-run` (GPU ups + GPU drops; no CPU movers today — flat prices, so none to show). Regression green (pytest 566 / svelte-check 0 / vitest 234 / e2e 52 / build).
+Completed work, newest first. Each entry's full write-up — problem, fix,
+files touched, live verification — is preserved verbatim in
+[`docs/archive/STATUS-history-to-2026-08-21.md`](docs/archive/STATUS-history-to-2026-08-21.md).
+This table replaced ~65 KB of inlined detail on 23-Aug-2026.
 
-### ✅ COMPLETE: Scorptec duplicate listings + missing OOS snapshots (21-Aug-2026)
-- **Problem:** 28 active Scorptec listings produced no snapshot for 21-Aug despite being live and in the grid. Two root causes: (1) Scorptec rewrote product URLs over time (`/…/nvidia/116356` → `/…/nvidia/116356-ne63050018je-1072f`; `/…/cpu/intel-socket-1700/105937-bx8071514900k` → `/…/cpu/intel/105937`), and `find_or_create_listing` keyed listings on the exact `listing_url`, so each format change **forked a duplicate row** (same physical product, old row permanently stale). (2) `scrape_scorptec` **dropped out-of-stock variants** whenever another variant of the same model was in stock, so an OOS card silently stopped getting snapshots.
-- **Dedup fix (`ingest.py`):** `extract_listing_key(retailer, url)` returns the stable numeric SKU (Scorptec `/(\d{5,7})(?:-[^/]*)?$` — 5-7 digits so a model number like "5090" can't collide; PCCG `/products/(\d+)`). `find_or_create_listing` still exact-matches URL first, then falls back to the key: it reuses an existing row (preferring `active` so a merged duplicate is never resurrected), adopts the new URL, stores `retailer_sku`, and reactivates if the row had been retired. New inserts now persist `retailer_sku`.
-- **OOS fix (`scraper/scorptec.py`):** every matched variant is saved regardless of stock state (matches PCCG's `scrape_category`), so OOS variants keep their price history.
-- **Migrations (`migrate.py`):** `migrate_backfill_retailer_sku` (derives `retailer_sku` from the URL key where NULL) and `migrate_merge_duplicate_listings` (groups active rows by `(retailer, key)`; picks the most-recently-scraped row as survivor; moves snapshots over one-per-date preserving `scraped_at`; marks absorbed rows `status='stale'` — rows are never deleted; restores survivor `last_*` timestamps; idempotent, active-only so a re-run is a true no-op).
-- **Live DB:** `python migrate.py` backfilled 351 `retailer_sku`s and merged 12 duplicate groups (e.g. 51→344, 50→342, 200→338, 108→353, 100→346, 210→332; all dups now `stale`). Verified no active duplicate groups remain and re-running the migration is a no-op.
-- **Live verification:** re-ran `python -m scraper.scorptec` + `python -m ingest --date 2026-08-21` with the fixed code — GPU matched 155 → 287 (all OOS variants captured), 133 new snapshots, 0 errors, and **no new duplicate listing rows**. Active Scorptec listings missing today's snapshot dropped from 28 → 5, all of which are CPU+MB bundle listings (permanently excluded from matching by `_is_bundle_product`, by design).
-- **Tests:** +20 (ingest: `extract_listing_key` matrix, Scorptec/PCCG slug-rewrite reuse, active-row preference, distinct-key separation; scraper: OOS-variant-alongside-in-stock + all-OOS saved; migrate: backfill + merge/dry-run/idempotent/distinct-keys + legacy-DB guard). 566 total.
-
-### ✅ COMPLETE: Backup on every run (21-Aug-2026)
-- `run_daily.py` now backs up the DB **automatically** on every real full run; the old `--backup N` flag is gone. Opt out with `--no-backup` (and dry-run/scrape-only runs never back up). Retention = `BACKUP_KEEP` from config (`TRACKAROO_BACKUP_KEEP`, default 14).
-- `deploy/entrypoint.sh` (pipeline-only), `deploy/entrypoint-single.sh` (all-in-one; keeps `TRACKAROO_BACKUP_KEEP`), and `docker-compose.yml` cron service updated (`TRACKAROO_BACKUP_KEEP=${TRACKAROO_BACKUP_KEEP:-14}`).
-- Tests patched to mock `backup_db.backup_database`; docs (`DEPLOYMENT.md`, `README.md`) updated.
-
-### ✅ COMPLETE: Delisted-listing detection — "why is this still in stock?" (20-Aug-2026)
-- **Problem:** `scraper/scorptec.py` only reads the category-grid pages. A delisted product disappears from the grid entirely, so no new `price_snapshots` row is ever written and its last snapshot (often `in_stock`) stays the latest — the dashboard keeps showing a stale "In stock" badge forever (repro: SKU 119183, XFX RX 7900 XT).
-- **`check_delisted.py` (repo root, stdlib only):** `query_check_listings()` selects active, tracked Scorptec listings with **no snapshot for today** (i.e. missing from the latest grid scrape) — or every active listing with `--all`. For each, `fetch_listing()` GETs the product page (reusing `scraper.scorptec.HEADERS` for UA consistency; retries on network errors **and** on throttling/transient status 403/429/5xx) and `classify_page()` returns:
-  - `delisted` — HTTP 404/410, or a 200 page containing the case-insensitive "No Longer Available" marker (matching the text, not the mangled CSS class names).
-  - `active` — a normal 200 page without the marker.
-  - `unknown` — network failure, other status, unrecognised page. **`unknown` listings are left untouched** — only a positive delisting signal marks a listing, so a transient failure can never delist a live product.
-  Confirmed delistings are `UPDATE ... SET status = 'delisted' WHERE id = ? AND status = 'active'` (idempotent — already-delisted rows are skipped on re-run). `--db` / `--dry-run` / `--all`; `run()` returns `{checked, delisted, active, unknown, skipped_cap}`.
-- **Politeness / throttling:** per-run fetch cap `SCORPTEC_DELIST_CHECK_MAX` (`TRACKAROO_SCORPTEC_DELIST_CHECK_MAX`, default 100) and a dedicated inter-fetch delay `SCORPTEC_DELIST_PAGE_DELAY` (`TRACKAROO_SCORPTEC_DELIST_PAGE_DELAY`, default 1.5s) — a burst of product-page requests gets CDN-throttled (429), which the retry loop absorbs. Both documented in `.env.example`.
-- **Wiring:** `run_daily.py` calls `check_delisted.run()` after DB validation and before the Discord digest, gated on a successful Scorptec scrape (`results.get("scorptec")`) and `not --dry-run`, wrapped in try/except so a failure never breaks the run (best-effort, like the digest).
-- **Frontend:** `listingsPanel.ts` — `ListingDisplay` gained `delisted: boolean`; `toListingDisplays()` sets it from `listing.status === 'delisted'` and forces `inStock: false` when delisted; `priceRange()` skips delisted listings so a stale price never skews the group price range or cheapest-first sort. `BrandGroupedListings.svelte` renders a `<Badge tone="stale" label="Delisted" />` instead of price + stock badge for delisted rows.
-- **Tests:** +23 backend `test_check_delisted.py` (classify_page matrix — 404/410/marker-200/plain-200/network-fail/other-status; fetch_listing retry-on-exception, retry-on-throttling-then-success, exhausted-retries-return-last-status; query_check_listings selection + exclusions (non-scorptec, delisted, untracked, has-today-snapshot) + `--all`; run() marks / leaves-unknown / dry-run-no-write / cap / inter-fetch-sleep / check_all). +3 vitest in `listingsPanel.test.ts` (delisted flag set, in-stock count excludes delisted, priceRange skips delisted). +1 e2e in `app.spec.ts` (delisted demo listing on the RTX 5060 Ti shows a "Delisted" badge, not a stale in-stock price). E2E seed (`seed.mjs`) attaches a delisted demo listing + one stale in_stock snapshot to the RTX 5060 Ti (present in both real and synthetic seeds).
-- **Live verification:** dry-run then real run against the production DB marked 5 delistings (incl. the 119183 repro); a follow-up run confirmed idempotency (0 new, already-delisted skipped).
-- **Regression (all green):** pytest **545** (was 522; +23) / svelte-check 0 (1 pre-existing unrelated warning in `CheapestCarousel.svelte`) / vitest **234** (was 231; +3) / e2e **52** (was 51; +1) / `npm run build` green.
-
-### ✅ COMPLETE: Price-drop & restock alerts — "tell me when to buy" (20-Aug-2026)
-- **Schema:** new `price_alerts` table in `db/schema.sql` — `id`, `product_id`, `target_price`, `channel` (`CHECK IN ('discord','email','webhook')`), `notify_on_restock`, `active`, `last_notified_at`, `last_notified_price`, `created_at`; `UNIQUE(product_id, channel)` (one alert per product per channel — re-arming updates in place) + indexes on `product_id` and `active`. Idempotent `migrate_add_price_alerts_table()` in `migrate.py`, wired into `main()`.
-- **`check_alerts.py` (repo root, stdlib only):** evaluates active alerts against the two latest snapshots per listing, aggregated to the product's cheapest in-stock price:
-  - **Price-drop:** cheapest in-stock ≤ `target_price` **and** (`last_notified_price` is NULL or price < `last_notified_price`) — a sustained breach doesn't re-fire; a further drop does.
-  - **Restock:** `notify_on_restock` set + a listing transitions out_of_stock → in_stock between the previous and latest snapshot + `last_notified_at` is NULL or older than `RESTOCK_COOLDOWN_HOURS` (24).
-  - Price takes precedence over restock in the same run. Cooldown columns (`last_notified_at` / `last_notified_price`) advance **only after successful delivery** — an unconfigured channel is skipped and does not consume the alert.
-- **Delivery (best-effort, never raises, no new deps):** `discord` → POST `{"content": msg}` to `TRACKAROO_DISCORD_WEBHOOK_URL`; `email` → `smtplib` via `TRACKAROO_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM/TO`; `webhook` → POST JSON to `TRACKAROO_ALERT_WEBHOOK_URL`. Deliberately separate from the Discord digest var (`DISCORD_WEBHOOK_URL`). CLI: `--db`, `--dry-run` (prints what would fire without sending).
-- **Wiring:** `run_daily.py` calls `check_alerts.run()` after a successful ingest + health checks — same gating as the digest (skipped on `--dry-run` / `--scrape-only` / `--no-health` / `--no-notify`). Env vars documented in `.env.example`, `docker-compose.yml` (cron passthrough), and `deploy/entrypoint-single.sh`.
-- **Frontend:** `AlertChannel` type in `types.ts`; new write-capable `getWriteDb()` in `db.ts` (the existing `getDb()` stays read-only — WAL allows one writer + readers); `upsertAlert` / `deleteAlert` / `getProductAlerts` in `repos.ts`; product-page server actions (`create` / `delete`) in `+page.server.ts`; new `PriceAlerts.svelte` panel on `/product/[id]` (target price, channel select, restock checkbox, "My alerts" list with per-alert delete).
-- **Tests:** +40 backend `test_check_alerts.py` (evaluation matrix — price hit/miss/further-drop re-fire/first-notify, restock transition + 24h cooldown, price precedence, message building, delivery stubs per channel configured/unconfigured, cooldown-advance-only-on-success, CLI), `test_migrate.py` extended with `price_alerts` DDL/CHECK/dry-run/idempotency + `main()` assertions (12 → 19), +5 vitest in `repos.test.ts` (upsert insert, re-arm instead of duplicate, one-per-channel, targeted delete, ordered fetch), +1 e2e (arm an alert from the product page → listed → delete).
-- **Regression (all green):** pytest **522** (was 479; +43) / svelte-check 0 (1 pre-existing unrelated warning in `CheapestCarousel.svelte`) / vitest **231** (was 226; +5) / e2e **51** (was 50; +1) / `npm run build` green.
-
-### ✅ COMPLETE: UX quick wins — "since tracked" chips + deal badges (20-Aug-2026)
-- **Product-page chips:** the "90d low"/"90d high" chips were relabelled **"All-time low"/"All-time high"** — `getPriceBand` is unwindowed, so they were always all-time extremes (a latent mislabel, not a behaviour change). A new **"30d avg"** chip shows the average of the per-day cheapest in-stock price over the trailing 30 days, rendered only with ≥`MIN_HISTORY_POINTS` (3) days of history.
-- **Deal badges (binary, user-approved rule):** a green **Deal** badge on `/products` cards and the dashboard `CheapestCarousel` when the current cheapest in-stock price is **below the 30-day average** with ≥3 days of history. Card tooltip: `Below the 30-day average ($X)`. Deliberately not the (declined 17-Aug) deal score — a single boolean, no percentage.
-- **Data layer (`repos.ts`):** new `ProductStats` + `getProductStats(db, productId, days=30)` (per-product) and `getProductDealStats(db, productIds, days=30)` (batched, one windowed query — no N+1); `getProductHistory` now attaches `stats`; `getCheapestPerModel` computes trailing-30d `avg30` + `avg30Points` per listing in the existing SQL; `ProductGroup` gained optional `avg30`/`deal`.
-- **Latent bug fixed:** `MIN_HISTORY_POINTS` was a runtime value exported from the server-only `$lib/server/repos` and imported by two **client** components — SvelteKit dev-server hydration failed with `An impossible situation occurred` (SSR HTML was fine; only hydration broke). The constant now lives in a shared non-server module `web/src/lib/constants.ts`, imported directly by `repos.ts`, the product page, `CheapestCarousel`, the products `+page.server.ts`, and `repos.test.ts`.
-- **Tests:** +9 vitest in `repos.test.ts` (`getProductStats`, `getProductDealStats`, `getCheapestPerModel` 30d stats, `getProductHistory` stats attachment, new `createMiniStatsDb()` helper), +5 in `components.test.ts` (ProductCard Deal badge + tooltip / omitted; CheapestCarousel below-avg / at-or-above-avg / insufficient-history; fixture gained `avg30`/`avg30Points`). E2e: +1 **data-driven** test in `app.spec.ts` — `expectedDeals()` opens `e2e/e2e.db` read-only (better-sqlite3, `import.meta.url` + `fileURLToPath` for the ESM package) and mirrors the server rule against the seeded data, so it asserts exact Deal counts for both real and synthetic seeds; the product-page chip test now asserts `All-time low`/`All-time high`/`30d avg`.
-- **Regression (all green):** pytest **479** / svelte-check 0 (1 pre-existing unrelated warning in `CheapestCarousel.svelte`) / vitest **226** (was 212) / e2e **50** on real data **and** synthetic (`TRACKAROO_DATA_DIR` empty dir) / `npm run build` green.
-
-### ✅ COMPLETE: Robustness pass — pipeline alert webhook, PCCG backoff cap+jitter, synthetic e2e seed, scorptec variant-only reporting (20-Aug-2026)
-- **Pipeline alert webhook (`DISCORD_WEBHOOK_ALERT`):** the daily digest is gated on a clean run, so scraper failures and health-check errors previously went silent. New `send_alert(lines, dry_run)` in `notify_discord.py` posts an orange embed (`ALERT_COLOR=0xFB923C`) to `DISCORD_WEBHOOK_ALERT` — never raises (a webhook error is logged), no-op when unset. `run_daily.py` calls it after the digest step with one line per failed scraper + one per health-check error. `.env.example` documents the new var.
-- **PCCG backoff cap + jitter (`scraper/pccg.py` `_retry_wait`):** a pathological `Retry-After` header could stall the whole run — it's now capped at `ALGOLIA_RATE_LIMIT_WAIT_SECONDS * ALGOLIA_MAX_RETRIES * 4`. The fallback backoff is capped by a new `TRACKAROO_ALGOLIA_BACKOFF_MAX` knob (default 20s) and ±10% jittered (`random.uniform(0.9, 1.1)`) so a burst of retries doesn't re-collide in lockstep.
-- **Scorptec variant-only unmatched reporting (`scraper/scorptec.py`):** `analyze_unmatched` now splits unmatched products into three buckets (was two). New `_term_matches_only_variants()` detects when a search term appears only as a prefix of a longer variant code (e.g. `ryzen 9 9900` inside a `9900x` listing) — such products are logged as "Only stocked as a different variant" (the retailer simply doesn't carry the base model) instead of crying wolf as a matching bug.
-- **Synthetic e2e seed (`web/e2e/seed.mjs`):** the e2e seed now generates deterministic synthetic data when `TRACKAROO_DATA_DIR` points to an empty directory, so the Playwright suite runs without real `data/*.json` scrape files (still uses the real data by default).
-- **Tests:** +18 backend — `test_notify_discord.py` (send_alert configured/unset/dry-run), `test_pccg_reliability.py` (Retry-After cap, backoff cap + jitter range), `test_scraper.py` (variant-only vs delisted vs possible-stocked buckets).
-- **Regression (all green):** pytest **479** (was 461; +18) / svelte-check 0 / vitest 212 / e2e 48 / build green.
-
-### ✅ COMPLETE: Phase 5 frontend polish — friendly generation names + chart loading skeleton + brand-group motion (20-Aug-2026)
-- **Friendly generation names:** new pure `web/src/lib/tiers.ts` maps generation/tier codes to display-friendly names; the product page now shows the friendly generation name. +7 vitest (`tiers.test.ts`, new suite) + an e2e assertion.
-- **Chart loading skeleton + brand-group motion:** `PriceChart` shows a loading skeleton while data is in flight; `BrandGroupedListings` brand groups animate on expand/collapse (new keyframes in `app.css`). +1 vitest (components) + e2e assertions.
-- **Regression (all green):** vitest **212** (was 204; +7 tiers, +1 components) / e2e 48 / build green.
-
-### ✅ COMPLETE: Brand icons + UI polish + Discord digest (19-Aug-2026, per `TRACKAROO_POLISH_AND_NOTIFICATIONS.md`)
-- **§2 Brand icons (M1):** added `simple-icons` (v16) to `web/`; new `BrandIcon.svelte` renders AMD (`#ED1C24`), NVIDIA (`#76B900`) or Intel (`#0071C5`) SVG marks (unknown brand → nothing). Applied in the product-page header, `ProductCard`, compare-table headers, and a footer trademark line ("Logos are trademarks of their respective owners") in `+layout.svelte`. Tree-shaking verified: the 3 icons land in one ~3.8 kB chunk with no leakage of the ~2MB package (v16 deep imports like `simple-icons/icons/siAmd.js` don't exist — icons are `.svg` files; named imports from the package root are the correct API). +5 vitest (BrandIcon ×4, ProductCard icon assertion), +3 e2e (footer line, products-page icons, product-page Intel icon, compare brand icons).
-- **§3 UI polish (M2, 3 of 6):** empty states unified — `BrandGroupedListings` and `CommandPalette` now use a consistent `border-border bg-surface` panel instead of bare text; product page shows `Updated {formatRelative(last_snapshot_at)}` under the meta chips; `ProductCard` content grows to fill the grid cell (`grow p-3`) and the two price rows hold a stable height (`min-h-7`). +2 vitest (empty panels, card layout), +1 e2e (freshness text, regex `/^Updated (just now|\d+[mhdw]o? ago|never)$/`).
-- **§4 Discord digest (M3):** new `notify_discord.py` (repo root, stdlib + `requests`):
-  - One query (`DIGEST_SQL`, windowed `ROW_NUMBER` rn=1/rn=2 per listing) pairs each listing's current snapshot with its own previous one; `build_digest` keeps per product the **biggest mover** (cheapest as tie-break — a move on a pricier variant beats a flat cheaper one; found and fixed against real data), then top-3 up/down per category, flat moves skipped.
-  - Embeds mirror the dashboard tokens (`UP_COLOR=0xF87171`, `DOWN_COLOR=0x34D399`); per-product line is `$prev → $today (+x.x%) · Retailer` with a `[View on Retailer](listing_url)` link; optional `TRACKAROO_PUBLIC_BASE_URL` adds a "Trackaroo page" link (omitted for v1 — retailer links are public, no Tailscale/proxy needed).
-  - Webhook URL via `DISCORD_WEBHOOK_URL` (one webhook carries both CPU and GPU embeds); with it unset the digest is a no-op; a webhook failure is logged, never raised (can't break the daily run). `--dry-run` prints embeds, `--test` sends a sample.
-  - **Gating:** `run_daily.py` fires the digest only when `notify_enabled(args)` (not dry-run / scrape-only / no-health / no-notify) **and** `health_errors(json_results, db_results)` is empty — a partial or unchecked scrape never celebrates moves. New `--no-notify` flag. `.env.example`, `docker-compose.yml` (cron env passthrough), `DEPLOYMENT.md` (new "Daily Discord digest" section), and the single-image entrypoint header updated.
-  - +27 `test_notify_discord.py` (pairing/exclusions, mover-over-flat, embed format/colors/links, POST shape + error swallowing, routing, no-op, dry-run, test-mode, `load_dotenv`) + 5 `run_daily` gating tests. Real-DB smoke: 274 digest rows, 3 live moves (RTX 5070 Ti +10.2%, RX 9070 +5.6%, RTX 5070 +4.4%) → `gpu:up` digest produced correctly.
-- **Regression after each milestone (all green):** M1: pytest 431 / svelte-check 0 / vitest 203 / e2e 47 / build. M2: pytest 431 / vitest 204 / e2e 48. M3: pytest **461** (+29) / vitest 204 / e2e 48 / build.
-
-### ✅ COMPLETE: Round-3 enhancements — snapshot counts, sortable columns, chart reactivity, name casing (18-Aug-2026, per `TRACKAROO_ENHANCEMENTS_ROUND3.md`)
-- **§1 Search results show snapshot counts:** `ProductIndexEntry` gained `snapshotCount`; `getProductIndex`'s LEFT JOIN now `COUNT`s `price_snapshots` per product (one subquery, no N+1). `CommandPalette` renders an `N snapshot(s)` badge per result and a muted "no data yet" for zero-history products (the quick-compare row is untouched). +1 vitest locking the count against a direct `COUNT(*)` SQL.
-- **§2 Sortable columns on Dashboard + Movers:** new pure `web/src/lib/tableSort.ts` — `SortDir` (`null | 'asc' | 'desc'`), `nextSortDir` (tri-state cycle), `sortRows` (numeric/string-aware, nulls last). Dashboard `LatestListingTable` (non-compact only) and the movers table got clickable column headers with a ▲/▼ indicator; movers column sort composes with the existing window/abs-pct/up-down controls. +5 vitest in a new `tableSort.test.ts` (tri-state cycle, nulls-last, numbers vs strings, ties preserve order). e2e asserts the full tri-state cycle on both pages.
-- **§3 Specs verification — verified healthy, no code change:** `specs` count **95** (46 GPU + 25 Intel + 24 AMD), **0 orphans**, 95/100 products have a spec row; the screenshot products (Core Ultra 5 245KF, Core Ultra 7 265K, RTX 5090, etc.) are all fully populated (generation/architecture/cores/clocks/TDP/VRAM present). `SpecPanel.svelte` + `compareRows.ts` display logic confirmed category-aware and correct. The empty-look in the screenshots was a **stale Docker DB** (fresh container seed), not an application bug — documented, no fix applied.
-- **§4/§5 PriceChart reactivity (one root cause fixed both):** `PriceChart.svelte` built its uPlot instance once in `onMount` and never redrew when props changed — so navigating between products reused a stale chart (same route component) and toggling "Show on chart" fed a new `series` array the chart ignored. Now a `$effect` re-runs `destroy()` + `mount()` whenever `series`/`band`/`cheapestInStock` change (uPlot has no `setBands`, so rebuild is the clean fix). e2e: "Show on chart" flips to "On chart" *and* the chart survives; a new navigation e2e opens a GPU product then Ctrl+K-navigates to a CPU and asserts the chart re-renders.
-- **§6 Consistent product name casing (display-only):** new `titleCase()` in `formats.ts` — only entirely-lowercase words are touched; known acronyms uppercase fully (`rtx`→`RTX`, `oc`→`OC`), unit-prefix words uppercase (`gddr7`→`GDDR7`, `8gb`→`8GB`), digit-suffix letters uppercase (`5600x`→`5600X`, `7800x3d`→`7800X3D`), `ti`→`Ti`, mixed-case tokens (RTX/GDDR7/GeForce) left alone. Applied at render time in `BrandGroupedListings`, `LatestListingTable` (`truncatedVariant`), movers, `CheapestCarousel`, and the product-page chart overlay label. **DB `variant_name` untouched** (still raw retailer data). +4 vitest.
-- **Regression (all green):** pytest **391** / svelte-check 0 errors / vitest **187** (was 177; formats 28→32, repos 54→55, tableSort new 5) / e2e **46** (was 42; +2 column-sort tri-state, +1 palette snapshot badge, +1 chart navigation) / `npm run build` green. *(Follow-up amend: compare's "Generation" row now falls back to `architecture` when `generation` is NULL — Intel sources carry it under `architecture` only — so Compare and the product-detail panel agree on what's shown; +1 vitest → **188**.)*
-
-### ✅ COMPLETE: TechPowerUp-grade spec enrichment (18-Aug-2026)
-- **Schema widened (21 → 34 columns):** `db/schema.sql` + `migrate.py` `SPECS_TABLE_SQL` gain `gpu_die`, `bus_interface`, `memory_bandwidth_gbps`, `memory_clock_mhz`, `process_nm`, `foundry`, `codename`, `l1_cache_kb`, `l2_cache_mb`, `memory_speed_mhz`, `memory_channels`, `memory_types`, `integrated_graphics`. New idempotent `migrate_add_specs_columns()` (create-if-missing) wires into `main()`. **Numeric fields are REAL** — the first pass added them as TEXT, which returned strings to better-sqlite3 and 500'd the panel (caught in live verification); the migration is now type-aware and `test_adds_missing_columns` asserts each column's type.
-- **`sync_specs.py`:** parsers emit the new fields up front (GPU: `gpuName`→`gpu_die`, `busInterface`, `memoryBandwidth`→`memory_bandwidth_gbps`, `memoryClock`, `processSize`→`process_nm`, `foundry`, `l2Cache`→`l2_cache_mb`; Intel: `Code Name`→`codename`, `Lithography(nm)`→`process_nm`, `Memory Types`, `Max Memory Speed(MHz)`, `Max Memory Channels`, `Integrated Graphics`, and `Cache(MB)`→`cache_l3_mb` — Intel's "Intel Smart Cache" equals TPU L3 for the desktop watchlist; AMD: `Former Codename`→`codename` (socket tag stripped), `L1/L2 Cache`, `Max Memory Speed` (max of the DDR5-xxxx list), `Memory Channels`, `System Memory Type`, `Graphics Model`). New **`backfill_specs_extra()`** re-derives all extra columns from each row's verbatim `raw_json` (idempotent, only touches NULLs, skips gracefully if a DB hasn't been migrated) and runs automatically after every sync. +6 vitest-equivalents (backfill per source, idempotence, dry-run, un-migrated DB) + parser assertions + `_amd_memory_speed_mhz`/`_clean_codename` helpers.
-- **Frontend:** `SpecRow` +13 fields; `SpecPanel` adds GPU die/Bandwidth/Bus interface/Memory clock/Process/L2 cache and CPU Codename/Memory support/Max memory speed/Channels/L1·L2/Process/Integrated graphics; `compareRows.ts` `gpuSpecRows`/`cpuSpecRows` gain GPU die/Bandwidth/Bus interface/Process/L2 and Codename/L2/Memory support/Max memory speed. New `formatBandwidth` (GB/s→TB/s), `formatProcess` (foundry + nm), `formatCacheKb`/`formatCacheMb`, `formatMhz`. +5 vitest (SpecPanel detail rows ×2, format helpers ×1) and +3 existing suites updated (compareRows labels, components fixture, seed helpers).
-- **Real DB upgraded + backfilled:** backup `db/backups/trackaroo_2026-08-18_125659.db` → `python migrate.py` added the 13 columns → numeric columns rebuilt as REAL (were TEXT) → `backfill_specs_extra` filled **95/95 rows** from `raw_json`. Verified live on :4175: RTX 5090 (GB202, PCIe 5.0 x16, **1.79 TB/s**, 1750 MHz, TSMC 5 nm, 96 MB L2), Ryzen 9 9950X (Granite Ridge, L1 1280 KB / L2 16 MB / L3 64 MB, DDR5-5600, 2 ch, Radeon™ iGPU), Core Ultra 9 285K (Arrow Lake, 3 nm, DDR5-6400, 36 MB L3), and `/compare?ids=77,94` / `?ids=27,53`.
-- **Known gaps (documented, not fixed):** GPU **launch MSRP was not in the dataset** — resolved 19-Aug by the curated `db/launch_msrp.json` + `backfill_msrp.py` (`launch_msrp_usd` backfilled; the existing "GPU launch MSRP stays NULL" note predates that). The 5 unmatched products are expected: Radeon RX 9070 XTX (not in the RightNow GPU dataset) and the four OEM-only AMD SKUs (Ryzen 5 5500/5600, 5700X, 9900 — no amd.com page; 404s). A full re-sync confirmed **Ryzen 7 7800X3D now matches** (spec row 82).
-- **Health checks + spec coverage:** new `check_spec_coverage()` in `health_checks.py` (wired into `run_all_checks` and `--db-only`) reports **coverage** (tracked products with a spec row vs `SPEC_COVERAGE_MIN_PCT`, default 80%) and **staleness** (`MAX(last_synced_at)` vs `SPEC_STALE_THRESHOLD_DAYS`, default 14) — WARNINGs, never errors, since specs are best-effort. Config: `TRACKAROO_SPEC_COVERAGE_MIN_PCT` / `TRACKAROO_SPEC_STALE_THRESHOLD_DAYS`. On the real DB: **`spec_coverage OK 95/100 (95%)`, `spec_staleness OK (0 days)`**. +7 pytest in `TestCheckSpecCoverage`.
-- **Regression (all green):** pytest **408** (was 401; +7 spec health checks) / svelte-check 0 errors / vitest **193** / e2e **46** / `npm run build` green.
-
-### ✅ COMPLETE: Trend sparklines on unexpanded product cards (18-Aug-2026, card-grid idea)
-- **`getProductSparklines(db, productIds, days=7)`** — one windowed query returning the **cheapest in-stock price per day per product** (joins `retailer_listings` → `price_snapshots`, `stock_status = 'in_stock'`, non-bundle, windowed on the DB max date); `Map<productId, PricePoint[]>`.
-- **`PricePoint { date, price }`** added to `repos.ts`; `Sparkline.svelte`'s prop generalized to `PricePoint[]` (existing `SparklinePoint[]` callers unaffected — structural typing). `ProductGroup` gained `sparkline?: PricePoint[]`.
-- **Card UI:** `/products` `+page.server.ts` attaches the product series per group; `ProductCard` renders `Sparkline` on the price row (right-aligned) and on the "No in-stock listings" row when history exists — so the card grid shows each product's price trend at a glance without expanding. Gated on ≥2 points, so history-less cards stay clean.
-- **Tests:** +3 vitest `getProductSparklines` (empty → empty map; cheapest-per-day ascending matches a direct SQL min per day; window bound respected), +3 ProductCard (polyline when history, polyline on no-in-stock + history, none when empty); e2e card-grid test asserts an unexpanded card contains a visible `svg`.
-- **Regression (all green):** pytest **391** / svelte-check 0 errors / vitest **177** (was 171; repos 51→54, components 41→44) / e2e **42** / `npm run build` green.
-
-### ✅ COMPLETE: Sparklines on dashboard + movers; troubleshooting scaffolding removed (18-Aug-2026, UI follow-up)
-- **Sparklines everywhere:** `getSparklines` is now attached in the dashboard (`/` `+page.server.ts`, 7-day window) and movers (`/movers` `+page.server.ts`, window-matched: 24h/7d/30d → 1/7/30 days). Both tables gained the Trend column via the existing `Sparkline.svelte` — `LatestListingTable` on `/`, a new Trend cell (between New and Change) in the movers dense table. Same up=red / down=green / dash-when-<2-points treatment; the column only appears when at least one row has ≥2 points in the window.
-- **`/troubleshooting` + `/api/health` deleted** (the temporary diagnostics built the same day were confirmed settled): `getCoverageSummary` + the `CoverageRetailer`/`CoverageRow`/`CoverageProduct`/`CoverageSummary` interfaces + `isoAddDays`/`daysBetween` helpers removed from `repos.ts`; `routes/troubleshooting/` and `routes/api/health/` deleted; 3 vitest (`getCoverageSummary`) and 2 e2e (view + health JSON) removed. Dashboard + movers sparkline assertions added to existing e2e instead.
-- **Regression (all green):** pytest **391** / svelte-check 0 errors / vitest **171** (was 174, −3 coverage; repos 54→51) / e2e **42** (was 44, −2 troubleshooting) / `npm run build` green.
-
-### ✅ COMPLETE: Command palette + inline sparkline trend column (18-Aug-2026, UI additions per `TRACKAROO_UI_ADDITIONS.md`)
-- **Command palette (Ctrl/Cmd+K):** new `getProductIndex(db)` in `repos.ts` (tracked products: id/category/brand/model/variant, ordered by category+model) loaded once in `+layout.server.ts` alongside `getHeaderStats` — the ~100-row catalog makes client-side substring filtering instant, no search endpoint or debounce needed. `CommandPalette.svelte` (mounted in `+layout.svelte`): global keydown listener toggles on Ctrl/Cmd+K, Escape/backdrop closes, input autofocuses on open, ↑/↓ moves the highlight, Enter navigates via `goto('/product/' + id)`, results are capped at 8 and reuse `Badge` for the GPU/CPU tag. When exactly two products match, a synthesized "Compare A vs B" row navigates to `/compare?ids=A,B`. A visible "Search" trigger button sits in the header for discoverability.
-- **Inline 7-day sparklines:** new `getSparklines(db, listingIds, days=7)` in `repos.ts` — one query (IN-list + window on the DB max snapshot date) returns each listing's daily price series; `products/+page.server.ts` attaches them per listing after `getLatestListings` (2 queries total regardless of row count; `idx_snapshots_listing_date` covers the lookup). New `Sparkline.svelte` renders a 24px SVG polyline (min/max-normalised) — price **increase = red/coral, decrease = green/teal** (same tokens as the Change badges), flat line = muted, <2 points = dash (matching the Movers "Not enough history" treatment). `LatestListingTable` gained a "Trend" column between Price and Stock, shown only when at least one row has sparkline data (so the dashboard table is unchanged; the products card tables get it).
-- **Tests:** +10 vitest — 2 `getProductIndex` (field shape, category+model ordering), 3 `getSparklines` (empty input → empty map, per-listing ascending series within window, window boundary), 5 `Sparkline` (dash for <2/undefined points, up stroke, down stroke, start→end price label). +4 e2e — palette opens via Ctrl+K and Enter-navigates to a product, Escape closes, quick-compare row on an exactly-two match ("RTX 5060"), expanded products card shows the Trend column + polyline. Full regression green: pytest **391** / svelte-check 0 errors / vitest **174** (+10) / e2e **44** (+4) / `npm run build` green.
-
-### ✅ COMPLETE: Bug fixes from `TRACKAROO_BUGS_AND_TROUBLESHOOTING.md` + temporary troubleshooting view (18-Aug-2026)
-- **§2.1 `getComparisonData` exact-date bug (confirmed + fixed):** the old price query used a single global `MAX(snapshot_date)` and required `snapshot_date = ?` exactly — any product whose only retailer missed that day (e.g. PCCG in cooldown) rendered every "Best price" row as N/A despite real prices a day or two earlier. Now uses the per-listing `LATEST_CTE` (same pattern as `getMovers`), so Compare matches how the rest of the app treats "latest price". +2 vitest lock-ins (a mini-DB where PCCG's latest snapshot is a day earlier than the global max still surfaces its price; an out-of-stock latest snapshot excludes that retailer).
-- **§2.2 Specs — settled, no fix needed:** `SELECT COUNT(*) FROM specs` = **95** (46 GPU + 25 Intel + 24 AMD), `SELECT COUNT(*) FROM specs WHERE product_id NOT IN (SELECT id FROM products)` = **0** — the import committed and the join is healthy. The empty-compare symptom was the §2.1 date bug, not missing spec rows.
-- **§3.2 Compare page now category-aware:** `rowDefs` was a single hardcoded 15-row array shown for every comparison. Extracted to a pure `web/src/lib/compareRows.ts` (`buildCompareRows`) — the server already guarantees a single category, so one check picks the rows: shared (MSRP, launch date, architecture, generation, TDP) + GPU (VRAM, memory type, memory bus, clocks) or CPU (cores/shaders, threads, clocks, socket, L3 cache). +5 vitest in a new `compareRows.test.ts` (GPU hides CPU fields and vice-versa, value formatting, N/A for missing fields, per-retailer price rows).
-- **§1.1 PCCG gaps — confirmed by design, not a bug:** `check_today_coverage` + the cooldown mechanism are the intended behaviour (`IMPROVEMENT_16_Aug_V1.md` §11.3/11.4): circuit breaker after 3 consecutive failed Algolia batches → `data/pccg_cooldown.json` → scraper skips within `TRACKAROO_PCCG_COOLDOWN_HOURS` (default 4h). No cooldown file is present now (PCCG healthy, 18-Aug scraped fine). The troubleshooting view surfaces the "stale but expected" cases directly.
-- **§4 Temporary troubleshooting view + `/api/health`:** `getCoverageSummary(db)` in `repos.ts` — per-retailer freshness (last date, date count, variants on the reference date), per-(retailer, category, product) snapshot count + last date + days-gap + last-7-day present/gap markers, and the "tracked product with no in-stock snapshot in the last 7 days" list. Rendered at `/troubleshooting` (retailer → category → model tables, gap badges, day dots), exposed as JSON at `/api/health`. Both flagged as temporary scaffolding to delete once the PCCG cooldown + compare/specs issues are confirmed settled. +3 vitest (`getCoverageSummary`) + 2 e2e (view renders, `/api/health` JSON shape).
-- **Test coverage review:** audited against the fixes — the gaps the old suite had (exact-date regression, category row split, coverage diagnostics) are now locked in. Full regression green: pytest **391** / svelte-check 0 errors / vitest **164** (+10: 5 compareRows, 5 repos) / e2e **40** (+2).
-
-### ✅ COMPLETE: Weekly spec sync scheduling (17-Aug-2026)
-- **`deploy/entrypoint-single.sh`** now schedules `sync_specs.py` automatically: a background `spec_sync_loop` polls hourly and runs the sync once a week at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00, clear of the daily price run). Cron-style DOW (0=Sun..6=Sat) derived from GNU `date %u` mod 7; the hour is zero-padded for a clean `date +%H` comparison. A `last_run` guard makes a mid-window container restart re-run it (safe — `sync_specs.py` upserts).
-- **New env knobs:** `SPEC_SYNC_DOW` (default 0) and `SPEC_SYNC_HOUR` (default 3), documented in the entrypoint header, DEPLOYMENT.md, README.md, and AGENTS.md.
-- **DEPLOYMENT.md:** the "Weekly spec sync" section now states Option C (single image) auto-schedules it in-container (no host crontab needed); the host-crontab guidance now applies to bare-host and Option A (compose) deployments.
-- **Note:** the compose `cron` service uses the pipeline-only `entrypoint.sh`, so it does *not* auto-schedule the spec sync — those deployments keep the host-crontab approach.
-- **Validation:** `sh -n` syntax check passes on the entrypoint; DOW-mapping and hour-padding logic verified.
-
-### ✅ COMPLETE: Hardcoded-values pass — tuning constants moved to config (17-Aug-2026)
-- **Audit:** swept the production code for hardcoded tuning values (timeouts, delays, retry counts, page caps, retention). 14 values were magic numbers; all are now `TRACKAROO_*` env-overridable knobs in `config.py` (read at import time, same pattern as the existing knobs).
-- **New config knobs (14):**
-  - `TRACKAROO_BACKUP_KEEP` (14) — backup retention; `backup_db.DEFAULT_KEEP` and `run_daily`'s automatic backup derive from it
-  - `TRACKAROO_SCRAPER_GAP_SECONDS` (2.0) — gap between the two scrapers in `run_daily.py`
-  - `TRACKAROO_SCORPTEC_TIMEOUT_SECONDS` (15), `TRACKAROO_SCORPTEC_MAX_RETRIES` (2), `TRACKAROO_SCORPTEC_RETRY_DELAY` (2.0), `TRACKAROO_SCORPTEC_PAGE_DELAY` (0.5), `TRACKAROO_SCORPTEC_MAX_PAGES` (20) — `scraper/scorptec.py`
-  - `TRACKAROO_ALGOLIA_HITS_PER_PAGE` (20), `TRACKAROO_ALGOLIA_MAX_PAGES` (10), `TRACKAROO_ALGOLIA_BATCH_MAX_PAGES` (3), `TRACKAROO_ALGOLIA_PAGE_DELAY` (0.3) — `scraper/pccg.py` (the call site's `hits_per_page=20, max_pages=3` now uses the config values)
-  - `TRACKAROO_SPEC_FETCH_TIMEOUT` (20), `TRACKAROO_SPEC_RETRY_BACKOFF` (2.0), `TRACKAROO_AMD_FETCH_DELAY` (1.0) — `sync_specs.py`
-- **Dedup fix:** `backup_db.py` hardcoded `PRAGMA busy_timeout=5000` instead of using `config.BUSY_TIMEOUT_MS` — now uses the config value.
-- **Left alone (logic, not tuning):** `query.py` `LIMIT 2` (change computation needs exactly 2 points), HTTP status codes, `test_concurrency.py`'s deliberate `busy_timeout=100`.
-- **Default-signature note:** `scorptec.fetch_page`'s `retries` default is now `None` → resolved to `config.SCORPTEC_MAX_RETRIES` at call time (avoids binding the config value at import time, which would break env-override tests). `scrape_all_pages`'s `max_pages` default binds `config.SCORPTEC_MAX_PAGES` at import time (same pattern as `BATCH_SIZE`).
-- **Tests:** +5 env-override tests in `test_config.py` (subprocess pattern) + 4 config-import lock-in tests (pccg pagination, scorptec tuning, sync_specs tuning, backup/run_daily); `test_scraper.py`'s `test_max_pages_default_is_20` now asserts against `config.SCORPTEC_MAX_PAGES`. `.env.example` + `config.py` docstring updated with the new vars.
-- **Regression (all green):** pytest **391** (was 383; +8) / svelte-check 0 errors / vitest 154 / e2e 38 (33.7s).
-
-### ✅ COMPLETE: Regression coverage pass (17-Aug-2026)
-- **Coverage review:** audited the full regression suite (365 pytest / 154 vitest / 38 e2e) against the code surface. Verdict: adequate — strong contract e2e (`test_e2e.py`), PCCG reliability lock-ins, full frontend query-layer + browser coverage. Two real gaps found and closed:
-- **Gap 1 — `migrate.py` had zero tests** (the only fully-untested backend module). New `unit_testing/test_migrate.py` (12 tests): introspection helpers, `get_connection` (missing-file exit, WAL + FK pragmas), both migrations (apply / dry-run no-op / idempotent skip), and `main()` end-to-end on a synthetic pre-12-Aug legacy DB (dry-run vs full run). Note: `get_connection`'s default `db_path` is bound at import time, so the `main()` tests patch the function itself, not just `migrate.DB_PATH`.
-- **Gap 2 — Scorptec pagination was signature-only:** `TestScrapeAllPages` in `test_scraper.py` only asserted `inspect.signature` (PCCG's equivalent loop *is* functionally tested). Replaced with functional tests (mocked `fetch_page`, real `parse_product_grid`/`get_next_page_url` on HTML fixtures): multi-page collection, `max_pages` cap, stop-on-fetch-failure — plus a new `TestFetchPage` (4 tests: 200, non-200→retry, all-fail→None, exception→None).
-- **Regression (all green):** pytest **383** (was 365; +18) / svelte-check 0 errors / vitest 154 / e2e 38 (33.9s).
-
-### ✅ COMPLETE: Docs-hygiene pass (17-Aug-2026)
-- **AGENTS.md:** vitest count corrected 117 → **154** (verified by counting the actual test files).
-- **Stale Mwave remnants removed from the frontend:** Mwave was dropped from scope on 10-Aug (CloudFront bot protection), but the UI filter dropdown still offered it — filtering by it matched nothing. Removed the `Mwave` entry from `RETAILER_OPTIONS` (`web/src/lib/filters.ts`), the `'mwave'` member of the `Retailer` type (`web/src/lib/types.ts`), and its branch in `web/test/filters.test.ts`. The `mwave` value in the `retailer` CHECK constraint in `db/schema.sql` was deliberately **kept** — removing it would require a table rebuild for no benefit (no mwave rows exist).
-- **SPEC.md:** §1 "three Australian retailers" → two (with the Mwave-removal note); Phase 4 marked partially complete (Docker deployment + backups done 15-Aug; remaining hardening — reverse proxy/TLS, monitoring — listed); chart lib finalised to uPlot in §6/§12 (the planning-era "uPlot or Chart.js" wording is gone).
-- **README.md:** repo layout now lists `deploy/bootstrap-data.sh` (bakes snapshot history into the image to hydrate a fresh DB on first boot).
-- **DEPLOYMENT.md:** Option C boot sequence now documents the fresh-DB hydration step.
-- **Regression (all green after the pass):** svelte-check 0 errors / vitest 154 / Playwright e2e 38 (33.7s) / pytest 365.
-
-### ✅ COMPLETE: PCCG reliability — recurring 429 hard-rate-limit fixed (16-Aug-2026)
-- **Root cause (confirmed by reading `scraper/pccg.py`):** both `algolia_single_search()` and `algolia_batch_search()` had an infinite loop — when every retry hit 429, the inner `for` exhausted, `page` never incremented, and the outer `while page < max_pages` rebuilt and retried the same request forever until the 300s subprocess timeout. Plus a second loop: in `algolia_single_search` reaching the last page `break`-ed only the inner loop, spinning on the final page even when not rate-limited. (Plan §10/11.1, `IMPROVEMENT_16_Aug_V1.md`.)
-- **Fixes (all §10 items landed):**
-  - `retries_exhausted` flag: exhausted retries now log a clear one-line reason and return, terminating in seconds instead of hanging
-  - `Retry-After` header honoured on 429 (fallback to the fixed formula)
-  - Non-JSON 200 responses (WAF/challenge pages) handled without crashing the run
-  - 401/403 logged distinctly as possible credential rotation, not generic "API error"
-  - Circuit breaker in `scrape_category()`: aborts after `TRACKAROO_ALGOLIA_CIRCUIT_BREAKER` (default 3) consecutive failed batches, returns what it matched
-  - Cooldown file `data/pccg_cooldown.json` written on trip; scraper skips (exits 0, expected behaviour) within `TRACKAROO_PCCG_COOLDOWN_HOURS` (default 4); cleared on success
-  - Short delay between CPU/GPU category passes (`TRACKAROO_CATEGORY_PASS_DELAY`, default 2s)
-  - `health_checks.py` `check_today_coverage`: per-retailer "today has a snapshot?" warning (e.g. `pccg: no snapshot for today yet`)
-  - DEPLOYMENT.md documents the safe scheduled `run_daily.py --pccg` retry (~12/18h) for the PCCG retry queue
-- **New config knobs:** `TRACKAROO_ALGOLIA_CIRCUIT_BREAKER`, `TRACKAROO_PCCG_COOLDOWN_HOURS`, `TRACKAROO_PCCG_COOLDOWN_FILE`, `TRACKAROO_CATEGORY_PASS_DELAY` (all in `.env.example`).
-- **Tests:** +14 `test_pccg_reliability.py` (429 termination, last-page exit, Retry-After, WAF-page guard, 403 logging, circuit breaker, cooldown) + 3 `test_health_checks.py` today-coverage tests → **277 backend tests passing** (was 251).
-- **Live-checked:** `health_checks --db-only` shows `[OK] today_coverage_scorptec (191 variants)` + `[WARNING] today_coverage_pccg (no snapshot for today)` — the exact partial-day state the plan wanted named.
-
-### ✅ COMPLETE: Real spec data (CPU + GPU) per `IMPROVEMENT_16_Aug_V1.md` §3–§9 (16-Aug-2026)
-- **Sources (final):** GPU — `RightNow-AI/RightNow-GPU-Database` (Apache-2.0, TechPowerUp data via `dbgpu`; 2824 records, no pricing → MSRP delta stays dormant, MSRP shown in USD when present). Intel — `toUpperCase78/intel-processors` raw CSVs (core + Core Ultra files). AMD — first-party `amd.com` product pages (browser UA, 1s delay; 24/28 SKUs 200, the 4 OEM-only SKUs 404 by design). The plan's Option A (`felixsteinke/cpu-spec-dataset`) was rejected (AGPL-3.0, missing current-gen parts).
-- **Schema:** new `specs` table (34 columns, `UNIQUE(product_id, source)`, `idx_specs_product`) in `db/schema.sql` + idempotent migration in `migrate.py`. One row per canonical product; `raw_json` keeps the verbatim source record. The 13 TechPowerUp-grade columns (`gpu_die`, `bus_interface`, `memory_bandwidth_gbps`, `memory_clock_mhz`, `process_nm`, `foundry`, `codename`, `l1_cache_kb`, `l2_cache_mb`, `memory_speed_mhz`, `memory_channels`, `memory_types`, `integrated_graphics`) are extracted from `raw_json` by `sync_specs.backfill_specs_extra`.
-- **`sync_specs.py`** (repo root): fetch (4xx definitive, 5xx/network retry with backoff) → pure parsers → match → upsert. Conflicting re-matches are flagged, never overwritten; unmatched records and vanished source rows are reported, never deleted. Report → `data/spec_sync_report.json`. Flags: `--category {gpu,cpu}`, `--dry-run`, `--report-only`; exits 1 on source failure. Never called from or by `run_daily.py` (§2 priority rule).
-- **`spec_matching.py`:** name normalization (strip brand/AIB prefixes, lowercase, collapse whitespace) + exact normalized matching at the `products` level; no fuzzy guessing.
-- **Coverage against the real watchlist:** Intel 25/25, AMD 24/28 (4 OEM-only SKUs have no public page), GPU 46/47 (RX 9070 XTX absent from the dataset).
-- **Spec panel (§7):** `SpecPanel.svelte` renders below the price chart on `/product/[id]` (GPU: generation/architecture, VRAM, MSRP-if-present, shaders, TDP; CPU: generation, cores/threads, clocks, TDP; collapsed "Show full specs" details). Fetched via one extra `SELECT` inside `getProductHistory` — never joined into list/index queries (§7.3). No panel at all when a product has no spec row (§7.4).
-- **Tests:** +89 backend (`test_specs_schema.py`, `test_specs_matching.py`, `test_sync_specs.py` → **366 backend tests**), +8 vitest (3 repos + 5 SpecPanel → **109**), +4 Playwright e2e (panel-below-chart layout, expand/collapse, no-panel negative, GPU fields → **27**).
-- **First live sync run (16-Aug):** `python sync_specs.py` populated the production `specs` table — **95 rows** (46 GPU + 25 Intel + 24 AMD). This surfaced a real matching bug: `match_gpu`'s VRAM-variant guard filtered on `memorySize`, but `sync_specs.parse_gpu_records` emits normalized records whose VRAM key is `vram_gb` — so every VRAM-variant GPU (RTX 3050/3060/4060 Ti/5060 Ti, RX 9060 XT) came back unmatched. Fixed by reading VRAM from either key (`_record_vram`) + 3 regression tests locking the normalized-record shape (`TestMatchGpuNormalizedRecords`). Re-ran GPU sync → all 5 now match to the correct variant; GPU coverage is genuinely **46/47** (RX 9070 XTX is absent from the dataset). Second bug found by the same live run: `data/spec_sync_report.json` was picked up by the ingest glob and failed as a "snapshot". Fixed with an `is_snapshot_file()` convention predicate in `ingest.py` (used by `ingest.main()` and the e2e test) + 5 tests (`TestIsSnapshotFile`).
-- **Watchlist correction (16-Aug, signed off):** `db/watchlist.csv` line 118 listed the Arc B570 as 12GB; the GPU dataset and Intel's official spec say 10GB — corrected to 10GB (separate commit `fix: Arc B570 watchlist VRAM 12GB -> 10GB`).
-
-### ✅ COMPLETE: Feature suggestions §2–§4 + repo cleanup §6 (17-Aug-2026)
-- **§2 Product detail redesign — band chart + brand-grouped listings:**
-  - `getPriceBand` in `repos.ts`: per-day `MIN`/`MAX` in-stock price over non-bundle listings + cheapest-in-stock at the latest day; `getProductHistory` returns it as `band`
-  - `PriceChart.svelte` rewritten: default view is a shaded low→high band (`uPlot` `bands` option) with a green "Cheapest in stock" marker; individual listing lines are hidden until toggled on
-  - New `BrandGroupedListings.svelte` + pure `listingsPanel.ts` (`deriveListingBrand` via `web/src/lib/branding.ts` — AIB first-token map, fallback to product brand; no schema change): collapsible brand groups (`MSI · $619–$635 · 2 listings · 1 in stock`), free-text search against variant name, "In stock only" filter, cheapest-first sort, per-listing "Show on chart"/"On chart" toggle
-- **§3 Compare feature:** new `/compare?ids=1,2` route (2–4 products, same category enforced server-side; shareable/bookmarkable) + `getComparisonData` joining products + specs + latest-day per-retailer in-stock prices; products page has per-card "Compare" checkboxes, category lock (different category disabled), and a floating "Compare (N) →" bar at ≥2
-- **§4 Quick wins:** §4.1 "Lowest in 90 days" — `getPriceExtremes` (in-stock low/high, anchored to latest snapshot day) drives a green `90d low` badge on dashboard deal cards and `90d low`/`90d high` chips on the product page; §4.2 carousel `title=` tooltip and §4.3 insufficient-history state were already shipped earlier
-- **§6 Repo cleanup:** `resync_stock_status.py` + `unit_testing/test_resync.py` deleted (one-off; bug fixed at source); `fetch_test.py` → `scraper/scorptec.py` via `git mv` (references updated in `run_daily.py`, `test_scraper.py`, `test_matching.py`, `db/watchlist.py`, README, SPEC.md, RAM_SCOPE.md); `migrate.py` docstring now says it's a historical-upgrade tool only
-- **Regression after each milestone (all green):** pytest 365 / svelte-check 0 errors / vitest 154 / e2e 38
-- **New tests:** +4 repos (getPriceBand, getComparisonData, getPriceExtremes), +10 `listingsPanel.test.ts` (new suite), +6 components (BrandGroupedListings interactions, ProductCard compare, CheapestCarousel badge/tooltip), +10 e2e (band chart + grouped listings panel, compare flow/validation, 90-day chips + carousel badge)
-
-### 🔄 IN PROGRESS: Frontend & UX Improvement Program (15 Aug-2026)
-
-Goal: make the dashboard actually help the user *find deals*, plus polish. Driven by user feedback + `FRONTEND_IMPROVEMENTS.md` (implementation brief in repo root).
-
-**Progress tracker** (check off as each lands; update "What's verified" + regression numbers when done):
-
-| # | Item | Status |
-|---|------|--------|
-| F1 | Docker: preload `data/*.json` history so a fresh container isn't empty | ✅ done — 1726 snapshots / 341 listings hydrated on first boot |
-| F2 | Header: show last snapshot date, snapshot count, DB size | ✅ done — header shows `Last snapshot: YYYY-MM-DD`, `N snapshots`, `Size` (hidden on tiny screens) |
-| F3 | Product search/filter by model name (CPU & GPU) | ✅ done — `Search by model` input (debounced, `?q=`) matches model/brand/variant |
-| F4 | Sort/view cheapest product per category/model (e.g. all 5090s, cheapest first) | ✅ done — `Sort by price` (low→high / high→low, `?sort=`) on table views; pairs with search |
-| F5 | Website icon / favicon | ✅ done — `static/favicon.svg` (accent-blue chart mark), linked in `app.html` |
-| F6 | Additional visual improvements (after walk-through) | ⬜ planned |
-| FI3 | Products page: card grid (grouped by model, expandable variants); keep dense table on Movers | ✅ done — one card per product (model, brand, category, cheapest in-stock "from $X" + retailer, listing count); expand reveals the variant table in compact mode; `sort=price-*` orders cards by cheapest in-stock price |
-| FI1 | ~~Deal score (`deal_score`, `pct_below_30d_avg`, `is_all_time_low`) gated behind ≥7 snapshot days~~ | ❌ declined (17-Aug) — user doesn't want a deal score; removed from the plan |
-| FI5 | Inline uPlot sparklines (7–30d) in rows/cards instead of "New listing" text; depends on accumulated history | ✅ done (18-Aug) — 7-day trend column in `LatestListingTable` (products card rows) per `TRACKAROO_UI_ADDITIONS.md` §2; `<2` points still shows the dash/"Not enough history" treatment |
-| ~~FI2~~ | ~~Product images (`image_url` column, hotlink retailer img, placeholder)~~ | ❌ declined — user doesn't want product images; scrapped from plan |
-
-Notes:
-- Git + GitHub: commits for this batch (F1–F5 + FI4 carousel) made after this entry; check `git status` is clean before ending sessions.
-- No image attached to review; visual feedback taken from the live pages.
-- FRONTEND_IMPROVEMENTS.md priority order (v2): FI2 (images — **declined**) → FI3 (cards ✅) → FI4 (carousel ✅) → FI1 (deal score — **declined 17-Aug**) → FI5 (sparklines). Carousel ships with the GPU/CPU toggle (resolved the GPU-only vs +CPU question).
-
-### ✅ COMPLETE: Phase 4 Deployment — single Docker image (15 Aug-2026)
-- **All-in-one Dockerfile** at the repo root: Python pipeline **and** SvelteKit dashboard in one container. `docker build -t trackaroo .` then `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`. No docker-compose required.
-- **`deploy/entrypoint-single.sh`**: seeds the DB, starts the dashboard on :3000, runs the pipeline immediately then every `RUN_INTERVAL_HOURS` (default 24). `RUN_ONCE=1` runs one pipeline then exits (host crontab compatible).
-- **Runtime gotcha fixed:** the scrapers use Python 3.12 PEP 701 f-strings (`f"{wp["vram_gb"]}gb"`), which are compile errors on 3.11 — so the runtime stage is `python:3.12-slim` with the Node binary copied from the Node build stage (bookworm apt `python3` is 3.11 and would crash).
-- **`docker-compose.yml`** kept as an optional two-service split of the same image (`cron` pins the pipeline-only entrypoint, `web` runs the server). `web/Dockerfile` removed (orphaned).
-- **Verified live in Docker:** image built, container booted — DB seeded (100 products), both scrapers ran OK, 315 listings ingested, backup created, dashboard served HTTP 200 with live data (315 listings today / 2 retailers).
-- **Playwright e2e suite added** (19 tests in `e2e/app.spec.ts`): navigation, theme toggle/persistence/reload, dashboard stat tiles + table, category/retailer/tier URL filters, clear-filters, products empty-state, movers windows + link-through, product detail + 404. Includes a `goto()` helper that waits for Svelte hydration (`networkidle`) — clicks/selects before hydration silently did nothing.
-- **Regression counts now:** 251 backend (15 modules via pytest; **277 as of 16-Aug** after PCCG-reliability + today-coverage tests), 90 frontend (vitest), 19 e2e (Playwright).
-- **Docs updated:** README (quick-start Docker + frontend e2e + repo layout), DEPLOYMENT.md (single-image Option C primary), AGENTS.md (commands + Docker + E2E conventions).
-
-### ✅ COMPLETE: Frontend M4–M5 (15 Aug-2026)
-- **M4 polish & verify:**
-  - §7a freshness wording — `LatestListingTable` now shows stale listings as `last seen {Nd} ago` in the freshness column, mutes the stale price cell, and drops hover on stale rows (never present stale data as current)
-  - Dashboard "Listings today" stat carries the latest snapshot date as context subtext
-  - Dark/light parity + chart tooltip token styling confirmed; `.num` mono/tabular-nums applied consistently; `meta name="description"` added to the dashboard
-  - Full verification: `svelte-check` 0 errors, `npm run build` green, production `adapter-node` server smoke-tested against the real DB — `/`, `/products`, `/movers` for 24h/7d/30d (invalid window falls back to 7d), `/product/1` all 200; `/product/999999` 404
-- **M5 tests & docs (partial):** added `test/components.test.ts` (13 tests) — presentational components (`Badge`, `StatTile`, `PriceChange`, `StockBadge`, `Chip`, `LatestListingTable`) mounted in jsdom, covering tone mapping, empty state, variant truncation, new-listing vs stale labelling, and "last seen" wording. Added vitest-only `svelte` → client-runtime alias in `vite.config.js` so client component tests can `mount()` (see DECISIONS.md).
-- **Frontend tests now 90** (formats 27, change 11, filters 14, theme 7, repos 18, components 13) — all passing.
-- **Docs updated:** DECISIONS.md (uPlot choice, theme strategy, DB path, `data` prop lesson, component-test alias), STATUS.md regression counts.
-
-### ✅ COMPLETE: Frontend M0–M3 (14–15 Aug-2026)
-- **Scaffold (M0):** SvelteKit + TypeScript + Tailwind v4 + `adapter-node` in `web/`; better-sqlite3 native build verified; `.gitignore` updated.
-- **Design foundations (M1):** token-driven `app.css` with `data-theme` dark-default/light; `theme.ts` toggle persisted in `localStorage`; primitives `Badge`, `StatTile`, `PriceChange`, `Chip`, `Filters`, `Header` + `+layout.svelte`; `.num` mono/tabular-nums utility.
-- **Server data layer (M2):** `src/lib/server/db.ts` (read-only singleton, `busy_timeout=5000`, never toggles journal mode, path `TRACKAROO_DB` → default `../../../../db/trackaroo.db`), `repos.ts` (`getSummary`, `getLatestListings`, `getProductHistory`, `getMovers`, `getBrands`), `formats.ts` + `change.ts`. Vitest suites: formats 27, change 11, repos 18 (temp DB seeded from `data/*.json`).
-- **Views (M3):** Dashboard `/` (stat row + filterable latest-prices table), Products `/products` (full filterable table), Movers `/movers` (24h/7d/30d windows, abs/pct/price sort, up/down/all filter, not-enough-history state), Product `/product/[id]` (meta chips + uPlot `PriceChart.svelte` with one series per retailer listing, single accent hue + solid/dashed/dotted line styles + hand-rolled token-styled tooltip + retailer listings panel), filters via `searchParams`.
-- **Verified:** `svelte-check` 0 errors, `vitest` 77 passing, `npm run build` green, and a live smoke test of the production `adapter-node` server against the real DB: `/`, `/products`, `/movers?window=24h` (invalid `window` falls back to 7d), `/product/1` all 200; `/product/999999` correctly 404; expected UI markers present (stat tiles, chips, chart container, retailer listings).
-- **Bug caught by smoke test:** pages were destructuring load results as top-level props instead of SvelteKit's single `data` prop — fixed across all four pages (Svelte 5 `$props()`). Also fixed a mis-written file path for the product `+page.server.ts` (stray duplicate directory segment) that silently excluded the product load from the build.
-
-### ✅ COMPLETE: PCCG Stock Status Hardening (13-Aug-2026)
-- **What broke:** PCCG scraper marked every product `in_stock` regardless of actual state ("Sold Out", "ETA: ...", "Stock at Supplier" were ignored)
-- **Fix:** `_map_stock_label()` in `scraper/pccg.py` correctly maps indicator labels to schema enum
-- **Impact:** 37 DB rows corrected for 13-Aug PCCG (3 CPU out_of_stock, 32 GPU out_of_stock, 2 GPU preorder)
-- **Resync script:** `resync_stock_status.py` — dry-run + apply mode, idempotent, scoped to PCCG only
-- **Backup files:** `.backup_buggy.json` files retained for audit; ingest pipeline now filters them out
-- **New tests:** `test_resync.py` (9 tests: dry-run, apply, idempotency, backup filtering, helpers)
-- **DB state verified:** PCCG 13-Aug now shows 86 in_stock, 35 out_of_stock, 2 preorder (was 123 all in_stock)
-
-### ✅ COMPLETE: Frontend-Readiness Hardening (13-Aug-2026)
-- **WAL mode enabled** — the real DB now runs `journal_mode=WAL`, set by the writer/init paths (`ingest.init_db`, `seed.init_db`, `migrate`). This is what makes `run_daily.py` (cron) writing while the frontend reads safe.
-- **Reader path fixed** — `query.get_connection` no longer toggles journal mode on open (the concurrency test exposed that a mode *change* on open takes an exclusive lock and can hit `database is locked` while the writer holds its lock). Readers inherit WAL from the file header; they set only `busy_timeout`.
-- **New tests (+10 → 207 total, +9 resync → 226):** `test_concurrency.py` (reader/writer threads under WAL — no lock errors), `test_e2e.py` (scrape-shaped JSON → ingest → query → health checks, plus real `data/` files), price-anomaly regression (`test_appearing_disappearing_variants_no_false_positive`: jump flags, vanishing/appearing variants don't), and `test_performance.py` (per-query wall-clock bounds + EXPLAIN index assertion).
-- **Indexes reviewed, measured not guessed** — the per-product history path already uses `idx_retailer_listings_product` + `idx_snapshots_listing_date` with no scans. Measured at ~10k snapshots: `show_latest_prices` 60ms, `show_biggest_movers` 7ms. No new index needed at this scale.
-- **`.env.example` committed** — `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` documented; `.gitignore` now negates `.env.example` so the template stays tracked.
-- **Anomaly sensitivity finding** — a single-day jump is only detectable once a listing has ~10+ history points (max deviation ≈ √N σ). Documented in `DECISIONS.md`; revisit calibration once listings accumulate more days.
-- **Decisions locked for Phase 3** — frontend reads SQLite directly via better-sqlite3; SvelteKit scaffolds into `web/` in this repo.
-
-### ✅ COMPLETE: New data point 13-Aug (5 days of history)
-Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors); DB health 10/10. Listings now span 09–13 Aug; 310 of 333 listings have 3+ price points (the anomaly-detection floor).
-
-### ✅ COMPLETE: Code Quality & Critical Bug Fixes (12-Aug-2026)
-- **What changed:** Full code-quality pass across the backend plus a critical health-check bug fix
-- **fetch_test.py:** Rewritten cleanly — the previous session had mangled it to 895 lines (blank line between every line); restored to a clean ~470-line version with type hints + logging
-- **Health check bug:** `check_match_count_anomalies` counted `COUNT(DISTINCT product_id)` but thresholds were calibrated for variant/listing counts — produced false "Match count dropped: 54" warnings against 192 real variants. **Fixed** to count distinct listings; real DB now reports Scorptec 192 / PCCG 123 variants, both stable
-- **Shared module:** `db/watchlist.py` extracted (parse_spec, load_watchlist, load_watchlist_products) — removed 3 copies of the same CSV/spec logic from `fetch_test.py`, `scraper/pccg.py`, `seed.py`
-- **Type hints + logging:** Applied consistently to all modules (`ingest.py`, `health_checks.py`, `query.py`, `seed.py`, `run_daily.py`, `migrate.py`); removed unused imports (`timedelta`, `json`, `csv`, `List`)
-- **PCCG scraper cleanup:** Replaced `__import__("urllib.parse").urlencode` code smell with the real import; fixed `global_idx` type issue; Algolia app ID/API key moved to env vars (`ALGOLIA_APP_ID`, `ALGOLIA_API_KEY`) with defaults
-- **mwave references:** Removed stale `mwave` option from `query.py --retailer` choices
-- **requirements.txt:** Added with pinned deps (requests, beautifulsoup4, pytest, pytest-mock)
-- **New tests:** `test_query.py` (12 tests), `test_cli.py` (9 CLI smoke tests), multi-variant regression test for the anomaly fix
-- **Tests:** **188 passing** (up from 175)
-
-### ✅ COMPLETE: Multi-Variant Tracking (11-Aug-2026)
-- **What changed:** Converted from "cheapest-only" to "all in-stock variants" tracking
-- **Impact:** Each in-stock model/brand variant (e.g., GIGABYTE, ASUS, Zotac 5090) now gets its own `retailer_listing` and individual price history
-- **Schema:** Added `variant_name TEXT` column to `retailer_listings`
-- **Scrapers:** Both `fetch_test.py` (Scorptec) and `scraper/pccg.py` (PCCG) updated to save ALL in-stock variants
-- **Ingestion:** `ingest.py` passes `variant_name` (from `scraped_name`) when creating listings
-- **Queries:** `query.py` displays variant names in output
-- **Health checks:** Thresholds updated for multi-variant counts (Scorptec: 90 total / 30 per category; PCCG: 20 total / 5 per category)
-- **Verified:** 11-Aug Scorptec scrape captured 194 variants (up from 56), including 15 RTX 5090 variants from $6,599–$7,599
-
-### ✅ COMPLETE: PCCG Scraper — Live & Verified (12-Aug-2026)
-- The Algolia rate limit that was blocking live PCCG scrapes has cleared; the scraper is now verified against live data
-- **12-Aug-2026:** 123 PCCG variants matched (21 CPU / 102 GPU)
-- Multi-variant PCCG tracking confirmed working end-to-end
+| Date | Status | Work |
+|---|---|---|
+| 23-Aug-2026 | done | JSON backup integrity, missed-day recovery, Docker persistence + timezone (see Recent changes above) |
+| 21-Aug-2026 | done | Discord digest consolidated to one webhook |
+| 21-Aug-2026 | done | Scorptec duplicate listings + missing OOS snapshots |
+| 21-Aug-2026 | done | Backup on every run |
+| 20-Aug-2026 | done | Delisted-listing detection — "why is this still in stock?" |
+| 20-Aug-2026 | done | Price-drop & restock alerts — "tell me when to buy" |
+| 20-Aug-2026 | done | UX quick wins — "since tracked" chips + deal badges |
+| 20-Aug-2026 | done | Robustness pass — pipeline alert webhook, PCCG backoff cap+jitter, synthetic e2e seed, scorptec variant-only reporting |
+| 20-Aug-2026 | done | Phase 5 frontend polish — friendly generation names + chart loading skeleton + brand-group motion |
+| — | done | Brand icons + UI polish + Discord digest (19-Aug-2026, per `TRACKAROO_POLISH_AND_NOTIFICATIONS.md`) |
+| — | done | Round-3 enhancements — snapshot counts, sortable columns, chart reactivity, name casing (18-Aug-2026, per `TRACKAROO_ENHANCEMENTS_ROUND3.md`) |
+| 18-Aug-2026 | done | TechPowerUp-grade spec enrichment |
+| — | done | Trend sparklines on unexpanded product cards (18-Aug-2026, card-grid idea) |
+| — | done | Sparklines on dashboard + movers; troubleshooting scaffolding removed (18-Aug-2026, UI follow-up) |
+| — | done | Command palette + inline sparkline trend column (18-Aug-2026, UI additions per `TRACKAROO_UI_ADDITIONS.md`) |
+| 18-Aug-2026 | done | Bug fixes from `TRACKAROO_BUGS_AND_TROUBLESHOOTING.md` + temporary troubleshooting view |
+| 17-Aug-2026 | done | Weekly spec sync scheduling |
+| 17-Aug-2026 | done | Hardcoded-values pass — tuning constants moved to config |
+| 17-Aug-2026 | done | Regression coverage pass |
+| 17-Aug-2026 | done | Docs-hygiene pass |
+| 16-Aug-2026 | done | PCCG reliability — recurring 429 hard-rate-limit fixed |
+| 16-Aug-2026 | done | Real spec data (CPU + GPU) per `IMPROVEMENT_16_Aug_V1.md` §3–§9 |
+| 17-Aug-2026 | done | Feature suggestions §2–§4 + repo cleanup §6 |
+| 15-Aug-2026 | **in progress** | Frontend & UX Improvement Program |
+| 15-Aug-2026 | done | Phase 4 Deployment — single Docker image |
+| 15-Aug-2026 | done | Frontend M4–M5 |
+| — | done | Frontend M0–M3 (14–15 Aug-2026) |
+| 13-Aug-2026 | done | PCCG Stock Status Hardening |
+| 13-Aug-2026 | done | Frontend-Readiness Hardening |
+| — | done | New data point 13-Aug (5 days of history) |
+| 12-Aug-2026 | done | Code Quality & Critical Bug Fixes |
+| 11-Aug-2026 | done | Multi-Variant Tracking |
+| 12-Aug-2026 | done | PCCG Scraper — Live & Verified |
 
 ## What exists right now
 
@@ -332,7 +209,7 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - `backup_db.py` — standalone DB backup with retention pruning
 - `requirements.txt` — pinned dependencies
 - `Dockerfile` — **single all-in-one image** (Python pipeline + dashboard); `docker run -p 3000:3000 -v trackaroo-data:/data trackaroo`
-- `docker-compose.yml` — optional two-service split of the same image
+- `docker-compose.yml` — **removed 23-Aug-2026**; the app runs as a single image via `docker run`
 - `deploy/entrypoint-single.sh` — all-in-one entrypoint (seed → dashboard → pipeline scheduler + weekly spec sync); `entrypoint.sh` for pipeline-only
 - `.dockerignore` — excludes regenerable artifacts and the web build context
 - `unit_testing/` — **566 regression tests** across 22 modules (seed, matching, schema, ingestion, scraper, migrate, PCCG reliability, daily runner, health checks, query, concurrency/WAL, E2E pipeline, performance, CLI smoke tests, backup, config, specs schema, specs matching, sync_specs, notify_discord, check_alerts, check_delisted; `test_resync.py` removed 17-Aug with its one-off script)
@@ -346,8 +223,8 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
   - `src/lib/` — `branding.ts` (client-safe AIB brand derivation), `listingsPanel.ts` (pure grouped-listings logic), `formats.ts`/`change.ts`
   - `src/lib/server/` — `db.ts` (better-sqlite3 read-only singleton + write-capable `getWriteDb()` for alert actions), `repos.ts` (incl. `groupListingsByProduct`, `getPriceBand`, `getComparisonData`, `getPriceExtremes`, `upsertAlert` / `deleteAlert` / `getProductAlerts`)
   - Routes — `/` dashboard (table with 7-day trend sparklines), `/products` (card grid with per-card trend sparklines + expandable variant listings with inline 7-day trend sparklines + compare selection), `/compare` (side-by-side specs + prices), `/movers` (dense table with window-matched trend sparklines), `/product/[id]` with URL-driven filters; global command palette (Ctrl/Cmd+K) on every page
-  - `test/` — vitest: formats (35), change (11), filters (23), theme (7), tiers (7), repos (70), components (57), listingsPanel (13), compareRows (6), tableSort (5) — **234 tests**
-  - `e2e/` — Playwright: 52 tests (app.spec.ts + seed.mjs deterministic DB — real data, or synthetic via `TRACKAROO_DATA_DIR` empty dir; incl. spec-panel, grouped-listings panel, compare flow/validation, 90d-low badges + chips, all-time low/high + 30d-avg chips, data-driven Deal-badge test, dashboard + movers + products trend sparklines (card + expanded table), command palette open/navigate/escape/quick-compare/snapshot-badge, column-sort tri-state on dashboard + movers, "Show on chart" toggle + chart navigation, products card-grid sparkline, brand icons, product-page freshness, price-alert arm + delete from the product page, delisted-listing "Delisted" badge (no stale in-stock price)) — **52 tests**
+  - `test/` — vitest, **301 tests** across 13 suites (run `npm test` for the current breakdown)
+  - `e2e/` — Playwright: 54 tests (app.spec.ts + seed.mjs deterministic DB — real data, or synthetic via `TRACKAROO_DATA_DIR` empty dir; incl. spec-panel, grouped-listings panel, compare flow/validation, 90d-low badges + chips, all-time low/high + 30d-avg chips, data-driven Deal-badge test, dashboard + movers + products trend sparklines (card + expanded table), command palette open/navigate/escape/quick-compare/snapshot-badge, column-sort tri-state on dashboard + movers, "Show on chart" toggle + chart navigation, products card-grid sparkline, brand icons, product-page freshness, price-alert arm + delete from the product page, delisted-listing "Delisted" badge (no stale in-stock price)) — **54 tests**
 
 ## What's verified
 
@@ -362,11 +239,11 @@ Live `run_daily.py` scrape both retailers → 315 snapshots ingested (0 errors);
 - **Code quality:** all modules type-hinted + logged; shared watchlist module deduplicates logic; secrets moved to env vars
 - **Spec sync:** live-fetch coverage verified against the real watchlist — Intel 25/25, AMD 24/28 (4 OEM-only SKUs have no public page), GPU 46/47 (RX 9070 XTX absent from the dataset); upsert conflict/unmatched/vanished-row behaviour locked in by tests; price pipeline untouched (§2 priority rule)
 - **Spec panel:** renders below the price chart on `/product/[id]` (E2E bounding-box assertion), hidden when a product has no spec row; fetched via one extra `SELECT` in the detail load only — never joined into list/index queries
-- **Frontend:** `svelte-check` 0 errors; vitest **234 passing**; Playwright e2e **52 passing** (real + synthetic seeds); production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
+- **Frontend:** `svelte-check` 0 errors; vitest **301 passing**; Playwright e2e **54 passing** (real + synthetic seeds); production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
 - **Docker:** single all-in-one image built and booted — DB seeded, both scrapers OK, 315 listings ingested, backup created, dashboard HTTP 200 with live stats
 - **Feature suggestions §2–§4:** band chart + brand-grouped listings on `/product/[id]`, `/compare?ids=` (2–4 same-category products), `90d low`/`90d high` on product page + dashboard cards — regression green after each milestone
 - **Troubleshooting:** the temporary `/troubleshooting` view + `/api/health` JSON built on 18-Aug were **removed** the same day once the PCCG cooldown behaviour and compare/specs issues were confirmed settled — `getCoverageSummary`, its routes, and their tests are gone (see the UI follow-up entry)
-- **Regression:** backend 566 passing (pytest); frontend 234 passing (vitest) + 52 e2e (Playwright, real + synthetic)
+- **Regression:** backend **611** passing (pytest); frontend **301** passing (vitest) + 54 e2e (Playwright, real + synthetic)
 - **Command palette + sparklines (18-Aug):** Ctrl/Cmd+K palette searches the tracked catalog from any page and Enter-navigates to a product (quick "Compare A vs B" when exactly two match); `/products` card tables, the `/` dashboard table, and the `/movers` table all show per-listing trend sparklines (up=red / down=green, dash when <2 points), and each unexpanded `/products` card shows its cheapest-in-stock trend line — regression green after the batch
 - **Round-3 enhancements (18-Aug):** palette results show per-product snapshot counts; dashboard + movers tables have tri-state sortable column headers; the product-page price chart is reactive (re-creates uPlot on prop change — fixes stale chart on navigation AND the inert "Show on chart" toggle); variant names are display-cased consistently (`titleCase()`) at every render site while the DB stays raw; specs confirmed healthy (95 rows / 0 orphans / 95 covered) — the empty-look was a stale Docker DB. Regression: pytest 391 / svelte-check 0 / vitest 187 / e2e 46 / build green.
 - **Brand icons + UI polish + Discord digest (19-Aug):** simple-icons AMD/NVIDIA/Intel marks in header, cards, compare + footer (tree-shaking verified); product-page "Updated X ago" freshness, unified card heights + empty-state panels; `notify_discord.py` digest gated on healthy runs (dry-run printed the real digest against live data — 3 moves: RTX 5070 Ti +10.2%, RX 9070 +5.6%, RTX 5070 +4.4%). Regression: pytest 461 / svelte-check 0 / vitest 204 / e2e 48 / build green.
@@ -410,31 +287,22 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 
 ## Regression test count
 
-- **566 tests** across 22 test modules via pytest (21-Aug Scorptec dedup/OOS batch added +20: ingest URL-key dedup + scraper OOS + migrate backfill/merge; 21-Aug alerts-resilience fix added +1 to test_cli.py; 20-Aug delisted batch added +23: check_delisted; 20-Aug alerts batch added +43: check_alerts (40) + price_alerts migration tests; prior 20-Aug robustness batch had added +18)
-  - `test_seed.py` — seed, watchlist loading, schema creation
-  - `test_matching.py` — product matching logic
-  - `test_schema.py` — schema validation, triggers, constraints
-  - `test_ingest.py` — ingestion pipeline + TestVariantTracking
-  - `test_scraper.py` — scraper URL fallback, category mapping, `fetch_page` retry behaviour (4), functional pagination loop (3: multi-page, max-pages cap, stop-on-failure)
-  - `test_migrate.py` — legacy-DB introspection, `get_connection` pragmas, variant_name + specs + **price_alerts** migrations (apply/dry-run/idempotent), `main()` end-to-end (19)
-  - `test_pccg_reliability.py` — **new:** 429-termination, last-page exit, Retry-After, WAF-page guard, 403 logging, circuit breaker, cooldown (14)
-  - `test_run_daily.py` — daily runner integration + **digest gating (health_errors flatten/filter, notify_enabled flag matrix)**
-  - `test_health_checks.py` — JSON validation, DB freshness, match/price anomalies + **today-coverage (3 new)** + variant appear/disappear regression
-  - `test_query.py` — query tool (latest prices, trends, biggest movers)
-  - `test_concurrency.py` — WAL-enable + concurrent read/write under load
-  - `test_e2e.py` — full pipeline: scrape-shaped JSON → ingest → query → health checks
-  - `test_performance.py` — query wall-clock bounds + index usage over ~10k synthetic snapshots
-  - `test_cli.py` — CLI entry-point smoke tests
-  - `test_backup.py` — backup_db.py retention
-  - `test_config.py` — config.py env-override + **tuning-knob import lock-in (pccg pagination, scorptec, sync_specs, backup/run_daily)**
-  - `test_specs_schema.py` — **new:** specs table DDL + idempotent migration
-  - `test_specs_matching.py` — **new:** name normalization + product→dataset matching
-  - `test_sync_specs.py` — **new:** fetch/parse/upsert, conflict no-overwrite, report, CLI flags
-  - `test_notify_discord.py` — digest query (same-listing pairing, exclusions: no-prev / out-of-stock / bundles / untracked / inactive, both retailers), `build_digest` (mover-over-flat, cheapest tie-break, flat skip, up/down split, top-3 cap), `build_embed` (title/color/price line, retailer + optional Trackaroo link), `send_embed` (POST shape, error swallowing), `run` (no-op without webhooks, category→webhook routing, dry-run prints no posts, test-mode samples), `load_dotenv` (file load, real-env wins, missing file no-op), `format_aud` (27)
-  - `test_check_alerts.py` — **new:** evaluation matrix (price hit/miss, further-drop re-fire, first-notify, sustained-breach no-re-fire, restock out→in transition + 24h cooldown, price-over-restock precedence), message building, delivery stubs per channel (configured / unconfigured skip), cooldown columns advance only on successful delivery, CLI (40)
-  - `test_check_delisted.py` — **new:** classify_page matrix (404/410 → delisted, 200+marker → delisted, plain 200 → active, network-fail / other-status → unknown), fetch_listing (retry-on-exception, retry-on-throttling-then-success, exhausted-retries-return-last-status), query_check_listings (selection + exclusions: non-scorptec / delisted / untracked / has-today-snapshot, `--all`), run() (marks delisted, leaves unknown untouched, dry-run no-write, per-run cap, inter-fetch sleep, check_all) (23)
-- **Frontend unit (vitest, `web/`) — 234 tests** across 10 suites (formats 35, change 11, filters 23, theme 7, tiers 7, repos 70, components 57, listingsPanel 13, compareRows 6, tableSort 5) — against temp DBs seeded from `data/*.json`; 20-Aug delisted batch added +3 listingsPanel (delisted flag, in-stock count excludes delisted, priceRange skips delisted); 20-Aug alerts batch added +5 repos (`upsertAlert` insert/re-arm, one-per-channel, `deleteAlert`, `getProductAlerts` ordering); 20-Aug UX batch added +9 repos (`getProductStats`/`getProductDealStats`/`getCheapestPerModel` 30d/`getProductHistory` stats) +5 components (Deal badges); 20-Aug polish added +7 tiers +1 components; 19-Aug batch added +5 BrandIcon (+ProductCard icon assertion), +2 empty-state panels (CommandPalette + BrandGroupedListings), +card layout assertions (grow / min-h-7)
-- **Frontend e2e (Playwright, `web/e2e/`) — 52 tests** — navigation, theme, dashboard filters, **dashboard table (populated + Trend sparklines + column-sort tri-state)**, **products card grid (4: heading+cards, empty state, card expand/collapse, sparkline trend column + brand icons)**, **compare (4: flow to /compare, category lock, clear bar, invalid URLs + brand icons)**, **movers (5: renders + Trend sparklines, window switching, invalid-window fallback, link-through, column-sort tri-state)**, product detail (+ **"Updated X ago" freshness**, Intel brand icon, **all-time low/high + 30d-avg chips**), **grouped listings (5: brand groups, expand+toggle+chart-survives, chart navigation, search, in-stock filter)**, **spec panel (4: below-chart layout, expand/collapse, no-panel negative, GPU fields)**, **90d chips + carousel badge (2)**, **data-driven Deal-badge test (1: `expectedDeals()` mirrors the server rule against the seeded DB — real or synthetic)**, **command palette (4: Ctrl+K open + Enter-navigate, Escape close, quick-compare row, snapshot-count badge)**, **price alerts (1: arm from the product page — target/channel/restock — listed under "My alerts", then deleted)**, **delisted listing (1: "Delisted" badge shown, no stale in-stock price)**, **footer trademark line**; troubleshooting view + health-JSON tests removed with the scaffolding; runs via `npm run test:e2e` against a seeded dev server (real `data/*.json`, or synthetic when `TRACKAROO_DATA_DIR` points at an empty dir)
+Current, as of 25-Aug-2026:
+
+| Suite | Tests | Command (from) |
+|---|---|---|
+| Backend (pytest) | **611** | `python -m pytest -q` (repo root) |
+| Frontend unit (vitest) | **301** | `npm test` (`web/`) |
+| Frontend e2e (Playwright) | **54** | `npm run test:e2e` (`web/`) |
+| Type + Svelte check | 0 errors | `npm run check` (`web/`) |
+
+The per-module breakdown that used to live here went stale every session;
+`pytest -q` and `vitest` are the source of truth. The 21-Aug snapshot of it
+is preserved in
+[`docs/archive/STATUS-history-to-2026-08-21.md`](docs/archive/STATUS-history-to-2026-08-21.md).
+
+Backend suites added 23-Aug: `test_snapshot_io.py` (14), 
+`test_export_snapshots.py` (16), `test_health_checks_backup.py` (15).
 
 ## How to update this file
 

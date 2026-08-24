@@ -1,114 +1,109 @@
 # Trackaroo Deployment
 
-Self-hosted deployment options for the daily tracker + dashboard. Two service
-types:
+Self-hosted deployment for the daily tracker + dashboard.
 
-- **`cron`** — the Python pipeline: scrape both retailers → validate JSON →
-  ingest → health-check DB → optional DB backup. Runs on a fixed interval.
-- **`web`** — the SvelteKit dashboard (adapter-node, port 3000).
+**One Docker image runs everything**, started with plain `docker run` — there is
+no docker-compose. The container serves the SvelteKit dashboard on :3000 and
+runs the daily pipeline (scrape both retailers → validate JSON → ingest →
+mirror the DB back out to JSON → health-check → back up the DB) once a day on a
+wall clock.
 
-The simplest deployment is a **single all-in-one Docker image** that runs both
-(Option C). A two-container split with docker-compose (Option A) is kept for
-users who prefer separate services. Both share one volume containing the SQLite
-DB (`/data/trackaroo.db`), the scraped JSON snapshots (`/data/`), and the
-backups. WAL mode (enabled by the writers) makes the concurrent writer/reader
-safe.
+Running the Python pipeline natively (`python run_daily.py`) is fully supported
+alongside or instead of the container; both use the same `db/` and `data/`
+directories.
+
+> **Changed 23-Aug-2026.** Three defaults were wrong in ways that lost data:
+>
+> - The stack used a **named volume** (and the live container had *no mount at
+>   all*), so scraped data lived inside Docker and vanished on `docker rm`. The
+>   documented run now bind-mounts the repo's own `db/` and `data/`.
+> - Containers ran on **UTC**. The scrapers stamp snapshots with the local
+>   date, so a run before 10:00 AEST filed data under the previous day. The
+>   image installs `tzdata` and pins `TZ=Australia/Melbourne`.
+> - Scheduling was `sleep ${RUN_INTERVAL_HOURS}h` anchored to container start,
+>   which drifted on every restart and could skip a day. It is now a wall-clock
+>   `RUN_AT_HOUR` (default 04:00 local) plus a catch-up run on boot when today
+>   has no data. **`RUN_INTERVAL_HOURS` is no longer used.**
+>
+> `docker-compose.yml` was removed in the same change; recover it with
+> `git show HEAD:docker-compose.yml` if you ever want the two-service split.
 
 ---
 
-## Option C — Single Docker image (recommended)
-
-One container serves the dashboard **and** runs the daily pipeline. No
-docker-compose needed.
+## Option A — Docker (recommended)
 
 ```bash
 docker build -t trackaroo .
+```
+
+Then run it with the DB and snapshots mapped onto the host, so the data
+outlives the container:
+
+```bash
 docker run -d --name trackaroo \
   -p 3000:3000 \
-  -v trackaroo-data:/data \
+  --restart unless-stopped \
+  --env-file .env \
+  -v "$(pwd)/db:/app/db" \
+  -v "$(pwd)/data:/app/data" \
   trackaroo
 ```
 
-On boot the container:
-1. Creates + seeds the SQLite DB (`python seed.py`) if missing.
-2. Hydrates a fresh DB from the snapshot history baked into the image
-   (`deploy/bootstrap-data.sh`) so the dashboard isn't empty on first boot —
-   a no-op when the volume already has snapshots.
-3. Starts the SvelteKit dashboard on :3000.
-4. Runs the daily pipeline immediately, then every `RUN_INTERVAL_HOURS`.
-5. Runs the spec sync (`python sync_specs.py`) once a week at
-   `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00), clear of the
-   daily price run. It refreshes the `specs` table (GPU/CPU) from upstream
-   sources; safe to re-run (upserts).
+PowerShell uses backticks and `${PWD}` — see [README.md](README.md#docker-single-all-in-one-container)
+for that form, the named-volume alternative, and the pipeline-only /
+dashboard-only entrypoint overrides.
 
-Logs: `docker logs -f trackaroo`
+| Mount | Contents |
+|---|---|
+| `./db` → `/app/db` | `trackaroo.db` (SQLite, WAL), `backups/`, `schema.sql`, `watchlist.csv` |
+| `./data` → `/app/data` | `{cpu,gpu}_{scorptec,pccg}_DD_Month_YYYY.json` daily snapshots |
+
+Map **both**. `data/*.json` is the backup the DB is rebuilt from
+(`python ingest.py`), so a container with only `/app/db` mapped still loses the
+backup on `docker rm`.
 
 | Setting | Default | Override |
 |---|---|---|
-| Pipeline cadence | 24h | `-e RUN_INTERVAL_HOURS=6` |
+| Daily run hour (local) | `04` | `-e RUN_AT_HOUR=6` |
+| Timezone | `Australia/Melbourne` | `-e TZ=Europe/Berlin` |
 | Backups retained | 14 | `-e TRACKAROO_BACKUP_KEEP=30` |
-| Dashboard port | 3000 | `-p 8080:3000` |
-| Spec-sync day | Sunday (0) | `-e SPEC_SYNC_DOW=1` (Mon) … `6` (Sat) |
-| Spec-sync hour | 03:00 | `-e SPEC_SYNC_HOUR=12` |
+| Dashboard host port | 3000 | `-p 8080:3000` |
+| Spec-sync day / hour | Sun / 03 | `-e SPEC_SYNC_DOW=1 -e SPEC_SYNC_HOUR=12` |
 
-One-shot run (e.g. from a host crontab, starts web then exits after a pipeline):
+On boot the container seeds the DB if missing, hydrates a fresh one from the
+snapshot history baked into the image (a no-op once snapshots exist), starts
+the dashboard, and runs the pipeline immediately **if today has no data yet**.
+Every real full run backs up the DB automatically (opt out with `--no-backup`).
+
+### Verifying a deployment
 
 ```bash
-docker run --rm -v trackaroo-data:/data -e RUN_ONCE=1 trackaroo
+docker exec trackaroo date                    # local time, not UTC
+docker inspect trackaroo --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}
+{{end}}'
+docker exec trackaroo python -c "import sqlite3;print(sqlite3.connect('/app/db/trackaroo.db').execute('select max(snapshot_date),count(*) from price_snapshots').fetchone())"
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/
 ```
 
-> **First run:** the pipeline scrapes live retailer sites, so the dashboard
-> populates over the first minutes. `seed.py` pre-populates the product
-> watchlist so pages render even before the first scrape completes.
+### Upgrading
+
+```bash
+docker stop trackaroo && docker rm trackaroo
+docker build -t trackaroo .
+# re-run the docker run command above
+```
+
+The data is in the mounts, not the container, so this is non-destructive.
+
+### Backups
+
+`backup_db.py` writes retention-pruned copies into `db/backups/` on every real
+run. Because that is a host directory rather than a Docker volume, any
+host-level backup of the project directory picks them up.
 
 ---
 
-## Option A — Docker Compose (two services)
-
-```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs -f cron web
-```
-
-Both services build from the **same repo-root `Dockerfile`** and pin their
-runtime entrypoints in the compose file (`cron` → pipeline loop, `web` →
-adapter-node server). Defaults:
-
-| Setting | Default | Override |
-|---|---|---|
-| Cron cadence | 24h | `RUN_INTERVAL_HOURS=6 docker compose up ...` |
-| Backups retained | 14 | `TRACKAROO_BACKUP_KEEP=30` |
-| Dashboard host port | 3000 | `PORT_TRACKAROO=8080` |
-
-The `cron` service runs `run_daily.py` every interval via
-`deploy/entrypoint.sh`; every real full run backs up the DB automatically
-(retention via `TRACKAROO_BACKUP_KEEP`, opt out with `--no-backup`). It is
-safe to run the same image one-shot from a host crontab instead (see Option B).
-
-Data lives in the named volume `trackaroo-data` (`/data` in both containers):
-
-```
-/data/
-├── trackaroo.db        # SQLite DB (WAL)
-├── cpu_scorptec_*.json # scraped snapshots (this run + history)
-├── gpu_pccg_*.json
-└── backups/            # trackaroo_YYYY-MM-DD_HHMMSS.db (retention-pruned)
-```
-
-> **First run:** the DB is created empty and seeded the first time ingestion
-> runs. To seed from the watchlist first, run the seed step once:
-> `docker compose run --rm cron sh -c "python seed.py && python run_daily.py"`.
-
-### Volume backup
-
-The Docker volume is just files on the host. For Proxmox, the simplest robust
-backup is a nightly `dump` of the volume directory, or use the in-app
-`backup_db.py` retention that already writes copies into `/data/backups/`.
-
----
-
-## Option B — Host cron (Proxmox/Linux)
+## Option B — Host scheduler (native, no Docker)
 
 No Docker required — run the pipeline directly with the system crontab. The
 scripts resolve all paths against the repo root (`config.py` uses its own
@@ -135,7 +130,7 @@ entrypoint runs `sync_specs.py` once a week in-container at `SPEC_SYNC_DOW` @
 with `-e SPEC_SYNC_DOW=1 -e SPEC_SYNC_HOUR=12` (or set them in the container
 env).
 
-For bare-host and Option A (compose) deployments, add a host crontab entry:
+For a native (Option B) deployment, add a host crontab entry:
 
 ```cron
 0 3 * * 0 cd /opt/trackaroo && /usr/bin/env python3 sync_specs.py >> /var/log/trackaroo_specs.log 2>&1
@@ -143,15 +138,15 @@ For bare-host and Option A (compose) deployments, add a host crontab entry:
 
 A non-zero exit means a source fetch failed (nothing was written); the report
 from the last run is in `data/spec_sync_report.json` (`python sync_specs.py
---report-only` reprints it). For the compose setup you can also run
-`docker exec trackaroo python sync_specs.py` from a host crontab — the spec
-state lives in the shared volume, so the outcome is identical to a host-run
-sync.
+--report-only` reprints it). With the container running you can also trigger
+it from a host crontab with `docker exec trackaroo python sync_specs.py` — the
+spec state lives in the mapped `db/`, so the outcome is identical to a
+host-run sync.
 
 ### PCCG scheduled retry (automatic, safe to run unconditionally)
 
 PCCG rate-limits aggressively; when it does, the scraper now fails fast via a
-circuit breaker (see IMPROVEMENT_16_Aug_V1.md §10). Because each run is cheap
+circuit breaker (see docs/archive/IMPROVEMENT_16_Aug_V1.md §10). Because each run is cheap
 and respects the cooldown file, you can schedule a plain `run_daily.py --pccg`
 a few hours after the main daily run without any guard logic — it either picks
 up the missing PCCG data or exits quietly:
@@ -178,10 +173,10 @@ Key behaviours that make this safe:
   respected the cooldown and exited quietly.
 
 For the all-in-one Docker container (Option C), add a host crontab entry that
-runs the same image one-shot (`docker run --rm -v trackaroo-data:/data -e RUN_ONCE=1 trackaroo`) — note this runs the full pipeline, so pick a time clear of
-the main scheduled run, or run a second container with the pipeline-only
-entrypoint (`deploy/entrypoint.sh`). The cooldown file lives in the shared
-volume, so the scoring is identical either way.
+runs the same image one-shot (`docker run --rm -v "$PWD/db:/app/db" -v "$PWD/data:/app/data" -e RUN_ONCE=1 trackaroo`) — note this runs the full pipeline, so
+pick a time clear of the main scheduled run, or run a second container with the
+pipeline-only entrypoint (`deploy/entrypoint.sh`). The cooldown file lives in
+the shared `data/` directory, so the scoring is identical either way.
 
 > **First run:** the pipeline scrapes live retailer sites, so the dashboard
 > populates over the first minutes.
@@ -208,16 +203,18 @@ python backup_db.py --keep 30 --backup-dir /mnt/nas/trackaroo
 ## Dashboard-only deployment
 
 If you only need the dashboard (pipeline runs elsewhere), the all-in-one image
-still works — set `RUN_INTERVAL_HOURS` high or skip the scheduler:
+still works — point it at an existing DB and use the web-only entrypoint so no
+pipeline ever runs:
 
 ```bash
 docker build -t trackaroo .
 docker run -d --name trackaroo-web \
   -p 3000:3000 \
-  -v /opt/trackaroo-data:/data \
-  -e TRACKAROO_DB=/data/trackaroo.db \
-  -e RUN_INTERVAL_HOURS=99999 \
-  trackaroo
+  -v /opt/trackaroo/db:/app/db \
+  -v /opt/trackaroo/data:/app/data \
+  -e TRACKAROO_DB=/app/db/trackaroo.db \
+  --entrypoint /usr/bin/tini \
+  trackaroo -- node web/build/index.js
 ```
 
 ### Option B (adapter-node directly)
@@ -239,8 +236,13 @@ is internet-facing.
 - Pipeline health: `run_daily.py` exits non-zero and the daily log contains
   `DB health: all N checks passed` on a good day. `health_checks.py` also runs
   standalone (`--json-only` / `--db-only`).
-- Backups: verify `/data/backups/` contains recent files:
-  `ls -la /data/backups | head`.
+- Backups: verify `db/backups/` contains recent files:
+  `ls -la db/backups | head`.
+- JSON backup integrity: `python export_snapshots.py --repair --dry-run` should
+  report 0 snapshots recovered. Anything else means `data/*.json` can no longer
+  rebuild the DB — run it without `--dry-run` to fix.
+- Missed days: `check_missing_days` runs as part of `run_daily.py` and raises a
+  Discord pipeline alert on any calendar gap.
 
 ## Daily Discord digest
 
@@ -254,10 +256,9 @@ Set up a webhook in Discord (Server Settings → Integrations → Webhooks → N
 Webhook, copy the URL) and pass it to the pipeline. Both CPU and GPU moves
 go to the same webhook:
 
-- Option C (single image): `-e DISCORD_WEBHOOK_URL=…`
-- Option A (compose): export the var on the host or in a `.env`; the cron
-  service forwards it (see `docker-compose.yml`).
-- Option B (host cron): put the var in a repo-root `.env` (gitignored) —
+- Option A (Docker): `--env-file .env` (recommended — keeps the secret out of
+  your shell history and `docker inspect`), or `-e DISCORD_WEBHOOK_URL=…`.
+- Option B (native): put the var in a repo-root `.env` (gitignored) —
   `notify_discord.py` loads it automatically — or export it in the crontab:
   ```cron
   30 6 * * * cd /opt/trackaroo && /usr/bin/env DISCORD_WEBHOOK_URL=... python3 run_daily.py >> /var/log/trackaroo_daily.log 2>&1
@@ -295,8 +296,8 @@ never fails the run), per the alert's `channel`:
 - `webhook` → `TRACKAROO_ALERT_WEBHOOK_URL` (generic JSON POST)
 
 These are deliberately distinct from the digest's `DISCORD_WEBHOOK_URL` var.
-Pass them the same way as the digest (compose forwards them in
-`docker-compose.yml`; host cron via a repo-root `.env` or the crontab env).
+Pass them the same way as the digest (`--env-file .env` for the container, a
+repo-root `.env` or the crontab env for a native run).
 All are optional — with none set, alert delivery is a no-op.
 
 Preview without sending:

@@ -1,0 +1,51 @@
+<script lang="ts">
+	import { page } from '$app/state';
+
+	/**
+	 * Without this, every failure — a 404 from an unknown product id, a 400 from
+	 * a malformed /compare URL, or a 500 because trackaroo.db is missing (db.ts
+	 * opens with fileMustExist) — rendered SvelteKit's unstyled default page
+	 * with no way back into the app.
+	 */
+	const status = $derived(page.status);
+	const message = $derived(page.error?.message ?? 'Something went wrong.');
+
+	const hint = $derived.by(() => {
+		if (status === 404) return 'The page or product you asked for does not exist.';
+		if (status === 400) return 'That link looks malformed — check the query parameters.';
+		if (/no such file|unable to open database|SQLITE_CANTOPEN/i.test(message))
+			return 'The database could not be opened. Run `python seed.py` (and `python run_daily.py` for data), or check that TRACKAROO_DB points at the right file.';
+		if (/no such table/i.test(message))
+			return 'The database is missing a table. Run `python migrate.py` to bring the schema up to date.';
+		if (status >= 500) return 'The server hit an unexpected error. The details are in the server log.';
+		return null;
+	});
+</script>
+
+<svelte:head>
+	<title>{status} — Trackaroo</title>
+</svelte:head>
+
+<div class="mx-auto max-w-xl py-16 text-center">
+	<p class="num text-5xl font-semibold text-text-muted">{status}</p>
+	<h1 class="mt-3 text-lg font-semibold text-text">{message}</h1>
+
+	{#if hint}
+		<p class="mt-3 text-sm text-text-muted">{hint}</p>
+	{/if}
+
+	<div class="mt-8 flex items-center justify-center gap-3">
+		<a
+			href="/"
+			class="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text no-underline hover:bg-surface-hover hover:no-underline"
+		>
+			Back to dashboard
+		</a>
+		<a
+			href="/products"
+			class="rounded-md px-3 py-2 text-sm text-text-muted no-underline hover:text-text hover:no-underline"
+		>
+			Browse products
+		</a>
+	</div>
+</div>

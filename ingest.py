@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from config import DATA_DIR, DB_PATH, DB_DATE_FORMAT, FILE_DATE_FORMAT, SCHEMA_PATH
+from config import DATA_DIR, DB_DATE_FORMAT, DB_PATH, FILE_DATE_FORMAT, SCHEMA_PATH, setup_logging
 
 LOGGER = logging.getLogger(__name__)
 
@@ -358,7 +358,10 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
                 )
                 stats["inserted"] += 1
 
-        except sqlite3.IntegrityError as e:
+        except (sqlite3.Error, KeyError, TypeError, ValueError) as e:
+            # A malformed record used to propagate and abort the whole file,
+            # discarding every product after it. Count it and keep going --
+            # the rest of the snapshot is still good data.
             LOGGER.error("ERROR processing %s: %s", model, e)
             stats["errors"] += 1
 
@@ -369,10 +372,7 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
 
 
 def main(argv: Optional[List[str]] = None) -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    setup_logging()
     parser = argparse.ArgumentParser(description="Ingest scraped JSON files into the Trackaroo database")
     parser.add_argument("--file", type=Path, help="Single file to ingest (default: all files in data/)")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing")

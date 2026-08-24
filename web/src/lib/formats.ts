@@ -53,12 +53,6 @@ export function formatDate(dateStr: string): string {
 	return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export function formatAxisLabel(dateStr: string): string {
-	const date = new Date(`${dateStr}T00:00:00`);
-	if (Number.isNaN(date.getTime())) return dateStr;
-	return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-}
-
 export function freshnessLabel(lastSnapshotAt: string | null, now: Date = new Date()): string {
 	if (!lastSnapshotAt) return 'no data';
 	const ageDays = Math.floor((now.getTime() - new Date(lastSnapshotAt).getTime()) / 86_400_000);
@@ -146,4 +140,27 @@ export function titleCase(name: string | null): string {
 		}
 		return out;
 	});
+}
+/**
+ * How many whole days behind today a snapshot date is.
+ *
+ * `snapshotDate` is a plain 'YYYY-MM-DD' calendar date, not a timestamp, so
+ * this compares calendar days in local time rather than subtracting instants —
+ * a snapshot taken this morning and one taken last night are both "today".
+ *
+ * Returns null when there is no date to compare, and never returns a negative
+ * number (a clock skew that puts the DB "ahead" is not staleness).
+ */
+export function daysBehindToday(snapshotDate: string | null, now: Date = new Date()): number | null {
+	if (!snapshotDate) return null;
+	const snap = new Date(`${snapshotDate}T00:00:00`);
+	if (Number.isNaN(snap.getTime())) return null;
+	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	const diff = Math.round((today.getTime() - snap.getTime()) / 86_400_000);
+	return diff > 0 ? diff : 0;
+}
+
+/** Human phrasing for a staleness gap, e.g. "1 day behind" / "3 days behind". */
+export function stalenessLabel(days: number): string {
+	return days === 1 ? '1 day behind' : `${days} days behind`;
 }

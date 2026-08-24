@@ -4,17 +4,26 @@
 # Runs everything a self-hosted Trackaroo needs in ONE container:
 #   1. Seed/init the SQLite DB if it doesn't exist yet.
 #   2. Start the SvelteKit dashboard (served by node on PORT, default 3000).
-#   3. Run the daily pipeline (scrape → ingest → health checks → backup)
-#      immediately, then every RUN_INTERVAL_HOURS (default 24).
+#   3. Run the daily pipeline (scrape -> ingest -> health checks -> backup)
+#      once a day at RUN_AT_HOUR, plus an immediate catch-up run on boot if
+#      today has no snapshot yet.
 #   4. Run the spec sync (sync_specs.py) once a week at SPEC_SYNC_DOW @
 #      SPEC_SYNC_HOUR (default Sunday 03:00), clear of the daily price run.
 #
+# Scheduling note: this used to be `sleep ${RUN_INTERVAL_HOURS}h` in a loop,
+# anchored to container start. That drifts — every restart moved the run time,
+# and a restart shortly before the due time could skip a day entirely (16-Aug
+# and 23-Aug 2026 were both lost that way). The schedule is now wall-clock:
+# the pipeline runs when the local hour matches RUN_AT_HOUR and today has not
+# run yet, so restarts cannot shift or skip it.
+#
 # Knobs (env):
-#   RUN_INTERVAL_HOURS   Pipeline cadence (default 24)
+#   RUN_AT_HOUR          Local hour to run the pipeline, 0-23 (default 4)
 #   TRACKAROO_BACKUP_KEEP  DB backups to retain (default 14; automatic)
 #   PORT                 Dashboard listen port (default 3000)
 #   HOST                 Dashboard bind host (default 0.0.0.0)
-#   TRACKAROO_DB         SQLite db path (default /data/trackaroo.db)
+#   TRACKAROO_DB         SQLite db path (default /app/db/trackaroo.db)
+#   TZ                   Timezone (default Australia/Melbourne, set in the image)
 #   SPEC_SYNC_DOW        Spec-sync day of week, cron style 0=Sun..6=Sat (default 0)
 #   SPEC_SYNC_HOUR       Spec-sync hour of day, 0-23 (default 3)
 #   DISCORD_WEBHOOK_URL  Discord webhook for the CPU+GPU digest (optional)
@@ -25,28 +34,56 @@
 #                        see .env.example
 #
 # A single pipeline iteration can be run and then exit with RUN_ONCE=1
-# (used for one-shot `docker run` from a host crontab).
+# (used for one-shot `docker run` from a host scheduler).
 
 set -e
 
-: "${RUN_INTERVAL_HOURS:=24}"
+: "${RUN_AT_HOUR:=4}"
 : "${SPEC_SYNC_DOW:=0}"
 : "${SPEC_SYNC_HOUR:=3}"
-# Zero-pad the hour so it compares cleanly against `date +%H` ("03" not "3").
+# Zero-pad the hours so they compare cleanly against `date +%H` ("03" not "3").
+RUN_AT_HOUR_PAD=$(printf '%02d' "$RUN_AT_HOUR")
 SPEC_SYNC_HOUR_PAD=$(printf '%02d' "$SPEC_SYNC_HOUR")
 
 log() {
-    echo "[trackaroo] $(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo "[trackaroo] $(date '+%Y-%m-%d %H:%M:%S %Z') $1"
 }
 
 run_pipeline() {
     log "Starting daily pipeline..."
-    python run_daily.py && log "Pipeline finished." || log "Pipeline finished with errors (retrying next interval)."
+    python run_daily.py && log "Pipeline finished." || log "Pipeline finished with errors (retrying next window)."
 }
 
 run_spec_sync() {
     log "Starting weekly spec sync..."
     python sync_specs.py && log "Spec sync finished." || log "Spec sync finished with errors (retrying next week)."
+}
+
+# Has the pipeline already stored snapshots for today's LOCAL date?
+# Used both for the boot catch-up and to make the daily window idempotent, so
+# a restart inside the run hour doesn't scrape twice.
+todays_run_done() {
+    python - <<'PY'
+import os
+import sqlite3
+import sys
+from datetime import date
+from pathlib import Path
+
+db = Path(os.environ.get("TRACKAROO_DB", "/app/db/trackaroo.db"))
+if not db.exists():
+    sys.exit(1)
+try:
+    conn = sqlite3.connect(str(db))
+    row = conn.execute(
+        "SELECT 1 FROM price_snapshots WHERE snapshot_date = ? LIMIT 1",
+        (date.today().isoformat(),),
+    ).fetchone()
+    conn.close()
+except sqlite3.Error:
+    sys.exit(1)
+sys.exit(0 if row else 1)
+PY
 }
 
 # Weekly spec sync: poll hourly; when the local time hits SPEC_SYNC_DOW @
@@ -87,22 +124,39 @@ if [ "$RUN_ONCE" = "1" ]; then
     exit 0
 fi
 
-# ── 3. Pipeline scheduler loop ────────────────────────────────────────────
+# ── 3. Pipeline scheduler ─────────────────────────────────────────────────
 # Weekly spec sync runs in its own background loop (see spec_sync_loop).
 spec_sync_loop &
 
-run_pipeline
-log "Scheduler started (interval: ${RUN_INTERVAL_HOURS}h, spec sync: dow ${SPEC_SYNC_DOW} @ ${SPEC_SYNC_HOUR_PAD}:00)"
+# Catch-up: if the container was down over the scheduled hour, today has no
+# data and waiting until tomorrow would lose a day permanently (retailers only
+# expose current prices). Run now instead.
+if todays_run_done; then
+    log "Today already has snapshots — skipping the boot catch-up run."
+else
+    log "No snapshots for today yet — running the pipeline now (catch-up)."
+    run_pipeline
+fi
+
+log "Scheduler started (daily at ${RUN_AT_HOUR_PAD}:00 ${TZ:-local}, spec sync: dow ${SPEC_SYNC_DOW} @ ${SPEC_SYNC_HOUR_PAD}:00)"
 while true; do
-    log "Sleeping for ${RUN_INTERVAL_HOURS}h..."
-    sleep "${RUN_INTERVAL_HOURS}h" &
+    sleep 3600 &
     sleep_pid=$!
-    # Keep the dashboard reachable even if the web process exits early:
     wait "$sleep_pid"
+
+    # Keep the dashboard reachable even if the web process exits early.
     if ! kill -0 "$WEB_PID" 2>/dev/null; then
         log "Dashboard exited; restarting."
         node web/build/index.js &
         WEB_PID=$!
     fi
-    run_pipeline
+
+    hour=$(date '+%H')
+    if [ "$hour" = "$RUN_AT_HOUR_PAD" ]; then
+        if todays_run_done; then
+            log "Run window reached but today already has snapshots — nothing to do."
+        else
+            run_pipeline
+        fi
+    fi
 done

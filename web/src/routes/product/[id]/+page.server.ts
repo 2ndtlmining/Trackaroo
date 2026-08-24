@@ -1,4 +1,4 @@
-import { error, redirect } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { getProductAlerts, getProductHistory, upsertAlert, deleteAlert } from '$lib/server/repos';
 import { getDb, getWriteDb } from '$lib/server/db';
 import type { AlertChannel } from '$lib/types';
@@ -25,12 +25,24 @@ export const actions = {
 		}
 		const form = await request.formData();
 		const rawTarget = Number(form.get('target_price'));
-		if (!Number.isFinite(rawTarget) || rawTarget <= 0) {
-			error(400, 'Enter a target price above zero.');
-		}
 		const channel = String(form.get('channel') ?? 'discord') as AlertChannel;
+
+		// Validation returns fail() rather than error(): error() replaces the whole
+		// product page with an error screen, losing the chart, the listings and
+		// whatever the user typed. fail() re-renders the page with a message.
+		if (!Number.isFinite(rawTarget) || rawTarget <= 0) {
+			return fail(400, {
+				error: 'Enter a target price above zero.',
+				target_price: String(form.get('target_price') ?? ''),
+				channel
+			});
+		}
 		if (!CHANNELS.includes(channel)) {
-			error(400, 'Unknown notification channel.');
+			return fail(400, {
+				error: 'Unknown notification channel.',
+				target_price: String(rawTarget),
+				channel: 'discord' as AlertChannel
+			});
 		}
 		const notifyOnRestock = form.get('notify_on_restock') === 'on' || form.get('notify_on_restock') === '1';
 

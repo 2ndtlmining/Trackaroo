@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { getInitialTheme, setTheme, type Theme } from '$lib/theme';
+	import { getInitialTheme, toggleTheme, type Theme } from '$lib/theme';
 
 	let theme: Theme = $state(getInitialTheme());
 
 	function toggle() {
-		theme = theme === 'dark' ? 'light' : 'dark';
-		setTheme(theme);
+		theme = toggleTheme();
 	}
 </script>
 

@@ -73,7 +73,7 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Frontend tests** | ✅ Complete | 234 vitest + 52 Playwright e2e (with a `goto()` hydration helper) |
-| **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container (docker-compose optional)
+| **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with plain `docker run`
 
 ## Quick start
 
@@ -135,33 +135,147 @@ python -m pytest unit_testing/ -v
 ## Docker (single all-in-one container)
 
 One image runs the whole system — the dashboard **and** the daily
-scrape → ingest → health-check → backup pipeline. No docker-compose required.
+scrape → ingest → mirror → health-check → backup pipeline. There is no
+docker-compose; plain `docker run` is the supported way to run this.
+
+### Build
 
 ```bash
-# Build (context = repo root)
-docker build -t trackaroo .
-
-# Run: dashboard on :3000, pipeline every 24h, data persisted in a volume
-docker run -d --name trackaroo \
-  -p 3000:3000 \
-  -v trackaroo-data:/data \
-  trackaroo
-
-# Follow logs
-docker logs -f trackaroo
-
-# One-shot pipeline (run manually, e.g. from a host crontab)
-docker run --rm -v trackaroo-data:/data -e RUN_ONCE=1 trackaroo
+docker build -t trackaroo .        # context = repo root, not web/
 ```
 
-On boot the container seeds the DB from the watchlist, serves the dashboard on
-:3000, and runs the pipeline immediately, then every `RUN_INTERVAL_HOURS`
-(default 24h). It also runs the weekly spec sync (`sync_specs.py`) once a week
-at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00). Knobs:
-`RUN_INTERVAL_HOURS`, `TRACKAROO_BACKUP_KEEP` (default 14; backup is automatic), `SPEC_SYNC_DOW` (0=Sun),
-`SPEC_SYNC_HOUR`, `-p 8080:3000` to change the host port. A docker-compose
-two-service split is also kept for those who prefer it — see
-[DEPLOYMENT.md](DEPLOYMENT.md).
+### Run — with the data mapped to the host
+
+The two `-v` mounts are the important part. `/app/db` holds the SQLite database
+and its backups; `/app/data` holds the JSON snapshots. **Without them, both
+live inside the container's writable layer and are destroyed the moment you
+`docker rm` it** — that is exactly how an earlier container silently threw away
+everything it had scraped.
+
+Mapping them onto the repo's own `db/` and `data/` directories means the
+container and anything you run natively (`python run_daily.py`, `npm run dev`)
+read and write the same files. One source of truth.
+
+**PowerShell (Windows):**
+
+```powershell
+docker run -d --name trackaroo `
+  -p 3000:3000 `
+  --restart unless-stopped `
+  --env-file .env `
+  -v "${PWD}\db:/app/db" `
+  -v "${PWD}\data:/app/data" `
+  trackaroo
+```
+
+**bash (Linux/macOS/Git Bash):**
+
+```bash
+docker run -d --name trackaroo \
+  -p 3000:3000 \
+  --restart unless-stopped \
+  --env-file .env \
+  -v "$(pwd)/db:/app/db" \
+  -v "$(pwd)/data:/app/data" \
+  trackaroo
+```
+
+Dashboard: <http://localhost:3000> · Logs: `docker logs -f trackaroo`
+
+`--env-file .env` supplies the Discord webhook and any `TRACKAROO_*` overrides
+(see `.env.example`). Drop it if you have no `.env` yet — the app runs fine
+without one, it just won't send notifications.
+
+### What the mounts contain
+
+| Host path | Container path | Contents |
+|---|---|---|
+| `./db` | `/app/db` | `trackaroo.db` (SQLite, WAL), `backups/`, `schema.sql`, `watchlist.csv` |
+| `./data` | `/app/data` | `{cpu,gpu}_{scorptec,pccg}_DD_Month_YYYY.json` daily snapshots |
+
+Both are gitignored. `data/*.json` is the backup the DB is rebuilt from, so map
+it too — not just the DB. If you only map `/app/db`, the pipeline still works
+but the JSON backup is lost with the container.
+
+#### Prefer a named volume?
+
+If you don't want the data in the repo directory, use a volume instead. It
+survives `docker rm` (unlike no mount at all), but the files are then only
+reachable through Docker:
+
+```bash
+docker volume create trackaroo-db
+docker volume create trackaroo-data
+docker run -d --name trackaroo -p 3000:3000 --restart unless-stopped \
+  -v trackaroo-db:/app/db -v trackaroo-data:/app/data trackaroo
+```
+
+### On boot
+
+1. Seeds the DB from `db/watchlist.csv` if it doesn't exist.
+2. Hydrates a fresh DB from the snapshot history baked into the image
+   (skipped once the DB has data).
+3. Starts the dashboard on :3000.
+4. **Runs the pipeline immediately if today has no data yet** — so a container
+   that was down over the scheduled hour catches up instead of losing the day.
+5. Thereafter runs daily at `RUN_AT_HOUR` (default 04:00 local), plus a weekly
+   spec sync at `SPEC_SYNC_DOW` @ `SPEC_SYNC_HOUR` (default Sunday 03:00).
+
+### Settings
+
+| Setting | Default | Override |
+|---|---|---|
+| Daily run hour (local) | `04` | `-e RUN_AT_HOUR=6` |
+| Timezone | `Australia/Melbourne` | `-e TZ=Europe/Berlin` |
+| Backups retained | 14 | `-e TRACKAROO_BACKUP_KEEP=30` |
+| Dashboard host port | 3000 | `-p 8080:3000` |
+| Spec-sync day / hour | Sun / 03 | `-e SPEC_SYNC_DOW=1 -e SPEC_SYNC_HOUR=12` |
+
+The timezone matters for correctness, not display: the scrapers stamp snapshots
+with the local date, so a UTC container running before 10:00 AEST would file
+today's prices under yesterday.
+
+### Other run modes
+
+```bash
+# One-shot pipeline, then exit (e.g. from a host scheduler)
+docker run --rm -e RUN_ONCE=1 \
+  -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" trackaroo
+
+# Pipeline only, no dashboard
+docker run -d --name trackaroo-pipeline \
+  -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" \
+  --entrypoint /usr/bin/tini trackaroo -- /usr/local/bin/trackaroo-entrypoint-pipeline
+
+# Dashboard only, no pipeline (read-only; DB written elsewhere)
+docker run -d --name trackaroo-web -p 3000:3000 \
+  -v "$(pwd)/db:/app/db" \
+  --entrypoint /usr/bin/tini trackaroo -- node web/build/index.js
+```
+
+### Verifying a deployment
+
+```bash
+docker exec trackaroo date                    # should print your local time, not UTC
+docker inspect trackaroo --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}
+{{end}}'                                      # both mounts present?
+docker exec trackaroo python -c "import sqlite3;print(sqlite3.connect('/app/db/trackaroo.db').execute('select max(snapshot_date),count(*) from price_snapshots').fetchone())"
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/
+```
+
+### Upgrading
+
+```bash
+docker stop trackaroo && docker rm trackaroo
+docker build -t trackaroo .
+# then re-run the command above
+```
+
+Your data is untouched by this because it lives in the mounts, not the
+container. That is the whole point of mapping them.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for host scheduling, reverse-proxy notes,
+and monitoring.
 
 ## Frontend (`web/`)
 
@@ -206,7 +320,7 @@ products ────── retailer_listings ────── price_snapshots
 - **specs** — one row per canonical product, sourced from the external spec datasets above (fetched weekly by `sync_specs.py`). Fetched only on the product detail page — never joined into list/index queries.
 - **price_alerts** — one row per product × channel (`UNIQUE(product_id, channel)`): target price, optional restock notify, and cooldown columns (`last_notified_at` / `last_notified_price`) that advance only after a successful delivery.
 
-The DB runs in `WAL` mode (set by the ingestion writers), so the frontend can read it while the daily cron job writes — no lock errors. Rows are never deleted. Products that roll out of scope are marked `tracked=0`. See [SPEC.md §7a](SPEC.md#7a-data-retention-policy) for the full retention policy.
+The DB runs in `WAL` mode (set by the ingestion writers), so the frontend can read it while the daily cron job writes — no lock errors. Rows are never deleted. Products that roll out of scope are marked `tracked=0`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Part 1 §7a for the full retention policy.
 
 ## Product scope
 
@@ -219,7 +333,7 @@ Track the **current generation plus two prior generations** per product line. No
 | NVIDIA GPU | RTX 50 (Blackwell) | RTX 40 (Ada) | RTX 30 (Ampere) |
 | AMD GPU | RX 9000 (RDNA 4) | RX 7000 (RDNA 3) | RX 6000 (RDNA 2) |
 
-Full rules in [SCOPE_RULES.md](SCOPE_RULES.md).
+Full rules in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Part 2.
 
 ## Repo layout
 
@@ -227,10 +341,12 @@ Full rules in [SCOPE_RULES.md](SCOPE_RULES.md).
 Trackaroo/
 ├── README.md           # this file
 ├── STATUS.md           # current progress — read this first
-├── SPEC.md             # full specification and architecture
-├── SCOPE_RULES.md      # product watchlist rules
-├── DECISIONS.md        # rationale for key choices
-├── FRONTEND_IMPROVEMENTS.md  # frontend/UX improvement implementation brief
+├── CLAUDE.md           # agent/contributor conventions (AGENTS.md points here)
+├── DEPLOYMENT.md       # running it — Docker and native
+├── docs/
+│   ├── ARCHITECTURE.md # spec (Pt 1) + scope rules (Pt 2) + decision log (Pt 3)
+│   ├── archive/        # implemented or declined plans, kept for rationale
+│   └── proposals/      # not-yet-built work (RAM tracking)
 │
 ├── run_daily.py        # one-command daily scraper + ingest runner (health checks + Discord digest + price alerts + delisted check)
 ├── notify_discord.py   # daily Discord digest of biggest CPU/GPU moves (top 3 up/down per category)
@@ -248,7 +364,6 @@ Trackaroo/
 ├── requirements.txt    # pinned dependencies
 │
 ├── Dockerfile          # all-in-one image: Python pipeline + dashboard (see DEPLOYMENT.md)
-├── docker-compose.yml  # optional two-service split of that image
 ├── deploy/
 │   ├── entrypoint.sh          # pipeline-only scheduler loop (used by compose `cron`)
 │   ├── entrypoint-single.sh   # all-in-one: seed → dashboard → pipeline scheduler
@@ -302,7 +417,7 @@ Trackaroo/
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 234 vitest regression tests (10 suites)
+    ├── test/                   # 239 vitest regression tests (11 suites)
     ├── e2e/                    # 52 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
@@ -311,11 +426,10 @@ Trackaroo/
 ## Documentation reading order
 
 1. **[STATUS.md](STATUS.md)** — where are we right now
-2. **[SPEC.md](SPEC.md)** — full specification, architecture, data model
-3. **[SCOPE_RULES.md](SCOPE_RULES.md)** — which products are tracked and why
-4. **[DECISIONS.md](DECISIONS.md)** — rationale behind key choices
-5. **[DEPLOYMENT.md](DEPLOYMENT.md)** — Docker (single image), compose, host cron
-6. **[IMPROVEMENT_16_Aug_V1.md](IMPROVEMENT_16_Aug_V1.md)** — real spec data plan + PCCG reliability fixes (both implemented; kept as the spec-data rationale)
+2. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — specification and data model (Part 1), which products are tracked and why (Part 2), rationale behind key choices (Part 3)
+3. **[DEPLOYMENT.md](DEPLOYMENT.md)** — running it: Docker, host scheduling, native
+4. **[CLAUDE.md](CLAUDE.md)** — conventions and guardrails for anyone (human or agent) changing the code
+5. **[docs/archive/](docs/archive/)** — completed plans, kept for the reasoning behind what shipped
 
 ## Ground rules
 

@@ -1,16 +1,24 @@
 <script lang="ts">
 	import PriceChart, { type ChartSeries } from '$lib/components/PriceChart.svelte';
-	import Chip from '$lib/components/Chip.svelte';
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
-	import BrandGroupedListings from '$lib/components/BrandGroupedListings.svelte';
+	import ProductHeadline from '$lib/components/ProductHeadline.svelte';
+	import OfferList from '$lib/components/OfferList.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
-	import { formatAud, formatDate, formatRelative, titleCase } from '$lib/formats';
+	import type { AlertChannel } from '$lib/types';
+	import { formatDate, formatRelative, titleCase } from '$lib/formats';
 	import { generationTierLabel } from '$lib/tiers';
-	import { MIN_HISTORY_POINTS } from '$lib/constants';
+	import { buildHeadline } from '$lib/productHeadline';
+	import { toListingDisplays } from '$lib/listingsPanel';
 	import { type ProductHistory, type AlertRow } from '$lib/server/repos';
 
-	let { data }: { data: ProductHistory & { alerts: AlertRow[] } } = $props();
+	let {
+		data,
+		form
+	}: {
+		data: ProductHistory & { alerts: AlertRow[] };
+		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
+	} = $props();
 
 	const product = $derived(data.product);
 	const series = $derived(data.series);
@@ -66,17 +74,8 @@ label:
 	);
 	const totalPoints = $derived(series.reduce((acc, s) => acc + s.points.length, 0));
 
-	// The band spans the product's entire history, so these are all-time
-	// extremes (not a 90-day window).
-	const bandLows = $derived(band ? band.low.filter((v): v is number => v !== null) : []);
-	const bandHighs = $derived(band ? band.high.filter((v): v is number => v !== null) : []);
-	const allTimeLow = $derived(bandLows.length ? Math.min(...bandLows) : null);
-	const allTimeHigh = $derived(bandHighs.length ? Math.max(...bandHighs) : null);
-	const avg30 = $derived(
-		data.stats.avg30 !== null && data.stats.avg30Points >= MIN_HISTORY_POINTS
-			? data.stats.avg30
-			: null
-	);
+	const offers = $derived(toListingDisplays(series, product.brand, selected));
+	const headline = $derived(buildHeadline(offers, data.band, data.stats));
 </script>
 
 <svelte:head>
@@ -93,28 +92,21 @@ label:
 			{product.model}{product.variant ? ` · ${product.variant}` : ''}
 		</h1>
 
-		<div class="mt-3 flex flex-wrap items-center gap-2">
-			{#if product.category}
-				<Chip label="Category" value={product.category} />
-			{/if}
+		<p class="mt-1 text-sm text-text-muted">
+			{product.category?.toUpperCase()}
 			{#if product.generation_tier}
-				<Chip
-					label="Generation"
-					value={generationTierLabel(product.brand, product.category, product.generation_tier) ?? product.generation_tier}
-				/>
+				· {generationTierLabel(product.brand, product.category, product.generation_tier) ??
+					product.generation_tier}
 			{/if}
-			{#if allTimeLow !== null}
-				<Chip label="All-time low" value={formatAud(allTimeLow)} />
-			{/if}
-			{#if allTimeHigh !== null}
-				<Chip label="All-time high" value={formatAud(allTimeHigh)} />
-			{/if}
-			{#if avg30 !== null}
-				<Chip label="30d avg" value={formatAud(avg30)} />
-			{/if}
-			<Chip label="Listings" value={String(series.length)} />
-			<Chip label="History span" value={span} />
-			<Chip label="Snapshots" value={String(totalPoints)} />
+		</p>
+
+		<div class="mt-4">
+			<ProductHeadline
+				{headline}
+				listingCount={series.length}
+				snapshotCount={totalPoints}
+				{span}
+			/>
 		</div>
 		{#if product.last_snapshot_at}
 			<p class="mt-2 text-xs text-text-muted">
@@ -124,7 +116,7 @@ label:
 	</div>
 
 	{#if hasChartData}
-		<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+		<div class="space-y-4">
 			<PriceChart
 				series={overlays}
 				band={band}
@@ -135,10 +127,11 @@ label:
 				}
 				height={360}
 			/>
-			<BrandGroupedListings
+			<OfferList
 				series={data.series}
 				productBrand={product.brand}
-				selected={selected}
+				avg30={headline.avg30}
+				{selected}
 				onToggleListing={toggleListing}
 			/>
 		</div>
@@ -150,7 +143,7 @@ label:
 		</div>
 	{/if}
 
-	<PriceAlerts alerts={data.alerts} />
+	<PriceAlerts alerts={data.alerts} {form} />
 
 	{#if data.specs}
 		<SpecPanel spec={data.specs} />

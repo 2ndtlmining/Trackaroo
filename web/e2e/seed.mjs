@@ -67,7 +67,8 @@ function buildSyntheticSources() {
 		'Arc B580': ['gpu', 'Intel', 'current'],
 		'Radeon RX 7800 XT': ['gpu', 'AMD', 'current-1']
 	};
-	// [model, retailer, scraped_name, url, prices per date (dates order)]
+	// [model, retailer, scraped_name, url, prices per date (dates order), optional
+	// stock statuses per date (dates order) — defaults to all 'in_stock' when omitted]
 	const listings = [
 		['Core Ultra 5 245', 'pccg', 'Intel Core Ultra 5 245 Boxed CPU', '/p/245-pccg', [489, 479, 459]],
 		['Core Ultra 5 245', 'scorptec', 'Intel Core Ultra 5 245 Desktop Processor', '/p/245-sct', [469, 469, 469]],
@@ -75,10 +76,36 @@ function buildSyntheticSources() {
 		['Ryzen 5 5600', 'scorptec', 'AMD Ryzen 5 5600', '/p/5600-sct', [189, 189, 189]],
 		['Ryzen 5 7600', 'scorptec', 'AMD Ryzen 5 7600', '/p/7600-sct', [339, 339, 339]],
 		['Ryzen 9 9900X', 'scorptec', 'AMD Ryzen 9 9900X', '/p/9900x-sct', [749, 749, 799]],
+		// RTX 5060 Ti carries 12 listings on purpose (10 in-stock + 2 out-of-stock,
+		// across both retailers and several AIB brands) so the product page's
+		// offer-list expander, in-stock filter, and facet chips are all
+		// exercisable in E2E without depending on the live scrape data/ directory.
 		['GeForce RTX 5060 Ti', 'pccg', 'ASUS GeForce RTX 5060 Ti TUF Gaming 16GB', '/p/5060ti-asus-pccg', [759, 759, 749]],
 		['GeForce RTX 5060 Ti', 'scorptec', 'ASUS Dual GeForce RTX 5060 Ti 16GB', '/p/5060ti-asus-sct', [749, 719, 699]],
 		['GeForce RTX 5060 Ti', 'scorptec', 'MSI Ventus GeForce RTX 5060 Ti 16GB', '/p/5060ti-msi-sct', [739, 739, 729]],
 		['GeForce RTX 5060 Ti', 'scorptec', 'Gigabyte Windforce GeForce RTX 5060 Ti 16GB', '/p/5060ti-giga-sct', [729, 729, 729]],
+		['GeForce RTX 5060 Ti', 'pccg', 'MSI GeForce RTX 5060 Ti Ventus 16GB', '/p/5060ti-msi-pccg', [745, 745, 735]],
+		['GeForce RTX 5060 Ti', 'pccg', 'Gigabyte GeForce RTX 5060 Ti Windforce 16GB', '/p/5060ti-giga-pccg', [735, 735, 725]],
+		['GeForce RTX 5060 Ti', 'pccg', 'Zotac GeForce RTX 5060 Ti Twin Edge 16GB', '/p/5060ti-zotac-pccg', [755, 755, 745]],
+		['GeForce RTX 5060 Ti', 'scorptec', 'Zotac GeForce RTX 5060 Ti Twin Edge 16GB', '/p/5060ti-zotac-sct', [744, 744, 734]],
+		['GeForce RTX 5060 Ti', 'scorptec', 'Palit GeForce RTX 5060 Ti Dual 16GB', '/p/5060ti-palit-sct', [734, 734, 724]],
+		['GeForce RTX 5060 Ti', 'scorptec', 'Inno3D GeForce RTX 5060 Ti Twin X2 16GB', '/p/5060ti-inno3d-sct', [724, 724, 714]],
+		[
+			'GeForce RTX 5060 Ti',
+			'pccg',
+			'PNY GeForce RTX 5060 Ti OC 16GB',
+			'/p/5060ti-pny-pccg',
+			[765, 765, 755],
+			['out_of_stock', 'out_of_stock', 'out_of_stock']
+		],
+		[
+			'GeForce RTX 5060 Ti',
+			'scorptec',
+			'PNY GeForce RTX 5060 Ti OC 16GB',
+			'/p/5060ti-pny-sct',
+			[764, 764, 754],
+			['out_of_stock', 'out_of_stock', 'out_of_stock']
+		],
 		['GeForce RTX 5060', 'pccg', 'MSI GeForce RTX 5060 8GB', '/p/5060-msi-pccg', [559, 559, 559]],
 		['GeForce RTX 5060', 'scorptec', 'Gigabyte GeForce RTX 5060 8GB', '/p/5060-giga-sct', [549, 549, 549]],
 		['Arc B580', 'pccg', 'ASRock Intel Arc B580 12GB', '/p/b580-pccg', [429, 429, 429]],
@@ -87,7 +114,7 @@ function buildSyntheticSources() {
 
 	// Group listings into per (category x retailer x date) source files.
 	const perKey = new Map();
-	for (const [model, retailer, scrapedName, url, prices] of listings) {
+	for (const [model, retailer, scrapedName, url, prices, stockStatuses] of listings) {
 		const [category, brand, gen] = defs[model];
 		for (let d = 0; d < dates.length; d += 1) {
 			const key = `${category}_${retailer}_${dates[d]}`;
@@ -100,7 +127,7 @@ function buildSyntheticSources() {
 				retailer,
 				scraped_name: scrapedName,
 				price_aud: prices[d],
-				stock_status: 'in_stock',
+				stock_status: stockStatuses ? stockStatuses[d] : 'in_stock',
 				url
 			});
 		}

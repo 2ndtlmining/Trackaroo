@@ -6,7 +6,7 @@ Fetches the approved spec sources, matches them against the products table,
 and upserts into the specs table. Rows are never deleted: a product whose
 upstream record disappears keeps its last-known row.
 
-Sources (see IMPROVEMENT_16_Aug_V1.md §3):
+Sources (see docs/archive/IMPROVEMENT_16_Aug_V1.md §3):
 - GPU:  RightNow-AI/RightNow-GPU-Database (Apache-2.0)
 - Intel: toUpperCase78/intel-processors CSVs (GPL-3.0)
 - AMD:  first-party amd.com product pages
