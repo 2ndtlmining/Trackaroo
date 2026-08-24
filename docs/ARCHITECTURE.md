@@ -394,4 +394,18 @@ The user decided not to build the deal-score feature (archive/FRONTEND_IMPROVEME
 #### 90-day low/high badge (§4.1): in-stock extremes anchored to the latest snapshot day (2026-08-17)
 Feature-suggestions §4.1 ("lowest price in 90 days") shipped as `getPriceExtremes(productId, days)` — MIN/MAX over **in-stock** snapshots only (consistent with the band chart and the "cheapest currently in stock" marker), excluding bundle listings, and anchored to `MAX(snapshot_date)` in the DB rather than `date('now')` so results are deterministic in tests and don't drift with wall-clock time. Because the app is only ~9 days old, "90 days" currently means "the full available window". Rendered as a green `90d low` badge on dashboard deal cards when the current price equals the window low, and as `90d low`/`90d high` chips on the product page. §4.2 (carousel `title=` tooltip) and §4.3 (insufficient-history state) were already implemented in earlier passes.
 
+#### /deals: two sections, not one blended score (2026-08-25)
+Stage 2 of the price-first IA spec (`docs/superpowers/specs/2026-08-23-price-first-ia-design.md` §4) ships `/deals`. This **revisits the "Deal score: declined" entry above (2026-08-17)** — that decision rejected a *composite* `deal_score` that would have collapsed several signals into one ranking number, and that rejection still stands. What shipped instead is two explicitly separate, individually explainable lists:
+
+- **Below 30-day average** — ranked by depth, `(avg30 − price) / avg30`, deepest first.
+- **At or near all-time low** — anchored at `#all-time-low`, where "near" means **within 2%** of the lowest price ever recorded.
+
+They are kept apart because they answer different questions ("cheap versus its own recent history" vs "cheap versus all history") and the second is the stronger claim. Blending them would reproduce exactly the unexplainable single number the 17-Aug entry rejected. A product may legitimately appear in both lists.
+
+Eligibility for **both** sections requires `avg30Points >= MIN_HISTORY_POINTS` (3). The spec states this gate for the average; it is applied to the all-time-low section too, because an "all-time low" drawn from three days of history is no more meaningful than a three-day average.
+
+One new query, `getDealCandidates` in `repos.ts` — one row per tracked product (its cheapest in-stock listing on the latest snapshot date, plus all-time low and 30-day average), deliberately mirroring the proven shape of `getCheapestPerModel` but spanning both categories and reporting an all-time rather than 90-day low. All ranking and section logic is pure and lives in `web/src/lib/deals.ts`. The page reuses the stage-1 `OfferRow` (given two additive optional props for a product-level title and detail link) and `FacetChips`; its chips are **URL-driven server-side**, unlike the product page's client-side chips — same presentational component, two different drivers, per spec §7.
+
+No nav link ships in this stage: spec §10 sequences nav last, so `/deals` is reachable by URL until stage 4.
+
 ---

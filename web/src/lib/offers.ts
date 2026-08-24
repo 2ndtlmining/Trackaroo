@@ -70,8 +70,10 @@ function facetLabel(key: 'retailer' | 'brand', value: string): string {
 	return RETAILER_LABELS.get(value) ?? value;
 }
 
-export function facetCounts(
-	offers: ListingDisplay[],
+// Generic over the item so /deals reuses this instead of growing a second
+// copy: any row carrying a retailer slug and a display brand can be faceted.
+export function facetCounts<T extends { retailer: string; brand: string }>(
+	offers: T[],
 	key: 'retailer' | 'brand'
 ): FacetOption[] {
 	const counts = new Map<string, number>();

@@ -689,6 +689,53 @@ describe('OfferRow', () => {
 		});
 		expect(html).toContain('—');
 	});
+
+	// /deals reuses this row at product level: the title becomes the model name
+	// and links to the product page, while the retailer link stays outbound.
+	it('uses the variant name as the title by default', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).toContain('ASUS TUF RTX 5070 Ti OC 16GB');
+	});
+
+	it('renders titleOverride instead of the variant name', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			titleOverride: 'GeForce RTX 5070 Ti'
+		});
+		expect(html).toContain('GeForce RTX 5070 Ti');
+		expect(html).not.toContain('ASUS TUF RTX 5070 Ti OC 16GB');
+	});
+
+	it('links the title to detailHref when given', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			titleOverride: 'GeForce RTX 5070 Ti',
+			detailHref: '/product/5'
+		});
+		expect(html).toContain('href="/product/5"');
+	});
+
+	it('keeps the outbound retailer link separate from the detail link', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			titleOverride: 'GeForce RTX 5070 Ti',
+			detailHref: '/product/5'
+		});
+		expect(html).toContain('href="https://example.com/1"');
+		expect(html).toContain('href="/product/5"');
+	});
+
+	it('renders a plain title, not a link, when no detailHref is given', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			titleOverride: 'GeForce RTX 5070 Ti'
+		});
+		expect(html).not.toContain('href="/product/');
+	});
 });
 
 describe('FacetChips', () => {
