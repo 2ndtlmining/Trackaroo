@@ -10,6 +10,13 @@ export function load({ url }: { url: URL }) {
 		(n) => n > 0
 	);
 
+	// Compare is in the nav now, so it must be openable with nothing selected.
+	// A malformed request that names exactly one product is still an error —
+	// that comes from a broken link, not from clicking "Compare" in the nav.
+	if (raw.trim() === '' && ids.length === 0) {
+		return { entries: [] };
+	}
+
 	if (ids.length < 2) {
 		error(400, 'Select at least 2 products to compare');
 	}
