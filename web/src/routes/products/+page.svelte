@@ -2,9 +2,19 @@
 	import Filters from '$lib/components/Filters.svelte';
 	import ProductCard from '$lib/components/ProductCard.svelte';
 	import type { ProductGroup } from '$lib/server/repos';
+	import type { FacetOption } from '$lib/offers';
 	import type { Category } from '$lib/types';
 
-	let { data }: { data: { groups: ProductGroup[]; brands: string[] } } = $props();
+	let {
+		data
+	}: {
+		data: {
+			groups: ProductGroup[];
+			brands: string[];
+			retailerFacets: FacetOption[];
+			retailerTotal: number;
+		};
+	} = $props();
 
 	let compareIds = $state<Set<number>>(new Set());
 
@@ -48,7 +58,11 @@
 
 	<div>
 		<div class="mb-3">
-			<Filters brands={data.brands} />
+			<Filters
+				brands={data.brands}
+				retailerFacets={data.retailerFacets}
+				retailerTotal={data.retailerTotal}
+			/>
 		</div>
 		<!--
 			Changing a filter re-renders the grid via a server round-trip. Sighted
