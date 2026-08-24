@@ -19,11 +19,6 @@ export interface ListingDisplay {
 	selected: boolean;
 }
 
-export interface PanelFilters {
-	query: string;
-	inStockOnly: boolean;
-}
-
 // One display row per retailer listing, derived from the detail-page series.
 export function toListingDisplays(
 	series: Series[],
