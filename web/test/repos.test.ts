@@ -21,7 +21,6 @@ import {
 	getProductStats,
 	getRetailerFreshness,
 	getSparklines,
-	getSummary,
 	groupListingsByProduct,
 	upsertAlert
 } from '../src/lib/server/repos';
@@ -38,38 +37,6 @@ beforeAll(() => {
 
 afterAll(() => {
 	seeded.close();
-});
-
-describe('getSummary', () => {
-	it('reports tracked products, listings today, retailers and date', () => {
-		const summary = getSummary(db);
-		const expectedLatest = fs
-			.readdirSync(DATA_DIR)
-			.filter((f) => f.endsWith('.json'))
-			.map(parseDateFromFilename)
-			.filter(Boolean)
-			.sort()
-			.reverse()[0];
-		expect(summary.trackedProducts).toBeGreaterThan(0);
-		expect(summary.listingsToday).toBeGreaterThan(0);
-		expect(summary.retailerCount).toBe(2);
-		expect(summary.latestSnapshotDate).toBe(expectedLatest);
-	});
-
-	it('reports a biggest mover or null', () => {
-		const summary = getSummary(db);
-		if (summary.biggestMover) {
-			expect(summary.biggestMover.pctChange).not.toBeNull();
-			expect(summary.biggestMover.notEnoughHistory).toBe(false);
-		}
-	});
-
-	it('reports snapshot count, distinct days and db size', () => {
-		const summary = getSummary(db);
-		expect(summary.snapshotCount).toBeGreaterThan(0);
-		expect(summary.snapshotDays).toBeGreaterThan(0);
-		expect(summary.dbSizeBytes).toBeGreaterThan(0);
-	});
 });
 
 describe('getLatestListings', () => {

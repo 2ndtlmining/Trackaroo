@@ -14,16 +14,6 @@ import { MIN_HISTORY_POINTS } from '../constants';
 
 export const DEFAULT_WINDOW_DAYS = 7;
 
-export interface Summary {
-	trackedProducts: number;
-	listingsToday: number;
-	retailerCount: number;
-	latestSnapshotDate: string | null;
-	snapshotCount: number;
-	snapshotDays: number;
-	dbSizeBytes: number;
-	biggestMover: Mover | null;
-}
 export interface SparklinePoint {
 	listingId: number;
 	date: string;
@@ -401,47 +391,6 @@ export function getCategoryCounts(db: DB): Map<Category, number> {
 		.prepare('SELECT category, COUNT(*) AS n FROM products WHERE tracked = 1 GROUP BY category')
 		.all() as Array<{ category: Category; n: number }>;
 	return new Map(rows.map((r) => [r.category, r.n]));
-}
-
-export function getSummary(db: DB): Summary {
-	const tracked = db.prepare('SELECT COUNT(*) AS n FROM products WHERE tracked = 1').get() as {
-		n: number;
-	};
-
-	const latestDateRow = db
-		.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
-		.get() as { d: string | null };
-
-	let listingsToday = 0;
-	if (latestDateRow.d) {
-		const today = db
-			.prepare(
-				'SELECT COUNT(DISTINCT retailer_listing_id) AS n FROM price_snapshots WHERE snapshot_date = ?'
-			)
-			.get(latestDateRow.d) as { n: number };
-		listingsToday = today.n;
-	}
-
-	const retailers = db
-		.prepare(
-			"SELECT COUNT(DISTINCT retailer) AS n FROM retailer_listings WHERE status = 'active'"
-		)
-		.get() as { n: number };
-
-	const header = getHeaderStats(db);
-
-	const best = getMovers(db, 1).find((m) => !m.notEnoughHistory && m.pctChange !== null) ?? null;
-
-	return {
-		trackedProducts: tracked.n,
-		listingsToday,
-		retailerCount: retailers.n,
-		latestSnapshotDate: header.latestSnapshotDate,
-		snapshotCount: header.snapshotCount,
-		snapshotDays: header.snapshotDays,
-		dbSizeBytes: header.dbSizeBytes,
-		biggestMover: best
-	};
 }
 
 export function getLatestListings(

@@ -1,18 +1,67 @@
-import { getBrands, getCheapestPerModel, getLatestListings, getSparklines, getSummary } from '$lib/server/repos';
+import {
+	getCategoryCounts,
+	getCheapestPerModel,
+	getDealCandidates,
+	getHeaderStats,
+	getMovers,
+	getRetailerFreshness,
+	type Mover
+} from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
-import { parseFilters } from '$lib/filters';
-import type { ListingFilters } from '$lib/types';
+import { belowAverage, toDeals, type Deal } from '$lib/deals';
+import { retailerHealth } from '$lib/health';
+import type { Category } from '$lib/types';
 
-export function load({ url }: { url: URL }) {
+// Fixed 7 days, not the /movers window selector: the scrape cadence is daily,
+// so a 24-hour window is a single snapshot pair and one missed run would empty
+// the section outright (spec §5).
+const HOME_MOVER_DAYS = 7;
+const PER_COLUMN = 3;
+
+const SECTIONS: Array<{ category: Category; title: string }> = [
+	{ category: 'gpu', title: 'GPUs' },
+	{ category: 'cpu', title: 'CPUs' }
+];
+
+export function load() {
 	const db = getDb();
-	const filters: ListingFilters = parseFilters(url.searchParams);
-	const listings = getLatestListings(db, filters);
-	const sparklines = getSparklines(db, listings.map((l) => l.listingId));
+	const stats = getHeaderStats(db);
+	const counts = getCategoryCounts(db);
+	// Same source as /deals, so the two surfaces can never disagree about
+	// what counts as a deal or how deep it is.
+	const allDeals = belowAverage(toDeals(getDealCandidates(db)));
+	const movers = getMovers(db, HOME_MOVER_DAYS);
+
+	const sections = SECTIONS.map(({ category, title }) => {
+		const cheapest = getCheapestPerModel(db, category);
+		const inCategory = (m: Mover) => m.category === category && m.pctChange !== null;
+		const drops = movers
+			.filter((m) => inCategory(m) && (m.pctChange as number) < 0)
+			.sort((a, b) => (a.pctChange as number) - (b.pctChange as number));
+		const rises = movers
+			.filter((m) => inCategory(m) && (m.pctChange as number) > 0)
+			.sort((a, b) => (b.pctChange as number) - (a.pctChange as number));
+
+		return {
+			category,
+			title,
+			href: `/products?category=${category}`,
+			trackedCount: counts.get(category) ?? 0,
+			cheapestPrice: cheapest.reduce<number | null>(
+				(min, c) => (min === null || c.price < min ? c.price : min),
+				null
+			),
+			deals: allDeals.filter((d: Deal) => d.category === category).slice(0, PER_COLUMN),
+			drops: drops.slice(0, PER_COLUMN),
+			rises: rises.slice(0, PER_COLUMN)
+		};
+	});
+
 	return {
-		summary: getSummary(db),
-		listings: listings.map((l) => ({ ...l, sparkline: sparklines.get(l.listingId) ?? [] })),
-		brands: getBrands(db),
-		cheapestGpu: getCheapestPerModel(db, 'gpu'),
-		cheapestCpu: getCheapestPerModel(db, 'cpu')
+		retailers: retailerHealth(getRetailerFreshness(db)),
+		latestSnapshotDate: stats.latestSnapshotDate,
+		snapshotDays: stats.snapshotDays,
+		snapshotCount: stats.snapshotCount,
+		sections
 	};
 }

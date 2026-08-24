@@ -10,7 +10,6 @@ import Chip from '../src/lib/components/Chip.svelte';
 import LatestListingTable from '../src/lib/components/LatestListingTable.svelte';
 import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
-import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
 import Sparkline from '../src/lib/components/Sparkline.svelte';
 import OfferRow from '../src/lib/components/OfferRow.svelte';
 import FacetChips from '../src/lib/components/FacetChips.svelte';
@@ -554,49 +553,6 @@ function cheapestListing(overrides: Partial<CheapestListing> = {}): CheapestList
 		...overrides
 	};
 }
-
-describe('CheapestCarousel', () => {
-	it('shows the 90d low badge when the price matches the 90-day low', () => {
-		const listing = cheapestListing({ price: 799 });
-		const body = renderComponent(CheapestCarousel, { gpu: [listing], cpu: [] });
-		expect(body).toContain('90d low');
-		expect(body).toContain('$799');
-	});
-
-	it('omits the 90d low badge when the price is above the 90-day low', () => {
-		const body = renderComponent(CheapestCarousel, { gpu: [cheapestListing()], cpu: [] });
-		expect(body).not.toContain('90d low');
-		expect(body).toContain('$849');
-	});
-
-	it('shows the Deal badge when the price is below the 30-day average', () => {
-		const listing = cheapestListing({ price: 799, avg30: 849, avg30Points: 5 });
-		const body = renderComponent(CheapestCarousel, { gpu: [listing], cpu: [] });
-		expect(body).toContain('Deal');
-		expect(body).toContain('Below the 30-day average ($849)');
-	});
-
-	it('omits the Deal badge when the price is at or above the 30-day average', () => {
-		const body = renderComponent(CheapestCarousel, {
-			gpu: [cheapestListing({ avg30: 849, avg30Points: 5 })],
-			cpu: []
-		});
-		expect(body).not.toContain('Deal');
-	});
-
-	it('omits the Deal badge when there is not enough 30-day history', () => {
-		const body = renderComponent(CheapestCarousel, {
-			gpu: [cheapestListing({ price: 799, avg30: 849, avg30Points: 2 })],
-			cpu: []
-		});
-		expect(body).not.toContain('Deal');
-	});
-
-	it('shows a tooltip title with the full variant name on the card', () => {
-		const body = renderComponent(CheapestCarousel, { gpu: [cheapestListing()], cpu: [] });
-		expect(body).toContain('title="Gigabyte GeForce RTX 5060 Ti Windforce OC 16GB"');
-	});
-});
 
 function sparkline(prices: number[]): SparklinePoint[] {
 	return prices.map((price, i) => ({
