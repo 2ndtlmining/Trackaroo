@@ -10,13 +10,15 @@ import Chip from '../src/lib/components/Chip.svelte';
 import LatestListingTable from '../src/lib/components/LatestListingTable.svelte';
 import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
-import CheapestCarousel from '../src/lib/components/CheapestCarousel.svelte';
 import Sparkline from '../src/lib/components/Sparkline.svelte';
 import OfferRow from '../src/lib/components/OfferRow.svelte';
 import FacetChips from '../src/lib/components/FacetChips.svelte';
 import OfferList from '../src/lib/components/OfferList.svelte';
+import HealthStrip from '../src/lib/components/HealthStrip.svelte';
+import MoverRow from '../src/lib/components/MoverRow.svelte';
+import CategorySection from '../src/lib/components/CategorySection.svelte';
 import { offer as offerRow } from './helpers/offers';
-import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint } from '../src/lib/server/repos';
+import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint, Mover } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
 import type { Retailer } from '../src/lib/types';
 
@@ -552,49 +554,6 @@ function cheapestListing(overrides: Partial<CheapestListing> = {}): CheapestList
 	};
 }
 
-describe('CheapestCarousel', () => {
-	it('shows the 90d low badge when the price matches the 90-day low', () => {
-		const listing = cheapestListing({ price: 799 });
-		const body = renderComponent(CheapestCarousel, { gpu: [listing], cpu: [] });
-		expect(body).toContain('90d low');
-		expect(body).toContain('$799');
-	});
-
-	it('omits the 90d low badge when the price is above the 90-day low', () => {
-		const body = renderComponent(CheapestCarousel, { gpu: [cheapestListing()], cpu: [] });
-		expect(body).not.toContain('90d low');
-		expect(body).toContain('$849');
-	});
-
-	it('shows the Deal badge when the price is below the 30-day average', () => {
-		const listing = cheapestListing({ price: 799, avg30: 849, avg30Points: 5 });
-		const body = renderComponent(CheapestCarousel, { gpu: [listing], cpu: [] });
-		expect(body).toContain('Deal');
-		expect(body).toContain('Below the 30-day average ($849)');
-	});
-
-	it('omits the Deal badge when the price is at or above the 30-day average', () => {
-		const body = renderComponent(CheapestCarousel, {
-			gpu: [cheapestListing({ avg30: 849, avg30Points: 5 })],
-			cpu: []
-		});
-		expect(body).not.toContain('Deal');
-	});
-
-	it('omits the Deal badge when there is not enough 30-day history', () => {
-		const body = renderComponent(CheapestCarousel, {
-			gpu: [cheapestListing({ price: 799, avg30: 849, avg30Points: 2 })],
-			cpu: []
-		});
-		expect(body).not.toContain('Deal');
-	});
-
-	it('shows a tooltip title with the full variant name on the card', () => {
-		const body = renderComponent(CheapestCarousel, { gpu: [cheapestListing()], cpu: [] });
-		expect(body).toContain('title="Gigabyte GeForce RTX 5060 Ti Windforce OC 16GB"');
-	});
-});
-
 function sparkline(prices: number[]): SparklinePoint[] {
 	return prices.map((price, i) => ({
 		listingId: 1,
@@ -1083,5 +1042,129 @@ describe('ProductHeadline', () => {
 		expect(html).not.toContain('class="text-down"');
 		expect(html).toContain('0.0%');
 		expect(html).toContain('vs 30d avg');
+	});
+});
+describe('HealthStrip', () => {
+	const health = [
+		{ retailer: 'scorptec', label: 'Scorptec', state: 'fresh' as const, days: 0, text: 'today' },
+		{ retailer: 'pccg', label: 'PCCG', state: 'stale' as const, days: 3, text: '3 days behind' }
+	];
+
+	it('states each retailer and its age in words, not colour alone', () => {
+		const html = renderComponent(HealthStrip, {
+			retailers: health,
+			latestSnapshotDate: '2026-08-25',
+			snapshotDays: 17,
+			snapshotCount: 4988
+		});
+		expect(html).toContain('Scorptec');
+		expect(html).toContain('today');
+		expect(html).toContain('PCCG');
+		expect(html).toContain('3 days behind');
+	});
+
+	it('shows the dataset depth', () => {
+		const html = renderComponent(HealthStrip, {
+			retailers: health,
+			latestSnapshotDate: '2026-08-25',
+			snapshotDays: 17,
+			snapshotCount: 4988
+		});
+		expect(html).toContain('17');
+		expect(html).toContain('4,988');
+	});
+
+	it('handles an empty database without crashing', () => {
+		const html = renderComponent(HealthStrip, {
+			retailers: [],
+			latestSnapshotDate: null,
+			snapshotDays: 0,
+			snapshotCount: 0
+		});
+		expect(html).toContain('No snapshots yet');
+	});
+});
+
+describe('MoverRow', () => {
+	function mover(over: Partial<Mover> = {}): Mover {
+		return {
+			listingId: 1,
+			productId: 5,
+			category: 'gpu',
+			brand: 'NVIDIA',
+			model: 'GeForce RTX 5070 Ti',
+			retailer: 'scorptec',
+			variantName: 'ASUS TUF RTX 5070 Ti OC 16GB',
+			listingUrl: 'https://example.com/1',
+			oldPrice: 1400,
+			newPrice: 1299,
+			change: -101,
+			pctChange: -7.2,
+			pointsInWindow: 7,
+			historyPoints: 30,
+			notEnoughHistory: false,
+			windowStart: '2026-08-18',
+			windowEnd: '2026-08-25',
+			...over
+		};
+	}
+
+	it('shows a down arrow and a signed percentage for a drop', () => {
+		const html = renderComponent(MoverRow, { mover: mover() });
+		expect(html).toContain('▼');
+		expect(html).toContain('7.2%');
+		expect(html).toContain('$1,299');
+		expect(html).toContain('GeForce RTX 5070 Ti');
+	});
+
+	it('shows an up arrow for a rise', () => {
+		const html = renderComponent(MoverRow, {
+			mover: mover({ pctChange: 5.4, change: 70, oldPrice: 1229, newPrice: 1299 })
+		});
+		expect(html).toContain('▲');
+		expect(html).toContain('5.4%');
+	});
+
+	it('links to the product page', () => {
+		const html = renderComponent(MoverRow, { mover: mover() });
+		expect(html).toContain('href="/product/5"');
+	});
+
+	it('renders a mover with no percentage without crashing', () => {
+		const html = renderComponent(MoverRow, {
+			mover: mover({ pctChange: null, change: null, oldPrice: null })
+		});
+		expect(html).toContain('GeForce RTX 5070 Ti');
+	});
+});
+
+describe('CategorySection', () => {
+	const base = {
+		title: 'GPUs',
+		href: '/products?category=gpu',
+		trackedCount: 47,
+		cheapestPrice: 329,
+		deals: [],
+		drops: [],
+		rises: []
+	};
+
+	it('shows the tracked count and cheapest price in the header', () => {
+		const html = renderComponent(CategorySection, base);
+		expect(html).toContain('GPUs');
+		expect(html).toContain('47');
+		expect(html).toContain('$329');
+		expect(html).toContain('href="/products?category=gpu"');
+	});
+
+	it('gives every empty column real copy, not a blank panel', () => {
+		const html = renderComponent(CategorySection, base);
+		expect(html).toContain('Nothing below its 30-day average today.');
+		expect(html).toContain('No significant price moves in the last 7 days.');
+	});
+
+	it('omits the cheapest figure when there is no in-stock price', () => {
+		const html = renderComponent(CategorySection, { ...base, cheapestPrice: null });
+		expect(html).not.toContain('cheapest');
 	});
 });

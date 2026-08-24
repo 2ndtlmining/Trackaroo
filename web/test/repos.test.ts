@@ -7,6 +7,7 @@ import {
 	deleteAlert,
 	deriveListingBrand,
 	getCheapestPerModel,
+	getCategoryCounts,
 	getComparisonData,
 	getDealCandidates,
 	getLatestListings,
@@ -18,8 +19,8 @@ import {
 	getProductIndex,
 	getProductSparklines,
 	getProductStats,
+	getRetailerFreshness,
 	getSparklines,
-	getSummary,
 	groupListingsByProduct,
 	upsertAlert
 } from '../src/lib/server/repos';
@@ -36,38 +37,6 @@ beforeAll(() => {
 
 afterAll(() => {
 	seeded.close();
-});
-
-describe('getSummary', () => {
-	it('reports tracked products, listings today, retailers and date', () => {
-		const summary = getSummary(db);
-		const expectedLatest = fs
-			.readdirSync(DATA_DIR)
-			.filter((f) => f.endsWith('.json'))
-			.map(parseDateFromFilename)
-			.filter(Boolean)
-			.sort()
-			.reverse()[0];
-		expect(summary.trackedProducts).toBeGreaterThan(0);
-		expect(summary.listingsToday).toBeGreaterThan(0);
-		expect(summary.retailerCount).toBe(2);
-		expect(summary.latestSnapshotDate).toBe(expectedLatest);
-	});
-
-	it('reports a biggest mover or null', () => {
-		const summary = getSummary(db);
-		if (summary.biggestMover) {
-			expect(summary.biggestMover.pctChange).not.toBeNull();
-			expect(summary.biggestMover.notEnoughHistory).toBe(false);
-		}
-	});
-
-	it('reports snapshot count, distinct days and db size', () => {
-		const summary = getSummary(db);
-		expect(summary.snapshotCount).toBeGreaterThan(0);
-		expect(summary.snapshotDays).toBeGreaterThan(0);
-		expect(summary.dbSizeBytes).toBeGreaterThan(0);
-	});
 });
 
 describe('getLatestListings', () => {
@@ -1132,5 +1101,28 @@ describe('getDealCandidates', () => {
 		const models = getDealCandidates(fixture.db).map((r) => r.model);
 		expect(models).not.toContain('RTX SoldOut');
 		expect(models).not.toContain('Ryzen Untracked');
+	});
+});
+
+describe('getRetailerFreshness', () => {
+	it('returns the latest snapshot date per retailer', () => {
+		const rows = getRetailerFreshness(db);
+		expect(rows.length).toBeGreaterThan(0);
+		for (const row of rows) {
+			expect(['scorptec', 'pccg']).toContain(row.retailer);
+			expect(row.latestSnapshotDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		}
+	});
+
+	it('orders retailers deterministically by slug', () => {
+		const slugs = getRetailerFreshness(db).map((r) => r.retailer);
+		expect([...slugs].sort()).toEqual(slugs);
+	});
+});
+
+describe('getCategoryCounts', () => {
+	it('counts tracked products per category', () => {
+		const counts = getCategoryCounts(db);
+		expect((counts.get('gpu') ?? 0) + (counts.get('cpu') ?? 0)).toBeGreaterThan(0);
 	});
 });

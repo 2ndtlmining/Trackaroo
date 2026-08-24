@@ -1,22 +1,8 @@
 <script lang="ts">
-	import { formatDate, formatPct } from '$lib/formats';
-	import Filters from '$lib/components/Filters.svelte';
-	import LatestListingTable from '$lib/components/LatestListingTable.svelte';
-	import StatTile from '$lib/components/StatTile.svelte';
-	import CheapestCarousel from '$lib/components/CheapestCarousel.svelte';
-	import type { CheapestListing, LatestListing, Summary } from '$lib/server/repos';
+	import CategorySection from '$lib/components/CategorySection.svelte';
+	import HealthStrip from '$lib/components/HealthStrip.svelte';
 
-	let {
-		data
-	}: {
-		data: {
-			summary: Summary;
-			listings: LatestListing[];
-			brands: string[];
-			cheapestGpu: CheapestListing[];
-			cheapestCpu: CheapestListing[];
-		};
-	} = $props();
+	let { data } = $props();
 </script>
 
 <svelte:head>
@@ -24,43 +10,27 @@
 	<meta name="description" content="Latest tracked prices for AU CPUs and GPUs." />
 </svelte:head>
 
-<div class="space-y-6">
-	<h1 class="text-xl font-semibold text-text">Dashboard</h1>
+<div>
+	<h1 class="mb-4 text-xl font-semibold text-text">Dashboard</h1>
 
-	<CheapestCarousel gpu={data.cheapestGpu} cpu={data.cheapestCpu} />
+	<HealthStrip
+		retailers={data.retailers}
+		latestSnapshotDate={data.latestSnapshotDate}
+		snapshotDays={data.snapshotDays}
+		snapshotCount={data.snapshotCount}
+	/>
 
-	<div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-		<StatTile label="Tracked products" value={String(data.summary.trackedProducts)} />
-		<StatTile
-			label="Listings today"
-			value={String(data.summary.listingsToday)}
-			sub={data.summary.latestSnapshotDate ? formatDate(data.summary.latestSnapshotDate) : undefined}
-		/>
-		<StatTile label="Retailers" value={String(data.summary.retailerCount)} />
-		{#if data.summary.biggestMover}
-			<StatTile
-				label="Biggest mover (24h)"
-				value={formatPct(data.summary.biggestMover.pctChange ?? 0)}
-				sub="{data.summary.biggestMover.model} · {data.summary.biggestMover.retailer}"
+	<div class="space-y-6">
+		{#each data.sections as section (section.category)}
+			<CategorySection
+				title={section.title}
+				href={section.href}
+				trackedCount={section.trackedCount}
+				cheapestPrice={section.cheapestPrice}
+				deals={section.deals}
+				drops={section.drops}
+				rises={section.rises}
 			/>
-		{:else}
-			<StatTile label="Biggest mover (24h)" value="—" />
-		{/if}
-	</div>
-
-	<div>
-		<div class="mb-3">
-			<Filters brands={data.brands} />
-		</div>
-		<!--
-			Changing a filter re-renders the table via a server round-trip. Sighted
-			users see the rows change; a screen-reader user got no announcement at
-			all, so this states the new result count.
-		-->
-		<p aria-live="polite" class="sr-only">
-			{data.listings.length}
-			{data.listings.length === 1 ? 'listing' : 'listings'} match the current filters.
-		</p>
-		<LatestListingTable rows={data.listings} />
+		{/each}
 	</div>
 </div>

@@ -14,16 +14,6 @@ import { MIN_HISTORY_POINTS } from '../constants';
 
 export const DEFAULT_WINDOW_DAYS = 7;
 
-export interface Summary {
-	trackedProducts: number;
-	listingsToday: number;
-	retailerCount: number;
-	latestSnapshotDate: string | null;
-	snapshotCount: number;
-	snapshotDays: number;
-	dbSizeBytes: number;
-	biggestMover: Mover | null;
-}
 export interface SparklinePoint {
 	listingId: number;
 	date: string;
@@ -374,45 +364,33 @@ export function getHeaderStats(db: DB): HeaderStats {
 	};
 }
 
-export function getSummary(db: DB): Summary {
-	const tracked = db.prepare('SELECT COUNT(*) AS n FROM products WHERE tracked = 1').get() as {
-		n: number;
-	};
+export interface RetailerFreshness {
+	retailer: Retailer;
+	latestSnapshotDate: string | null;
+}
 
-	const latestDateRow = db
-		.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots')
-		.get() as { d: string | null };
-
-	let listingsToday = 0;
-	if (latestDateRow.d) {
-		const today = db
-			.prepare(
-				'SELECT COUNT(DISTINCT retailer_listing_id) AS n FROM price_snapshots WHERE snapshot_date = ?'
-			)
-			.get(latestDateRow.d) as { n: number };
-		listingsToday = today.n;
-	}
-
-	const retailers = db
+// Per-retailer currency for the homepage health strip. Deliberately DB-only:
+// distinguishing an intended circuit-breaker pause from real staleness would
+// require reading data/pccg_cooldown.json, coupling the web app to the
+// pipeline's file layout (spec §5 defers this).
+export function getRetailerFreshness(db: DB): RetailerFreshness[] {
+	const rows = db
 		.prepare(
-			"SELECT COUNT(DISTINCT retailer) AS n FROM retailer_listings WHERE status = 'active'"
+			`SELECT l.retailer AS retailer, MAX(s.snapshot_date) AS latest
+			 FROM retailer_listings l
+			 JOIN price_snapshots s ON s.retailer_listing_id = l.id
+			 GROUP BY l.retailer
+			 ORDER BY l.retailer ASC`
 		)
-		.get() as { n: number };
+		.all() as Array<{ retailer: Retailer; latest: string | null }>;
+	return rows.map((r) => ({ retailer: r.retailer, latestSnapshotDate: r.latest }));
+}
 
-	const header = getHeaderStats(db);
-
-	const best = getMovers(db, 1).find((m) => !m.notEnoughHistory && m.pctChange !== null) ?? null;
-
-	return {
-		trackedProducts: tracked.n,
-		listingsToday,
-		retailerCount: retailers.n,
-		latestSnapshotDate: header.latestSnapshotDate,
-		snapshotCount: header.snapshotCount,
-		snapshotDays: header.snapshotDays,
-		dbSizeBytes: header.dbSizeBytes,
-		biggestMover: best
-	};
+export function getCategoryCounts(db: DB): Map<Category, number> {
+	const rows = db
+		.prepare('SELECT category, COUNT(*) AS n FROM products WHERE tracked = 1 GROUP BY category')
+		.all() as Array<{ category: Category; n: number }>;
+	return new Map(rows.map((r) => [r.category, r.n]));
 }
 
 export function getLatestListings(

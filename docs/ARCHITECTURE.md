@@ -408,4 +408,15 @@ One new query, `getDealCandidates` in `repos.ts` — one row per tracked product
 
 No nav link ships in this stage: spec §10 sequences nav last, so `/deals` is reachable by URL until stage 4.
 
+#### Homepage: health first, then deals, then movers (2026-08-25)
+Stage 3 of the price-first IA spec (§5) replaces the homepage's filter-and-sort listing table with a question-answering dashboard: a data-health strip, then one section per category carrying top deals, biggest 7-day drops and biggest 7-day rises. Three decisions worth recording:
+
+**Three freshness states, not the spec's two.** §5 names *fresh* (snapshot today), *cooling down* and *stale* (≥ 2 days). That leaves **exactly one day behind** unnamed — and it is the most common state of all, because the pipeline runs at 04:00, so every retailer is one day behind until the morning run. Calling it stale would cry wolf; calling it fresh would be false. Implemented as `fresh` (0 days) / `recent` (1 day, muted) / `stale` (≥ 2 days, warning), matching the treatment `StaleDataBanner` already shipped. The ≥ 2 day stale boundary is exactly the spec's. Classification is pure, in `web/src/lib/health.ts`, so the boundaries are pinned by tests rather than by how a pill renders.
+
+**"Cooling down" is deliberately deferred, and displays as stale.** Distinguishing an intended PCCG circuit-breaker pause from real staleness requires the web app to read `data/pccg_cooldown.json`, coupling it to the pipeline's file layout. That coupling is not worth it yet. Until it lands a cooling-down retailer reads as stale — honest, since its data *is* older, just less specific — and the pill uses a **warning** tone, never an error tone: the breaker is working as designed and the UI must not imply the pipeline is broken.
+
+**The homepage reuses `deals.ts`, it does not re-rank.** Top deals come from the same `getDealCandidates` → `toDeals` → `belowAverage` path `/deals` uses, filtered by category and capped at three. A second ranking would eventually disagree with the first. Movers stay separate and come from `getMovers` at a **fixed 7-day window** (the `/movers` selector stays on `/movers`): the scrape cadence is daily, so a 24-hour window is a single snapshot pair and one missed run would empty the section outright. A product can legitimately appear as both a deal and a mover — they answer different questions — and the e2e suite asserts exactly that rather than deduplicating.
+
+**What was removed with it.** The four stat tiles, `CheapestCarousel`, and the filtered listing table come off `/`; `getSummary`/`Summary` went with them, having no other caller. The `90d low` badge lived only on the carousel and is now gone from the product entirely — the all-time-low signal it approximated is carried better by `/deals`' at-or-near-all-time-low section and the product-page headline. `Filters.svelte` is now used only by `/products`, so its e2e coverage moved there rather than being dropped.
+
 ---
