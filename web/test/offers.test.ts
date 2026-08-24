@@ -1,7 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import type { ListingDisplay } from '../src/lib/offers';
-import { offerTier, sortOffers } from '../src/lib/offers';
+import { deltaPresentation, deltaVsAvg30, offerTier, sortOffers } from '../src/lib/offers';
 import { offer } from './helpers/offers';
+
+describe('deltaVsAvg30', () => {
+	it('computes the percent delta of a price against the average', () => {
+		expect(deltaVsAvg30(1288, 1400)).toBeCloseTo(-8, 1);
+		expect(deltaVsAvg30(1500, 1400)).toBeCloseTo(7.14, 1);
+	});
+
+	it('returns exactly 0 for a price that equals the average, not a tiny float error', () => {
+		expect(deltaVsAvg30(189, 189)).toBe(0);
+	});
+
+	it('is null when the price or the average is missing, or the average is 0', () => {
+		expect(deltaVsAvg30(null, 1400)).toBeNull();
+		expect(deltaVsAvg30(1299, null)).toBeNull();
+		expect(deltaVsAvg30(1299, 0)).toBeNull();
+	});
+});
+
+describe('deltaPresentation', () => {
+	it('treats a negative delta as down: a filled triangle and the down colour', () => {
+		expect(deltaPresentation(-8)).toEqual({ arrow: '▼', class: 'text-down' });
+	});
+
+	it('treats a positive delta as up', () => {
+		expect(deltaPresentation(7)).toEqual({ arrow: '▲', class: 'text-up' });
+	});
+
+	it('treats exactly zero as neutral — never an arrow or a directional colour', () => {
+		expect(deltaPresentation(0)).toEqual({ arrow: '·', class: 'text-text-muted' });
+	});
+});
 
 describe('offerTier', () => {
 	it('ranks in stock, then out of stock, then delisted', () => {
@@ -201,5 +232,44 @@ describe('buildOfferView volume control', () => {
 		expect(view.visible).toEqual([]);
 		expect(view.showExpander).toBe(false);
 		expect(view.stockFilterForcedOff).toBe(false);
+	});
+});
+
+import { applyStockFilter } from '../src/lib/offers';
+
+describe('applyStockFilter', () => {
+	it('keeps only in-stock offers when the filter is on and something is in stock', () => {
+		const rows = [
+			offer({ listingId: 1 }),
+			offer({ listingId: 2, inStock: false, latestStock: 'out_of_stock' })
+		];
+		const result = applyStockFilter(rows, true);
+		expect(result.applied).toBe(true);
+		expect(result.forcedOff).toBe(false);
+		expect(result.offers.map((o) => o.listingId)).toEqual([1]);
+	});
+
+	it('forces the filter off and returns everything when nothing is in stock', () => {
+		const rows = [
+			offer({ listingId: 1, inStock: false, latestStock: 'out_of_stock' }),
+			offer({ listingId: 2, inStock: false, latestStock: 'out_of_stock' })
+		];
+		const result = applyStockFilter(rows, true);
+		expect(result.forcedOff).toBe(true);
+		expect(result.applied).toBe(false);
+		expect(result.offers).toHaveLength(2);
+	});
+
+	it('returns everything unfiltered when the filter is off', () => {
+		const rows = [offer({ listingId: 1 }), offer({ listingId: 2, inStock: false })];
+		const result = applyStockFilter(rows, false);
+		expect(result.applied).toBe(false);
+		expect(result.offers).toHaveLength(2);
+	});
+
+	it('never forces off an empty list (there is nothing to render either way)', () => {
+		const result = applyStockFilter([], true);
+		expect(result.forcedOff).toBe(false);
+		expect(result.offers).toEqual([]);
 	});
 });

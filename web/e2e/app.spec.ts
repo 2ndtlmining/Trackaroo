@@ -598,10 +598,28 @@ test.describe('product detail offer list', () => {
 	}
 
 	test('product page leads with the cheapest price and caps the offer list', async ({ page }) => {
-		await goto(page, '/product/1');
+		// The RTX 5060 Ti is seeded with more than 8 in-stock offers (see
+		// openGpuProduct above), so both claims in this test's name are
+		// actually exercisable here, unlike /product/1 whose live-scraped
+		// listing count varies day to day.
+		await openGpuProduct(page);
+
+		// The headline leads with the cheapest in-stock price — it must match
+		// the first (cheapest-first-sorted) row in the offer list below it.
+		const headlinePrice = (await page.locator('.text-3xl.num').first().textContent())?.trim();
+		expect(headlinePrice).toBeTruthy();
+		const firstRowPrice = (
+			await page.locator('.order-1.w-24').first().textContent()
+		)?.trim();
+		expect(firstRowPrice).toBe(headlinePrice);
 
 		// In-stock-only is the default and states what it hides.
 		await expect(page.getByText(/In stock only \(\d+ of \d+\)/)).toBeVisible();
+
+		// The offer list is capped at 8 rows with an expander stating the true
+		// total — it is not just rendering everything it has.
+		await expect(page.getByRole('button', { name: /Show all \d+ offers/ })).toBeVisible();
+		expect(await page.locator('a', { hasText: 'View →' }).count()).toBeLessThanOrEqual(8);
 
 		// Every offer row shows its retailer and links out.
 		const firstOffer = page.locator('a', { hasText: 'View →' }).first();
