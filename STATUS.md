@@ -14,6 +14,34 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-25** — **Nav + six-retailer prep — the price-first IA spec is now
+  fully implemented (stages 1–4)**, per
+  [`docs/superpowers/plans/2026-08-25-nav-and-six-retailer-prep.md`](docs/superpowers/plans/2026-08-25-nav-and-six-retailer-prep.md).
+  Nav is now **Deals · GPUs · CPUs · Movers · Compare** — Deals first, category
+  a *place* (`/products?category=…`) rather than a filter re-applied everywhere,
+  and Compare no longer an orphan reachable only via checkboxes. Active-state
+  matching moved to a pure `isActiveLink` in `web/src/lib/nav.ts`: the old
+  `path === link.href` check compared a pathname against a string containing a
+  query, so **neither category link could ever have highlighted**. The nav
+  renders `aria-current="page"`, and below `md` it is a horizontally scrollable
+  row, not a hamburger.
+  `/products`' retailer `<select>` became a **URL-driven chip row**, making
+  `FacetChips` serve three drivers (product page client-side; `/deals` and
+  `/products` URL-driven server-side) — deliberately **not** unified, per §7.
+  Chip options come from counts over the current result set, so a count always
+  equals what a click produces and a retailer with no rows shows no chip.
+  **Six-retailer registry** — `Retailer`, `RETAILER_OPTIONS` and
+  `notify_discord.RETAILER_LABELS` now carry `mwave`, `umart`, `centrecom`,
+  `ple`. **No scraper exists for any of the four**; this is display-side only,
+  so landing one is a pipeline change rather than a UI change.
+  `/compare` with no `ids` now renders an empty state explaining how to select
+  (a request naming exactly one product is still a 400). Dataset stats
+  (snapshot days, DB size) moved from the header into the homepage health strip.
+  Also fixed a brittle `parseFilters` test that routed any unrecognised slug to
+  `tier`, so adding a retailer failed it for an unrelated reason.
+  Regression: pytest **612** / svelte-check 0 errors, 0 warnings / vitest
+  **357** / e2e **63** / build green.
+
 - **2026-08-25** — **Homepage dashboard rebuilt** — stage 3 of
   [`docs/superpowers/specs/2026-08-23-price-first-ia-design.md`](docs/superpowers/specs/2026-08-23-price-first-ia-design.md)
   (§5), per [`docs/superpowers/plans/2026-08-25-homepage-dashboard.md`](docs/superpowers/plans/2026-08-25-homepage-dashboard.md).
@@ -270,7 +298,7 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
   - `src/lib/` — `branding.ts` (client-safe AIB brand derivation), `listingsPanel.ts` (pure grouped-listings logic), `formats.ts`/`change.ts`
   - `src/lib/server/` — `db.ts` (better-sqlite3 read-only singleton + write-capable `getWriteDb()` for alert actions), `repos.ts` (incl. `groupListingsByProduct`, `getPriceBand`, `getComparisonData`, `getPriceExtremes`, `upsertAlert` / `deleteAlert` / `getProductAlerts`)
   - Routes — `/deals` (below-30d-average + at/near-all-time-low sections, URL-driven chip facets), `/` dashboard (data-health strip + per-category deals/drops/rises sections), `/products` (card grid with per-card trend sparklines + expandable variant listings with inline 7-day trend sparklines + compare selection), `/compare` (side-by-side specs + prices), `/movers` (dense table with window-matched trend sparklines), `/product/[id]` with URL-driven filters; global command palette (Ctrl/Cmd+K) on every page
-  - `test/` — vitest, **342 tests** across 15 suites (run `npm test` for the current breakdown)
+  - `test/` — vitest, **357 tests** across 17 suites (run `npm test` for the current breakdown)
   - `e2e/` — Playwright: 54 tests (app.spec.ts + seed.mjs deterministic DB — real data, or synthetic via `TRACKAROO_DATA_DIR` empty dir; incl. spec-panel, grouped-listings panel, compare flow/validation, 90d-low badges + chips, all-time low/high + 30d-avg chips, data-driven Deal-badge test, dashboard + movers + products trend sparklines (card + expanded table), command palette open/navigate/escape/quick-compare/snapshot-badge, column-sort tri-state on dashboard + movers, "Show on chart" toggle + chart navigation, products card-grid sparkline, brand icons, product-page freshness, price-alert arm + delete from the product page, delisted-listing "Delisted" badge (no stale in-stock price)) — **54 tests**
 
 ## What's verified
@@ -286,11 +314,11 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
 - **Code quality:** all modules type-hinted + logged; shared watchlist module deduplicates logic; secrets moved to env vars
 - **Spec sync:** live-fetch coverage verified against the real watchlist — Intel 25/25, AMD 24/28 (4 OEM-only SKUs have no public page), GPU 46/47 (RX 9070 XTX absent from the dataset); upsert conflict/unmatched/vanished-row behaviour locked in by tests; price pipeline untouched (§2 priority rule)
 - **Spec panel:** renders below the price chart on `/product/[id]` (E2E bounding-box assertion), hidden when a product has no spec row; fetched via one extra `SELECT` in the detail load only — never joined into list/index queries
-- **Frontend:** `svelte-check` 0 errors; vitest **342 passing**; Playwright e2e **60 passing** (real + synthetic seeds); production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
+- **Frontend:** `svelte-check` 0 errors; vitest **357 passing**; Playwright e2e **63 passing** (real + synthetic seeds); production build green; live `adapter-node` smoke test of all routes against the real DB (dashboard/products/movers/product 200s, unknown product 404, bad window param falls back)
 - **Docker:** single all-in-one image built and booted — DB seeded, both scrapers OK, 315 listings ingested, backup created, dashboard HTTP 200 with live stats
 - **Feature suggestions §2–§4:** band chart + brand-grouped listings on `/product/[id]`, `/compare?ids=` (2–4 same-category products), `90d low`/`90d high` on product page + dashboard cards — regression green after each milestone
 - **Troubleshooting:** the temporary `/troubleshooting` view + `/api/health` JSON built on 18-Aug were **removed** the same day once the PCCG cooldown behaviour and compare/specs issues were confirmed settled — `getCoverageSummary`, its routes, and their tests are gone (see the UI follow-up entry)
-- **Regression:** backend **611** passing (pytest); frontend **342** passing (vitest) + 60 e2e (Playwright, real + synthetic)
+- **Regression:** backend **612** passing (pytest); frontend **357** passing (vitest) + 63 e2e (Playwright, real + synthetic)
 - **Command palette + sparklines (18-Aug):** Ctrl/Cmd+K palette searches the tracked catalog from any page and Enter-navigates to a product (quick "Compare A vs B" when exactly two match); `/products` card tables, the `/` dashboard table, and the `/movers` table all show per-listing trend sparklines (up=red / down=green, dash when <2 points), and each unexpanded `/products` card shows its cheapest-in-stock trend line — regression green after the batch
 - **Round-3 enhancements (18-Aug):** palette results show per-product snapshot counts; dashboard + movers tables have tri-state sortable column headers; the product-page price chart is reactive (re-creates uPlot on prop change — fixes stale chart on navigation AND the inert "Show on chart" toggle); variant names are display-cased consistently (`titleCase()`) at every render site while the DB stays raw; specs confirmed healthy (95 rows / 0 orphans / 95 covered) — the empty-look was a stale Docker DB. Regression: pytest 391 / svelte-check 0 / vitest 187 / e2e 46 / build green.
 - **Brand icons + UI polish + Discord digest (19-Aug):** simple-icons AMD/NVIDIA/Intel marks in header, cards, compare + footer (tree-shaking verified); product-page "Updated X ago" freshness, unified card heights + empty-state panels; `notify_discord.py` digest gated on healthy runs (dry-run printed the real digest against live data — 3 moves: RTX 5070 Ti +10.2%, RX 9070 +5.6%, RTX 5070 +4.4%). Regression: pytest 461 / svelte-check 0 / vitest 204 / e2e 48 / build green.
@@ -338,9 +366,9 @@ Current, as of 25-Aug-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **611** | `python -m pytest -q` (repo root) |
-| Frontend unit (vitest) | **342** | `npm test` (`web/`) |
-| Frontend e2e (Playwright) | **60** | `npm run test:e2e` (`web/`) |
+| Backend (pytest) | **612** | `python -m pytest -q` (repo root) |
+| Frontend unit (vitest) | **357** | `npm test` (`web/`) |
+| Frontend e2e (Playwright) | **63** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
 
 The per-module breakdown that used to live here went stale every session;

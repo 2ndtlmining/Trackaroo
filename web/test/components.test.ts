@@ -1063,15 +1063,29 @@ describe('HealthStrip', () => {
 		expect(html).toContain('3 days behind');
 	});
 
-	it('shows the dataset depth', () => {
+	it('shows the dataset depth, including the DB size moved out of the header', () => {
 		const html = renderComponent(HealthStrip, {
 			retailers: health,
 			latestSnapshotDate: '2026-08-25',
 			snapshotDays: 17,
-			snapshotCount: 4988
+			snapshotCount: 4988,
+			dbSizeBytes: 1153434
 		});
 		expect(html).toContain('17');
 		expect(html).toContain('4,988');
+		expect(html).toContain('MB');
+	});
+
+	it('omits the DB size when it is unknown', () => {
+		const html = renderComponent(HealthStrip, {
+			retailers: health,
+			latestSnapshotDate: '2026-08-25',
+			snapshotDays: 17,
+			snapshotCount: 4988,
+			dbSizeBytes: 0
+		});
+		expect(html).toContain('4,988');
+		expect(html).not.toContain('MB');
 	});
 
 	it('handles an empty database without crashing', () => {

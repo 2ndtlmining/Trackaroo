@@ -1,17 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import ThemeToggle from './ThemeToggle.svelte';
-	import { formatBytes } from '$lib/formats';
+	import { NAV_LINKS, isActiveLink } from '$lib/nav';
 
-	let { stats, onOpenSearch }: { stats: import('$lib/server/repos').HeaderStats; onOpenSearch?: () => void } = $props();
-
-	const links = [
-		{ href: '/', label: 'Dashboard' },
-		{ href: '/products', label: 'Products' },
-		{ href: '/movers', label: 'Movers' }
-	];
-
-	const path = $derived(page.url.pathname);
+	let { onOpenSearch }: { onOpenSearch?: () => void } = $props();
 </script>
 
 <header class="border-b border-border bg-surface">
@@ -20,11 +12,16 @@
 			<span class="h-2 w-2 rounded-full bg-accent"></span>
 			Trackaroo
 		</a>
-		<nav class="flex items-center gap-1 text-sm" aria-label="Main">
-			{#each links as link}
+		<nav
+			class="-mx-1 flex max-w-full items-center gap-1 overflow-x-auto px-1 text-sm md:overflow-visible"
+			aria-label="Main"
+		>
+			{#each NAV_LINKS as link (link.href)}
+				{@const active = isActiveLink(link.href, page.url.pathname, page.url.searchParams)}
 				<a
 					href={link.href}
-					class="rounded-md px-2.5 py-1.5 no-underline hover:no-underline {path === link.href
+					aria-current={active ? 'page' : undefined}
+					class="whitespace-nowrap rounded-md px-2.5 py-1.5 no-underline hover:no-underline {active
 						? 'bg-surface-hover font-medium text-text'
 						: 'text-text-muted hover:bg-surface-hover hover:text-text'}"
 				>
@@ -33,50 +30,6 @@
 			{/each}
 		</nav>
 		<div class="flex items-center gap-4">
-			<p class="hidden items-center gap-3 text-xs text-text-muted lg:flex">
-				{#if stats.latestSnapshotDate}
-					<span title="Most recent price snapshot date">
-						{stats.latestSnapshotDate}
-					</span>
-				{/if}
-				{#if stats.snapshotDays > 0}
-					<span class="inline-flex items-center gap-1.5" title="Distinct days with a snapshot">
-						<svg
-							class="h-3.5 w-3.5 shrink-0"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.8"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-							<circle cx="12" cy="13" r="4" />
-						</svg>
-						{stats.snapshotDays} days
-					</span>
-				{/if}
-				{#if stats.dbSizeBytes > 0}
-					<span class="inline-flex items-center gap-1.5" title="SQLite database size">
-						<svg
-							class="h-3.5 w-3.5 shrink-0"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.8"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<ellipse cx="12" cy="5" rx="9" ry="3" />
-							<path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-							<path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-						</svg>
-						{formatBytes(stats.dbSizeBytes)}
-					</span>
-				{/if}
-			</p>
 			{#if onOpenSearch}
 				<button
 					type="button"

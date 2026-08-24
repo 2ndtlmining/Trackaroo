@@ -62,6 +62,7 @@ export function load() {
 		latestSnapshotDate: stats.latestSnapshotDate,
 		snapshotDays: stats.snapshotDays,
 		snapshotCount: stats.snapshotCount,
+		dbSizeBytes: stats.dbSizeBytes,
 		sections
 	};
 }

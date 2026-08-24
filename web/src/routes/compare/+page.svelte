@@ -25,7 +25,17 @@
 		</p>
 	</div>
 
-	<div class="overflow-x-auto rounded-md border border-border">
+	{#if entries.length === 0}
+		<div class="rounded-md border border-border bg-surface px-4 py-10 text-center">
+			<p class="text-sm text-text">Nothing selected to compare yet.</p>
+			<p class="mt-1 text-sm text-text-muted">
+				Pick 2–4 products in the same category on the
+				<a href="/products" class="text-accent no-underline hover:underline">Products</a>
+				page — tick the compare box on each card, then use the Compare bar.
+			</p>
+		</div>
+	{:else}
+		<div class="overflow-x-auto rounded-md border border-border">
 		<table class="w-full border-collapse text-sm">
 			<thead>
 				<tr class="border-b border-border bg-surface">
@@ -72,5 +82,6 @@
 				{/each}
 			</tbody>
 		</table>
-	</div>
+		</div>
+	{/if}
 </div>

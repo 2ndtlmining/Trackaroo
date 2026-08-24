@@ -98,34 +98,63 @@ function expectedDeals(): { dealIds: number[]; nonDealId: number | null } {
 }
 
 test.describe('navigation & layout', () => {
-	test('header links navigate between pages', async ({ page }) => {
+	test('puts Deals first and reaches every page', async ({ page }) => {
 		await goto(page, '/');
-		await expect(page.getByRole('link', { name: 'Products' })).toBeVisible();
-		await page.getByRole('link', { name: 'Products' }).click();
-		await expect(page).toHaveTitle('Trackaroo — Products');
-		await expect(page.getByRole('heading', { name: /Products/i })).toBeVisible();
-
-		await page.getByRole('link', { name: 'Movers' }).click();
-		await expect(page).toHaveTitle('Trackaroo — Movers');
-		await expect(page.getByRole('heading', { name: 'Movers' })).toBeVisible();
-
-		await page.getByRole('link', { name: 'Dashboard', exact: false }).first().click();
-		await expect(page).toHaveTitle('Trackaroo — Dashboard');
+		const nav = page.getByRole('navigation', { name: 'Main' });
+		await expect(nav.getByRole('link').first()).toHaveText('Deals');
+		for (const label of ['Deals', 'GPUs', 'CPUs', 'Movers', 'Compare']) {
+			await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
+		}
 	});
 
-test('footer shows the product tagline on every page', async ({ page }) => {
+	test('header links navigate between pages', async ({ page }) => {
+		await goto(page, '/');
+		const nav = page.getByRole('navigation', { name: 'Main' });
+
+		await nav.getByRole('link', { name: 'GPUs', exact: true }).click();
+		await expect(page).toHaveTitle('Trackaroo — Products');
+		await expect(page).toHaveURL(/category=gpu/);
+
+		await nav.getByRole('link', { name: 'Movers', exact: true }).click();
+		await expect(page).toHaveTitle('Trackaroo — Movers');
+
+		await nav.getByRole('link', { name: 'Deals', exact: true }).click();
+		await expect(page).toHaveTitle('Deals · Trackaroo');
+	});
+
+	// The old check compared pathname to the whole href, so neither category
+	// link could ever highlight.
+	test('highlights the GPUs link on /products?category=gpu', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const nav = page.getByRole('navigation', { name: 'Main' });
+		await expect(nav.getByRole('link', { name: 'GPUs', exact: true })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+		await expect(nav.getByRole('link', { name: 'CPUs', exact: true })).not.toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+	});
+
+	test('footer shows the product tagline on every page', async ({ page }) => {
 		await goto(page, '/products');
 		await expect(page.getByText('Trackaroo — AU CPU & GPU price tracker')).toBeVisible();
 		await expect(page.getByText('Logos are trademarks of their respective owners')).toBeVisible();
 	});
 
-	test('header shows snapshot stats and lends context', async ({ page }) => {
+	// The dataset stats moved into the homepage health strip (spec §6).
+	test('header no longer carries the dataset stats', async ({ page }) => {
 		await goto(page, '/');
-		await expect(page.getByText(/\d{4}-\d{2}-\d{2}/)).toBeVisible();
-		await expect(page.getByTitle('Most recent price snapshot date')).toBeVisible();
-		await expect(page.getByTitle('Distinct days with a snapshot')).toBeVisible();
-		await expect(page.getByTitle('SQLite database size')).toBeVisible();
+		await expect(page.getByTitle('Distinct days with a snapshot')).toHaveCount(0);
+		await expect(page.getByTitle('SQLite database size')).toHaveCount(0);
+		await expect(page.getByLabel('Data health')).toBeVisible();
 	});
+});
+
+test('compare opens with an empty state explaining how to select', async ({ page }) => {
+	await goto(page, '/compare');
+	await expect(page.getByText('Nothing selected to compare yet.')).toBeVisible();
 });
 
 test.describe('theme toggle', () => {
@@ -230,9 +259,9 @@ test.describe('products page filters', () => {
 		expect(await page.locator('article').count()).toBeGreaterThan(0);
 	});
 
-	test('filters by retailer via the URL', async ({ page }) => {
+	test('retailer chips filter via the URL', async ({ page }) => {
 		await goto(page, '/products');
-		await page.getByLabel('Filter by retailer').selectOption('scorptec');
+		await page.getByRole('button', { name: /^Scorptec/ }).click();
 		await expect(page).toHaveURL(/retailer=scorptec/);
 	});
 

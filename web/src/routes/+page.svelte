@@ -18,6 +18,7 @@
 		latestSnapshotDate={data.latestSnapshotDate}
 		snapshotDays={data.snapshotDays}
 		snapshotCount={data.snapshotCount}
+		dbSizeBytes={data.dbSizeBytes}
 	/>
 
 	<div class="space-y-6">

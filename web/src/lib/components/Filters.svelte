@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import FacetChips from './FacetChips.svelte';
 	import {
 		CATEGORY_OPTIONS,
-		RETAILER_OPTIONS,
 		SORT_OPTIONS,
 		TIER_OPTIONS,
 		hasActiveFilters,
@@ -11,8 +11,13 @@
 		updateFilter
 	} from '$lib/filters';
 	import type { ListingFilters } from '$lib/types';
+	import type { FacetOption } from '$lib/offers';
 
-	let { brands = [] }: { brands?: string[] } = $props();
+	let {
+		brands = [],
+		retailerFacets = [],
+		retailerTotal = 0
+	}: { brands?: string[]; retailerFacets?: FacetOption[]; retailerTotal?: number } = $props();
 
 	const filters = $derived(parseFilters(page.url.searchParams));
 	const active = $derived(hasActiveFilters(filters));
@@ -37,7 +42,8 @@
 	}
 </script>
 
-<div class="flex flex-wrap items-center gap-2">
+<div class="flex flex-col gap-2">
+	<div class="flex flex-wrap items-center gap-2">
 	<select
 		class="h-8 rounded-md border border-border bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none"
 		value={filters.category ?? ''}
@@ -46,18 +52,6 @@
 	>
 		<option value="">All categories</option>
 		{#each CATEGORY_OPTIONS as opt}
-			<option value={opt.value}>{opt.label}</option>
-		{/each}
-	</select>
-
-	<select
-		class="h-8 rounded-md border border-border bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none"
-		value={filters.retailer ?? ''}
-		aria-label="Filter by retailer"
-		onchange={(e) => set('retailer', (e.target as HTMLSelectElement).value)}
-	>
-		<option value="">All retailers</option>
-		{#each RETAILER_OPTIONS as opt}
 			<option value={opt.value}>{opt.label}</option>
 		{/each}
 	</select>
@@ -129,4 +123,18 @@
 			Clear filters
 		</button>
 	{/if}
+	</div>
+
+	<!--
+		URL-driven, server-side — the same presentational component the product
+		page drives client-side (spec §7). Options come from counts over the
+		current result set, so a retailer with no rows shows no chip.
+	-->
+	<FacetChips
+		label="Retailer"
+		options={retailerFacets}
+		selected={filters.retailer ?? null}
+		allCount={retailerTotal}
+		onSelect={(v) => set('retailer', v ?? '')}
+	/>
 </div>

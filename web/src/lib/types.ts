@@ -1,6 +1,10 @@
 export type Category = 'cpu' | 'gpu';
 
-export type Retailer = 'scorptec' | 'pccg';
+// The four beyond scorptec/pccg have no scraper yet — the display layer is
+// prepared ahead of them so adding one is a pipeline change, not a UI change
+// (spec §7). Slugs must match what a future scraper writes to
+// retailer_listings.retailer.
+export type Retailer = 'scorptec' | 'pccg' | 'mwave' | 'umart' | 'centrecom' | 'ple';
 
 export type GenerationTier = 'current' | 'current-1' | 'current-2';
 
