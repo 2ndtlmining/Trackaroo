@@ -8,6 +8,7 @@ import {
 	deriveListingBrand,
 	getCheapestPerModel,
 	getComparisonData,
+	getDealCandidates,
 	getLatestListings,
 	getMovers,
 	getPriceBand,
@@ -1028,3 +1029,108 @@ function createMiniAlertsDb(): { db: DB; close: () => void } {
 		}
 	};
 }
+function createMiniDealsDb(): { db: DB; close: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-deals-'));
+	const file = path.join(dir, 'deals.db');
+	const db = openDatabase(file, { readonly: false, fileMustExist: false });
+	db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+
+	// 1: two listings, a long history, and a much older all-time low.
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('gpu', 'NVIDIA', 'RTX Deal', 'current', 1)"
+	).run();
+	// 2: only an out-of-stock listing today — must not be a candidate.
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('gpu', 'AMD', 'RTX SoldOut', 'current', 1)"
+	).run();
+	// 3: untracked — must never appear.
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen Untracked', 'current', 0)"
+	).run();
+
+	const listing = db.prepare(
+		'INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (?, ?, ?, ?, ?)'
+	);
+	const cheapId = Number(
+		listing.run(1, 'scorptec', 'Deal A', 'https://scorptec/deal-a', 'active').lastInsertRowid
+	);
+	const dearId = Number(
+		listing.run(1, 'pccg', 'Deal B', 'https://pccg/deal-b', 'active').lastInsertRowid
+	);
+	const bundleId = Number(
+		listing.run(1, 'scorptec', 'Deal A bundle', 'https://scorptec/deal-a-bundle', 'active')
+			.lastInsertRowid
+	);
+	const oosId = Number(
+		listing.run(2, 'scorptec', 'SoldOut', 'https://scorptec/soldout', 'active').lastInsertRowid
+	);
+	const untrackedId = Number(
+		listing.run(3, 'pccg', 'Untracked', 'https://pccg/untracked', 'active').lastInsertRowid
+	);
+
+	const snap = db.prepare(
+		'INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) VALUES (?, ?, ?, ?, ?)'
+	);
+	// Well outside the 30-day window, so it is the all-time low but not in avg30.
+	snap.run(cheapId, '2026-01-01', 55, 'in_stock', '2026-01-01T04:00:00.000Z');
+	snap.run(cheapId, '2026-08-18', 120, 'in_stock', '2026-08-18T04:00:00.000Z');
+	snap.run(cheapId, '2026-08-19', 140, 'in_stock', '2026-08-19T04:00:00.000Z');
+	snap.run(cheapId, '2026-08-20', 100, 'in_stock', '2026-08-20T04:00:00.000Z');
+	snap.run(dearId, '2026-08-20', 140, 'in_stock', '2026-08-20T04:00:00.000Z');
+	// A bundle priced far below everything — proves notBundle() excludes it
+	// from both the cheapest-listing pick and the average.
+	snap.run(bundleId, '2026-08-20', 10, 'in_stock', '2026-08-20T04:00:00.000Z');
+	snap.run(oosId, '2026-08-20', 90, 'out_of_stock', '2026-08-20T04:00:00.000Z');
+	snap.run(untrackedId, '2026-08-20', 80, 'in_stock', '2026-08-20T04:00:00.000Z');
+
+	return {
+		db,
+		close: () => {
+			db.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	};
+}
+
+describe('getDealCandidates', () => {
+	let fixture: { db: DB; close: () => void };
+
+	beforeAll(() => {
+		fixture = createMiniDealsDb();
+	});
+
+	afterAll(() => {
+		fixture.close();
+	});
+
+	it('returns the cheapest in-stock listing per product on the latest date', () => {
+		const rows = getDealCandidates(fixture.db);
+		expect(rows).toHaveLength(1);
+		expect(rows[0].productId).toBe(1);
+		expect(rows[0].model).toBe('RTX Deal');
+		expect(rows[0].category).toBe('gpu');
+		expect(rows[0].price).toBe(100);
+		expect(rows[0].retailer).toBe('scorptec');
+		expect(rows[0].listingUrl).toBe('https://scorptec/deal-a');
+		expect(rows[0].snapshotDate).toBe('2026-08-20');
+	});
+
+	it('reports the all-time low across all history, not just the 30-day window', () => {
+		const rows = getDealCandidates(fixture.db);
+		expect(rows[0].allTimeLow).toBe(55);
+	});
+
+	it('averages the per-day cheapest in-stock price within the window and counts days', () => {
+		const rows = getDealCandidates(fixture.db);
+		// 2026-08-18..20 only: (120 + 140 + 100) / 3. The January row and the
+		// $10 bundle are both excluded.
+		expect(rows[0].avg30Points).toBe(3);
+		expect(rows[0].avg30).toBeCloseTo(120, 5);
+	});
+
+	it('omits products with no in-stock listing on the latest date, and untracked products', () => {
+		const models = getDealCandidates(fixture.db).map((r) => r.model);
+		expect(models).not.toContain('RTX SoldOut');
+		expect(models).not.toContain('Ryzen Untracked');
+	});
+});

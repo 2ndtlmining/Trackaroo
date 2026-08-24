@@ -835,6 +835,122 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 	}));
 }
 
+export interface DealCandidate {
+	productId: number;
+	category: Category;
+	model: string;
+	brand: string;
+	listingId: number;
+	variantName: string | null;
+	retailer: Retailer;
+	listingUrl: string;
+	price: number;
+	snapshotDate: string;
+	allTimeLow: number | null;
+	avg30: number | null;
+	avg30Points: number;
+}
+
+// One row per tracked product: its cheapest in-stock listing on the latest
+// snapshot date, plus the two history figures /deals ranks on. Spans both
+// categories in a single query — the page facets by category from the URL, so
+// splitting it per category would just double the work.
+export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
+	const rows = db
+		.prepare(
+			`SELECT
+				p.id AS product_id,
+				p.category,
+				p.model,
+				p.brand,
+				l.id AS listing_id,
+				l.variant_name,
+				l.retailer,
+				l.listing_url,
+				ps.price_aud AS price,
+				ps.snapshot_date,
+				(SELECT MIN(ps3.price_aud)
+				 FROM price_snapshots ps3
+				 JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+				 WHERE l3.product_id = p.id
+				   AND ps3.stock_status = 'in_stock'
+				   AND ${notBundle('l3')}) AS all_time_low,
+				(SELECT AVG(dm.price)
+				 FROM (
+					SELECT ps3.snapshot_date, MIN(ps3.price_aud) AS price
+					FROM price_snapshots ps3
+					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+					WHERE l3.product_id = p.id
+					  AND ps3.stock_status = 'in_stock'
+					  AND ${notBundle('l3')}
+					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), @window)
+					GROUP BY ps3.snapshot_date
+				 ) dm) AS avg30,
+				(SELECT COUNT(*)
+				 FROM (
+					SELECT ps3.snapshot_date
+					FROM price_snapshots ps3
+					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+					WHERE l3.product_id = p.id
+					  AND ps3.stock_status = 'in_stock'
+					  AND ${notBundle('l3')}
+					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), @window)
+					GROUP BY ps3.snapshot_date
+				 ) dm) AS avg30_points
+			FROM products p
+			JOIN retailer_listings l ON l.product_id = p.id AND l.status = 'active'
+			JOIN price_snapshots ps
+			  ON ps.retailer_listing_id = l.id
+			  AND ps.snapshot_date = (SELECT MAX(snapshot_date) FROM price_snapshots)
+			  AND ps.stock_status = 'in_stock'
+			WHERE p.tracked = 1
+			  AND ${notBundle('l')}
+			  AND ps.price_aud = (
+				SELECT MIN(ps2.price_aud)
+				FROM price_snapshots ps2
+				JOIN retailer_listings l2 ON l2.id = ps2.retailer_listing_id
+				WHERE l2.product_id = p.id
+				  AND l2.status = 'active'
+				  AND ${notBundle('l2')}
+				  AND ps2.snapshot_date = ps.snapshot_date
+				  AND ps2.stock_status = 'in_stock'
+			  )
+			GROUP BY p.id
+			ORDER BY p.model COLLATE NOCASE ASC`
+		)
+		.all({ window: `-${days} days` }) as Array<{
+		product_id: number;
+		category: Category;
+		model: string;
+		brand: string;
+		listing_id: number;
+		variant_name: string | null;
+		retailer: Retailer;
+		listing_url: string;
+		price: number;
+		snapshot_date: string;
+		all_time_low: number | null;
+		avg30: number | null;
+		avg30_points: number;
+	}>;
+
+	return rows.map((r) => ({
+		productId: r.product_id,
+		category: r.category,
+		model: r.model,
+		brand: r.brand,
+		listingId: r.listing_id,
+		variantName: r.variant_name,
+		retailer: r.retailer,
+		listingUrl: r.listing_url,
+		price: r.price,
+		snapshotDate: r.snapshot_date,
+		allTimeLow: r.all_time_low,
+		avg30: r.avg30,
+		avg30Points: r.avg30_points
+	}));
+}
+
 export function getMovers(db: DB, windowDays: number): Mover[] {
 	const sql = `
 ${LATEST_CTE}
