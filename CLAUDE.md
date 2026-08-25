@@ -132,3 +132,42 @@ Never delete price or product data. Products that roll out of scope get
 - Update `STATUS.md` before ending a work session — add a dated bullet under
   **Recent changes**. Do not start a nested "Prior update" chain; that is what
   grew the file to 106 KB.
+
+## Shell scripts must reach the working tree as LF
+
+Git stores `deploy/*.sh` as LF and always has. The damage happens on
+**checkout**: Git for Windows ships `core.autocrlf=true` at *system* scope, so
+without `.gitattributes` every Windows clone materialises these scripts with
+CRLF. `docker build` COPYs the working-tree file, so the CR rides into the
+image, the shebang becomes `#!/bin/sh` + CR, and Linux hunts for an interpreter
+literally named `/bin/sh<CR>`. The ENOENT is reported against the *script*:
+
+```
+[FATAL tini (7)] exec /usr/local/bin/trackaroo-entrypoint failed: No such file or directory
+```
+
+which reads as a missing `COPY` and sends you hunting in the wrong place. The
+container could not start at all. Three guards, keep all three:
+
+- **`.gitattributes`** pins `*.sh` (and `Dockerfile`) to `eol=lf`, so the
+  checkout is correct in the first place.
+- **The Dockerfile** strips CRs after `COPY` and runs `sh -n` on each script,
+  so a source zip or stray editor fails the build rather than the first boot.
+- **`unit_testing/test_shell_scripts.py`** fails the suite if any tracked
+  `*.sh` in the working tree gains a CR.
+
+Do not "verify" line endings with `grep -c $'\r'` in Git Bash - it reports
+false positives. Count bytes instead:
+`python -c "print(open(f,'rb').read().count(bytes([13])))"`.
+
+**Passing `pytest` / `npm test` does not mean the app runs.** The suites never
+build the image, so a fully green run says nothing about whether the container
+starts. After touching the `Dockerfile`, `deploy/`, or anything the container
+executes, build and boot it before calling the work done:
+
+```bash
+docker build -t trackaroo . && docker run -d --name trackaroo-verify -p 3001:3000   --env-file .env -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" trackaroo
+docker logs trackaroo-verify && curl -s -o /dev/null -w '%{http_code}
+' http://localhost:3001/
+docker rm -f trackaroo-verify
+```

@@ -1,0 +1,28 @@
+# Shell scripts MUST arrive in the working tree with LF endings.
+#
+# Git stores these files as LF and always has. The damage happens on
+# *checkout*: Git for Windows ships `core.autocrlf=true` at system scope, so
+# without a rule here every Windows clone materialises deploy/*.sh with CRLF.
+# `docker build` then COPYs the working-tree file, so the shebang lands in the
+# image as `#!/bin/sh` + CR. Linux looks for an interpreter literally named
+# "/bin/sh<CR>", fails, and reports the ENOENT against the *script*:
+#
+#   [FATAL tini (7)] exec /usr/local/bin/trackaroo-entrypoint failed:
+#   No such file or directory
+#
+# which reads like a missing COPY. The container could not start at all.
+# Verified: a fresh clone of the parent commit yields CR=162 on
+# entrypoint-single.sh; with this file present it yields CR=0.
+#
+# See docs/ARCHITECTURE.md Part 3 and unit_testing/test_shell_scripts.py.
+*.sh text eol=lf
+
+# Consumed by Linux tooling in the image build.
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+
+# Markdown and Python are edited by tooling that defaults to the platform
+# newline on Windows. Pinning them keeps diffs reviewable - a whole-file
+# rewrite hides the handful of lines that actually changed.
+*.md text eol=lf
+*.py text eol=lf

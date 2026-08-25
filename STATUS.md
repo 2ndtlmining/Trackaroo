@@ -14,6 +14,44 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-25** — **Fixed: the Docker container could not start at all.**
+  `docker run` died instantly with
+  `[FATAL tini (7)] exec /usr/local/bin/trackaroo-entrypoint failed: No such
+  file or directory`. The file was present and executable — the path in that
+  message is a red herring. `deploy/entrypoint-single.sh` reached the image
+  with **CRLF endings**, so the shebang read `#!/bin/sh` + CR and Linux tried
+  to exec an interpreter literally named `/bin/sh<CR>`; that ENOENT is
+  reported against the *script*, so it reads like a missing `COPY`.
+  **The CRLF was never committed.** Git stores these scripts as LF and always
+  has — the blob is byte-identical from the commit that added it to today. The
+  conversion happens on **checkout**: Git for Windows sets `core.autocrlf=true`
+  at *system* scope, and with no `.gitattributes` every Windows clone
+  materialised `deploy/*.sh` with CRLF, which `docker build` then copied into
+  the image. So it was broken for anyone building on Windows with a default
+  Git install, and fine on Linux/macOS — which is how it survived a
+  "verified live" note.
+  Proven at two levels: the working-tree script mounted into a bare
+  `debian:bookworm-slim` reproduces the error while the byte-identical
+  CR-stripped file runs fine; and a fresh `git clone` of the parent commit
+  yields `CR=162` on that script versus `CR=0` with `.gitattributes` present.
+  Three layered guards: **`.gitattributes`** pins `*.sh`/`Dockerfile` to
+  `eol=lf` (the actual fix); the **Dockerfile** strips CRs after `COPY` and
+  runs `sh -n` on each script so an archive/zip checkout fails the build rather
+  than the first boot; and **`unit_testing/test_shell_scripts.py`** (7 tests)
+  fails the suite on any tracked `*.sh` whose working copy contains a CR.
+  **Verified by actually running it this time:** image rebuilt, container
+  booted against the live `db/` and `data/` mounts — all five routes (`/`,
+  `/deals`, `/products`, `/movers`, `/compare`) return **HTTP 200**, container
+  clock reports **AEST** matching the host with `date.today() = 2026-08-25`,
+  boot catch-up correctly skipped because today already has snapshots,
+  scheduler armed for 04:00 Australia/Melbourne.
+  **Process gaps closed:** pytest/vitest/Playwright never build the image, so a
+  green regression run said nothing about whether the app starts — `CLAUDE.md`
+  now requires a Docker build-and-boot for changes touching the `Dockerfile`,
+  `deploy/`, or container-executed code. Also noted there: `grep -c $'\r'`
+  under Git Bash reports false positives and misled the first pass of this
+  investigation; count bytes in Python instead.
+
 - **2026-08-25** — **Nav + six-retailer prep — the price-first IA spec is now
   fully implemented (stages 1–4)**, per
   [`docs/superpowers/plans/2026-08-25-nav-and-six-retailer-prep.md`](docs/superpowers/plans/2026-08-25-nav-and-six-retailer-prep.md).
@@ -318,7 +356,7 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
 - **Docker:** single all-in-one image built and booted — DB seeded, both scrapers OK, 315 listings ingested, backup created, dashboard HTTP 200 with live stats
 - **Feature suggestions §2–§4:** band chart + brand-grouped listings on `/product/[id]`, `/compare?ids=` (2–4 same-category products), `90d low`/`90d high` on product page + dashboard cards — regression green after each milestone
 - **Troubleshooting:** the temporary `/troubleshooting` view + `/api/health` JSON built on 18-Aug were **removed** the same day once the PCCG cooldown behaviour and compare/specs issues were confirmed settled — `getCoverageSummary`, its routes, and their tests are gone (see the UI follow-up entry)
-- **Regression:** backend **612** passing (pytest); frontend **357** passing (vitest) + 63 e2e (Playwright, real + synthetic)
+- **Regression:** backend **619** passing (pytest); frontend **357** passing (vitest) + 63 e2e (Playwright, real + synthetic)
 - **Command palette + sparklines (18-Aug):** Ctrl/Cmd+K palette searches the tracked catalog from any page and Enter-navigates to a product (quick "Compare A vs B" when exactly two match); `/products` card tables, the `/` dashboard table, and the `/movers` table all show per-listing trend sparklines (up=red / down=green, dash when <2 points), and each unexpanded `/products` card shows its cheapest-in-stock trend line — regression green after the batch
 - **Round-3 enhancements (18-Aug):** palette results show per-product snapshot counts; dashboard + movers tables have tri-state sortable column headers; the product-page price chart is reactive (re-creates uPlot on prop change — fixes stale chart on navigation AND the inert "Show on chart" toggle); variant names are display-cased consistently (`titleCase()`) at every render site while the DB stays raw; specs confirmed healthy (95 rows / 0 orphans / 95 covered) — the empty-look was a stale Docker DB. Regression: pytest 391 / svelte-check 0 / vitest 187 / e2e 46 / build green.
 - **Brand icons + UI polish + Discord digest (19-Aug):** simple-icons AMD/NVIDIA/Intel marks in header, cards, compare + footer (tree-shaking verified); product-page "Updated X ago" freshness, unified card heights + empty-state panels; `notify_discord.py` digest gated on healthy runs (dry-run printed the real digest against live data — 3 moves: RTX 5070 Ti +10.2%, RX 9070 +5.6%, RTX 5070 +4.4%). Regression: pytest 461 / svelte-check 0 / vitest 204 / e2e 48 / build green.
@@ -366,7 +404,7 @@ Current, as of 25-Aug-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **612** | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **619** | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **357** | `npm test` (`web/`) |
 | Frontend e2e (Playwright) | **63** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |

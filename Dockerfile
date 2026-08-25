@@ -79,6 +79,22 @@ COPY deploy/entrypoint.sh /usr/local/bin/trackaroo-entrypoint-pipeline
 COPY deploy/entrypoint-single.sh /usr/local/bin/trackaroo-entrypoint
 COPY deploy/bootstrap-data.sh /usr/local/bin/trackaroo-bootstrap-data
 
+# Belt and braces on line endings. .gitattributes pins *.sh to eol=lf, but a
+# source zip, an old clone, or a stray editor can still deliver CRLF -- and a
+# carriage return on the shebang makes the kernel hunt for an interpreter
+# literally named "/bin/sh\r", then fail with
+#   exec /usr/local/bin/trackaroo-entrypoint: no such file or directory
+# which reads as a missing COPY rather than a line-ending problem. Stripping
+# here means a broken checkout cannot produce a container that will not boot.
+# sh -n parses each script without running it, so a syntax error fails the
+# build instead of the first boot.
+RUN set -eux; \
+    for f in trackaroo-entrypoint trackaroo-entrypoint-pipeline trackaroo-bootstrap-data; do \
+        sed -i 's/\r$//' "/usr/local/bin/$f"; \
+        chmod +x "/usr/local/bin/$f"; \
+        sh -n "/usr/local/bin/$f"; \
+    done
+
 # Web frontend runtime bits built in stage 1.
 COPY --from=web /app/web/node_modules ./web/node_modules
 COPY --from=web /app/web/build ./web/build
