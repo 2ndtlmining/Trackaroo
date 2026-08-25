@@ -201,3 +201,45 @@ class TestInitDb:
         index_names = [i[0] for i in indexes]
         assert "idx_products_category_tracked" in index_names
         assert "idx_snapshots_listing_date" in index_names
+
+
+class TestGenerationTierSync:
+    """The watchlist calls itself the source of truth, so a corrected
+    gen_tier must reach products that already exist.
+
+    Found via Intel Arc: A380/A750/A770 (Alchemist) and B570/B580
+    (Battlemage) were both tagged `current`. Retagging the watchlist changed
+    nothing, because seeding skipped every existing row outright — so the
+    dashboard would have grouped two generations under one heading forever.
+    """
+
+    def test_updates_generation_tier_when_the_watchlist_changes(self, db, sample_gpu):
+        seed_products(db, [sample_gpu])
+        retagged = {**sample_gpu, "generation_tier": "current-1"}
+
+        stats = seed_products(db, [retagged])
+
+        assert stats["updated"] == 1
+        assert stats["inserted"] == 0
+        tier = db.execute(
+            "SELECT generation_tier FROM products WHERE model = ?", (sample_gpu["model"],)
+        ).fetchone()[0]
+        assert tier == "current-1"
+
+    def test_leaves_an_unchanged_product_alone(self, db, sample_gpu):
+        seed_products(db, [sample_gpu])
+        stats = seed_products(db, [sample_gpu])
+        assert stats["updated"] == 0
+        assert stats["skipped"] == 1
+
+    def test_dry_run_reports_but_does_not_write(self, db, sample_gpu):
+        seed_products(db, [sample_gpu])
+        retagged = {**sample_gpu, "generation_tier": "current-2"}
+
+        stats = seed_products(db, [retagged], dry_run=True)
+
+        assert stats["updated"] == 1
+        tier = db.execute(
+            "SELECT generation_tier FROM products WHERE model = ?", (sample_gpu["model"],)
+        ).fetchone()[0]
+        assert tier == sample_gpu["generation_tier"]

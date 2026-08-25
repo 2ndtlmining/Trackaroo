@@ -290,6 +290,45 @@ function sortClause(sort: ListingSort | undefined): string {
 	}
 }
 
+export interface TrackedProduct {
+	productId: number;
+	category: Category;
+	brand: string;
+	model: string;
+	productVariant: string | null;
+	generationTier: GenerationTier | null;
+}
+
+// Every tracked product in a category, whether or not a retailer has ever
+// listed it. The index needs these: ~39% of the watchlist has never matched a
+// listing, and silently omitting them makes a search for a genuinely tracked
+// model answer "no match", which is not the same thing as "not stocked".
+export function getTrackedProducts(db: DB, category: Category): TrackedProduct[] {
+	const rows = db
+		.prepare(
+			`SELECT id, category, brand, model, variant, generation_tier
+			 FROM products
+			 WHERE tracked = 1 AND category = ?
+			 ORDER BY model COLLATE NOCASE ASC`
+		)
+		.all(category) as Array<{
+		id: number;
+		category: Category;
+		brand: string;
+		model: string;
+		variant: string | null;
+		generation_tier: GenerationTier | null;
+	}>;
+	return rows.map((r) => ({
+		productId: r.id,
+		category: r.category,
+		brand: r.brand,
+		model: r.model,
+		productVariant: r.variant,
+		generationTier: r.generation_tier
+	}));
+}
+
 export function getBrands(db: DB): string[] {
 	const rows = db
 		.prepare('SELECT DISTINCT brand FROM products WHERE tracked = 1 ORDER BY brand ASC')

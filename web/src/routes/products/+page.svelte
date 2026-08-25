@@ -1,98 +1,189 @@
 <script lang="ts">
-	import Filters from '$lib/components/Filters.svelte';
-	import ProductCard from '$lib/components/ProductCard.svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import ProductRow from '$lib/components/ProductRow.svelte';
+	import { groupForIndex } from '$lib/productIndex';
+	import { searchProducts } from '$lib/productSearch';
 	import type { ProductGroup } from '$lib/server/repos';
-	import type { FacetOption } from '$lib/offers';
 	import type { Category } from '$lib/types';
 
 	let {
 		data
 	}: {
 		data: {
-			groups: ProductGroup[];
-			brands: string[];
-			retailerFacets: FacetOption[];
-			retailerTotal: number;
+			category: Category;
+			inStockOnly: boolean;
+			trackedCount: number;
+			listedCount: number;
+			groups: (ProductGroup & { neverListed?: boolean })[];
 		};
 	} = $props();
 
+	const heading = $derived(data.category === 'cpu' ? 'CPUs' : 'GPUs');
+
+	let query = $state('');
+	let searchEl: HTMLInputElement | undefined = $state();
+
+	// Filtering happens here, not on the server: the whole category is already
+	// in the browser, so narrowing is instant and there is no debounce.
+	const matches = $derived(searchProducts(data.groups, query));
+	const searching = $derived(query.trim().length > 0);
+	const groups = $derived(searching ? [] : groupForIndex(data.groups));
+
 	let compareIds = $state<Set<number>>(new Set());
 
-	const compareCategory = $derived.by(() => {
-		const cats = new Set<Category>();
-		for (const g of data.groups) {
-			if (compareIds.has(g.productId)) cats.add(g.category);
-		}
-		return cats.size === 1 ? [...cats][0] : null;
-	});
-
-	function toggleCompare(productId: number, category: Category) {
-		if (compareIds.has(productId)) {
-			const next = new Set(compareIds);
-			next.delete(productId);
-			compareIds = next;
-			return;
-		}
-		if (compareIds.size >= 4) return;
-		if (compareCategory !== null && compareCategory !== category) return;
+	function toggleCompare(productId: number) {
 		const next = new Set(compareIds);
-		next.add(productId);
+		if (next.has(productId)) next.delete(productId);
+		else if (next.size < 4) next.add(productId);
 		compareIds = next;
 	}
 
 	const compareUrl = $derived(`/compare?ids=${[...compareIds].join(',')}`);
+
+	// GPUs -> CPUs is the same route with a different query, so this component
+	// is not remounted and a selection would survive the switch. /compare
+	// rejects a mixed-category comparison with a 400, so clear on change.
+	let lastCategory: Category | undefined;
+	$effect(() => {
+		const current = data.category;
+		// undefined on the first run, so the initial render never clears.
+		if (lastCategory !== undefined && current !== lastCategory) compareIds = new Set();
+		lastCategory = current;
+	});
+
+	function openTopHit() {
+		if (matches.length > 0) goto(`/product/${matches[0].productId}`);
+	}
+
+	function onSearchKey(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			openTopHit();
+		} else if (event.key === 'Escape') {
+			query = '';
+		}
+	}
+
+	// "/" jumps to search from anywhere on the page — but never while the user
+	// is already typing somewhere, or it would swallow the character.
+	function onWindowKey(event: KeyboardEvent) {
+		if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+		const target = event.target as HTMLElement | null;
+		const tag = target?.tagName;
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+		event.preventDefault();
+		searchEl?.focus();
+	}
+
+	function setInStock(checked: boolean) {
+		const params = new URLSearchParams(page.url.searchParams);
+		if (checked) params.set('in_stock', '1');
+		else params.delete('in_stock');
+		goto(`/products?${params.toString()}`, { keepFocus: true, noScroll: true });
+	}
 </script>
 
+<svelte:window onkeydown={onWindowKey} />
+
 <svelte:head>
-	<title>Trackaroo — Products</title>
+	<title>Trackaroo — {heading}</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div>
-		<h1 class="text-xl font-semibold text-text">Products</h1>
-		<p class="mt-1 text-sm text-text-muted">
-			Every tracked product as a card — expand one to see each retailer listing with its
-			7-day change. Tick up to 4 in the same category to compare them.
+<div>
+	<div class="flex flex-wrap items-baseline justify-between gap-2">
+		<h1 class="text-xl font-semibold text-text">{heading}</h1>
+		<p class="text-xs text-text-muted">
+			<span class="num">{data.trackedCount}</span> tracked
+			{#if data.inStockOnly}
+				· <span class="num">{data.groups.length}</span> in stock
+			{:else}
+				· <span class="num">{data.listedCount}</span> seen at a retailer
+			{/if}
 		</p>
 	</div>
 
-	<div>
-		<div class="mb-3">
-			<Filters
-				brands={data.brands}
-				retailerFacets={data.retailerFacets}
-				retailerTotal={data.retailerTotal}
+	<div class="mt-3 flex flex-wrap items-center gap-3">
+		<div class="min-w-0 flex-1 basis-64">
+			<label for="product-search" class="sr-only">Search {heading}</label>
+			<input
+				id="product-search"
+				bind:this={searchEl}
+				bind:value={query}
+				onkeydown={onSearchKey}
+				type="search"
+				autocomplete="off"
+				placeholder={`Search ${data.groups.length} ${heading}…  (press / )`}
+				class="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
 			/>
 		</div>
-		<!--
-			Changing a filter re-renders the grid via a server round-trip. Sighted
-			users see the cards change; a screen-reader user got no announcement at
-			all, so this states the new result count.
-		-->
-		<p aria-live="polite" class="sr-only">
-			{data.groups.length}
-			{data.groups.length === 1 ? 'product' : 'products'} match the current filters.
-		</p>
-		{#if data.groups.length === 0}
-			<div
-				class="rounded-md border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted"
-			>
-				No listings match the current filters.
-			</div>
+		<label
+			class="flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-sm text-text"
+		>
+			<input
+				type="checkbox"
+				class="accent-accent"
+				checked={data.inStockOnly}
+				onchange={(e) => setInStock((e.target as HTMLInputElement).checked)}
+			/>
+			In stock
+		</label>
+	</div>
+
+	<p class="mt-2 text-xs text-text-muted" aria-live="polite" data-testid="index-count">
+		{#if searching}
+			<span class="num">{matches.length}</span> of
+			<span class="num">{data.groups.length}</span> match
 		{:else}
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-				{#each data.groups as group (group.productId)}
-					<ProductCard
+			Type to narrow, or press Enter to open the top match
+		{/if}
+	</p>
+
+	{#if searching}
+		{#if matches.length > 0}
+			<div class="mt-3 divide-y divide-border rounded-lg border border-border bg-surface">
+				{#each matches as group (group.productId)}
+					<ProductRow
 						{group}
 						compareSelected={compareIds.has(group.productId)}
-						compareDisabled={compareCategory !== null &&
-							compareCategory !== group.category}
-						onToggleCompare={(id) => toggleCompare(id, group.category)}
+						compareDisabled={!compareIds.has(group.productId) && compareIds.size >= 4}
+						onToggleCompare={toggleCompare}
 					/>
 				{/each}
 			</div>
+		{:else}
+			<p
+				class="mt-3 rounded-lg border border-border bg-surface px-3 py-8 text-center text-sm text-text-muted"
+			>
+				No {heading} match “{query}”.
+				<button type="button" class="ml-1 text-accent underline" onclick={() => (query = '')}>
+					Clear
+				</button>
+			</p>
 		{/if}
-	</div>
+	{:else}
+		<div class="mt-3 space-y-4">
+			{#each groups as group (group.key)}
+				<section>
+					<h2
+						class="border-b border-border pb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted"
+					>
+						{group.brand} · {group.label}
+					</h2>
+					<div class="divide-y divide-border">
+						{#each group.items as item (item.productId)}
+							<ProductRow
+								group={item}
+								compareSelected={compareIds.has(item.productId)}
+								compareDisabled={!compareIds.has(item.productId) && compareIds.size >= 4}
+								onToggleCompare={toggleCompare}
+							/>
+						{/each}
+					</div>
+				</section>
+			{/each}
+		</div>
+	{/if}
 </div>
 
 {#if compareIds.size >= 2}
@@ -108,14 +199,11 @@
 			<button
 				type="button"
 				onclick={() => (compareIds = new Set())}
-				class="text-xs text-text-muted hover:text-text"
+				class="text-sm text-text-muted hover:text-text"
 			>
 				Clear
 			</button>
-			<a
-				href={compareUrl}
-				class="rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-surface no-underline hover:opacity-90"
-			>
+			<a href={compareUrl} class="text-sm font-medium text-accent no-underline hover:underline">
 				Compare ({compareIds.size}) →
 			</a>
 		</div>

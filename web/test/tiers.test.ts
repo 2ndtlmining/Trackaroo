@@ -26,9 +26,18 @@ describe('generationTierLabel', () => {
 		expect(generationTierLabel('AMD', 'gpu', 'current-2')).toBe('RX 6000 (RDNA 2)');
 	});
 
-	it('falls back to generic labels for unmapped lines (Intel Arc)', () => {
-		expect(generationTierLabel('Intel', 'gpu', 'current')).toBe(GENERIC_TIER_LABELS.current);
-		expect(generationTierLabel('Intel', 'gpu', 'current-1')).toBe(GENERIC_TIER_LABELS['current-1']);
+	// Arc used to fall back to "Current gen", which lumped Alchemist and
+	// Battlemage under one heading on the product index.
+	it('names the Intel Arc generations', () => {
+		expect(generationTierLabel('Intel', 'gpu', 'current')).toBe('Arc B (Battlemage)');
+		expect(generationTierLabel('Intel', 'gpu', 'current-1')).toBe('Arc A (Alchemist)');
+	});
+
+	it('still falls back to generic labels for a line with no mapping', () => {
+		expect(generationTierLabel('Someshop', 'gpu', 'current')).toBe(GENERIC_TIER_LABELS.current);
+		expect(generationTierLabel('Someshop', 'gpu', 'current-1')).toBe(
+			GENERIC_TIER_LABELS['current-1']
+		);
 	});
 
 	it('is case-insensitive on brand and category', () => {

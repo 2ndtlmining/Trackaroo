@@ -14,6 +14,35 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-25** — **`/products` rebuilt as a search-first index**, per
+  [`docs/superpowers/specs/2026-08-25-product-index-design.md`](docs/superpowers/specs/2026-08-25-product-index-design.md)
+  and its plan. The card grid was a *browse* layout for a *find* job. Now one
+  search box and one dense row per product, filtered **in the browser** — the
+  whole category (~50 rows) ships on load, so the 450ms debounce and a server
+  round trip per keystroke are gone. Empty box shows the catalogue grouped
+  **brand-major, newest generation first** with non-collapsing headers from the
+  existing `generationTierLabel`; typing gives a flat ranked list, `Enter`
+  opens the top hit, `Escape` clears, `/` focuses.
+  **Matching is shared with the Ctrl+K palette** (`productSearch.ts`) so the
+  two surfaces cannot rank the same catalogue differently — the palette gained
+  ranking, having previously done an unranked substring filter.
+  **The index starts from the watchlist, not from what has been scraped** —
+  39 of 100 tracked products have never matched a listing, and omitting them
+  made a search for a tracked model answer "no match". Rows now say
+  **Not listed** (never seen at a retailer) as distinct from **No stock**, and
+  the header reads "47 tracked · 23 seen at a retailer".
+  **Removed:** `ProductCard`, `Filters`, the retailer chip row from stage 4
+  (superseded by the search box), and server-side search/sort for this route.
+  **Intel Arc was mis-tagged** — A380/A750/A770 (Alchemist) and B570/B580
+  (Battlemage) were all `current` with no `intel-gpu` label, so two generations
+  would have shared one generic heading. Retagged, with proper labels.
+  **That exposed a seeding bug:** the watchlist calls itself the source of
+  truth, but `seed.py` skipped existing products outright, so the retag could
+  never reach the DB. `seed_products` now syncs `generation_tier` for existing
+  rows (reported as `updated`, honoured by `--dry-run`).
+  Regression: pytest **622** / svelte-check 0 errors, 0 warnings / vitest
+  **373** / e2e **59** / build green / Docker image built and booted.
+
 - **2026-08-25** — **Two honesty fixes on the product page**, both from user
   feedback. **(1) The price-range bar compared two different series**: the low
   was the cheapest listing per day, but the high was the *dearest* listing per
@@ -423,9 +452,9 @@ Current, as of 25-Aug-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **619** | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **622** | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **357** | `npm test` (`web/`) |
-| Frontend e2e (Playwright) | **63** | `npm run test:e2e` (`web/`) |
+| Frontend e2e (Playwright) | **59** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
 
 The per-module breakdown that used to live here went stale every session;

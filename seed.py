@@ -80,7 +80,7 @@ def seed_products(
     Returns:
         Stats dict with inserted/skipped/errors counts.
     """
-    stats = {"inserted": 0, "skipped": 0, "errors": 0}
+    stats = {"inserted": 0, "skipped": 0, "updated": 0, "errors": 0}
 
     for p in products:
         # Check if already exists (by category + brand + model)
@@ -88,8 +88,25 @@ def seed_products(
             "SELECT id FROM products WHERE category = ? AND brand = ? AND model = ?",
             (p["category"], p["brand"], p["model"]),
         )
-        if cursor.fetchone():
-            stats["skipped"] += 1
+        existing = cursor.fetchone()
+        if existing:
+            # The watchlist is the source of truth for generation_tier, so a
+            # correction there must reach products that already exist —
+            # skipping outright meant a retag silently did nothing. Only this
+            # column is synced: the rest of the row is either immutable
+            # identity or enriched elsewhere.
+            current_tier = conn.execute(
+                "SELECT generation_tier FROM products WHERE id = ?", (existing[0],)
+            ).fetchone()[0]
+            if current_tier != p["generation_tier"]:
+                stats["updated"] += 1
+                if not dry_run:
+                    conn.execute(
+                        "UPDATE products SET generation_tier = ? WHERE id = ?",
+                        (p["generation_tier"], existing[0]),
+                    )
+            else:
+                stats["skipped"] += 1
             continue
 
         if not dry_run:
@@ -146,6 +163,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     LOGGER.info("\nResults:")
     LOGGER.info("  Inserted: %d", stats["inserted"])
     LOGGER.info("  Skipped (already exists): %d", stats["skipped"])
+    LOGGER.info("  Updated (generation tier): %d", stats["updated"])
     LOGGER.info("  Errors: %d", stats["errors"])
 
     # Verify
