@@ -12,8 +12,7 @@
 		compareDisabled = false,
 		onToggleCompare
 	}: {
-		// The /products load augments each group with the deal figures.
-		group: ProductGroup & { avg30?: number | null; avg30Points?: number };
+		group: ProductGroup;
 		compareSelected?: boolean;
 		compareDisabled?: boolean;
 		onToggleCompare?: (productId: number) => void;

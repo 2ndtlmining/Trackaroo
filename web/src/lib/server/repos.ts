@@ -66,6 +66,9 @@ export interface ProductGroup {
 	// Average of the per-day cheapest in-stock price over the trailing 30 days
 	// (null when no in-stock history in the window).
 	avg30?: number | null;
+	// Days that actually contributed to avg30. The window is 30 days but a
+	// young dataset has fewer, and the UI labels the real number.
+	avg30Points?: number;
 	// True when the current cheapest in-stock price is below the 30-day
 	// average (and there is enough history to trust the average).
 	deal?: boolean;
