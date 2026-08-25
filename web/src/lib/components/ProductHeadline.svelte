@@ -2,7 +2,7 @@
 	import PriceRangeBar from './PriceRangeBar.svelte';
 	import { RETAILER_OPTIONS } from '$lib/filters';
 	import { formatAud, formatPct } from '$lib/formats';
-	import { deltaPresentation } from '$lib/offers';
+	import { avgWindowLabel, deltaPresentation } from '$lib/offers';
 	import type { Headline } from '$lib/productHeadline';
 
 	let {
@@ -34,7 +34,7 @@
 					{@const d = deltaPresentation(headline.vsAvg30Pct)}
 					<span class={d.class}>
 						{d.arrow}
-						{formatPct(headline.vsAvg30Pct)} vs 30d avg
+						{formatPct(headline.vsAvg30Pct)} {avgWindowLabel(headline.avgPoints)}
 					</span>
 				{:else}
 					<span class="text-text-muted">Not enough history</span>
@@ -68,6 +68,7 @@
 			high={headline.allTimeHigh}
 			current={headline.currentPrice}
 			position={headline.rangePosition}
+			points={headline.pricePoints}
 		/>
 	{/if}
 

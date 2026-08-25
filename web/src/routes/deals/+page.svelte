@@ -26,7 +26,7 @@
 <div class="mx-auto max-w-6xl px-4 py-6">
 	<h1 class="text-xl font-semibold tracking-tight text-text">Deals</h1>
 	<p class="mt-1 text-sm text-text-muted">
-		Products whose cheapest in-stock price is below their own 30-day average.
+		Products whose cheapest in-stock price is below their own recent average (up to 30 days of history).
 	</p>
 
 	<div class="mt-4 flex flex-col gap-2">
@@ -55,12 +55,12 @@
 
 	<p class="mt-3 text-xs text-text-muted" aria-live="polite" data-testid="deals-count">
 		{resultCount}
-		{resultCount === 1 ? 'product' : 'products'} below the 30-day average
+		{resultCount === 1 ? 'product' : 'products'} below their recent average
 	</p>
 
 	<section class="mt-4" aria-labelledby="below-average-heading">
 		<h2 id="below-average-heading" class="text-sm font-semibold text-text">
-			Below 30-day average
+			Below recent average
 		</h2>
 		{#if data.belowAverage.length > 0}
 			<div
@@ -71,6 +71,7 @@
 					<OfferRow
 						offer={dealToOffer(deal)}
 						avg30={deal.avg30}
+						avgPoints={deal.avg30Points}
 						titleOverride={deal.model}
 						detailHref={`/product/${deal.productId}`}
 					/>
@@ -80,7 +81,7 @@
 			<p
 				class="mt-2 rounded-lg border border-border bg-surface px-3 py-6 text-center text-sm text-text-muted"
 			>
-				No products are below their 30-day average today.
+				No products are below their recent average today.
 			</p>
 		{/if}
 	</section>
@@ -101,6 +102,7 @@
 					<OfferRow
 						offer={dealToOffer(deal)}
 						avg30={deal.avg30}
+						avgPoints={deal.avg30Points}
 						titleOverride={deal.model}
 						detailHref={`/product/${deal.productId}`}
 					/>

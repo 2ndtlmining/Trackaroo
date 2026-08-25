@@ -225,10 +225,11 @@ describe('ProductCard', () => {
 
 	it('shows a Deal badge with the 30-day average tooltip when flagged', () => {
 		const body = renderComponent(ProductCard, {
-			group: productGroup({ deal: true, avg30: 320 })
+			group: productGroup({ deal: true, avg30: 320,
+				avg30Points: 17 })
 		});
 		expect(body).toContain('Deal');
-		expect(body).toContain('Below the 30-day average ($320)');
+		expect(body).toContain('Below the 17-day average ($320)');
 	});
 
 	it('omits the Deal badge when the group is not flagged as a deal', () => {
@@ -606,10 +607,21 @@ describe('OfferRow', () => {
 		expect(html).toContain('rel="noopener noreferrer"');
 	});
 
-	it('shows a down-arrow delta with a signed number when below the 30-day average', () => {
-		const html = renderComponent(OfferRow, { offer: offerRow({ latestPrice: 1288 }), avg30: 1400 });
+	it('shows a down-arrow delta with a signed number when below the average', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow({ latestPrice: 1288 }),
+			avg30: 1400,
+			avgPoints: 17
+		});
 		expect(html).toContain('▼');
-		expect(html).toContain('vs 30d avg');
+		// States the days that actually back the average rather than claiming 30.
+		expect(html).toContain('vs 17-day avg');
+		expect(html).not.toContain('30d avg');
+	});
+
+	it('falls back to a day-count-free label when the point count is unknown', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow({ latestPrice: 1288 }), avg30: 1400 });
+		expect(html).toContain('vs recent avg');
 	});
 
 	it('shows an up arrow when above the average', () => {
@@ -624,13 +636,13 @@ describe('OfferRow', () => {
 		expect(html).not.toContain('text-up');
 		expect(html).not.toContain('text-down');
 		expect(html).toContain('·');
-		expect(html).toContain('vs 30d avg');
+		expect(html).toContain('vs recent avg');
 	});
 
 	it('says so plainly when there is not enough history, rather than showing a number', () => {
 		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: null });
 		expect(html).toContain('Not enough history');
-		expect(html).not.toContain('vs 30d avg');
+		expect(html).not.toContain('-day avg');
 	});
 
 	it('marks a delisted offer and omits its stock badge', () => {
@@ -966,6 +978,8 @@ function headline(overrides: Partial<Headline> = {}): Headline {
 		allTimeLow: 1249,
 		allTimeHigh: 1689,
 		avg30: 1400,
+		avgPoints: 17,
+		pricePoints: 17,
 		vsAvg30Pct: -7.2,
 		vsAllTimeLowPct: 4.0,
 		rangePosition: 0.11,
@@ -985,7 +999,7 @@ describe('ProductHeadline', () => {
 	it('shows both deltas with arrows, not colour alone', () => {
 		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
 		expect(html).toContain('▼');
-		expect(html).toContain('vs 30d avg');
+		expect(html).toContain('vs 17-day avg');
 		expect(html).toContain('above all-time low');
 		// Verify actual percentages match the fixture values (not hardcoded)
 		expect(html).toContain('−7.2%');
@@ -1025,7 +1039,7 @@ describe('ProductHeadline', () => {
 			headline: headline({ avg30: null, vsAvg30Pct: null }),
 			...base
 		});
-		expect(html).not.toContain('vs 30d avg');
+		expect(html).not.toContain('30d avg');
 		expect(html).toContain('Not enough history');
 	});
 
@@ -1041,7 +1055,7 @@ describe('ProductHeadline', () => {
 		expect(html).not.toContain('class="text-up"');
 		expect(html).not.toContain('class="text-down"');
 		expect(html).toContain('0.0%');
-		expect(html).toContain('vs 30d avg');
+		expect(html).toContain('vs 17-day avg');
 	});
 });
 describe('HealthStrip', () => {
@@ -1173,12 +1187,57 @@ describe('CategorySection', () => {
 
 	it('gives every empty column real copy, not a blank panel', () => {
 		const html = renderComponent(CategorySection, base);
-		expect(html).toContain('Nothing below its 30-day average today.');
+		expect(html).toContain('Nothing below its recent average today.');
 		expect(html).toContain('No significant price moves in the last 7 days.');
 	});
 
 	it('omits the cheapest figure when there is no in-stock price', () => {
 		const html = renderComponent(CategorySection, { ...base, cheapestPrice: null });
 		expect(html).not.toContain('cheapest');
+	});
+});
+
+describe('ProductHeadline honesty', () => {
+	it('labels the average with the days that actually back it, not a flat 30', () => {
+		const html = renderComponent(ProductHeadline, {
+			headline: headline({ avgPoints: 17 }),
+			listingCount: 3,
+			snapshotCount: 51,
+			span: '9 Aug - 25 Aug 2026'
+		});
+		expect(html).toContain('vs 17-day avg');
+		expect(html).not.toContain('30d avg');
+	});
+
+	it('says the price has held steady rather than claiming a single reading', () => {
+		const html = renderComponent(ProductHeadline, {
+			headline: headline({
+				allTimeLow: 1299,
+				allTimeHigh: 1299,
+				rangePosition: null,
+				pricePoints: 17
+			}),
+			listingCount: 3,
+			snapshotCount: 51,
+			span: '9 Aug - 25 Aug 2026'
+		});
+		expect(html).toContain('held at');
+		expect(html).toContain('17');
+		expect(html).not.toContain('Only one price recorded');
+	});
+
+	it('still says "only one price" when there genuinely is only one', () => {
+		const html = renderComponent(ProductHeadline, {
+			headline: headline({
+				allTimeLow: 1299,
+				allTimeHigh: 1299,
+				rangePosition: null,
+				pricePoints: 1
+			}),
+			listingCount: 1,
+			snapshotCount: 1,
+			span: '25 Aug 2026'
+		});
+		expect(html).toContain('Only one price recorded');
 	});
 });

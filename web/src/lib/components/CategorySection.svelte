@@ -47,13 +47,14 @@
 						<OfferRow
 							offer={dealToOffer(deal)}
 							avg30={deal.avg30}
+							avgPoints={deal.avg30Points}
 							titleOverride={deal.model}
 							detailHref={`/product/${deal.productId}`}
 						/>
 					{/each}
 				</div>
 			{:else}
-				<p class="px-3 py-4 text-xs text-text-muted">Nothing below its 30-day average today.</p>
+				<p class="px-3 py-4 text-xs text-text-muted">Nothing below its recent average today.</p>
 			{/if}
 		</div>
 

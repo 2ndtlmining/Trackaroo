@@ -9,12 +9,15 @@
 		series,
 		productBrand,
 		avg30,
+		avgPoints,
 		selected,
 		onToggleListing
 	}: {
 		series: Series[];
 		productBrand: string;
 		avg30: number | null;
+		// Days behind avg30, so each row's label states real evidence.
+		avgPoints?: number;
 		selected: ReadonlySet<number>;
 		onToggleListing: (listingId: number) => void;
 	} = $props();
@@ -124,7 +127,7 @@
 	{:else}
 		<div class="divide-y divide-border">
 			{#each view.visible as o (o.listingId)}
-				<OfferRow offer={o} {avg30} onToggleChart={onToggleListing} />
+				<OfferRow offer={o} {avg30} {avgPoints} onToggleChart={onToggleListing} />
 			{/each}
 		</div>
 	{/if}

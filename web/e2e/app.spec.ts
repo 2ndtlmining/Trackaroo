@@ -356,7 +356,7 @@ await toggle.click();
 		expect(await card.locator('table svg polyline').count()).toBeGreaterThan(0);
 	});
 
-	test('flags products whose cheapest in-stock price is below the 30-day average', async ({
+	test('flags products whose cheapest in-stock price is below their recent average', async ({
 		page
 	}) => {
 		await goto(page, '/products');
@@ -561,16 +561,18 @@ await goto(page, '/product/1');
 		await expect(page.locator('.chart-skeleton')).toHaveCount(0);
 	});
 
-	test('shows all-time low/high and the vs-30d-average delta on the product page', async ({
-		page
-	}) => {
+	test('shows the cheapest-price range and an honest average delta', async ({ page }) => {
 		await goto(page, '/product/1');
-		// Labels on the price-range bar.
-		await expect(page.getByText('All-time low', { exact: true })).toBeVisible();
-		await expect(page.getByText('All-time high', { exact: true })).toBeVisible();
+		// Both ends of the bar come from the cheapest-per-day series, so the
+		// labels say so rather than implying the dearest listing on the shelf.
+		await expect(page.getByText('Cheapest', { exact: true })).toBeVisible();
+		await expect(page.getByText('Dearest', { exact: true })).toBeVisible();
+		await expect(page.getByText(/Range of the cheapest price across \d+ days/)).toBeVisible();
 		// The headline's vs-30d-average delta, next to the current price (offer
 		// rows also show a per-row vs-30d-avg delta, so scope to the first match).
-		await expect(page.getByText(/vs 30d avg/).first()).toBeVisible();
+		// The label must state the days actually behind the average, never a flat 30.
+		await expect(page.getByText(/vs \d+-day avg/).first()).toBeVisible();
+		await expect(page.getByText(/vs 30d avg/)).toHaveCount(0);
 	});
 
 	test('shows when the product was last updated', async ({ page }) => {

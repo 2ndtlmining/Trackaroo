@@ -12,7 +12,8 @@
 		compareDisabled = false,
 		onToggleCompare
 	}: {
-		group: ProductGroup;
+		// The /products load augments each group with the deal figures.
+		group: ProductGroup & { avg30?: number | null; avg30Points?: number };
 		compareSelected?: boolean;
 		compareDisabled?: boolean;
 		onToggleCompare?: (productId: number) => void;
@@ -82,8 +83,8 @@
 						class="shrink-0 rounded-full border border-down/30 bg-down/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-down"
 						title={
 							group.avg30 != null
-								? `Below the 30-day average (${formatAud(group.avg30)})`
-								: 'Below the 30-day average'
+								? `Below the ${group.avg30Points ? `${group.avg30Points}-day` : 'recent'} average (${formatAud(group.avg30)})`
+								: 'Below the recent average'
 						}
 					>
 						Deal

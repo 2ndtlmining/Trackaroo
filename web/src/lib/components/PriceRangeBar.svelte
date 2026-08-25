@@ -5,24 +5,47 @@
 		low,
 		high,
 		current,
-		position
-	}: { low: number; high: number; current: number; position: number | null } = $props();
+		position,
+		points = 0
+	}: {
+		low: number;
+		high: number;
+		current: number;
+		position: number | null;
+		// Days on which a cheapest-in-stock price was recorded. Distinguishes
+		// "we've only seen one price" from "the price has held steady".
+		points?: number;
+	} = $props();
 
 	const pct = $derived(position === null ? 0 : Math.round(position * 100));
 	const label = $derived(
-		`Currently ${formatAud(current)}. All-time low ${formatAud(low)}, all-time high ${formatAud(high)}.`
+		`Currently ${formatAud(current)}. Cheapest recorded ${formatAud(low)}, ` +
+			`highest the cheapest price has been ${formatAud(high)}, over ${points} days.`
 	);
 </script>
 
 {#if position === null}
-	<p class="text-xs text-text-muted">
-		Only one price recorded so far: <span class="num">{formatAud(current)}</span>
-	</p>
+	<!--
+		A flat range is not the same as a single reading. Claiming "only one
+		price recorded" for a product tracked for weeks at a steady price is
+		simply false, and that is what this panel used to say.
+	-->
+	{#if points > 1}
+		<p class="text-xs text-text-muted">
+			Price has held at <span class="num font-medium text-text">{formatAud(current)}</span>
+			for all
+			<span class="num">{points}</span> days tracked.
+		</p>
+	{:else}
+		<p class="text-xs text-text-muted">
+			Only one price recorded so far: <span class="num">{formatAud(current)}</span>
+		</p>
+	{/if}
 {:else}
 	<div class="max-w-md">
 		<div class="flex justify-between text-[10px] uppercase tracking-wide text-text-muted">
-			<span>All-time low</span>
-			<span>All-time high</span>
+			<span>Cheapest</span>
+			<span>Dearest</span>
 		</div>
 		<div role="img" aria-label={label} class="relative mt-1 h-1.5 rounded-full bg-surface-hover">
 			<span
@@ -35,5 +58,13 @@
 			<span class="num font-medium text-text">{formatAud(current)}</span>
 			<span class="num text-text-muted">{formatAud(high)}</span>
 		</div>
+		<!--
+			Says what the range actually is. Both ends are the cheapest available
+			price on a given day, so "dearest" means the worst day to have bought,
+			not the most expensive listing on the shelf.
+		-->
+		<p class="mt-1 text-[11px] text-text-muted">
+			Range of the cheapest price across <span class="num">{points}</span> days tracked
+		</p>
 	</div>
 {/if}

@@ -4,14 +4,15 @@
 	import StockBadge from './StockBadge.svelte';
 	import { RETAILER_OPTIONS } from '$lib/filters';
 	import { formatAud, formatPct, formatRelative, titleCase } from '$lib/formats';
-	import { deltaPresentation, deltaVsAvg30, type ListingDisplay } from '$lib/offers';
+	import { avgWindowLabel, deltaPresentation, deltaVsAvg30, type ListingDisplay } from '$lib/offers';
 
 	let {
 		offer,
 		avg30,
 		onToggleChart,
 		titleOverride,
-		detailHref
+		detailHref,
+		avgPoints
 	}: {
 		offer: ListingDisplay;
 		avg30: number | null;
@@ -21,6 +22,8 @@
 		// keeps the variant-name title with only the outbound retailer link.
 		titleOverride?: string;
 		detailHref?: string;
+		// Days actually behind avg30, so the label states real evidence.
+		avgPoints?: number;
 	} = $props();
 
 	const retailerLabel = $derived(
@@ -69,7 +72,7 @@
 			{@const d = deltaPresentation(deltaPct)}
 			<span class={d.class}>
 				{d.arrow}
-				{formatPct(deltaPct)} vs 30d avg
+				{formatPct(deltaPct)} {avgWindowLabel(avgPoints)}
 			</span>
 		{:else}
 			<span class="text-text-muted">Not enough history</span>

@@ -12,6 +12,12 @@ export interface Headline {
 	allTimeHigh: number | null;
 	// Null when there is not enough history to trust it.
 	avg30: number | null;
+	// Days of data actually behind avg30, so the label can state the real
+	// evidence instead of claiming a full 30 days on a young dataset.
+	avgPoints: number;
+	// Days on which a cheapest-in-stock price was recorded. Distinguishes
+	// "one price so far" from "the price has held steady for weeks".
+	pricePoints: number;
 	vsAvg30Pct: number | null;
 	vsAllTimeLowPct: number | null;
 	// 0..1 for the range bar, or null when a bar would be meaningless.
@@ -33,11 +39,18 @@ export function buildHeadline(
 		}
 	}
 
+	// Both ends come from the SAME series: the cheapest in-stock price per day.
+	// Using p.high here would take the dearest listing any retailer asked that
+	// day, so the bar would compare today's best offer against the worst price
+	// ever seen -- which pinned the marker to the left on ~70% of products.
 	let allTimeLow: number | null = null;
 	let allTimeHigh: number | null = null;
+	let pricePoints = 0;
 	for (const p of band) {
-		if (p.low !== null && (allTimeLow === null || p.low < allTimeLow)) allTimeLow = p.low;
-		if (p.high !== null && (allTimeHigh === null || p.high > allTimeHigh)) allTimeHigh = p.high;
+		if (p.low === null) continue;
+		pricePoints += 1;
+		if (allTimeLow === null || p.low < allTimeLow) allTimeLow = p.low;
+		if (allTimeHigh === null || p.low > allTimeHigh) allTimeHigh = p.low;
 	}
 
 	// The same guard the old "30d avg" chip used: a three-day average is not an
@@ -63,6 +76,8 @@ export function buildHeadline(
 		allTimeLow,
 		allTimeHigh,
 		avg30,
+		avgPoints: stats.avg30Points,
+		pricePoints,
 		vsAvg30Pct,
 		vsAllTimeLowPct,
 		rangePosition

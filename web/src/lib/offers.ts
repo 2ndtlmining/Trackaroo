@@ -27,6 +27,14 @@ export function deltaVsAvg30(price: number | null, avg30: number | null): number
 	return ((price - avg30) / avg30) * 100;
 }
 
+// The average is a trailing 30-day WINDOW, but on a young dataset only a
+// handful of days fall inside it. Labelling every delta "30d avg" overstates
+// the evidence, so the label states the days that actually contributed and
+// grows into "30-day" on its own once the history is deep enough.
+export function avgWindowLabel(points: number | null | undefined): string {
+	return points && points > 0 ? `vs ${points}-day avg` : 'vs recent avg';
+}
+
 export interface DeltaPresentation {
 	arrow: '▼' | '▲' | '·';
 	class: 'text-down' | 'text-up' | 'text-text-muted';
