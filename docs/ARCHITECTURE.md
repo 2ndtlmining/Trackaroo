@@ -444,4 +444,13 @@ Three guards, layered because each closes a different route:
 
 **Two process lessons.** First, the test suites never build the image, so a fully green pytest/vitest/Playwright run said nothing about whether the app could start; `CLAUDE.md` now requires a Docker build-and-boot for any change touching the `Dockerfile`, `deploy/`, or container-executed code. Second, `grep -c $'\r'` under Git Bash reports false positives (it claimed 98 CRs in a file that had none) and sent the first pass of this investigation down a wrong path - count bytes in Python instead.
 
+#### Price-range bar compares like with like; average labels state real evidence (2026-08-25)
+Two honesty defects, both reported from use.
+
+**The range bar mixed two different series.** `allTimeLow` was the min of each day's *cheapest* in-stock listing, but `allTimeHigh` was the max of each day's *dearest* listing. The marker -- today's cheapest offer -- was therefore plotted against the worst price any retailer had ever asked, so it could only sit high if today's best deal approached the dearest-ever price. Measured on live data: 70% of bars had the marker pinned in the bottom fifth, and only one product sat above the midpoint. Both ends now come from the same series, the cheapest-per-day price, which answers the question the bar is actually asking -- is today cheap in this product's own history? The same measurement afterwards: 50% in the bottom fifth (genuine -- 77% of products really are at their all-time low), and 9 products above the midpoint instead of 1. Labels changed from "All-time low/high" to "Cheapest/Dearest" with a caption naming the series and the day count, because "all-time high" now means the worst day to have bought rather than the priciest listing on the shelf.
+
+**A flat range was reported as a single reading.** When low equalled high the bar degraded to "Only one price recorded so far" -- false for a product tracked for 17 days at a steady price, which is 24 of 44 products on the current dataset. `Headline.pricePoints` now carries the number of days with a recorded price, and the copy distinguishes "Price has held at $120 for all 17 days tracked" from a genuine single reading.
+
+**"30d avg" overstated the evidence.** The SQL window genuinely is 30 days, but the dataset spans 17, so every delta was labelled with a month of evidence it did not have. `avgWindowLabel()` renders the real contributing day count -- "vs 17-day avg" -- and grows into "vs 30-day avg" by itself once the history is deep enough. Rule-level prose ("below their recent average") is now kept separate from evidence-level numbers, so a heading never claims a window the data cannot back.
+
 ---

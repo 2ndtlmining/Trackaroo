@@ -38,6 +38,7 @@ export function load({ url }: { url: URL }) {
 				...g,
 				sparkline: productSparklines.get(g.productId) ?? [],
 				avg30,
+				avg30Points: stats?.avg30Points ?? 0,
 				// A deal is the current cheapest in-stock price sitting below
 				// the 30-day average, only when there's enough history to
 				// trust the average (avoids flagging 1-2 day products).

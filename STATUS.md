@@ -14,6 +14,25 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-25** — **Two honesty fixes on the product page**, both from user
+  feedback. **(1) The price-range bar compared two different series**: the low
+  was the cheapest listing per day, but the high was the *dearest* listing per
+  day, so today's cheapest offer was plotted against the worst price any
+  retailer ever asked. 70% of bars had the marker pinned in the bottom fifth
+  and only one product sat above the midpoint. Both ends now come from the
+  cheapest-per-day series; afterwards 50% sit in the bottom fifth (genuine —
+  77% of products really are at their all-time low) and 9 sit above the
+  midpoint. Labels are now "Cheapest/Dearest" with a caption naming the series
+  and day count. **A flat range no longer claims a single reading** — 24 of 44
+  products have never changed price, and used to render "Only one price
+  recorded so far"; they now say "Price has held at $120 for all 17 days
+  tracked". **(2) "30d avg" overstated the evidence** — the SQL window is 30
+  days but the dataset spans 17. New `avgWindowLabel()` states the real
+  contributing day count ("vs 17-day avg") and grows into "30-day" on its own.
+  Rule-level prose ("below their recent average") is now separate from
+  evidence-level numbers. Regression: pytest **619** / svelte-check 0 errors,
+  0 warnings / vitest **364** / e2e **63**.
+
 - **2026-08-25** — **Fixed: the Docker container could not start at all.**
   `docker run` died instantly with
   `[FATAL tini (7)] exec /usr/local/bin/trackaroo-entrypoint failed: No such

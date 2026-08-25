@@ -131,6 +131,7 @@ label:
 				series={data.series}
 				productBrand={product.brand}
 				avg30={headline.avg30}
+				avgPoints={headline.avgPoints}
 				{selected}
 				onToggleListing={toggleListing}
 			/>
