@@ -430,4 +430,18 @@ Stage 4 — the last stage of the price-first IA spec (§6, §7). Three things w
 
 **Also in this stage:** `/compare` joins the nav and, opened with no `ids`, renders an empty state explaining how to select products instead of a 400 — a request naming exactly one product is still a 400, since that comes from a broken link rather than from clicking Compare. The dataset stats (snapshot days, DB size) moved from the header into the homepage health strip, their honest home; the user-facing staleness signal was already `StaleDataBanner`. Below `md` the nav is a horizontally scrollable row rather than a hamburger — five short items fit, and a menu would add a tap to every navigation.
 
+#### Shell scripts pinned to LF on checkout; the container could not start (2026-08-25)
+`docker run` failed immediately with `[FATAL tini (7)] exec /usr/local/bin/trackaroo-entrypoint failed: No such file or directory`. The file was present and executable - the path in that message is a red herring. `deploy/entrypoint-single.sh` reached the image with CRLF endings, so the shebang read `#!/bin/sh` + CR and the kernel tried to exec an interpreter literally named `/bin/sh<CR>`. Linux reports that ENOENT against the script rather than the interpreter, which makes it read as a missing `COPY`.
+
+**The CRLF was never committed.** Git stores these scripts as LF and always has - the blob for `entrypoint-single.sh` is byte-identical from the commit that added it through to today. The conversion happens on **checkout**: Git for Windows sets `core.autocrlf=true` at *system* scope, and with no `.gitattributes` every Windows clone materialised `deploy/*.sh` with CRLF. `docker build` then COPYs the working-tree file, carrying the CR into the image. So the image was broken for anyone building on Windows with a default Git install, and fine for anyone building on Linux or macOS - which is why it survived a "verified live" note.
+
+Proven at two levels. Mechanism: the working-tree script mounted into a bare `debian:bookworm-slim` reproduces `exec ...: no such file or directory`, while the byte-identical file with CRs stripped executes normally. Provenance: a fresh `git clone` of the parent commit yields `CR=162` on that script, and a fresh clone with `.gitattributes` present yields `CR=0`.
+
+Three guards, layered because each closes a different route:
+- **`.gitattributes`** pins `*.sh` and `Dockerfile` to `eol=lf`, overriding `autocrlf` so the checkout is right in the first place. This is the actual fix.
+- **The Dockerfile** strips CRs after `COPY` and runs `sh -n` on each script. A source zip, an exported archive or a stray editor bypasses git entirely; this makes such a checkout fail the *build* rather than the first boot.
+- **`unit_testing/test_shell_scripts.py`** fails the regression suite on any tracked `*.sh` whose working-tree copy contains a CR - deliberately checking the working tree, since that is both the layer that breaks and the layer `docker build` reads.
+
+**Two process lessons.** First, the test suites never build the image, so a fully green pytest/vitest/Playwright run said nothing about whether the app could start; `CLAUDE.md` now requires a Docker build-and-boot for any change touching the `Dockerfile`, `deploy/`, or container-executed code. Second, `grep -c $'\r'` under Git Bash reports false positives (it claimed 98 CRs in a file that had none) and sent the first pass of this investigation down a wrong path - count bytes in Python instead.
+
 ---
