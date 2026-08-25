@@ -1,56 +1,68 @@
 import {
-	getBrands,
 	getLatestListings,
 	getProductDealStats,
-	getProductSparklines,
-	getSparklines,
+	getTrackedProducts,
 	groupListingsByProduct
 } from '$lib/server/repos';
-import { MIN_HISTORY_POINTS } from '$lib/constants';
 import { getDb } from '$lib/server/db';
 import { parseFilters } from '$lib/filters';
-import { facetCounts } from '$lib/offers';
-import type { ListingFilters } from '$lib/types';
+import type { Category, ListingFilters } from '$lib/types';
 
+// The index ships the whole category to the browser and filters there, so this
+// load deliberately does less than it used to: no text search, no sort, no
+// per-listing or per-product sparkline queries, no facet counts. ~50 rows is a
+// few kilobytes, which is cheaper than a round trip per keystroke.
 export function load({ url }: { url: URL }) {
 	const db = getDb();
-	const filters: ListingFilters = parseFilters(url.searchParams);
-	// Counted over the set filtered by every axis EXCEPT retailer, so a chip's
-	// count always equals the number of rows clicking it produces.
-	const forCounts = getLatestListings(db, { ...filters, retailer: undefined });
-	const retailerFacets = facetCounts(forCounts, 'retailer');
-	const listings = filters.retailer
-		? forCounts.filter((l) => l.retailer === filters.retailer)
-		: forCounts;
-	const sparklines = getSparklines(db, listings.map((l) => l.listingId));
-	const withSparklines = listings.map((l) => ({
-		...l,
-		sparkline: sparklines.get(l.listingId) ?? []
-	}));
-	const groups = groupListingsByProduct(withSparklines, filters.sort);
-	const productSparklines = getProductSparklines(db, groups.map((g) => g.productId));
-	const dealStats = getProductDealStats(db, groups.map((g) => g.productId));
-	return {
-		groups: groups.map((g) => {
-			const stats = dealStats.get(g.productId);
-			const avg30 = stats?.avg30 ?? null;
+	const parsed: ListingFilters = parseFilters(url.searchParams);
+	// Category is the page (the GPUs / CPUs nav destinations), so it always has
+	// a subject even when the URL omits one.
+	const category: Category = parsed.category ?? 'gpu';
+
+	const listings = getLatestListings(db, { category, inStock: parsed.inStock });
+	const withListings = groupListingsByProduct(listings);
+	const dealStats = getProductDealStats(db, withListings.map((g) => g.productId));
+	const byProduct = new Map(withListings.map((g) => [g.productId, g]));
+
+	// Start from the watchlist, not from what has been scraped. Around 39% of
+	// tracked products have never matched a listing; dropping them would make
+	// a search for a genuinely tracked model answer "no match", which is a
+	// different claim from "nobody stocks it".
+	const groups = getTrackedProducts(db, category).map((product) => {
+		const group = byProduct.get(product.productId);
+		if (!group) {
 			return {
-				...g,
-				sparkline: productSparklines.get(g.productId) ?? [],
-				avg30,
-				avg30Points: stats?.avg30Points ?? 0,
-				// A deal is the current cheapest in-stock price sitting below
-				// the 30-day average, only when there's enough history to
-				// trust the average (avoids flagging 1-2 day products).
-				deal:
-					g.cheapestInStockPrice !== null &&
-					avg30 !== null &&
-					(stats?.avg30Points ?? 0) >= MIN_HISTORY_POINTS &&
-					g.cheapestInStockPrice < avg30
+				...product,
+				listings: [],
+				cheapestInStockPrice: null,
+				cheapestInStockRetailer: null,
+				inStockCount: 0,
+				avg30: null,
+				avg30Points: 0,
+				neverListed: true
 			};
-		}),
-		brands: getBrands(db),
-		retailerFacets,
-		retailerTotal: forCounts.length
+		}
+		const stats = dealStats.get(group.productId);
+		return {
+			...group,
+			avg30: stats?.avg30 ?? null,
+			avg30Points: stats?.avg30Points ?? 0,
+			neverListed: false
+		};
+	});
+
+	// "In stock" must still narrow the page. Watchlist-only products have no
+	// stock by definition, so they drop out when the filter is on.
+	const inStockOnly = parsed.inStock ?? false;
+	const visible = inStockOnly ? groups.filter((g) => g.cheapestInStockPrice !== null) : groups;
+
+	return {
+		category,
+		inStockOnly,
+		// Always the whole category, so the header does not restate the
+		// filtered count back as though it were the catalogue size.
+		trackedCount: groups.length,
+		listedCount: withListings.length,
+		groups: visible
 	};
 }

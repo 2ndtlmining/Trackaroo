@@ -22,6 +22,11 @@ const TIER_LINE_LABELS: Record<string, Record<GenerationTier, string>> = {
 		'current-1': 'RTX 40 (Ada)',
 		'current-2': 'RTX 30 (Ampere)'
 	},
+	'intel-gpu': {
+		current: 'Arc B (Battlemage)',
+		'current-1': 'Arc A (Alchemist)',
+		'current-2': 'Arc (earlier)'
+	},
 	'amd-gpu': {
 		current: 'RX 9000 (RDNA 4)',
 		'current-1': 'RX 7000 (RDNA 3)',

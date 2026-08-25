@@ -8,12 +8,12 @@ import PriceChange from '../src/lib/components/PriceChange.svelte';
 import StockBadge from '../src/lib/components/StockBadge.svelte';
 import Chip from '../src/lib/components/Chip.svelte';
 import LatestListingTable from '../src/lib/components/LatestListingTable.svelte';
-import ProductCard from '../src/lib/components/ProductCard.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
 import Sparkline from '../src/lib/components/Sparkline.svelte';
 import OfferRow from '../src/lib/components/OfferRow.svelte';
 import FacetChips from '../src/lib/components/FacetChips.svelte';
 import OfferList from '../src/lib/components/OfferList.svelte';
+import ProductRow from '../src/lib/components/ProductRow.svelte';
 import HealthStrip from '../src/lib/components/HealthStrip.svelte';
 import MoverRow from '../src/lib/components/MoverRow.svelte';
 import CategorySection from '../src/lib/components/CategorySection.svelte';
@@ -207,142 +207,6 @@ function productGroup(overrides: Partial<ProductGroup> = {}): ProductGroup {
 		...overrides
 	};
 }
-
-describe('ProductCard', () => {
-	it('renders model, brand, category and the cheapest in-stock price', () => {
-		const body = renderComponent(ProductCard, { group: productGroup() });
-		expect(body).toContain('Ryzen 5 7600');
-		expect(body).toContain('AMD');
-		expect(body).toContain('fill="#ED1C24"');
-		expect(body).toContain('CPU');
-		expect(body).toContain('from $299');
-		expect(body).toContain('scorptec');
-		// The card content grows to fill the grid cell and the price row keeps a
-		// consistent height whether or not a sparkline is present.
-		expect(body).toContain('class="grow p-3"');
-		expect(body).toContain('mt-2 flex min-h-7 items-center gap-2');
-	});
-
-	it('shows a Deal badge with the 30-day average tooltip when flagged', () => {
-		const body = renderComponent(ProductCard, {
-			group: productGroup({ deal: true, avg30: 320,
-				avg30Points: 17 })
-		});
-		expect(body).toContain('Deal');
-		expect(body).toContain('Below the 17-day average ($320)');
-	});
-
-	it('omits the Deal badge when the group is not flagged as a deal', () => {
-		const body = renderComponent(ProductCard, {
-			group: productGroup({ avg30: 320 })
-		});
-		expect(body).not.toContain('Deal');
-	});
-
-	it('shows a no-in-stock note when nothing is in stock', () => {
-		const body = renderComponent(ProductCard, {
-			group: productGroup({
-				cheapestInStockPrice: null,
-				cheapestInStockRetailer: null,
-				inStockCount: 0
-			})
-		});
-		expect(body).toContain('No in-stock listings');
-	});
-
-	it('keeps the variant listings collapsed by default', () => {
-		const body = renderComponent(ProductCard, { group: productGroup() });
-		expect(body).not.toContain('<table');
-		expect(body).toContain('Show 1 listing');
-	});
-
-	it('lists the total and in-stock listing counts', () => {
-		const body = renderComponent(ProductCard, {
-			group: productGroup({
-				listings: [latestListing(), latestListing({ listingId: 2, retailer: 'pccg' })],
-				cheapestInStockPrice: 289,
-				cheapestInStockRetailer: 'pccg',
-				inStockCount: 2
-			})
-		});
-		expect(body).toContain('2 listings');
-		expect(body).toContain('2 in stock');
-	});
-
-	it('omits the compare checkbox when no toggle handler is provided', () => {
-		const body = renderComponent(ProductCard, { group: productGroup() });
-		expect(body).not.toContain('Add to compare');
-	});
-
-	it('renders the compare checkbox with checked and disabled states', () => {
-		const target = document.createElement('div');
-		const comp = mount(ProductCard, {
-			target,
-			props: {
-				group: productGroup(),
-				compareSelected: true,
-				compareDisabled: true,
-				onToggleCompare: () => {}
-			}
-		});
-		expect(target.innerHTML).toContain('Add Ryzen 5 7600 to compare');
-		const input = target.querySelector('input[type="checkbox"]') as HTMLInputElement;
-		expect(input.checked).toBe(true);
-		expect(input.disabled).toBe(true);
-		unmount(comp);
-	});
-
-	it('fires onToggleCompare with the product id when toggled', () => {
-		const target = document.createElement('div');
-		const onToggleCompare = vi.fn();
-		const comp = mount(ProductCard, {
-			target,
-			props: { group: productGroup(), onToggleCompare }
-		});
-		const input = target.querySelector('input[type="checkbox"]') as HTMLInputElement;
-		input.checked = true;
-		input.dispatchEvent(new Event('change', { bubbles: true }));
-		expect(onToggleCompare).toHaveBeenCalledWith(1);
-		unmount(comp);
-	});
-
-	it('renders a trend sparkline on the unexpanded card when history exists', () => {
-		const body = renderComponent(ProductCard, {
-			group: productGroup({
-				sparkline: [
-					{ date: '2026-08-16', price: 299 },
-					{ date: '2026-08-17', price: 289 },
-					{ date: '2026-08-18', price: 285 }
-				]
-			})
-		});
-		expect(body).toContain('<polyline');
-	});
-
-	it('still shows the sparkline on a no-in-stock card with history', () => {
-		const body = renderComponent(ProductCard, {
-			group: productGroup({
-				cheapestInStockPrice: null,
-				cheapestInStockRetailer: null,
-				inStockCount: 0,
-				sparkline: [
-					{ date: '2026-08-16', price: 299 },
-					{ date: '2026-08-17', price: 289 },
-					{ date: '2026-08-18', price: 285 }
-				]
-			})
-		});
-		expect(body).toContain('No in-stock listings');
-		expect(body).toContain('<polyline');
-	});
-
-	it('omits the card sparkline when there is no in-stock history', () => {
-		const body = renderComponent(ProductCard, {
-			group: productGroup({ sparkline: [] })
-		});
-		expect(body).not.toContain('<polyline');
-	});
-});
 
 function specRow(overrides: Partial<SpecRow> = {}): SpecRow {
 	return {
@@ -1239,5 +1103,120 @@ describe('ProductHeadline honesty', () => {
 			span: '25 Aug 2026'
 		});
 		expect(html).toContain('Only one price recorded');
+	});
+});
+
+describe('ProductRow', () => {
+	const base = {
+		productId: 7,
+		category: 'gpu',
+		brand: 'NVIDIA',
+		model: 'GeForce RTX 5070 Ti',
+		productVariant: null,
+		generationTier: 'current',
+		listings: [],
+		cheapestInStockPrice: 1599,
+		cheapestInStockRetailer: 'pccg',
+		inStockCount: 3,
+		avg30: 1650,
+		avg30Points: 17
+	} as unknown as ProductGroup;
+
+	it('shows model, price, retailer and links to the product', () => {
+		const html = renderComponent(ProductRow, { group: base });
+		expect(html).toContain('GeForce RTX 5070 Ti');
+		expect(html).toContain('$1,599');
+		expect(html).toContain('PCCG');
+		expect(html).toContain('href="/product/7"');
+	});
+
+	it('states the average window honestly', () => {
+		const html = renderComponent(ProductRow, { group: base });
+		expect(html).toContain('17-day avg');
+		expect(html).not.toContain('30d avg');
+	});
+
+	it('renders a dash and says so when nothing is in stock', () => {
+		const html = renderComponent(ProductRow, {
+			group: {
+				...base,
+				cheapestInStockPrice: null,
+				cheapestInStockRetailer: null,
+				inStockCount: 0
+			} as unknown as ProductGroup
+		});
+		expect(html).toContain('—');
+		expect(html).toContain('No stock');
+	});
+
+	// A watchlist product no retailer has ever listed is a different claim from
+	// one that is listed but out of stock, and the row must not conflate them.
+	it('distinguishes never-listed from out-of-stock', () => {
+		const neverListed = renderComponent(ProductRow, {
+			group: {
+				...base,
+				cheapestInStockPrice: null,
+				cheapestInStockRetailer: null,
+				inStockCount: 0,
+				avg30: null,
+				avg30Points: 0,
+				neverListed: true
+			} as unknown as ProductGroup
+		});
+		expect(neverListed).toContain('Not listed');
+		expect(neverListed).not.toContain('No stock');
+
+		const outOfStock = renderComponent(ProductRow, {
+			group: {
+				...base,
+				cheapestInStockPrice: null,
+				cheapestInStockRetailer: null,
+				inStockCount: 0,
+				avg30: null,
+				avg30Points: 0,
+				neverListed: false
+			} as unknown as ProductGroup
+		});
+		expect(outOfStock).toContain('No stock');
+		expect(outOfStock).not.toContain('Not listed');
+	});
+
+	it('says so when there is too little history to judge', () => {
+		const html = renderComponent(ProductRow, {
+			group: { ...base, avg30: null, avg30Points: 0 } as unknown as ProductGroup
+		});
+		expect(html).toContain('Not enough history');
+	});
+
+	it('renders a compare checkbox only when a handler is supplied', () => {
+		const withBox = renderComponent(ProductRow, { group: base, onToggleCompare: () => {} });
+		expect(withBox).toContain('type="checkbox"');
+		const without = renderComponent(ProductRow, { group: base });
+		expect(without).not.toContain('type="checkbox"');
+	});
+
+	// Svelte sets `checked` as a DOM property, not an HTML attribute, so this
+	// has to inspect the node rather than the serialised markup.
+	function checkboxState(props: Record<string, unknown>): {
+		checked: boolean;
+		disabled: boolean;
+	} {
+		const target = document.createElement('div');
+		const comp = mount(ProductRow as never, { target, props });
+		const input = target.querySelector('input[type="checkbox"]') as HTMLInputElement;
+		const state = { checked: input.checked, disabled: input.disabled };
+		unmount(comp);
+		return state;
+	}
+
+	it('reflects compare selection state', () => {
+		expect(checkboxState({ group: base, compareSelected: true, onToggleCompare: () => {} }).checked).toBe(true);
+		expect(checkboxState({ group: base, compareSelected: false, onToggleCompare: () => {} }).checked).toBe(false);
+	});
+
+	it('disables the checkbox when compare is locked to another category', () => {
+		expect(
+			checkboxState({ group: base, compareDisabled: true, onToggleCompare: () => {} }).disabled
+		).toBe(true);
 	});
 });

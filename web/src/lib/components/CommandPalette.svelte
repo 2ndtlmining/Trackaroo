@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { searchProducts } from '$lib/productSearch';
 	import { goto } from '$app/navigation';
 	import Badge from './Badge.svelte';
 	import type { ProductIndexEntry } from '$lib/server/repos';
@@ -74,18 +75,10 @@
 		}
 	}
 
-	const q = $derived(query.trim().toLowerCase());
-
-	const filtered = $derived(
-		q
-			? items.filter(
-					(i) =>
-						i.model.toLowerCase().includes(q) ||
-						i.brand.toLowerCase().includes(q) ||
-						(i.productVariant ?? '').toLowerCase().includes(q)
-				)
-			: items
-	);
+	// Shared with the /products index so the two search surfaces cannot rank
+	// the same catalogue differently. Also gains ranking, which the inline
+	// filter this replaced did not have.
+	const filtered = $derived(searchProducts(items, query));
 
 	const visible = $derived(filtered.slice(0, 8));
 
@@ -103,8 +96,10 @@
 		return list;
 	});
 
+	// Reset the highlight whenever the query changes or the palette reopens,
+	// so Enter never fires the previous query's top hit.
 	$effect(() => {
-		void q;
+		void query;
 		if (open) highlight = 0;
 	});
 

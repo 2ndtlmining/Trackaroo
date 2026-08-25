@@ -112,7 +112,7 @@ test.describe('navigation & layout', () => {
 		const nav = page.getByRole('navigation', { name: 'Main' });
 
 		await nav.getByRole('link', { name: 'GPUs', exact: true }).click();
-		await expect(page).toHaveTitle('Trackaroo — Products');
+		await expect(page).toHaveTitle('Trackaroo — GPUs');
 		await expect(page).toHaveURL(/category=gpu/);
 
 		await nav.getByRole('link', { name: 'Movers', exact: true }).click();
@@ -251,130 +251,63 @@ test.describe('homepage dashboard', () => {
 
 // Filters.svelte moved off the homepage with the listing table (spec §5) and is
 // now used only by /products, so its coverage moves here rather than being lost.
-test.describe('products page filters', () => {
-	test('filters by category via the URL', async ({ page }) => {
-		await goto(page, '/products');
-		await page.getByLabel('Filter by category').selectOption('gpu');
-		await expect(page).toHaveURL(/category=gpu/);
-		expect(await page.locator('article').count()).toBeGreaterThan(0);
-	});
-
-	test('retailer chips filter via the URL', async ({ page }) => {
-		await goto(page, '/products');
-		await page.getByRole('button', { name: /^Scorptec/ }).click();
-		await expect(page).toHaveURL(/retailer=scorptec/);
-	});
-
-	test('filters by generation tier via the URL', async ({ page }) => {
-		await goto(page, '/products');
-		await page.getByLabel('Filter by generation tier').selectOption('current-2');
-		await expect(page).toHaveURL(/tier=current-2/);
-	});
-
-	test('search narrows the grid to matching models', async ({ page }) => {
-		await goto(page, '/products');
-		await page.getByLabel('Search by model').fill('5600');
-		await expect(page).toHaveURL(/q=5600/);
-		await expect(page.locator('article').first()).toContainText('5600');
-	});
-
-	test('sort by price reorders the grid', async ({ page }) => {
+test.describe('product index', () => {
+	test('groups the catalogue by brand and generation when the box is empty', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		const sortSelect = page.getByLabel('Sort by price');
-		await sortSelect.selectOption('price-asc');
-		await expect(page).toHaveURL(/sort=price-asc/);
-		const first = await page.locator('article').first().textContent();
-		await sortSelect.selectOption('price-desc');
-		await expect(page).toHaveURL(/sort=price-desc/);
-		await expect(page.locator('article').first()).not.toHaveText(first ?? '');
+		await expect(page.getByRole('heading', { name: 'GPUs', level: 1 })).toBeVisible();
+		// Generation headings come from the shared tier labels.
+		await expect(page.getByRole('heading', { level: 2 }).first()).toBeVisible();
+		expect(await page.getByRole('link', { name: /GeForce|Radeon|Arc/ }).count()).toBeGreaterThan(3);
 	});
 
-	test('in-stock filter keeps the grid populated and sets the query string', async ({ page }) => {
-		await goto(page, '/products');
-		await page.getByLabel('In stock only').check();
-		await expect(page).toHaveURL(/in_stock=1/);
-		expect(await page.locator('article').count()).toBeGreaterThan(0);
-	});
-
-	test('clear filters removes the query string', async ({ page }) => {
+	test('typing narrows the list and reports the count', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		await page.getByRole('button', { name: 'Clear filters' }).click();
-		await expect(page).toHaveURL('/products');
-	});
-});
-
-test.describe('products page', () => {
-	test('shows the products heading and a card grid', async ({ page }) => {
-		await goto(page, '/products');
-		await expect(page.getByRole('heading', { name: /Products/i })).toBeVisible();
-		const cards = page.locator('article');
-		expect(await cards.count()).toBeGreaterThan(0);
-		// Each card shows the model name and a "from $" price (or no-in-stock note)
-		await expect(cards.first()).toContainText(/from \$|No in-stock listings/);
-		// Brand logo icons render on the cards (AMD/NVIDIA/Intel seeded)
-		await expect(page.locator('svg[aria-label="AMD"]').first()).toBeVisible();
-		await expect(page.locator('svg[aria-label="NVIDIA"]').first()).toBeVisible();
-		await expect(page.locator('svg[aria-label="Intel"]').first()).toBeVisible();
-		// At least one unexpanded card shows a trend sparkline (cards with history)
-		const sparklineCard = cards.filter({ has: page.locator('svg polyline') }).first();
-		expect(await sparklineCard.count()).toBeGreaterThan(0);
-		await expect(
-			sparklineCard.locator('svg').filter({ has: page.locator('polyline') }).first()
-		).toBeVisible();
+		await page.getByLabel(/^Search GPUs$/).fill('5060');
+		await expect(page.getByTestId('index-count')).toContainText('match');
+		expect(await page.getByRole('link', { name: /GeForce RTX 5060/ }).count()).toBeGreaterThan(0);
+		// Headings are replaced by a flat ranked list while searching.
+		await expect(page.getByRole('heading', { level: 2 })).toHaveCount(0);
 	});
 
-	test('shows an empty state when no filters match', async ({ page }) => {
-		await goto(page, '/products?brand=NoSuchBrandXYZ');
-		await expect(
-			page.getByText('No listings match the current filters.')
-		).toBeVisible();
+	test('Enter opens the top hit', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const box = page.getByLabel(/^Search GPUs$/);
+		await box.fill('5060 ti');
+		await box.press('Enter');
+		await expect(page).toHaveURL(/\/product\/\d+/);
 	});
 
-	test('expands a product card to reveal its variant listings', async ({ page }) => {
-		await goto(page, '/products');
-		const card = page.locator('article').filter({ hasText: 'RTX 5060 Ti' }).first();
-		await expect(card).toBeVisible();
-		const toggle = card.getByRole('button', { name: /listing/i });
-		await expect(card.locator('table')).toHaveCount(0);
-
-		await toggle.click();
-		await expect(card.locator('table')).toBeVisible();
-		await expect(toggle).toHaveText(/Hide listings/);
-
-await toggle.click();
-		await expect(card.locator('table')).toHaveCount(0);
+	test('Escape clears the box and restores the groups', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const box = page.getByLabel(/^Search GPUs$/);
+		await box.fill('5060');
+		await expect(page.getByRole('heading', { level: 2 })).toHaveCount(0);
+		await box.press('Escape');
+		await expect(page.getByRole('heading', { level: 2 }).first()).toBeVisible();
 	});
 
-	test('shows a trend sparkline column once a card is expanded', async ({ page }) => {
-		await goto(page, '/products');
-		const card = page.locator('article').first();
-		await expect(card).toBeVisible();
-		await card.getByRole('button', { name: /listing/i }).click();
-		await expect(card.locator('table')).toBeVisible();
-		await expect(card.locator('table thead th').filter({ hasText: 'Trend' })).toBeVisible();
-		await expect(card.locator('table svg').first()).toBeVisible();
-		expect(await card.locator('table svg polyline').count()).toBeGreaterThan(0);
+	test('says so plainly when nothing matches', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByLabel(/^Search GPUs$/).fill('nosuchcardxyz');
+		await expect(page.getByText(/No GPUs match/)).toBeVisible();
 	});
 
-	test('flags products whose cheapest in-stock price is below their recent average', async ({
-		page
-	}) => {
-		await goto(page, '/products');
-		const { dealIds, nonDealId } = expectedDeals();
-		expect(dealIds.length).toBeGreaterThan(0);
-		// Exactly the expected products carry a Deal badge.
-		await expect(page.getByText('Deal', { exact: true })).toHaveCount(dealIds.length);
-		for (const id of dealIds) {
-			await expect(
-				page.locator('article', { has: page.locator(`a[href="/product/${id}"]`) })
-			).toContainText('Deal');
-		}
-		// An in-stock product that is NOT a deal must not be flagged.
-		if (nonDealId !== null) {
-			await expect(
-				page.locator('article', { has: page.locator(`a[href="/product/${nonDealId}"]`) })
-			).not.toContainText('Deal');
-		}
+	test('the CPUs destination shows CPUs, not GPUs', async ({ page }) => {
+		await goto(page, '/products?category=cpu');
+		await expect(page.getByRole('heading', { name: 'CPUs', level: 1 })).toBeVisible();
+		expect(await page.getByRole('link', { name: /Ryzen|Core/ }).count()).toBeGreaterThan(3);
+	});
+
+	test('compare still reaches /compare from the index', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const boxes = page.getByRole('checkbox', { name: /^Compare / });
+		await boxes.nth(0).check();
+		await boxes.nth(1).check();
+		await page
+			.getByRole('region', { name: 'Compare bar' })
+			.getByRole('link', { name: /Compare \(2\)/ })
+			.click();
+		await expect(page).toHaveURL(/\/compare\?ids=\d+,\d+/);
 	});
 });
 
@@ -386,12 +319,14 @@ test.describe('command palette', () => {
 		await expect(dialog).toBeVisible();
 		await expect(dialog.getByRole('textbox', { name: 'Search products' })).toBeFocused();
 
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('7600');
+		// Exactly one match: two would render the palette's "Compare A vs B"
+		// row instead, and Enter would open /compare.
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('rx 7800 xt');
 		const first = dialog.getByRole('option').first();
-		await expect(first).toContainText('Ryzen 5 7600');
+		await expect(first).toContainText('Radeon RX 7800 XT');
 		await page.keyboard.press('Enter');
 		await expect(page).toHaveURL(/\/product\/\d+$/);
-		await expect(page.getByRole('heading', { name: /Ryzen 5 7600/ })).toBeVisible();
+		await expect(page.getByRole('heading', { name: /Radeon RX 7800 XT/ })).toBeVisible();
 	});
 
 	test('closes with Escape', async ({ page }) => {
@@ -423,12 +358,11 @@ test.describe('command palette', () => {
 });
 
 test.describe('compare', () => {
-	test('selecting two products in a category enables the compare bar and opens /compare', async ({ page }) => {
-		await goto(page, '/products');
-		const gpuCards = page.locator('article').filter({ hasText: 'GPU' });
-		await expect(gpuCards.first()).toBeVisible();
-		await gpuCards.nth(0).getByRole('checkbox').check();
-		await gpuCards.nth(1).getByRole('checkbox').check();
+	test('selecting two products enables the compare bar and opens /compare', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const boxes = page.getByRole('checkbox', { name: /^Compare / });
+		await boxes.nth(0).check();
+		await boxes.nth(1).check();
 
 		const bar = page.getByRole('region', { name: 'Compare bar' });
 		await expect(bar).toBeVisible();
@@ -436,33 +370,38 @@ test.describe('compare', () => {
 
 		await expect(page).toHaveURL(/\/compare\?ids=\d+,\d+$/);
 		await expect(page.getByRole('heading', { name: 'Compare' })).toBeVisible();
-		// Two product columns plus the "Field" header
 		await expect(page.locator('thead th a')).toHaveCount(2);
-		// Each column header shows a brand logo icon
 		await expect(page.locator('thead svg[aria-label]')).toHaveCount(2);
 		await expect(page.getByText('Architecture', { exact: true })).toBeVisible();
 	});
 
-	test('locks other categories once one category is selected', async ({ page }) => {
-		await goto(page, '/products');
-		const gpuCard = page.locator('article').filter({ hasText: 'GPU' }).first();
-		const cpuCard = page.locator('article').filter({ hasText: 'CPU' }).first();
-		await expect(gpuCard).toBeVisible();
-		await expect(cpuCard).toBeVisible();
+	// The index is one category per page, so a mixed-category selection is no
+	// longer reachable by clicking. Switching category must drop the selection,
+	// or the compare link would carry GPUs into the CPU page and 400.
+	test('switching category clears the selection', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const boxes = page.getByRole('checkbox', { name: /^Compare / });
+		await boxes.nth(0).check();
+		await boxes.nth(1).check();
+		await expect(page.getByRole('region', { name: 'Compare bar' })).toBeVisible();
 
-		await gpuCard.getByRole('checkbox').check();
-		await expect(cpuCard.getByRole('checkbox')).toBeDisabled();
-		// Same-category cards stay enabled
-		await expect(
-			page.locator('article').filter({ hasText: 'GPU' }).nth(1).getByRole('checkbox')
-		).toBeEnabled();
+		await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'CPUs', exact: true }).click();
+		await expect(page).toHaveURL(/category=cpu/);
+		await expect(page.getByRole('region', { name: 'Compare bar' })).toHaveCount(0);
+	});
+
+	test('caps the selection at four', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const boxes = page.getByRole('checkbox', { name: /^Compare / });
+		for (let i = 0; i < 4; i += 1) await boxes.nth(i).check();
+		await expect(boxes.nth(4)).toBeDisabled();
 	});
 
 	test('clears the selection from the compare bar', async ({ page }) => {
-		await goto(page, '/products');
-		const gpuCards = page.locator('article').filter({ hasText: 'GPU' });
-		await gpuCards.nth(0).getByRole('checkbox').check();
-		await gpuCards.nth(1).getByRole('checkbox').check();
+		await goto(page, '/products?category=gpu');
+		const boxes = page.getByRole('checkbox', { name: /^Compare / });
+		await boxes.nth(0).check();
+		await boxes.nth(1).check();
 
 		const bar = page.getByRole('region', { name: 'Compare bar' });
 		await bar.getByRole('button', { name: 'Clear' }).click();
@@ -590,8 +529,7 @@ await goto(page, '/product/1');
 test.describe('product detail offer list', () => {
 	async function openGpuProduct(page: Page) {
 		await goto(page, '/products?category=gpu');
-		const card = page.locator('article').filter({ hasText: 'RTX 5060 Ti' }).first();
-		await card.locator('a').first().click();
+		await page.getByRole('link', { name: 'GeForce RTX 5060 Ti', exact: true }).first().click();
 	}
 
 	test('product page leads with the cheapest price and caps the offer list', async ({ page }) => {
@@ -692,10 +630,10 @@ test.describe('product detail offer list', () => {
 		// component, so this exercises the client-side-navigation reuse path.
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('7600');
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('rx 7800 xt');
 		await page.keyboard.press('Enter');
 
-		await expect(page.getByRole('heading', { name: /Ryzen 5 7600/ })).toBeVisible();
+		await expect(page.getByRole('heading', { name: /Radeon RX 7800 XT/ })).toBeVisible();
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
 	});
 
@@ -767,8 +705,7 @@ test.describe('product detail specs', () => {
 
 	test('renders the gpu spec fields', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		const card = page.locator('article').filter({ hasText: 'RTX 5060 Ti' }).first();
-		await card.locator('a').first().click();
+		await page.getByRole('link', { name: 'GeForce RTX 5060 Ti', exact: true }).first().click();
 
 		await expect(page.getByRole('heading', { name: 'Specs' })).toBeVisible();
 		await expect(page.getByText('RTX 50 — Blackwell')).toBeVisible();

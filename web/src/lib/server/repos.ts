@@ -66,6 +66,9 @@ export interface ProductGroup {
 	// Average of the per-day cheapest in-stock price over the trailing 30 days
 	// (null when no in-stock history in the window).
 	avg30?: number | null;
+	// Days that actually contributed to avg30. The window is 30 days but a
+	// young dataset has fewer, and the UI labels the real number.
+	avg30Points?: number;
 	// True when the current cheapest in-stock price is below the 30-day
 	// average (and there is enough history to trust the average).
 	deal?: boolean;
@@ -285,6 +288,45 @@ function sortClause(sort: ListingSort | undefined): string {
 		default:
 			return 'ORDER BY p.category, p.model, l.retailer, lat.price_aud';
 	}
+}
+
+export interface TrackedProduct {
+	productId: number;
+	category: Category;
+	brand: string;
+	model: string;
+	productVariant: string | null;
+	generationTier: GenerationTier | null;
+}
+
+// Every tracked product in a category, whether or not a retailer has ever
+// listed it. The index needs these: ~39% of the watchlist has never matched a
+// listing, and silently omitting them makes a search for a genuinely tracked
+// model answer "no match", which is not the same thing as "not stocked".
+export function getTrackedProducts(db: DB, category: Category): TrackedProduct[] {
+	const rows = db
+		.prepare(
+			`SELECT id, category, brand, model, variant, generation_tier
+			 FROM products
+			 WHERE tracked = 1 AND category = ?
+			 ORDER BY model COLLATE NOCASE ASC`
+		)
+		.all(category) as Array<{
+		id: number;
+		category: Category;
+		brand: string;
+		model: string;
+		variant: string | null;
+		generation_tier: GenerationTier | null;
+	}>;
+	return rows.map((r) => ({
+		productId: r.id,
+		category: r.category,
+		brand: r.brand,
+		model: r.model,
+		productVariant: r.variant,
+		generationTier: r.generation_tier
+	}));
 }
 
 export function getBrands(db: DB): string[] {

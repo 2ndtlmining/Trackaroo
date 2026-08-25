@@ -453,4 +453,21 @@ Two honesty defects, both reported from use.
 
 **"30d avg" overstated the evidence.** The SQL window genuinely is 30 days, but the dataset spans 17, so every delta was labelled with a month of evidence it did not have. `avgWindowLabel()` renders the real contributing day count -- "vs 17-day avg" -- and grows into "vs 30-day avg" by itself once the history is deep enough. Rule-level prose ("below their recent average") is now kept separate from evidence-level numbers, so a heading never claims a window the data cannot back.
 
+#### /products becomes a search-first index (2026-08-25)
+The GPU/CPU pages were a filter-and-sort card grid: six selects, a debounced text box, one ~150px card per product. Reported as clucky, and correctly so — the stated job is **"find a model I already have in mind"**, and a browse layout is the wrong tool for a find task. 100 products across three generations today, and every launch adds ~15 more.
+
+Rebuilt as a dense index: one search box, one row per product, filtered **in the browser**. The whole category (~50 rows) ships on load, so narrowing is instant and the 450ms debounce plus a server round trip per keystroke are gone. This is deliberately the opposite of the `/deals` and chip-facet decision (price-first IA §7), where the result set is listings and too large to ship; here it is one row per *product* and shipping it is cheaper than querying it.
+
+**Matching is shared with the Ctrl+K palette** (`productSearch.ts`). Two search surfaces over one catalogue must not rank differently. The palette previously did an unranked substring filter, so it gained ranking too: exact model, then prefix, then word boundary, then substring, then brand/variant-only, with an alphabetical tie-break for stability. Every term must appear, in any order, so `5070 ti` and `ti 5070` agree.
+
+**Grouping is brand-major, newest generation first** (`productIndex.ts`), labelled from the existing `generationTierLabel` — no new derivation, and a new generation gets a header as soon as the watchlist tags it. Brand-major because buying is brand-anchored; the cost is that an older NVIDIA generation sits above a newer AMD one, which the explicit headers make legible. Headers do not collapse: collapsing would add a click to the task the page exists for.
+
+**The index starts from the watchlist, not from what has been scraped.** 39 of 100 tracked products have never matched a listing. Building the page from `getLatestListings` alone silently omitted them, so searching a genuinely tracked model answered "no match" — a different claim from "nobody stocks it". `getTrackedProducts` supplies the full category and rows say **Not listed**, distinct from **No stock**. It also means the header count is honest: "47 tracked · 23 seen at a retailer".
+
+**Removed:** `ProductCard`, `Filters` (no consumer left), the retailer chip row added days earlier in price-first IA stage 4 — the search box supersedes it — and server-side text search, sort and debounce for this route. The in-stock toggle survives.
+
+**Intel Arc was mis-tagged.** A380/A750/A770 (Alchemist) and B570/B580 (Battlemage) were all `current`, and `intel-gpu` had no label mapping, so five cards from two generations would have sat under one generic "Current gen" heading. Retagged in the watchlist, with `Arc B (Battlemage)` / `Arc A (Alchemist)` labels.
+
+**That exposed a seeding bug worth its own note.** `db/watchlist.csv` calls itself the source of truth, but `seed.py` skipped every existing product outright, so a corrected `gen_tier` could never reach the database — the retag did nothing until `seed_products` learned to sync that one column (reported as `updated`, honoured by `--dry-run`). Only `generation_tier` is synced; the rest of the row is either immutable identity or enriched elsewhere.
+
 ---
