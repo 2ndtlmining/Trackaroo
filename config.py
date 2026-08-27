@@ -49,6 +49,8 @@ Environment variables (all optional):
     TRACKAROO_ALGOLIA_MAX_PAGES         Algolia pagination safety cap  (default: 10)
     TRACKAROO_ALGOLIA_BATCH_MAX_PAGES   Page cap for batch searches    (default: 3)
     TRACKAROO_ALGOLIA_PAGE_DELAY        Delay between Algolia pages    (default: 0.3)
+    TRACKAROO_ALGOLIA_CATALOGUE_HITS    Hits per catalogue page        (default: 1000)
+    TRACKAROO_ALGOLIA_CATALOGUE_PAGES   Catalogue pagination cap       (default: 10)
 
     TRACKAROO_SPEC_FETCH_TIMEOUT        Spec-source fetch timeout      (default: 20)
     TRACKAROO_SPEC_RETRY_BACKOFF        Delay between spec fetch retries (default: 2.0)
@@ -190,6 +192,13 @@ ALGOLIA_MAX_PAGES = _env_int("TRACKAROO_ALGOLIA_MAX_PAGES", 10)
 # early in the ranked results, so 3 pages is enough.
 ALGOLIA_BATCH_MAX_PAGES = _env_int("TRACKAROO_ALGOLIA_BATCH_MAX_PAGES", 3)
 ALGOLIA_PAGE_DELAY = _env_float("TRACKAROO_ALGOLIA_PAGE_DELAY", 0.3)
+
+# Catalogue fetch — PCCG's public search key is capped at 100 queries per IP
+# per hour, so the scraper pulls each category whole (empty query, one page)
+# instead of querying once per watchlist product. 1000 is Algolia's maximum
+# hitsPerPage; the page cap only matters if a category ever outgrows it.
+ALGOLIA_CATALOGUE_HITS_PER_PAGE = _env_int("TRACKAROO_ALGOLIA_CATALOGUE_HITS", 1000)
+ALGOLIA_CATALOGUE_MAX_PAGES = _env_int("TRACKAROO_ALGOLIA_CATALOGUE_PAGES", 10)
 
 # ── Spec sync tuning (sync_specs.py) ──────────────────────────────────
 SPEC_FETCH_TIMEOUT_SECONDS = _env_int("TRACKAROO_SPEC_FETCH_TIMEOUT", 20)

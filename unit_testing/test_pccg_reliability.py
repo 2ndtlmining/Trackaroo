@@ -6,8 +6,8 @@ Covers:
 - Retry-After header preferred over the fixed formula
 - Non-JSON 200 response (WAF challenge page) handled without crashing
 - 401/403 logged distinctly (credential rotation, not rate-limiting)
-- Circuit breaker aborts a category pass after N consecutive failed batches
-  and returns what was matched so far
+- Circuit breaker trips when the catalogue fetch comes back empty (a block),
+  while a short-but-real catalogue keeps its matches
 - Cooldown file: written on trip, respected within window, cleared on success
 """
 import json
@@ -206,12 +206,16 @@ def test_403_logs_auth_rotation_not_api_error(monkeypatch, caplog):
 
 # ── Circuit breaker ────────────────────────────────────────────────
 
-def test_circuit_breaker_aborts_after_n_failed_batches(monkeypatch):
-    """Consecutive all-empty batches trip the breaker and return early."""
-    monkeypatch.setattr("scraper.pccg.algolia_batch_search", lambda *a, **k: [[] for _ in a[0]])
-    monkeypatch.setattr("scraper.pccg.BATCH_DELAY", 0)
-    monkeypatch.setattr("scraper.pccg.BATCH_SIZE", 2)
-    monkeypatch.setattr("scraper.pccg.ALGOLIA_CIRCUIT_BREAKER_LIMIT", 3)
+def test_circuit_breaker_trips_when_catalogue_fetch_is_rate_limited(monkeypatch):
+    """A catalogue fetch that 429s out returns nothing → breaker trips.
+
+    End-to-end through the real HTTP layer: exhausting the retries leaves an
+    empty catalogue, which ``scrape_category`` must treat as a block rather
+    than as an empty shop.
+    """
+    monkeypatch.setattr("scraper.pccg.requests.post", _fake_429)
+    monkeypatch.setattr("scraper.pccg.ALGOLIA_RATE_LIMIT_WAIT_SECONDS", 0)
+    monkeypatch.setattr("scraper.pccg.ALGOLIA_PAGE_DELAY", 0)
     monkeypatch.setattr("scraper.pccg._write_cooldown", lambda reason: None)
     monkeypatch.setattr("scraper.pccg._clear_cooldown", lambda: None)
 
@@ -227,24 +231,18 @@ def test_circuit_breaker_aborts_after_n_failed_batches(monkeypatch):
     assert matched == set()
 
 
-def test_circuit_breaker_keeps_prior_matches_when_not_tripped(monkeypatch):
-    """A single failed batch must not trip the breaker or discard earlier matches."""
-    monkeypatch.setattr("scraper.pccg.BATCH_DELAY", 0)
-    monkeypatch.setattr("scraper.pccg.BATCH_SIZE", 2)
-    monkeypatch.setattr("scraper.pccg.ALGOLIA_CIRCUIT_BREAKER_LIMIT", 3)
+def test_partial_catalogue_keeps_its_matches_without_tripping(monkeypatch):
+    """A catalogue that came back short must not discard what it did match.
+
+    Pagination giving up part-way (or a category genuinely holding few
+    products) still yields real listings — that is a usable run, not a block.
+    """
     monkeypatch.setattr("scraper.pccg._write_cooldown", lambda reason: None)
     monkeypatch.setattr("scraper.pccg._clear_cooldown", lambda: None)
-
-    def _search(queries, *a, **k):
-        out = []
-        for q in queries:
-            if "found" in q:
-                out.append([{"name": f"Listed {q}", "price": 500,
-                             "url": "/p/x", "stock_status": "in_stock"}])
-            else:
-                out.append([])
-        return out
-    monkeypatch.setattr("scraper.pccg.algolia_batch_search", _search)
+    monkeypatch.setattr("scraper.pccg.algolia_fetch_catalogue", lambda *a, **k: [
+        {"name": "Gigabyte Found GPU Windforce 12GB", "price": 500,
+         "url": "/p/x", "stock_status": "in_stock"},
+    ])
 
     watchlist = [
         {"category": "gpu", "model": "Found GPU", "brand": "NVIDIA", "gen_tier": "current",
