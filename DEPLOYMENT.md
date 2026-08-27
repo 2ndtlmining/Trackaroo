@@ -75,6 +75,28 @@ snapshot history baked into the image (a no-op once snapshots exist), starts
 the dashboard, and runs the pipeline immediately **if today has no data yet**.
 Every real full run backs up the DB automatically (opt out with `--no-backup`).
 
+### Choosing the dashboard port
+
+The app listens on port **3000 inside the container**. When publishing it, the
+**right-hand number must be 3000**:
+
+```bash
+-p 3000:3000     # localhost:3000
+-p 8080:3000     # localhost:8080
+-p 2222:3000     # localhost:2222
+```
+
+To change the *container* port you must set `PORT` as well, so both halves match:
+
+```bash
+docker run -e PORT=2222 -p 2222:2222 ... trackaroo
+```
+
+**`-p 2222:2222` without `PORT=2222` fails silently** — Docker reports the
+container as `Up`, but nothing inside is listening on 2222, so every request
+hangs. The startup log states the container port explicitly; check
+`docker logs trackaroo` if the dashboard is unreachable.
+
 ### Verifying a deployment
 
 ```bash
@@ -331,6 +353,38 @@ Preview without writing:
 ```bash
 python check_delisted.py --dry-run   # print what would be marked
 ```
+
+## Staleness monitor — catching the run that never happened
+
+Every other health check runs *inside* `run_daily.py`, so none of them can fire
+when the pipeline does not run at all. That is a real gap, not a theoretical
+one: on 27-Aug-2026 the daily run simply had not happened and a human noticed
+before the system did.
+
+`check_staleness.py` closes it. It reads only the database — no scraping, no
+network, no writes — so it is safe to run on any schedule, independently of the
+pipeline it watches.
+
+```bash
+python check_staleness.py              # exit 0 = fresh, exit 1 = stale
+python check_staleness.py --dry-run    # print the alert instead of posting
+python check_staleness.py --threshold-days 2
+```
+
+Severity is split deliberately:
+
+| Condition | Status | Effect |
+|---|---|---|
+| DB missing, unreadable, or empty | ERROR | exit 1 + Discord alert |
+| Newest snapshot across **all** retailers older than the threshold | ERROR | exit 1 + Discord alert |
+| One retailer lagging while others are current (e.g. PCCG cooldown) | WARNING | logged only — the pipeline is running, data is merely degraded |
+
+Default threshold is **1 day**: a run that has not fired *yet today* is not an
+outage, but two days of silence means one was missed.
+
+**Alerts need `DISCORD_WEBHOOK_ALERT` set** (see `.env.example`). Without it the
+monitor still works, but signals only through its exit code — which is enough
+for a scheduler, cron `MAILTO`, or an uptime checker.
 
 ## Config reference
 
