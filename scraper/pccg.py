@@ -1,6 +1,12 @@
 """PC Case Gear scraper — uses PCCG's Algolia search API directly.
+
 No Playwright needed — we query the Algolia index that powers PCCG's site search.
-Uses batched multi-query requests to avoid rate limiting.
+
+The key is capped at 100 queries per IP in a rolling ~60-minute window, so the
+scraper fetches each category **whole** (one empty query, ``hitsPerPage=1000``)
+and matches the watchlist locally — 2 queries per run. See
+``algolia_fetch_catalogue``. Batching per-product queries into one HTTP request
+does **not** reduce the cost; that older approach is what caused the daily 429s.
 """
 from __future__ import annotations
 
@@ -19,6 +25,8 @@ import requests
 from config import (
     ALGOLIA_BACKOFF_MAX_SECONDS,
     ALGOLIA_BATCH_MAX_PAGES,
+    ALGOLIA_CATALOGUE_HITS_PER_PAGE,
+    ALGOLIA_CATALOGUE_MAX_PAGES,
     ALGOLIA_CIRCUIT_BREAKER_LIMIT,
     ALGOLIA_HITS_PER_PAGE,
     ALGOLIA_MAX_PAGES,
@@ -286,6 +294,13 @@ def algolia_single_search(
 ) -> list[Dict[str, Any]]:
     """Search a single query on PCCG via Algolia, paginating through all results.
 
+    .. deprecated:: 27-Aug-2026
+        **No longer used by the pipeline, and must not be reintroduced into it.**
+        Per-product searching is what exhausted the search key's
+        ``maxQueriesPerIPPerHour: 100`` budget and caused the daily 429s.
+        ``scrape_category`` now calls :func:`algolia_fetch_catalogue` instead.
+        Kept only as a general-purpose helper for one-off manual queries.
+
     Args:
         query: Search query string
         category_filter: Algolia category filter
@@ -371,9 +386,16 @@ def algolia_batch_search(
 ) -> list[list[Dict[str, Any]]]:
     """Batch search PCCG via Algolia multi-query API with pagination.
 
+    .. deprecated:: 27-Aug-2026
+        **No longer used by the pipeline, and must not be reintroduced into it.**
+        Batching queries into one HTTP request made the scrape *look* cheap but
+        did nothing for the quota: Algolia bills each entry in ``requests`` as a
+        separate query, so 100 watchlist products still cost 100 of the key's
+        100-per-IP-per-hour budget. That is the bug this module was rewritten to
+        remove — see :func:`algolia_fetch_catalogue`.
+
     Sends multiple queries in a single API request and paginates through
-    all results for each query. This is much faster than calling
-    algolia_single_search sequentially for each query.
+    all results for each query.
 
     Args:
         queries: List of search query strings
@@ -469,13 +491,123 @@ def algolia_batch_search(
     return all_results
 
 
+def algolia_fetch_catalogue(
+    category_filter: str,
+    hits_per_page: int = ALGOLIA_CATALOGUE_HITS_PER_PAGE,
+    max_pages: int = ALGOLIA_CATALOGUE_MAX_PAGES,
+) -> list[Dict[str, Any]]:
+    """Fetch an entire PCCG category in as few Algolia queries as possible.
+
+    **This is the fix for the daily 429s — do not go back to per-product
+    searching.** PCCG's public search key is restricted to
+    ``"maxQueriesPerIPPerHour": 100`` (confirmed 27-Aug-2026 against
+    ``GET /1/keys/<key>``). The scraper used to send one query per watchlist
+    product per page, so 100 tracked products spent the whole hourly budget on
+    page 0 alone and most runs 429'd partway through. No backoff could fix
+    that: the budget is a **rolling ~60-minute window**, not an hour-boundary
+    bucket, so waiting *inside* a run cannot create quota — it only burns the
+    run's remaining time. (Measured 27-Aug-2026: a heavy spend at 18:06 GMT
+    was still 429ing at 19:01 GMT, i.e. after a fresh clock hour had begun.)
+    Quota frees up roughly an hour after the queries that consumed it.
+
+    Fetching the category whole costs one query (229 GPUs / 60 CPUs both fit in
+    Algolia's 1000-hit maximum), and the watchlist is matched against it
+    locally by ``match_product`` — the same authoritative filter that was
+    already applied to search results, so matching is equivalent but can no
+    longer miss a listing that fuzzy ranking happened to rank low.
+
+    Args:
+        category_filter: Algolia ``categories.lvl0`` value, e.g. "Graphics Cards"
+        hits_per_page: Hits per page (1000 is Algolia's maximum)
+        max_pages: Safety cap, only reached if a category outgrows one page
+
+    Returns:
+        List of product dicts for the whole category (empty on failure).
+    """
+    filter_str = f'categories.lvl0:"{category_filter}"'
+    all_products: list[Dict[str, Any]] = []
+    page = 0
+
+    while page < max_pages:
+        params_dict = {
+            "query": "",
+            "hitsPerPage": hits_per_page,
+            "page": page,
+            "attributesToRetrieve": STOCK_ATTRS,
+            "filters": filter_str,
+        }
+        params_str = urlencode(params_dict)
+        payload = {"requests": [{"indexName": ALGOLIA_INDEX, "params": params_str}]}
+
+        retries_exhausted = True
+        for attempt in range(ALGOLIA_MAX_RETRIES):
+            try:
+                r = requests.post(ALGOLIA_URL, json=payload, headers=HEADERS, timeout=ALGOLIA_TIMEOUT_SECONDS)
+                if r.status_code == 429:
+                    retry_after = r.headers.get("Retry-After")
+                    wait = _retry_wait(retry_after, attempt)
+                    LOGGER.warning(
+                        "Rate limited fetching the %s catalogue (attempt %d/%d), waiting %ds — "
+                        "the search key allows 100 queries/IP/hour; another process or an "
+                        "earlier run today may have spent it.",
+                        category_filter, attempt + 1, ALGOLIA_MAX_RETRIES, wait,
+                    )
+                    time.sleep(wait)
+                    continue
+                if r.status_code != 200:
+                    _log_api_status_error(r)
+                    return all_products
+                try:
+                    data = r.json()
+                except ValueError:
+                    LOGGER.error("Algolia returned non-JSON response (likely a WAF/challenge page), body[:200]: %s", r.text[:200])
+                    return all_products
+                if "results" not in data:
+                    LOGGER.error("Algolia API unexpected response")
+                    return all_products
+
+                result = data["results"][0]
+                hits = result.get("hits", [])
+                all_products.extend(_extract_products(hits))
+
+                nb_pages = result.get("nbPages", 1)
+                retries_exhausted = False
+                if page + 1 >= nb_pages:
+                    LOGGER.info(
+                        "  %s catalogue: %d products in %d Algolia quer%s",
+                        category_filter, len(all_products), page + 1,
+                        "y" if page == 0 else "ies",
+                    )
+                    return all_products
+
+                page += 1
+                time.sleep(ALGOLIA_PAGE_DELAY)
+                break
+
+            except requests.RequestException as e:
+                LOGGER.error("Algolia catalogue request error: %s", e)
+                return all_products
+
+        if retries_exhausted:
+            LOGGER.error(
+                "Giving up after %d retries on %s catalogue page %d — PCCG is rate-limiting. "
+                "The key's budget is 100 queries/IP in a rolling ~60min window — "
+                "it frees up about an hour after whatever spent it, not at the top of the hour.",
+                ALGOLIA_MAX_RETRIES, category_filter, page,
+            )
+            return all_products
+
+    return all_products
+
+
 def scrape_category(
     category: str,
     watchlist: list[WatchlistProduct],
 ) -> Tuple[list[Dict[str, Any]], set[int], bool]:
     """Scrape a single category (cpu or gpu) from PCCG via Algolia API.
 
-    Uses batched multi-query requests to avoid rate limiting.
+    Fetches the category once (see ``algolia_fetch_catalogue`` for why) and
+    matches the watchlist against it locally.
 
     Returns (results_list, matched_global_indices_set, breaker_tripped).
     """
@@ -486,94 +618,66 @@ def scrape_category(
 
     results: list[Dict[str, Any]] = []
     matched_global: set[int] = set()
-    consecutive_failures = 0  # Track consecutive failed batches for backoff
     breaker_tripped = False
 
-    # Sort watchlist by search term length (longest first = most specific)
-    sorted_indices = sorted(
-        range(len(category_watchlist)),
-        key=lambda i: len(category_watchlist[i]["search_terms"][0]),
-        reverse=True,
-    )
+    # One query for the whole category — the watchlist is matched locally.
+    catalogue = algolia_fetch_catalogue(category_filter)
+
+    # An entirely empty category is a block, not an empty shop: PCCG always
+    # stocks GPUs and CPUs, so nothing back means the request never really
+    # landed. Trip the breaker so the next scheduled run backs off instead of
+    # hammering a blocking API, and so the run reports incomplete rather than
+    # silently ingesting zero listings.
+    if not catalogue:
+        LOGGER.error(
+            "Circuit breaker tripped: PCCG returned an empty %s catalogue — "
+            "treating as a block, not an empty category.", category,
+        )
+        _write_cooldown("empty catalogue")
+        return [], set(), True
 
     # Map each model back to its global index in the full watchlist
     model_to_global: Dict[str, int] = {
         wp["model"]: gi for gi, wp in enumerate(watchlist)
     }
 
-    # Track ALL matches per watchlist item, then pick cheapest
-    all_matches: dict[int, list[Dict[str, Any]]] = {}  # global_idx -> list of matched product dicts
+    # Track ALL matches per watchlist item
+    all_matches: dict[int, list[Dict[str, Any]]] = {}  # global_idx -> matched product dicts
 
-    # Process in batches
-    for batch_start in range(0, len(sorted_indices), BATCH_SIZE):
-        batch_indices = sorted_indices[batch_start : batch_start + BATCH_SIZE]
-        queries: list[str] = []
+    # Longest search term first = most specific, preserved from the batched
+    # implementation so log ordering stays familiar. Matching itself is
+    # order-independent: every watchlist entry sees the whole catalogue.
+    sorted_indices = sorted(
+        range(len(category_watchlist)),
+        key=lambda i: len(category_watchlist[i]["search_terms"][0]),
+        reverse=True,
+    )
 
-        for idx in batch_indices:
-            wp = category_watchlist[idx]
-            primary_term = wp["search_terms"][0] if wp["search_terms"] else wp["model"]
-            queries.append(primary_term)
+    for idx in sorted_indices:
+        wp = category_watchlist[idx]
+        global_idx = model_to_global.get(wp["model"])
+        if global_idx is None:
+            continue
 
-        # Batch query — shallow pagination is enough; products appear early
-        batch_results = algolia_batch_search(
-            queries, category_filter,
-            hits_per_page=ALGOLIA_HITS_PER_PAGE, max_pages=ALGOLIA_BATCH_MAX_PAGES,
-        )
-
-        # Check if batch failed (all empty) — if so, add a cool-down
-        batch_failed = all(len(pr) == 0 for pr in batch_results)
-
-        # Process each result
-        for i, idx in enumerate(batch_indices):
-            wp = category_watchlist[idx]
-
-            # Find global index
-            global_idx = model_to_global.get(wp["model"])
-
-            products = batch_results[i] if i < len(batch_results) else []
-
-            # Collect ALL matching products
-            for prod in products:
-                if _is_bundle_product(prod["name"], prod.get("url", "")):
-                    continue
-                if match_product(prod["name"], wp):
-                    price = _parse_price(prod["price"])
-                    if price and global_idx is not None:
-                        match_dict = {
-                            "watchlist_model": wp["model"],
-                            "watchlist_category": wp["category"],
-                            "watchlist_brand": wp["brand"],
-                            "watchlist_gen_tier": wp["gen_tier"],
-                            "retailer": "pccg",
-                            "scraped_name": prod["name"][:120],
-                            "price_aud": price,
-                            "stock_status": prod.get("stock_status", "unknown"),
-                            "url": prod["url"],
-                        }
-                        if global_idx not in all_matches:
-                            all_matches[global_idx] = []
-                        all_matches[global_idx].append(match_dict)
-
-        # Delay between batches to avoid rate limiting
-        # Use exponential backoff for consecutive failed batches
-        if batch_failed:
-            consecutive_failures += 1
-            if consecutive_failures >= ALGOLIA_CIRCUIT_BREAKER_LIMIT:
-                LOGGER.error(
-                    "Circuit breaker tripped after %d consecutive failed batches (%s) — "
-                    "PCCG appears to be blocking all requests right now. Aborting remaining "
-                    "%s batches and saving what was matched so far.",
-                    ALGOLIA_CIRCUIT_BREAKER_LIMIT, category,
-                    len(sorted_indices) - batch_start - BATCH_SIZE,
-                )
-                _write_cooldown("429 circuit breaker")
-                breaker_tripped = True
-                break
-            delay = min(BATCH_DELAY * (2 ** consecutive_failures), ALGOLIA_BACKOFF_MAX_SECONDS)
-        else:
-            consecutive_failures = 0
-            delay = BATCH_DELAY
-        time.sleep(delay)
+        for prod in catalogue:
+            if _is_bundle_product(prod["name"], prod.get("url", "")):
+                continue
+            if not match_product(prod["name"], wp):
+                continue
+            price = _parse_price(prod["price"])
+            if not price:
+                continue
+            all_matches.setdefault(global_idx, []).append({
+                "watchlist_model": wp["model"],
+                "watchlist_category": wp["category"],
+                "watchlist_brand": wp["brand"],
+                "watchlist_gen_tier": wp["gen_tier"],
+                "retailer": "pccg",
+                "scraped_name": prod["name"][:120],
+                "price_aud": price,
+                "stock_status": prod.get("stock_status", "unknown"),
+                "url": prod["url"],
+            })
 
     # Save ALL matched variants for each watchlist item — regardless of stock
     # state. Sold-out and on-order cards keep their listings and price history.

@@ -31,14 +31,22 @@
 
 <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-surface-hover">
 	{#if onToggleCompare}
-		<input
-			type="checkbox"
-			class="shrink-0 accent-accent"
-			checked={compareSelected}
-			disabled={compareDisabled}
-			aria-label={`Compare ${group.model}`}
-			onchange={() => onToggleCompare?.(group.productId)}
-		/>
+		<!-- The padded label is the touch target: a bare 13px checkbox is well
+		     under the 24px WCAG 2.2 AA minimum and awkward to hit on a phone.
+		     Negative margin keeps the row's visual density unchanged. -->
+		<label
+			class="-m-2 flex shrink-0 items-center p-2"
+			class:cursor-pointer={!compareDisabled}
+		>
+			<input
+				type="checkbox"
+				class="size-4 shrink-0 accent-accent"
+				checked={compareSelected}
+				disabled={compareDisabled}
+				aria-label={`Compare ${group.model}`}
+				onchange={() => onToggleCompare?.(group.productId)}
+			/>
+		</label>
 	{/if}
 
 	<span class="w-24 shrink-0">

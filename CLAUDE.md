@@ -100,12 +100,28 @@ Never delete price or product data. Products that roll out of scope get
   adds the date-stamped `logs/trackaroo-*.log` file handler. Use a plain
   append `FileHandler`, never a rotating one: the scrapers are separate
   processes sharing the file and concurrent rotation corrupts it.
-- PCCG rate-limits hard. On a 429 circuit-breaker trip the scraper writes
-  `data/pccg_cooldown.json` and later runs skip PCCG for
-  `PCCG_COOLDOWN_HOURS`. That is intended — don't "fix" it by removing the
-  breaker. To retry sooner, confirm the API is actually healthy first, then
-  delete the cooldown file and re-run with gentler pacing
-  (`TRACKAROO_BATCH_SIZE=8 TRACKAROO_BATCH_DELAY=3.0`).
+- **PCCG's Algolia key allows 100 queries per IP per hour.** That is a hard
+  fact of the key, confirmed against `GET /1/keys/<key>`
+  (`"maxQueriesPerIPPerHour": 100`), not a guess from observed 429s. The
+  scraper therefore fetches each category **whole** — one empty query with
+  `hitsPerPage=1000` — and matches the watchlist locally
+  (`algolia_fetch_catalogue`). A full run costs **2 queries**: 229 GPUs and
+  60 CPUs each fit in a single page.
+  **Never go back to one query per watchlist product.** That is what caused
+  the daily 429s: 100 tracked products spent the entire hourly budget on page
+  0 alone. Batching them into one HTTP request does not help — Algolia bills
+  each entry in the `requests` array separately. And no amount of backoff can
+  help, because the budget is a **rolling ~60-minute window** (measured: a
+  heavy spend at 18:06 GMT was still 429ing at 19:01 GMT, after a fresh clock
+  hour began). Quota frees up about an hour after whatever spent it, so
+  waiting inside a run only burns the run. `algolia_single_search` / `algolia_batch_search` are
+  kept for manual one-off queries and are marked deprecated for this reason.
+  `unit_testing/test_pccg_query_budget.py` pins the 2-query budget.
+- On a circuit-breaker trip (an entirely empty catalogue — a block, not an
+  empty shop) the scraper writes `data/pccg_cooldown.json` and later runs skip
+  PCCG for `PCCG_COOLDOWN_HOURS`. That is intended — don't "fix" it by removing
+  the breaker. If it trips now, suspect something *other* than our own query
+  volume: another process on the same IP, or PCCG changing the key.
 
 ## E2E conventions
 

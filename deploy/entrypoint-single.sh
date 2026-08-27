@@ -111,7 +111,11 @@ python seed.py
 trackaroo-bootstrap-data
 
 # ── 2. Start the dashboard in the background ──────────────────────────────
-log "Starting dashboard on :${PORT}"
+# State the container port explicitly. Publishing `-p 2222:2222` without
+# also setting PORT is a silent failure: Docker reports the container as
+# healthy, but nothing inside is listening on 2222 and every request hangs.
+log "Dashboard listening INSIDE the container on port ${PORT}"
+log "Publish it with:  -p <HOST_PORT>:${PORT}   (right-hand number must be ${PORT}; set PORT to change it)"
 node web/build/index.js &
 WEB_PID=$!
 log "Dashboard started."

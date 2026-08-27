@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-25
+**Last updated:** 2026-08-28
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,131 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-08-28** — **28-Aug snapshot recovered; the 27-Aug work landed in git.**
+  The scheduled run had not fired — the container was not running on this
+  machine — so the day was recovered with a native `run_daily.py`: **441
+  snapshots** (pccg 121 / scorptec 320), four JSON files, zero ingest errors,
+  one delisting marked, backup written. The rewritten PCCG scraper was
+  exercised on a real run for the first time since the fix and cost **2
+  Algolia queries with zero 429s** ("62 products in 1 Algolia query" / "230
+  products in 1 Algolia query"). One health WARNING, no ERRORs, so the digest
+  fired: RX 9070 XT @ Scorptec $1199 against a $1104 average (4.4 std devs) —
+  a real price move, not a parse fault.
+  **The whole 27-Aug session was uncommitted** — the PCCG rate-limit fix,
+  `check_staleness.py` and the mobile pass existed only in the working tree,
+  which matters because `docker build` COPYs the working tree, so the image
+  built fine while none of it was in history. Landed as five commits on
+  `chore/land-27-aug-work`. Regression re-run green before committing:
+  pytest **643** / svelte-check 0 errors, 0 warnings / vitest **373** / e2e
+  **67** (1.0m).
+  **Still open from that session:** `check_staleness.py` is documented but not
+  scheduled anywhere, and `DISCORD_WEBHOOK_ALERT` is still unset in `.env` —
+  so the monitor built to catch a missed day would not have caught this one
+  either. Untracked `web/__shot2.mjs` (throwaway screenshot script) left alone.
+
+- **2026-08-27** — **Staleness monitor + mobile viewport pass.**
+  **`check_staleness.py`** is the first health check that runs *outside*
+  `run_daily.py`, which is the whole point: every existing check runs inside a
+  run and so cannot fire when the run never happens — exactly how the 27-Aug
+  gap was found by a human rather than by the system. It reads only the DB (no
+  scraping, no network, no writes), splits severity deliberately — **ERROR**
+  (exit 1 + Discord alert) for a missing/unreadable/empty DB or no data from
+  *any* retailer inside the threshold, **WARNING** for a single lagging
+  retailer such as PCCG in cooldown, since the pipeline is still running — and
+  never raises. Default threshold 1 day: not having run *yet today* is not an
+  outage; two days of silence is. Exit code carries the signal even with no
+  webhook configured. 14 tests. **Note:** `DISCORD_WEBHOOK_ALERT` is documented
+  in `.env.example` but **not set in `.env`**, so alerting is exit-code-only
+  until it is.
+  **Mobile pass:** audited every route at 320px and 390px with Playwright.
+  **The backlog item was largely stale** — no route scrolls horizontally at
+  either width, because the `md:` table-to-card split already handles phones.
+  One genuine defect found and fixed: the `/products` compare checkbox was a
+  bare 13x13px input with no wrapping label — under the WCAG 2.2 AA 24x24
+  minimum and awkward to hit. It now sits in a padded `<label>` (32px target,
+  negative margin keeps desktop density identical). New
+  `web/e2e/mobile.spec.ts` (8 tests) pins no-horizontal-overflow on 5 routes at
+  390px plus /products at 320px, and the tap-target size; both tap-target tests
+  were confirmed to **fail** against the old markup before the fix.
+  Remaining (not fixed, judged acceptable): filter/sort/window chips are 27-28px
+  tall — above the 24px AA minimum but below the 44px comfort guideline.
+  Regression: pytest **643** / svelte-check 0 errors, 0 warnings / vitest
+  **373** / e2e **67** (57.8s) / build green.
+
+- **2026-08-27** — **PCCG rate limiting: root cause found and fixed.** The daily
+  429s were never a pacing problem. PCCG's public Algolia search key carries
+  **`"maxQueriesPerIPPerHour": 100`** — read directly off `GET /1/keys/<key>`,
+  not inferred from behaviour. The scraper issued **one query per watchlist
+  product per page**, so 100 tracked products spent the entire hourly budget on
+  page 0 alone and most runs 429'd partway through. Two long-standing
+  assumptions were wrong: **batching does not help** (Algolia bills each entry
+  in a multi-query `requests` array separately, so the "batched requests avoid
+  rate limiting" comment was false), and **backoff cannot help** (the quota
+  is a rolling ~60-minute window, not an hour-boundary bucket (measured: a heavy
+  spend at 18:06 GMT still 429'd at 19:01 GMT) — waiting inside a run only burns it,
+  which is exactly why `TRACKAROO_BATCH_SIZE=8 / BATCH_DELAY=3.0` had matched
+  zero on 16-Aug).
+  **Fix:** `algolia_fetch_catalogue()` pulls each category whole with one empty
+  query at `hitsPerPage=1000` (229 GPUs / 60 CPUs each fit a single page) and
+  `scrape_category` matches the watchlist against it locally with the existing
+  `match_product` — the same authoritative filter that was already applied to
+  search hits, so matching is equivalent but can no longer miss a listing that
+  fuzzy ranking happened to rank low. **A full run now costs 2 Algolia queries.**
+  The old path cost at least 100 (page 0 alone: 53 CPU + 47 GPU queries) and
+  up to ~300 once queries paginated to the 3-page cap — i.e. it was over
+  budget on every single run, before a byte of pagination.
+  **Verified live, same hour the old code was rate-limited:** the rewritten
+  scraper produced **byte-identical output** to the morning's run — 21 CPU and
+  100 GPU matches, identical names/prices/stock/models — with **zero 429s**
+  (04:06 log: four rate-limit warnings; 04:26 log: none, "60 products in 1
+  Algolia query" / "229 products in 1 Algolia query").
+  **End-to-end verified 05:15** on a clean quota window: full `run_daily.py`
+  against an empty DB and empty data dir produced "60 products in 1 Algolia
+  query" / "229 products in 1 Algolia query", **0 rate-limit warnings, 0
+  ERRORs, no cooldown written**, 441 snapshots inserted (pccg 121 / scorptec
+  320 — identical to the real 27-Aug run) and clean JSON/DB parity.
+  Two earlier attempts (04:34, 05:01) *did* 429 — not the fix failing, but the
+  old code's 04:06 spend still inside the rolling window. That is also how the
+  window was measured: 05:01 is a fresh clock hour and was still limited, so
+  the budget is rolling, not hour-boundary. **PCCG is effectively
+  single-tenant per IP** — a second run inside the hour still collides, which
+  the app-side scheduler should guard with a "ran recently" check.
+  **Proven on the real path 11:21** at the user's request: the 27th was deleted
+  outright (441 DB rows + all four JSON files, after taking rollback copies of
+  both) and rebuilt by a normal `run_daily.py`. Result: 2 Algolia queries,
+  **0 rate-limit warnings, 0 ERRORs, no cooldown**, 442 rows ingested, parity
+  clean. PCCG came back **byte-identical** — cpu 21/21 and gpu 100/100 exactly
+  matching the pre-delete backup. Scorptec moved 284 -> 285 GPUs, which is real
+  intraday movement (a new Palit RTX 5080 listing; RTX 5060 Ti Dual $749 ->
+  $699), not a fault.
+  Empty-catalogue now trips the breaker directly (a block, not an empty shop);
+  the consecutive-failed-batches breaker is gone with the batching.
+  `algolia_single_search` / `algolia_batch_search` are retained for manual
+  one-off queries and marked **deprecated** so the per-product path is not
+  rewired. New `unit_testing/test_pccg_query_budget.py` (7 tests) pins the
+  2-query budget. `CLAUDE.md` and `docs/ARCHITECTURE.md` corrected — both
+  previously prescribed the wrong remedy.
+  Regression: pytest **629**. Frontend untouched (backend-only change).
+  **Follow-up:** `BATCH_SIZE`, `BATCH_DELAY`, `ALGOLIA_CIRCUIT_BREAKER_LIMIT`
+  and `ALGOLIA_BATCH_MAX_PAGES` are now unused by the pipeline but still
+  imported in `scraper/pccg.py` because `test_config.py` asserts they are
+  re-exported; retiring those knobs is a separate cleanup.
+
+- **2026-08-27** — **Daily run for the 27th executed manually** — no data existed
+  for the day (latest JSON and `price_snapshots` were both 26-Aug). `run_daily.py`
+  completed clean: 441 snapshots inserted, 0 skipped, 0 errors (scorptec 320 /
+  pccg 121, in line with the 26th's 319/122); all four JSON snapshots full-size;
+  JSON⇄DB parity clean; 40 DB warnings, all `price_anomaly` (informational);
+  delisted check 6/6 active; Discord digest sent; backup written.
+  PCCG GPU hit the rate limiter and gave up after 3 retries on page 1, but the
+  later pages succeeded and `gpu_pccg_27_August_2026.json` landed at 45,558 B
+  vs the 26th's 46,024 B — no meaningful loss, and no cooldown file was written.
+  **Gap found: nothing schedules this run.** There is no Trackaroo Docker image,
+  no container, and no Windows scheduled task on the host, so the "daily"
+  pipeline only runs when invoked by hand — which is why the 27th was empty and
+  why run times across the week are ragged (04:26, 06:09, 09:25, 03:40).
+  Automating it is the next task.
 
 - **2026-08-25** — **`/products` rebuilt as a search-first index**, per
   [`docs/superpowers/specs/2026-08-25-product-index-design.md`](docs/superpowers/specs/2026-08-25-product-index-design.md)
@@ -429,8 +554,12 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 1. ✅ **Products-page filters** — done (pre-existing): `/products` grid already has category/retailer/brand/generation selects + debounced text search + in-stock toggle + sort (see `web/src/lib/components/Filters.svelte`).
 2. ✅ **"Since tracked" stat chips** — done 20-Aug: product page shows **All-time low / All-time high** (the band was always unwindowed) + a **30d avg** chip (mean of per-day cheapest in-stock over the trailing 30 days, ≥3 days of history).
 3. ✅ **Deal highlight** — done 20-Aug: green **Deal** badge on `/products` cards + the dashboard carousel when the cheapest in-stock price is below the 30-day average (binary, ≥3 days of history).
-4. **Mobile responsiveness pass** — card grid / compare / chart on phone viewports (~few hours).
-5. **RSS feed of biggest movers** (~1 h).
+4. ✅ **Mobile responsiveness pass** — done 27-Aug. Audited at 320px/390px:
+   no route overflowed (the `md:` table-to-card split already covered phones),
+   so the item was largely stale. Fixed the one real defect — the `/products`
+   compare checkbox was a bare 13x13px input, under the WCAG 2.2 AA 24x24
+   minimum. Pinned by `web/e2e/mobile.spec.ts`.
+5. ~~**RSS feed of biggest movers**~~ — dropped 27-Aug, not wanted.
 
 ## Next concrete steps
 
@@ -448,13 +577,13 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 
 ## Regression test count
 
-Current, as of 25-Aug-2026:
+Current, as of 27-Aug-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **622** | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **643** | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **357** | `npm test` (`web/`) |
-| Frontend e2e (Playwright) | **59** | `npm run test:e2e` (`web/`) |
+| Frontend e2e (Playwright) | **67** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
 
 The per-module breakdown that used to live here went stale every session;
