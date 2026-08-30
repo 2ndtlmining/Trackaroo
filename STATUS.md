@@ -16,7 +16,8 @@ backup integrity.
 
 - **2026-08-31** - **Mwave probed and parked; price-anomaly detection fixed,
   and the old check turned out to be worse than "slightly damped".**
-  **Mwave: NO-GO on this measurement**, written up in
+  **Mwave: NO-GO at the plan's 5s cadence - but NOT a NO-GO on Mwave**, written
+  up in
   [`docs/proposals/mwave-waf-probe.md`](docs/proposals/mwave-waf-probe.md). Task
   0 of the scraper plan ran and **0 of 8 requests** at the plan's own 5s daily
   cadence were served - all HTTP 202 AWS WAF challenges. Two confounders were
@@ -26,8 +27,19 @@ backup integrity.
   flat NO-GO because one request *did* return a real 159 KB page, so real HTML
   is obtainable; what this data cannot separate is "Mwave challenges every
   JS-less client" from "we are in rate-state from yesterday's spike plus today's
-  15 requests". **One cold request after hours of no contact settles it** - that
-  is the next action, not more code. Two findings survive either way: the
+  15 requests". **The cold re-probe settled it, and reversed the reading**:
+  after ~45 minutes of no contact a single request returned **200 / 159,056
+  bytes**, so the challenge is rate state that clears on its own, not a standing
+  block on JS-less clients. Re-running the plan's gate from that clean state
+  gave the number that matters: **five requests served at 5s spacing, then
+  challenged on the sixth**, and challenged from then on. So
+  `MWAVE_PAGE_DELAY = 5.0s` as the plan specifies would fail partway through
+  every run - but a once-daily scraper has no time pressure, and 20 pages at 60s
+  apart is a 20-minute unattended job. **Next action is a cadence sweep at 30s
+  and 60s**, not scraper code and not another 5s run. Second discovery: `?page=1`
+  through `?page=5` all returned exactly 159,078 bytes, the same as the bare URL,
+  so the `page` parameter is **ignored** and Mwave's real pagination scheme is
+  unknown - a Task 4 discovery item, not a constant. Two findings survive either way: the
   healthy page *embeds* `challenge.js` and the string `awswaf` in its normal
   `<head>`, so neither can ever be a challenge marker (Task 3's
   `is_waf_challenge` keys on `awsWafCookieDomainList`/`gokuProps`, absent from
@@ -688,11 +700,15 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
    [`docs/proposals/THIRD_RETAILER.md`](docs/proposals/THIRD_RETAILER.md), with
    a step-by-step build plan ready to execute in
    [`docs/superpowers/plans/2026-08-31-mwave-scraper.md`](docs/superpowers/plans/2026-08-31-mwave-scraper.md).
-   **Task 0 of that plan is a GO/NO-GO gate**: Mwave turned out to sit behind
-   **AWS WAF** — the same protection Centre Com was ruled out for — and started
-   returning HTTP 202 challenge pages after ~12 rapid requests. It serves real
-   HTML to a polite client, so a once-daily scraper is probably fine, but that
-   must be measured before any code is written.
+   **Task 0 ran on 31-Aug and did not pass as written** - see
+   [`docs/proposals/mwave-waf-probe.md`](docs/proposals/mwave-waf-probe.md).
+   Mwave sits behind **AWS WAF**, but unlike Centre Com the challenge is rate
+   state that clears with idleness, not a standing block: a cold request returns
+   a real 159 KB page. The measured allowance is **5 requests before it trips**
+   at 5s spacing, which invalidates the plan's `MWAVE_PAGE_DELAY = 5.0s` but not
+   Mwave itself. **Next action: a cadence sweep at 30s and 60s from cold.** If
+   either sustains 20 requests, that becomes the delay and the plan proceeds
+   from Task 1.
    Recommendation: **Mwave first, and only Mwave** — it is the largest
    candidate, the only one already allowed by the schema's retailer `CHECK`,
    and it probed as a clean server-rendered BeautifulSoup scrape. **Centre Com
