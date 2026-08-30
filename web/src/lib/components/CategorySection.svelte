@@ -38,8 +38,12 @@
 		</p>
 	</header>
 
+	<!-- min-w-0 on each column: the mover rows truncate, and `truncate` implies
+	     `white-space: nowrap`, so a grid item's automatic minimum (min-content)
+	     becomes the full untruncated string and blows the track out past the
+	     viewport on a phone. -->
 	<div class="grid gap-px bg-border md:grid-cols-3">
-		<div class="bg-surface" data-testid="top-deals">
+		<div class="min-w-0 bg-surface" data-testid="top-deals">
 			<h3 class="px-3 pt-2.5 text-xs font-medium text-text-muted">Top deals</h3>
 			{#if deals.length > 0}
 				<div class="divide-y divide-border">
@@ -58,7 +62,7 @@
 			{/if}
 		</div>
 
-		<div class="bg-surface" data-testid="biggest-drops">
+		<div class="min-w-0 bg-surface" data-testid="biggest-drops">
 			<h3 class="px-3 pt-2.5 text-xs font-medium text-text-muted">Biggest drops (7d)</h3>
 			{#if drops.length > 0}
 				<div class="divide-y divide-border">
@@ -73,7 +77,7 @@
 			{/if}
 		</div>
 
-		<div class="bg-surface" data-testid="biggest-rises">
+		<div class="min-w-0 bg-surface" data-testid="biggest-rises">
 			<h3 class="px-3 pt-2.5 text-xs font-medium text-text-muted">Biggest rises (7d)</h3>
 			{#if rises.length > 0}
 				<div class="divide-y divide-border">

@@ -4,11 +4,11 @@ import {
 	getDealCandidates,
 	getHeaderStats,
 	getMovers,
-	getRetailerFreshness,
-	type Mover
+	getRetailerFreshness
 } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 import { belowAverage, toDeals, type Deal } from '$lib/deals';
+import { topMoversByProduct } from '$lib/movers';
 import { retailerHealth } from '$lib/health';
 import type { Category } from '$lib/types';
 
@@ -34,13 +34,11 @@ export function load() {
 
 	const sections = SECTIONS.map(({ category, title }) => {
 		const cheapest = getCheapestPerModel(db, category);
-		const inCategory = (m: Mover) => m.category === category && m.pctChange !== null;
-		const drops = movers
-			.filter((m) => inCategory(m) && (m.pctChange as number) < 0)
-			.sort((a, b) => (a.pctChange as number) - (b.pctChange as number));
-		const rises = movers
-			.filter((m) => inCategory(m) && (m.pctChange as number) > 0)
-			.sort((a, b) => (b.pctChange as number) - (a.pctChange as number));
+		// One row per product: getMovers is per-listing, and a retailer carrying
+		// several SKUs of one card (PCCG has three MSI RTX 5070s) would otherwise
+		// fill all three slots with what looks like the same row repeated.
+		const drops = topMoversByProduct(movers, category, 'down', PER_COLUMN);
+		const rises = topMoversByProduct(movers, category, 'up', PER_COLUMN);
 
 		return {
 			category,
@@ -52,8 +50,8 @@ export function load() {
 				null
 			),
 			deals: allDeals.filter((d: Deal) => d.category === category).slice(0, PER_COLUMN),
-			drops: drops.slice(0, PER_COLUMN),
-			rises: rises.slice(0, PER_COLUMN)
+			drops,
+			rises
 		};
 	});
 

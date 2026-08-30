@@ -237,6 +237,22 @@ test.describe('homepage dashboard', () => {
 		).toBeVisible();
 	});
 
+	// getMovers is per-listing, so a retailer stocking several SKUs of one card
+	// used to fill all three slots with rows that read identically (model +
+	// retailer, no variant). Each slot must now be a different product.
+	test('never lists the same product twice in a mover column', async ({ page }) => {
+		await goto(page, '/');
+		for (const section of ['GPUs', 'CPUs']) {
+			for (const column of ['biggest-drops', 'biggest-rises']) {
+				const links = page.getByLabel(section).getByTestId(column).getByRole('link');
+				const hrefs = await links.evaluateAll((els) =>
+					els.map((el) => el.getAttribute('href'))
+				);
+				expect(new Set(hrefs).size).toBe(hrefs.length);
+			}
+		}
+	});
+
 	test('no longer renders the filter-and-sort listing table', async ({ page }) => {
 		await goto(page, '/');
 		await expect(page.getByRole('table')).toHaveCount(0);

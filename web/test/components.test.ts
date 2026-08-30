@@ -1022,6 +1022,25 @@ describe('MoverRow', () => {
 		expect(html).toContain('href="/product/5"');
 	});
 
+	it('shows the retailer and which variant moved', () => {
+		const html = renderComponent(MoverRow, { mover: mover() });
+		expect(html).toContain('Scorptec · ASUS TUF RTX 5070 Ti OC 16GB');
+	});
+
+	it('trims the variant at the first comma, as the movers table does', () => {
+		const html = renderComponent(MoverRow, {
+			mover: mover({ variantName: 'palit geforce rtx 5070 infinity 3, 12gb' })
+		});
+		expect(html).toContain('Palit Geforce RTX 5070 Infinity 3');
+		expect(html).not.toContain('12gb');
+	});
+
+	it('falls back to the retailer alone when the variant is missing', () => {
+		const html = renderComponent(MoverRow, { mover: mover({ variantName: null }) });
+		expect(html).toContain('Scorptec');
+		expect(html).not.toContain('·');
+	});
+
 	it('renders a mover with no percentage without crashing', () => {
 		const html = renderComponent(MoverRow, {
 			mover: mover({ pctChange: null, change: null, oldPrice: null })
