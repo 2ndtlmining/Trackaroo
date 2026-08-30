@@ -21,7 +21,8 @@ Environment variables (all optional):
     TRACKAROO_STALE_THRESHOLD_DAYS      Freshness threshold in days   (default: 3)
     TRACKAROO_MATCH_THRESHOLDS_JSON     Per-retailer match thresholds (JSON object)
     TRACKAROO_PRICE_ANOMALY_STD_DEVS    Price-anomaly sigma gate      (default: 3.0)
-    TRACKAROO_MIN_HISTORY_FOR_ANOMALY   Min history points for anomaly detection (default: 3)
+    TRACKAROO_MIN_HISTORY_FOR_ANOMALY   Min PRIOR points for the sigma test (default: 10)
+    TRACKAROO_PRICE_MOVE_PCT            Day-over-day move flagged on its own (default: 0.20)
 
     TRACKAROO_SCRAPER_TIMEOUT_SECONDS   Per-scraper subprocess timeout (default: 300)
     TRACKAROO_BATCH_SIZE                Algolia batch size            (default: 16)
@@ -136,9 +137,18 @@ STALE_THRESHOLD_DAYS = _env_int("TRACKAROO_STALE_THRESHOLD_DAYS", 3)
 # deviations from the historical mean for that product+retailer combo
 PRICE_ANOMALY_STD_DEVS = _env_float("TRACKAROO_PRICE_ANOMALY_STD_DEVS", 3.0)
 
-# Minimum number of historical data points needed before anomaly detection
-# is meaningful (with fewer points, std dev is unreliable)
-MIN_HISTORY_FOR_ANOMALY = _env_int("TRACKAROO_MIN_HISTORY_FOR_ANOMALY", 3)
+# Minimum number of PRIOR data points needed before the sigma test can fire.
+# With N points the largest z-score reachable by any single value is about
+# sqrt(N), so a 3-sigma trip is not merely unlikely below N=10 -- it is
+# impossible. A lower gate walks listings through a check that can never flag
+# them, which reads as coverage the check does not have.
+MIN_HISTORY_FOR_ANOMALY = _env_int("TRACKAROO_MIN_HISTORY_FOR_ANOMALY", 10)
+
+# Day-over-day fractional price move flagged on its own, independent of the
+# sigma test. It needs only two points, so it covers the listings the sigma
+# test structurally cannot -- most importantly a flat price history, where the
+# prior standard deviation is exactly 0 and no jump is reachable at any N.
+PRICE_MOVE_PCT = _env_float("TRACKAROO_PRICE_MOVE_PCT", 0.20)
 
 # Fallback thresholds applied to any retailer NOT in MATCH_THRESHOLDS
 DEFAULT_MIN_PER_CATEGORY = 5

@@ -34,6 +34,7 @@ from health_checks import (
     STALE_THRESHOLD_DAYS,
     PRICE_ANOMALY_STD_DEVS,
     MIN_HISTORY_FOR_ANOMALY,
+    PRICE_MOVE_PCT,
     SPEC_COVERAGE_MIN_PCT,
     SPEC_STALE_THRESHOLD_DAYS,
 )
@@ -464,7 +465,9 @@ class TestCheckPriceAnomalies:
         """Products with identical prices don't cause division errors."""
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys = ON")
-        self._seed_product_with_history(conn, "RTX 5080", "scorptec", [500, 500, 500, 500])
+        # 12 identical prices: past MIN_HISTORY_FOR_ANOMALY, so this still
+        # reaches the std-dev arithmetic rather than being skipped by the gate.
+        self._seed_product_with_history(conn, "RTX 5080", "scorptec", [500] * 12)
         conn.close()
 
         results = check_price_anomalies(db_path)
@@ -550,6 +553,189 @@ class TestCheckPriceAnomalies:
             "VANISHER" in r.message or "NEWCOMER" in r.message for r in results
         )
         assert not any(r.status == CheckResult.ERROR for r in results)
+
+
+class TestPriceAnomalyBaseline:
+    """The sigma test compares today against PRIOR days, gated at N >= 10.
+
+    Two defects motivated this: MIN_HISTORY_FOR_ANOMALY was 3 against a
+    3-sigma gate (with N points the largest reachable z-score is about
+    sqrt(N), so a 3-sigma trip is impossible below N=10), and the baseline
+    included the very point being tested, damping the deviation it measured.
+    """
+
+    def _seed(self, conn, model, retailer, prices):
+        """Insert one listing with `prices` on consecutive days, oldest first."""
+        conn.execute(
+            "INSERT OR IGNORE INTO products (category, brand, model, tracked) "
+            "VALUES ('gpu', 'NVIDIA', ?, 1)",
+            (model,),
+        )
+        pid = conn.execute("SELECT id FROM products WHERE model = ?", (model,)).fetchone()[0]
+        conn.execute(
+            "INSERT OR IGNORE INTO retailer_listings (product_id, retailer, listing_url, status) "
+            "VALUES (?, ?, ?, 'active')",
+            (pid, retailer, f"https://x.com/{model}"),
+        )
+        lid = conn.execute(
+            "SELECT id FROM retailer_listings WHERE product_id = ? AND retailer = ?",
+            (pid, retailer),
+        ).fetchone()[0]
+        for i, price in enumerate(prices):
+            d = (date.today() - timedelta(days=len(prices) - 1 - i)).strftime("%Y-%m-%d")
+            conn.execute(
+                "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+                "VALUES (?, ?, ?, 'in_stock')",
+                (lid, d, price),
+            )
+        conn.commit()
+        return lid
+
+    def test_baseline_excludes_todays_price(self, db_path):
+        """The reported average is the mean of prior days only.
+
+        Priors alternate 990/1010, so the prior mean is exactly $1000. Today is
+        $1300. If today were still in the baseline the mean would be ~$1023,
+        so the reported figure distinguishes the two implementations.
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        priors = [990, 1010] * 6          # 12 prior points, mean exactly 1000
+        self._seed(conn, "RTX 5070 Baseline", "scorptec", priors + [1300])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        warnings = [r for r in results if r.status == CheckResult.WARNING]
+        assert len(warnings) == 1, warnings
+        assert "avg: $1000" in warnings[0].message, warnings[0].message
+
+    def test_nine_prior_points_are_below_the_sigma_gate(self, db_path):
+        """N=9 prior points cannot reach 3 sigma, so the sigma test must not run.
+
+        Under the old gate of 3 this listing was walked through the check every
+        day and could never be flagged by it.
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        priors = [990, 1010] * 4 + [1000]   # 9 prior points
+        self._seed(conn, "RTX 5070 Nine", "scorptec", priors + [1005])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        assert not any(r.status == CheckResult.WARNING for r in results), results
+        # The count must say so: 9 priors is one short, so this listing is the
+        # one skipped. Asserting on the number, not just the phrase, is what
+        # distinguishes "gated out" from "checked and found clean".
+        ok = [r for r in results if r.status == CheckResult.OK]
+        assert any("(1 skipped" in r.message for r in ok), ok
+
+
+class TestPriceMoveRule:
+    """A plain day-over-day percentage rule, alongside the sigma test.
+
+    It needs only two points, so it covers the listings the sigma test
+    structurally cannot -- including a perfectly flat history, where the prior
+    standard deviation is 0 and no jump is reachable at any N.
+    """
+
+    _seed = TestPriceAnomalyBaseline._seed
+
+    def test_flags_a_large_move_on_a_flat_history(self, db_path):
+        """The RTX 5070's +45.0% on 28-Aug: flat priors, so sigma is blind.
+
+        This is the case excluding today's point from the baseline creates:
+        12 identical prior days give a prior sigma of exactly 0, so the z-test
+        divides by nothing and skips. Only the move rule can catch it.
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._seed(conn, "RTX 5070 Flat", "scorptec", [1000] * 12 + [1450])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        warnings = [r for r in results if r.status == CheckResult.WARNING]
+        assert len(warnings) == 1, warnings
+        assert "45.0%" in warnings[0].message, warnings[0].message
+
+    def test_ignores_a_move_under_the_threshold(self, db_path):
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._seed(conn, "RTX 5070 Small", "scorptec", [1000] * 12 + [1050])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        assert not any(r.status == CheckResult.WARNING for r in results), results
+
+    def test_fires_on_only_two_points(self, db_path):
+        """Two points is all the rule needs -- the sigma test needs ten."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._seed(conn, "RTX 5070 Pair", "scorptec", [1000, 1500])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        warnings = [r for r in results if r.status == CheckResult.WARNING]
+        assert len(warnings) == 1, warnings
+        assert "50.0%" in warnings[0].message, warnings[0].message
+
+    def test_flags_a_large_drop_as_well_as_a_rise(self, db_path):
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._seed(conn, "RTX 5070 Drop", "scorptec", [1000] * 12 + [600])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        warnings = [r for r in results if r.status == CheckResult.WARNING]
+        assert len(warnings) == 1, warnings
+        assert "-40.0%" in warnings[0].message, warnings[0].message
+
+    def test_a_listing_is_reported_once_not_by_both_rules(self, db_path):
+        """A jump on a jittery history trips both tests; it must warn once."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        priors = [990, 1010] * 6          # sigma > 0, so the z-test can fire
+        self._seed(conn, "RTX 5070 Both", "scorptec", priors + [4000])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        warnings = [r for r in results if r.status == CheckResult.WARNING]
+        assert len(warnings) == 1, warnings
+        assert "std devs" in warnings[0].message, warnings[0].message
+
+    def test_a_single_snapshot_has_nothing_to_compare(self, db_path):
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._seed(conn, "RTX 5070 Lonely", "scorptec", [1000])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        assert not any(r.status == CheckResult.WARNING for r in results), results
+
+    def test_a_trivial_move_on_a_flat_history_is_not_an_anomaly(self, db_path):
+        """The defect that actually motivated excluding today from the baseline.
+
+        With today's point inside the baseline, a flat prior history makes the
+        z-score exactly sqrt(N) for ANY move -- a $1 change and a $5000 change
+        both score identically, because the only variance in the sample is the
+        one the tested point contributes. On the real DB on 31-Aug, four of the
+        five warnings were this artefact, including a +1.3% move ($7599 ->
+        $7699 over 16 flat days) reported as "4.0 std devs".
+
+        Here 18 flat prior days and a $1 move scored 4.24 sigma under the old
+        implementation. It must now be silent: sigma is 0 so the z-test cannot
+        run, and $1 is far under the move threshold.
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._seed(conn, "RTX 5070 Trivial", "scorptec", [1000] * 18 + [1001])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        assert not any(r.status == CheckResult.WARNING for r in results), results
+
+    def test_threshold_is_a_sane_fraction(self):
+        """PRICE_MOVE_PCT is a fraction (0.20), not a percentage (20)."""
+        assert 0 < PRICE_MOVE_PCT < 1
 
 
 # ── Today coverage ──────────────────────────────────────────────────

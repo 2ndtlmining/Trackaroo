@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-30
+**Last updated:** 2026-08-31
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,55 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-08-31** - **Mwave probed and parked; price-anomaly detection fixed,
+  and the old check turned out to be worse than "slightly damped".**
+  **Mwave: NO-GO on this measurement**, written up in
+  [`docs/proposals/mwave-waf-probe.md`](docs/proposals/mwave-waf-probe.md). Task
+  0 of the scraper plan ran and **0 of 8 requests** at the plan's own 5s daily
+  cadence were served - all HTTP 202 AWS WAF challenges. Two confounders were
+  ruled out beyond what the plan asked: the query string is not the trigger (the
+  bare URL challenges too) and a cookie jar does not help, because the challenge
+  issues its token from JavaScript rather than `Set-Cookie`. Held short of a
+  flat NO-GO because one request *did* return a real 159 KB page, so real HTML
+  is obtainable; what this data cannot separate is "Mwave challenges every
+  JS-less client" from "we are in rate-state from yesterday's spike plus today's
+  15 requests". **One cold request after hours of no contact settles it** - that
+  is the next action, not more code. Two findings survive either way: the
+  healthy page *embeds* `challenge.js` and the string `awswaf` in its normal
+  `<head>`, so neither can ever be a challenge marker (Task 3's
+  `is_waf_challenge` keys on `awsWafCookieDomainList`/`gokuProps`, absent from
+  it, and is correct as specified); and Mwave's `robots.txt` returns a real 200,
+  unlike Centre Com's, which is itself a CAPTCHA. Mwave is hostile by rate rule,
+  not by policy.
+  **Price anomaly detection: options (b) + (c) + (e) implemented**, closing the
+  item below. `MIN_HISTORY_FOR_ANOMALY` 3 -> **10**, the baseline now excludes
+  the point being tested, and a plain day-over-day move rule
+  (`PRICE_MOVE_PCT`, default **0.20**) runs alongside the sigma test.
+  **(e) was not optional in the end.** Excluding today from the baseline means a
+  listing with a flat price history has a prior sigma of exactly **0**, so the
+  z-test divides by nothing and is blind to a jump of any size. The move rule is
+  the only thing that catches those, which is precisely the RTX 5070's +45.0% on
+  28-Aug. One warning per listing, so a jump on a jittery history is not
+  reported twice.
+  **The finding that made this worth doing:** with today's point *inside* the
+  baseline and a flat prior history, the z-score is **exactly sqrt(N) whatever
+  the move is** - the only variance in the sample is the one the tested point
+  contributes. Verified algebraically and numerically: 18 flat days plus a **$1**
+  move scores 4.24 sigma, identically to a $5000 move. On the real DB this was
+  not theoretical - the old check raised **5** warnings, of which **4 were this
+  artefact**, including `RTX 5090 @ pccg $7599 -> $7699` (**+1.3%**) reported as
+  "4.0 std devs", which is exactly sqrt(16). So the old check was not
+  over-sensitive in general; it was *magnitude-blind on flat listings* and fired
+  at the sqrt(N) ceiling regardless. The new check raises **2** warnings on the
+  same DB, both genuine, and includes an `RTX 5070 Ti @ scorptec $2099 vs a
+  $1921 prior mean` (4.3 sigma) that the old one **missed** because today's
+  price dragged the mean far enough to damp it under 3. Pinned by a regression
+  test that was confirmed to **fail** against the old implementation.
+  Regression green: pytest **660**, vitest **393**, e2e **68**, svelte-check 0
+  errors.
+  **Noted, not fixed:** `DECISIONS.md` does not exist, though this file's own
+  "How to update" section and the anomaly write-up both refer to it.
 
 - **2026-08-30 (later)** - **Watchlist hygiene started; anomaly-detection
   options written down.**
@@ -86,8 +135,10 @@ backup integrity.
   `docker inspect`. Linux and macOS hosts are unaffected.
   Verified by building the image and booting it: dashboard HTTP 200, both
   scheduler loops alive, `check_staleness.py` OK against the mounted DB.
-  Regression green: pytest **660**, svelte-check 0 errors, vitest **393**,
-  e2e **68**.
+  Regression green: pytest **650**, svelte-check 0 errors, vitest **393**,
+  e2e **68**. *(This entry originally said 660; measured at 650 on 31-Aug by
+  checking out this commit and re-running, which is also what the Mwave plan
+  recorded as its baseline.)*
 
 - **2026-08-28** — **28-Aug snapshot recovered; the 27-Aug work landed in git.**
   The scheduled run had not fired — the container was not running on this
@@ -619,45 +670,19 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
 2. **Frontend (Phase 3) — complete.** M0–M5 done: views, polish/verify, units + e2e. Remaining: final visual QA eyeball (any new filters/hardening belong to Phase 4).
 3. **Detailed deployment** — done: single Docker image + compose split verified. Optional extras for later: reverse proxy (Caddy/nginx/Traefik) for TLS, host-cron option docs already in DEPLOYMENT.md.
 4. **Hardening (Phase 4, remaining)** — reverse proxy/TLS, Prometheus-style monitoring, alerting on pipeline failure (current: exit codes + logs).
-5. **Price anomaly detection — needs a decision, no longer needs more data.**
-   The premise this item was written under has expired. As of 30-Aug **324 of
-   478 listings (71%) have ≥10 history points**, up from a handful; 21 snapshot
-   days are banked (09–30 Aug) and the deepest listing has 21 points.
+5. ~~**Price anomaly detection**~~ - **done 31-Aug.** Options (b) + (c) + (e)
+   from the analysis below were implemented together: the sigma gate is now
+   **10** prior points (matching what a 3-sigma trip can actually reach), the
+   baseline **excludes the point being tested**, and a day-over-day
+   `PRICE_MOVE_PCT` rule (default 0.20) covers the listings the sigma test
+   structurally cannot. (e) turned out to be load-bearing rather than optional:
+   once today's point leaves the baseline, a flat price history has a prior
+   sigma of exactly 0, so the z-test is blind to a jump of any size and the move
+   rule is the only rule that can see it. See the 31-Aug entry for the sqrt(N)
+   artefact this uncovered in the old implementation. Remaining option **(d)**,
+   median + MAD, is *not* done and is still a reasonable future refinement if
+   the sigma test proves noisy on real spikes.
 
-   The maths that gates it: with N points, the largest reachable z-score is
-   about √N, so a listing needs **N ≥ 10** before a 3σ trip is *possible at
-   all*. `MIN_HISTORY_FOR_ANOMALY` is **3**, which is why 154 listings are
-   currently walked through the check every day and could never be flagged by
-   it. That is not harmful, just misleading.
-
-   A second, subtler issue: `check_price_anomalies` computes the mean and
-   variance over **all** snapshots for the listing — *including today's*. The
-   current price therefore drags the baseline toward itself, damping the very
-   deviation being measured. The effect shrinks as N grows but never vanishes.
-
-   Options, roughly cheapest first — **not yet chosen**:
-
-   - **(a) Leave it.** It works on the 71% that have depth and grows into the
-     rest. Zero effort; keeps the misleading gate.
-   - **(b) Raise `MIN_HISTORY_FOR_ANOMALY` 3 → 10** so the gate matches what is
-     mathematically reachable, and report the skipped count honestly. One-line
-     config change; makes the check's coverage legible.
-   - **(c) Exclude today's point from the baseline** — compare the current
-     price against the mean/σ of *prior* days only. Turns a self-damped
-     statistic into a real outlier test. A contained SQL change in
-     `check_price_anomalies`.
-   - **(d) Swap z-score for median + MAD.** Robust to the spikes being hunted
-     (one big jump inflates σ and hides itself), and usable at lower N. More
-     work, and diverges from what `DECISIONS.md` records.
-   - **(e) Add a plain percentage-move rule** alongside it — e.g. flag any
-     day-over-day move >20%. Needs only 2 points, so it covers the listings
-     the σ test structurally cannot, and would have caught the RTX 5070's
-     +45.0% on 28-Aug. Complements rather than replaces.
-
-   Recommendation if someone wants a default: **(b) + (c)** together — small,
-   independent, and they fix the two things that are actually wrong. **(e)** is
-   the best value if the goal is catching real price events rather than
-   validating the scraper.
 6. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3/4
 7. **Third retailer** — probed 30-Aug, written up in
    [`docs/proposals/THIRD_RETAILER.md`](docs/proposals/THIRD_RETAILER.md), with
@@ -711,13 +736,13 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 
 ## Regression test count
 
-Current, as of 27-Aug-2026:
+Current, as of 31-Aug-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **643** | `python -m pytest -q` (repo root) |
-| Frontend unit (vitest) | **357** | `npm test` (`web/`) |
-| Frontend e2e (Playwright) | **67** | `npm run test:e2e` (`web/`) |
+| Backend (pytest) | **660** | `python -m pytest -q` (repo root) |
+| Frontend unit (vitest) | **393** | `npm test` (`web/`) |
+| Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
 
 The per-module breakdown that used to live here went stale every session;

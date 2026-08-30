@@ -37,6 +37,7 @@ from config import (
     MATCH_THRESHOLDS,
     MIN_HISTORY_FOR_ANOMALY,
     PRICE_ANOMALY_STD_DEVS,
+    PRICE_MOVE_PCT,
     SPEC_COVERAGE_MIN_PCT,
     SPEC_STALE_THRESHOLD_DAYS,
     STALE_THRESHOLD_DAYS,
@@ -471,9 +472,16 @@ def check_price_anomalies(db_path: Optional[Path] = None) -> list[CheckResult]:
         # Get latest snapshot per listing with historical stats
         # Use a subquery to compute historical stats per listing, then join
         # to the latest snapshot
+        # Two deliberate choices in this query:
+        #   * the baseline is PRIOR days only (snapshot_date < the listing's
+        #     latest), so the point being tested no longer drags the mean and
+        #     variance toward itself and damps its own deviation;
+        #   * prev_price is carried alongside, so a plain day-over-day move can
+        #     be judged for listings the sigma test cannot reach.
         cursor = conn.execute("""
             SELECT p.model, rl.retailer, latest.price_aud, latest.snapshot_date,
-                   stats.hist_avg, stats.hist_count, stats.variance
+                   prior.hist_avg, prior.hist_count, prior.variance,
+                   prev.prev_price
             FROM (
                 -- Latest snapshot per listing
                 SELECT ps1.retailer_listing_id, ps1.price_aud, ps1.snapshot_date
@@ -486,15 +494,36 @@ def check_price_anomalies(db_path: Optional[Path] = None) -> list[CheckResult]:
             ) latest
             JOIN retailer_listings rl ON latest.retailer_listing_id = rl.id
             JOIN products p ON rl.product_id = p.id
-            JOIN (
-                -- Historical stats per listing
-                SELECT retailer_listing_id,
-                       AVG(price_aud) as hist_avg,
-                       COUNT(price_aud) as hist_count,
-                       (AVG(price_aud * price_aud) - AVG(price_aud) * AVG(price_aud)) as variance
-                FROM price_snapshots
-                GROUP BY retailer_listing_id
-            ) stats ON latest.retailer_listing_id = stats.retailer_listing_id
+            LEFT JOIN (
+                -- Stats over PRIOR days only, excluding the latest snapshot
+                SELECT ps.retailer_listing_id,
+                       AVG(ps.price_aud) as hist_avg,
+                       COUNT(ps.price_aud) as hist_count,
+                       (AVG(ps.price_aud * ps.price_aud)
+                        - AVG(ps.price_aud) * AVG(ps.price_aud)) as variance
+                FROM price_snapshots ps
+                WHERE ps.snapshot_date < (
+                    SELECT MAX(psx.snapshot_date)
+                    FROM price_snapshots psx
+                    WHERE psx.retailer_listing_id = ps.retailer_listing_id
+                )
+                GROUP BY ps.retailer_listing_id
+            ) prior ON latest.retailer_listing_id = prior.retailer_listing_id
+            LEFT JOIN (
+                -- The single snapshot immediately before the latest one
+                SELECT ps.retailer_listing_id, ps.price_aud as prev_price
+                FROM price_snapshots ps
+                WHERE ps.snapshot_date = (
+                    SELECT MAX(psy.snapshot_date)
+                    FROM price_snapshots psy
+                    WHERE psy.retailer_listing_id = ps.retailer_listing_id
+                      AND psy.snapshot_date < (
+                          SELECT MAX(psz.snapshot_date)
+                          FROM price_snapshots psz
+                          WHERE psz.retailer_listing_id = ps.retailer_listing_id
+                      )
+                )
+            ) prev ON latest.retailer_listing_id = prev.retailer_listing_id
         """)
         latest_prices = cursor.fetchall()
 
@@ -502,35 +531,58 @@ def check_price_anomalies(db_path: Optional[Path] = None) -> list[CheckResult]:
         skipped_no_history = 0
 
         for row in latest_prices:
-            hist_count = row["hist_count"]
-            if hist_count < MIN_HISTORY_FOR_ANOMALY:
-                skipped_no_history += 1
-                continue
-
-            variance = row["variance"] or 0
-            std_dev = variance ** 0.5 if variance > 0 else 0
-
-            if std_dev == 0:
-                continue  # No variation — nothing to flag
-
-            hist_avg = row["hist_avg"]
             current_price = row["price_aud"]
-            deviation = abs(current_price - hist_avg) / std_dev
+            hist_count = row["hist_count"] or 0
+            flagged = False
 
-            if deviation > PRICE_ANOMALY_STD_DEVS:
-                anomalies_found += 1
-                results.append(CheckResult(
-                    f"price_anomaly_{row['retailer']}",
-                    CheckResult.WARNING,
-                    f"{row['model']} @ {row['retailer']}: ${current_price:.0f} "
-                    f"(avg: ${hist_avg:.0f}, {deviation:.1f} std devs)",
-                ))
+            # ── Sigma test: today against the mean/sd of prior days ──
+            if hist_count >= MIN_HISTORY_FOR_ANOMALY:
+                variance = row["variance"] or 0
+                std_dev = variance ** 0.5 if variance > 0 else 0
+
+                if std_dev > 0:
+                    hist_avg = row["hist_avg"]
+                    deviation = abs(current_price - hist_avg) / std_dev
+
+                    if deviation > PRICE_ANOMALY_STD_DEVS:
+                        flagged = True
+                        anomalies_found += 1
+                        results.append(CheckResult(
+                            f"price_anomaly_{row['retailer']}",
+                            CheckResult.WARNING,
+                            f"{row['model']} @ {row['retailer']}: ${current_price:.0f} "
+                            f"(avg: ${hist_avg:.0f}, {deviation:.1f} std devs)",
+                        ))
+            else:
+                skipped_no_history += 1
+
+            # ── Move rule: today against yesterday, needs only two points ──
+            # Deliberately still runs for listings the sigma test skipped or
+            # could not judge. A flat history has a prior sigma of exactly 0,
+            # so the z-test divides by nothing and sees no jump however large;
+            # this is the only rule that catches those. One warning per
+            # listing, so a jump on a jittery history is not reported twice.
+            if not flagged:
+                prev_price = row["prev_price"]
+
+                if prev_price:
+                    move = (current_price - prev_price) / prev_price
+
+                    if abs(move) > PRICE_MOVE_PCT:
+                        anomalies_found += 1
+                        results.append(CheckResult(
+                            f"price_move_{row['retailer']}",
+                            CheckResult.WARNING,
+                            f"{row['model']} @ {row['retailer']}: ${current_price:.0f} "
+                            f"({move * 100:+.1f}% from ${prev_price:.0f})",
+                        ))
 
         if anomalies_found == 0:
             results.append(CheckResult(
                 "price_anomalies",
                 CheckResult.OK,
-                f"No price anomalies detected ({skipped_no_history} skipped — insufficient history)",
+                f"No price anomalies detected ({skipped_no_history} skipped - "
+                f"insufficient history for the sigma test)",
             ))
 
     except sqlite3.Error:
