@@ -660,7 +660,14 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
    validating the scraper.
 6. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3/4
 7. **Third retailer** — probed 30-Aug, written up in
-   [`docs/proposals/THIRD_RETAILER.md`](docs/proposals/THIRD_RETAILER.md).
+   [`docs/proposals/THIRD_RETAILER.md`](docs/proposals/THIRD_RETAILER.md), with
+   a step-by-step build plan ready to execute in
+   [`docs/superpowers/plans/2026-08-31-mwave-scraper.md`](docs/superpowers/plans/2026-08-31-mwave-scraper.md).
+   **Task 0 of that plan is a GO/NO-GO gate**: Mwave turned out to sit behind
+   **AWS WAF** — the same protection Centre Com was ruled out for — and started
+   returning HTTP 202 challenge pages after ~12 rapid requests. It serves real
+   HTML to a polite client, so a once-daily scraper is probably fine, but that
+   must be measured before any code is written.
    Recommendation: **Mwave first, and only Mwave** — it is the largest
    candidate, the only one already allowed by the schema's retailer `CHECK`,
    and it probed as a clean server-rendered BeautifulSoup scrape. **Centre Com

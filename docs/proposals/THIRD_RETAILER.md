@@ -6,10 +6,12 @@ Candidates considered: **Mwave, Umart, Centre Com, PLE.**
 
 ## Recommendation
 
-**Build Mwave first, and only Mwave.** It is the largest of the four, it is the
-only one already permitted by the database schema, and it probed as a
-conventional server-rendered scrape of the same shape as Scorptec. Add a second
-retailer only once Mwave has run clean for a fortnight.
+**Build Mwave first, and only Mwave — but gate it on a viability probe.** It is
+the largest of the four, the only one already permitted by the database schema,
+and its pages parse as a conventional server-rendered scrape of the same shape
+as Scorptec. It is also behind AWS WAF and *will* challenge a scraper that
+bursts, so the first task is measuring whether a realistic daily cadence trips
+it. Add a second retailer only once Mwave has run clean for a fortnight.
 
 **Rule out Centre Com.** Not a scope decision — a technical one. See below.
 
@@ -47,7 +49,7 @@ change, not a UI change").
 Probed with a normal browser UA. Confidence is stated honestly — this was a
 short spike, not an implementation.
 
-### Mwave — viable, recommended
+### Mwave — recommended, gated on a WAF viability probe
 
 - Category pages are **server-rendered HTML**. `/graphics-cards` returned
   ~160 KB with 64 product anchors and prices in the markup.
@@ -61,13 +63,31 @@ short spike, not an implementation.
 - `robots.txt` disallows `/searchresult*`, `/*?display*`, `/*?slug*` and
   account paths. **Category and product pages are not disallowed**; the
   sitemap is explicitly advertised. Scrape categories, not search.
-- **Behind CloudFront, and it is bot-sensitive.** A request with a bare
-  `Mozilla/5.0` UA got `403 Request blocked`; the same URL with a full browser
-  UA plus `Accept` and `Accept-Language` returned 200. Later, after roughly
-  eight rapid requests, responses came back empty — consistent with
-  throttling. **The scraper must send realistic headers and rate-limit
-  itself**, and should reuse the cooldown/backoff machinery already built for
-  PCCG rather than inventing new.
+- **Behind AWS WAF — the same protection Centre Com was ruled out for.**
+  This was found late in the spike and corrects an earlier reading of it as
+  plain CloudFront rate-limiting. The behaviour is graduated:
+  - A bare `Mozilla/5.0` UA got `403 Request blocked`.
+  - A full browser UA plus `Accept` / `Accept-Language` returned 200 with real
+    content, repeatedly.
+  - After roughly a dozen requests in a few minutes, the same URL began
+    returning **HTTP 202 with an AWS WAF challenge page** —
+    `window.awsWafCookieDomainList = ['www.mwave.com.au','mwave.com.au']`
+    plus `challenge.js`, byte-for-byte the same mechanism as Centre Com.
+
+  **The difference from Centre Com is threshold, not vendor.** Centre Com
+  challenges immediately, on `robots.txt` itself. Mwave serves real pages and
+  only challenges once a burst trips it.
+
+  That difference is probably decisive in Mwave's favour — a daily scraper
+  making ~20 requests once every 24 hours looks nothing like the burst that
+  tripped it here — **but that is an assumption, not a measured fact.** It is
+  the single thing to establish before any scraper code is written. If a
+  polite daily cadence still gets challenged, Mwave goes the way of Centre Com
+  and the recommendation moves to Umart.
+
+  If it proceeds: realistic headers are mandatory, requests must be spaced,
+  and it should reuse the cooldown/breaker machinery already built for PCCG —
+  a challenge response must trip a cooldown, never a retry storm.
 
 *Not established:* how many category pages deep the GPU/CPU catalogue runs, and
 whether stock status is in the grid or only on the product page. Both are
@@ -117,9 +137,13 @@ browser (worst case — a new heavyweight dependency this repo does not have).
 
 ## Suggested order
 
-1. **Relax nothing, build Mwave.** No schema migration needed. Follow
-   `scraper/scorptec.py` structure; reuse the PCCG cooldown/backoff module for
-   CloudFront politeness. Update the nine hardcoded sites above.
+0. **Measure the WAF first.** Before any code: confirm a polite, daily-cadence
+   request pattern is served real HTML rather than an AWS WAF challenge. This
+   is a go/no-go gate, not a formality.
+1. **Then build Mwave.** No schema migration needed. Follow
+   `scraper/scorptec.py` structure; reuse the PCCG cooldown/breaker module so a
+   WAF challenge trips a cooldown instead of a retry storm. Update the nine
+   hardcoded sites above.
 2. **Then do the `CHECK`-constraint migration properly**, once, on its own —
    with a verified backup and a rehearsal against a copy. Ideally replace the
    hardcoded enum with a `retailers` lookup table so a fourth retailer is a row
