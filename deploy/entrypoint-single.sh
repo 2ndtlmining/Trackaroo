@@ -9,6 +9,9 @@
 #      today has no snapshot yet.
 #   4. Run the spec sync (sync_specs.py) once a week at SPEC_SYNC_DOW @
 #      SPEC_SYNC_HOUR (default Sunday 03:00), clear of the daily price run.
+#   5. Run the staleness monitor (check_staleness.py) once a day at
+#      STALENESS_CHECK_HOUR (default 10:00) to catch a pipeline run that
+#      never happened at all.
 #
 # Scheduling note: this used to be `sleep ${RUN_INTERVAL_HOURS}h` in a loop,
 # anchored to container start. That drifts — every restart moved the run time,
@@ -26,6 +29,11 @@
 #   TZ                   Timezone (default Australia/Melbourne, set in the image)
 #   SPEC_SYNC_DOW        Spec-sync day of week, cron style 0=Sun..6=Sat (default 0)
 #   SPEC_SYNC_HOUR       Spec-sync hour of day, 0-23 (default 3)
+#   STALENESS_CHECK_HOUR Staleness-monitor hour, 0-23 (default 10). Must be
+#                        LATER than RUN_AT_HOUR: before the daily run has had
+#                        its chance, "no data today" is not yet an outage.
+#   DISCORD_WEBHOOK_ALERT  Webhook the staleness monitor posts to. Unset means
+#                        the check still runs but signals only via the log.
 #   DISCORD_WEBHOOK_URL  Discord webhook for the CPU+GPU digest (optional)
 #   TRACKAROO_PUBLIC_BASE_URL  Public dashboard URL, adds Trackaroo links to
 #                        the Discord digest (optional)
@@ -41,9 +49,11 @@ set -e
 : "${RUN_AT_HOUR:=4}"
 : "${SPEC_SYNC_DOW:=0}"
 : "${SPEC_SYNC_HOUR:=3}"
+: "${STALENESS_CHECK_HOUR:=10}"
 # Zero-pad the hours so they compare cleanly against `date +%H` ("03" not "3").
 RUN_AT_HOUR_PAD=$(printf '%02d' "$RUN_AT_HOUR")
 SPEC_SYNC_HOUR_PAD=$(printf '%02d' "$SPEC_SYNC_HOUR")
+STALENESS_CHECK_HOUR_PAD=$(printf '%02d' "$STALENESS_CHECK_HOUR")
 
 log() {
     echo "[trackaroo] $(date '+%Y-%m-%d %H:%M:%S %Z') $1"
@@ -57,6 +67,15 @@ run_pipeline() {
 run_spec_sync() {
     log "Starting weekly spec sync..."
     python sync_specs.py && log "Spec sync finished." || log "Spec sync finished with errors (retrying next week)."
+}
+
+# Every other health check runs INSIDE run_daily.py, so none of them can fire
+# when the pipeline does not run at all -- exactly what happened on 27-Aug-2026,
+# where a human noticed the missing day before the system did. This one reads
+# the DB only (no scraping, no writes), so it is safe on any schedule.
+run_staleness_check() {
+    log "Running staleness check..."
+    python check_staleness.py && log "Staleness check: data is fresh." || log "Staleness check FAILED - data is stale (see alert)."
 }
 
 # Has the pipeline already stored snapshots for today's LOCAL date?
@@ -104,6 +123,22 @@ spec_sync_loop() {
     done
 }
 
+# Daily staleness monitor: same hourly-poll shape as spec_sync_loop. The
+# last_run guard keeps it to once a day; a restart inside the window re-runs it,
+# which is harmless because the check is read-only.
+staleness_loop() {
+    last_run=""
+    while true; do
+        hour=$(date '+%H')
+        today=$(date '+%Y-%m-%d')
+        if [ "$hour" = "$STALENESS_CHECK_HOUR_PAD" ] && [ "$last_run" != "$today" ]; then
+            run_staleness_check
+            last_run="$today"
+        fi
+        sleep 3600
+    done
+}
+
 # ── 1. Ensure the DB exists (init empty DB + seed watchlist) ──────────────
 python seed.py
 
@@ -131,6 +166,7 @@ fi
 # ── 3. Pipeline scheduler ─────────────────────────────────────────────────
 # Weekly spec sync runs in its own background loop (see spec_sync_loop).
 spec_sync_loop &
+staleness_loop &
 
 # Catch-up: if the container was down over the scheduled hour, today has no
 # data and waiting until tomorrow would lose a day permanently (retailers only
@@ -142,7 +178,7 @@ else
     run_pipeline
 fi
 
-log "Scheduler started (daily at ${RUN_AT_HOUR_PAD}:00 ${TZ:-local}, spec sync: dow ${SPEC_SYNC_DOW} @ ${SPEC_SYNC_HOUR_PAD}:00)"
+log "Scheduler started (daily at ${RUN_AT_HOUR_PAD}:00 ${TZ:-local}, spec sync: dow ${SPEC_SYNC_DOW} @ ${SPEC_SYNC_HOUR_PAD}:00, staleness check @ ${STALENESS_CHECK_HOUR_PAD}:00)"
 while true; do
     sleep 3600 &
     sleep_pid=$!
