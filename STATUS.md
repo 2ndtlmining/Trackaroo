@@ -14,6 +14,38 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-30 (later)** - **Watchlist hygiene started; anomaly-detection
+  options written down.**
+  **What "watchlist hygiene" means**, since it was never spelled out: 43 of the
+  100 tracked products (24 GPU / 19 CPU) have **no active listing at any
+  retailer**, so the dashboard's "47 tracked" for GPUs describes 23 cards you
+  can actually buy. The count overstates coverage by nearly half, and the
+  thin CPU mover columns are a symptom, not a bug. Those 43 split into three
+  kinds, which want different answers: cards that **do not exist** (retire
+  them), cards that exist but **aren't sold in AU** (Arc A750/A770/B570 -
+  arguably keep, so the absence is itself data), and **matching failures**
+  (fix the aliases). Only the first kind is actioned so far.
+  **Radeon RX 9070 XTX retired** - announced but never released, so it can
+  never have a listing. Removing it from `watchlist.csv` is *not* enough:
+  `seed.py` only ever INSERTs, so an existing DB keeps `tracked=1` forever.
+  Added `migrate_untrack_retired_products` + `RETIRED_PRODUCTS` to `migrate.py`
+  (which `deploy/bootstrap-data.sh` runs on every container start), so prod
+  applies it on the next rebuild with no manual SQL. A test asserts anything in
+  `RETIRED_PRODUCTS` is absent from `watchlist.csv`, so the migration and the
+  seed can never fight. Local DB: 100 -> 99 tracked.
+  **Open question deliberately not answered:** should `seed.py` untrack
+  *anything* missing from `watchlist.csv`, making the CSV genuinely the source
+  of truth its own header claims it is? That would remove the need for
+  `RETIRED_PRODUCTS`, but it turns a partial or mis-parsed CSV into a mass
+  untracking event. Left as an explicit decision rather than done quietly.
+  **Anomaly detection**: no code change - the options are now written up under
+  "What's NOT done yet" item 5 with the two real defects named (a
+  `MIN_HISTORY_FOR_ANOMALY` of 3 against a 3-sigma gate that needs N>=10, and a
+  baseline that includes the point being tested). 71% of listings now have the
+  depth to be checked, so this is a decision, not a waiting game.
+  `web/__shot2.mjs` deleted. Reverse proxy / TLS confirmed deferred while the
+  dashboard stays on the LAN.
+
 - **2026-08-30** - **Dashboard mover dedupe, staleness monitor scheduled, and a
   silent Docker mount trap documented.**
   The dashboard showed the RTX 5070 three times in "Biggest rises (7d)" with
@@ -78,6 +110,8 @@ backup integrity.
   scheduled anywhere, and `DISCORD_WEBHOOK_ALERT` is still unset in `.env` —
   so the monitor built to catch a missed day would not have caught this one
   either. Untracked `web/__shot2.mjs` (throwaway screenshot script) left alone.
+  *(Both resolved 30-Aug: the monitor is scheduled, the webhook is set on the
+  prod host, and `__shot2.mjs` is deleted.)*
 
 - **2026-08-27** — **Staleness monitor + mobile viewport pass.**
   **`check_staleness.py`** is the first health check that runs *outside*
@@ -585,7 +619,45 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
 2. **Frontend (Phase 3) — complete.** M0–M5 done: views, polish/verify, units + e2e. Remaining: final visual QA eyeball (any new filters/hardening belong to Phase 4).
 3. **Detailed deployment** — done: single Docker image + compose split verified. Optional extras for later: reverse proxy (Caddy/nginx/Traefik) for TLS, host-cron option docs already in DEPLOYMENT.md.
 4. **Hardening (Phase 4, remaining)** — reverse proxy/TLS, Prometheus-style monitoring, alerting on pipeline failure (current: exit codes + logs).
-5. **Price anomaly detection maturity** — a single-day jump only trips the 3σ check once a listing has ~10+ history points (max deviation ≈ √N); most listings still below that depth. See DECISIONS.md.
+5. **Price anomaly detection — needs a decision, no longer needs more data.**
+   The premise this item was written under has expired. As of 30-Aug **324 of
+   478 listings (71%) have ≥10 history points**, up from a handful; 21 snapshot
+   days are banked (09–30 Aug) and the deepest listing has 21 points.
+
+   The maths that gates it: with N points, the largest reachable z-score is
+   about √N, so a listing needs **N ≥ 10** before a 3σ trip is *possible at
+   all*. `MIN_HISTORY_FOR_ANOMALY` is **3**, which is why 154 listings are
+   currently walked through the check every day and could never be flagged by
+   it. That is not harmful, just misleading.
+
+   A second, subtler issue: `check_price_anomalies` computes the mean and
+   variance over **all** snapshots for the listing — *including today's*. The
+   current price therefore drags the baseline toward itself, damping the very
+   deviation being measured. The effect shrinks as N grows but never vanishes.
+
+   Options, roughly cheapest first — **not yet chosen**:
+
+   - **(a) Leave it.** It works on the 71% that have depth and grows into the
+     rest. Zero effort; keeps the misleading gate.
+   - **(b) Raise `MIN_HISTORY_FOR_ANOMALY` 3 → 10** so the gate matches what is
+     mathematically reachable, and report the skipped count honestly. One-line
+     config change; makes the check's coverage legible.
+   - **(c) Exclude today's point from the baseline** — compare the current
+     price against the mean/σ of *prior* days only. Turns a self-damped
+     statistic into a real outlier test. A contained SQL change in
+     `check_price_anomalies`.
+   - **(d) Swap z-score for median + MAD.** Robust to the spikes being hunted
+     (one big jump inflates σ and hides itself), and usable at lower N. More
+     work, and diverges from what `DECISIONS.md` records.
+   - **(e) Add a plain percentage-move rule** alongside it — e.g. flag any
+     day-over-day move >20%. Needs only 2 points, so it covers the listings
+     the σ test structurally cannot, and would have caught the RTX 5070's
+     +45.0% on 28-Aug. Complements rather than replaces.
+
+   Recommendation if someone wants a default: **(b) + (c)** together — small,
+   independent, and they fix the two things that are actually wrong. **(e)** is
+   the best value if the goal is catching real price events rather than
+   validating the scraper.
 6. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3/4
 
 ## Next up (planned 18-Aug — picked up tomorrow)

@@ -51,8 +51,11 @@ class TestLoadWatchlist:
     """Test watchlist CSV loading."""
 
     def test_loads_all_products(self):
+        # 99 since RX 9070 XTX was retired on 30-Aug-2026 (see
+        # migrate.RETIRED_PRODUCTS). These counts are a guard against the
+        # watchlist being truncated or corrupted, so update them deliberately.
         products = load_watchlist(WATCHLIST_PATH)
-        assert len(products) == 100
+        assert len(products) == 99
 
     def test_cpu_count(self):
         products = load_watchlist(WATCHLIST_PATH)
@@ -62,7 +65,7 @@ class TestLoadWatchlist:
     def test_gpu_count(self):
         products = load_watchlist(WATCHLIST_PATH)
         gpus = [p for p in products if p["category"] == "gpu"]
-        assert len(gpus) == 47
+        assert len(gpus) == 46
 
     def test_all_have_brand(self):
         products = load_watchlist(WATCHLIST_PATH)

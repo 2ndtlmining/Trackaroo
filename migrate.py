@@ -299,6 +299,57 @@ def _latest_scraped_at(conn: sqlite3.Connection, listing_id: int) -> Optional[st
     return row[0]
 
 
+# Products deliberately removed from db/watchlist.csv.
+#
+# seed.py only ever INSERTs — it syncs generation_tier and otherwise leaves
+# existing rows alone — so deleting a watchlist row does nothing to a DB that
+# already has the product. It stays tracked=1 forever, counting toward the
+# dashboard's "N tracked" while never being able to have a listing.
+#
+# Per the never-delete-product-data rule these are untracked, not removed: the
+# row and any price history it accumulated stay put.
+#
+# Radeon RX 9070 XTX — announced-but-never-released card; no retailer will ever
+# stock it (retired 30-Aug-2026).
+RETIRED_PRODUCTS = ("Radeon RX 9070 XTX",)
+
+
+def migrate_untrack_retired_products(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Set tracked=0 for products retired from the watchlist.
+
+    Idempotent: a second run finds nothing still tracked.
+
+    Args:
+        conn: Open SQLite connection.
+        dry_run: When True, only preview what would change without writing.
+    """
+    placeholders = ",".join("?" for _ in RETIRED_PRODUCTS)
+    still_tracked = [
+        row[0]
+        for row in conn.execute(
+            f"SELECT model FROM products WHERE tracked = 1 AND model IN ({placeholders})",
+            RETIRED_PRODUCTS,
+        )
+    ]
+
+    if not still_tracked:
+        LOGGER.info("  [SKIP] no retired products still tracked")
+        return
+
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would untrack %d retired product(s): %s",
+                    len(still_tracked), ", ".join(still_tracked))
+        return
+
+    conn.execute(
+        f"UPDATE products SET tracked = 0 WHERE model IN ({placeholders})",
+        RETIRED_PRODUCTS,
+    )
+    conn.commit()
+    for model in still_tracked:
+        LOGGER.info("  [MIGRATE] Untracked retired product: %s", model)
+
+
 def migrate_merge_duplicate_listings(conn: sqlite3.Connection, dry_run: bool = False) -> None:
     """Merge duplicate retailer_listings rows forked by retailer URL slug rewrites.
 
@@ -443,6 +494,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: Merge duplicate listings forked by URL slug rewrites
         migrate_merge_duplicate_listings(conn, dry_run=args.dry_run)
+
+        # Migration: Untrack products retired from the watchlist
+        migrate_untrack_retired_products(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify
