@@ -465,9 +465,10 @@ class TestCheckPriceAnomalies:
         """Products with identical prices don't cause division errors."""
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys = ON")
-        # 12 identical prices: past MIN_HISTORY_FOR_ANOMALY, so this still
-        # reaches the std-dev arithmetic rather than being skipped by the gate.
-        self._seed_product_with_history(conn, "RTX 5080", "scorptec", [500] * 12)
+        # 12 identical prior prices then a move: past MIN_HISTORY_FOR_ANOMALY
+        # and past the changed-since-previous gate, so this still reaches the
+        # std-dev arithmetic with a prior sigma of exactly 0.
+        self._seed_product_with_history(conn, "RTX 5080", "scorptec", [500] * 12 + [520])
         conn.close()
 
         results = check_price_anomalies(db_path)
@@ -728,6 +729,47 @@ class TestPriceMoveRule:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys = ON")
         self._seed(conn, "RTX 5070 Trivial", "scorptec", [1000] * 18 + [1001])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        assert not any(r.status == CheckResult.WARNING for r in results), results
+
+    def test_a_step_is_flagged_on_the_day_and_then_goes_quiet(self, db_path):
+        """An anomaly check for a price EVENT requires a price event.
+
+        Real case from 31-Aug: RTX 5060 @ scorptec held $579 for 18 days, moved
+        to $649 on 30-Aug and stayed there. Without a changed-since-previous
+        gate the sigma test reports it every single day afterwards, because
+        today's price stays far from a trailing mean still dominated by $579 --
+        five such echoes were in that morning's digest, every one of them
+        +0.0% on the day. Alarms that repeat for weeks train the reader to
+        ignore the digest.
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        # Day of the step: flat history, then +12.1%.
+        self._seed(conn, "RTX 5060 Step", "scorptec", [579] * 18 + [649])
+        conn.close()
+        day_of = check_price_anomalies(db_path)
+        warnings = [r for r in day_of if r.status == CheckResult.WARNING]
+        assert len(warnings) == 1, warnings
+        assert "12.1%" in warnings[0].message, warnings[0].message
+
+    def test_the_day_after_a_step_is_silent(self, db_path):
+        """Same listing, one day later, price unchanged -- must say nothing."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._seed(conn, "RTX 5060 Held", "scorptec", [579] * 18 + [649, 649])
+        conn.close()
+
+        results = check_price_anomalies(db_path)
+        assert not any(r.status == CheckResult.WARNING for r in results), results
+
+    def test_an_unchanged_price_far_from_the_mean_is_not_flagged(self, db_path):
+        """The exact 31-Aug shape: 4.0 sigma from the mean, 0.0% on the day."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        self._seed(conn, "RTX 5090 Echo", "pccg", [7599] * 16 + [7699, 7699])
         conn.close()
 
         results = check_price_anomalies(db_path)

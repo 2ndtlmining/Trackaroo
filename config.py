@@ -148,7 +148,9 @@ MIN_HISTORY_FOR_ANOMALY = _env_int("TRACKAROO_MIN_HISTORY_FOR_ANOMALY", 10)
 # sigma test. It needs only two points, so it covers the listings the sigma
 # test structurally cannot -- most importantly a flat price history, where the
 # prior standard deviation is exactly 0 and no jump is reachable at any N.
-PRICE_MOVE_PCT = _env_float("TRACKAROO_PRICE_MOVE_PCT", 0.20)
+# 0.10 rather than 0.20 because the real steps this is meant to catch have been
+# +10.5% and +12.1%; at 0.20 both were missed on the day they happened.
+PRICE_MOVE_PCT = _env_float("TRACKAROO_PRICE_MOVE_PCT", 0.10)
 
 # Fallback thresholds applied to any retailer NOT in MATCH_THRESHOLDS
 DEFAULT_MIN_PER_CATEGORY = 5

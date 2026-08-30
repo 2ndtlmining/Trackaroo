@@ -532,6 +532,17 @@ def check_price_anomalies(db_path: Optional[Path] = None) -> list[CheckResult]:
 
         for row in latest_prices:
             current_price = row["price_aud"]
+            prev_price = row["prev_price"]
+
+            # An anomaly check for a price EVENT requires a price event.
+            # Without this gate the sigma test re-reports a step change every
+            # day until the trailing mean catches up: on 31-Aug all five
+            # warnings raised were +0.0% on the day, echoes of steps taken on
+            # 28 and 30-Aug. Alarms that repeat for weeks train the reader to
+            # ignore the digest, which costs more than the check earns.
+            if prev_price is None or abs(current_price - prev_price) < 0.005:
+                continue
+
             hist_count = row["hist_count"] or 0
             flagged = False
 
@@ -557,25 +568,22 @@ def check_price_anomalies(db_path: Optional[Path] = None) -> list[CheckResult]:
                 skipped_no_history += 1
 
             # ── Move rule: today against yesterday, needs only two points ──
-            # Deliberately still runs for listings the sigma test skipped or
-            # could not judge. A flat history has a prior sigma of exactly 0,
+            # Reached only by listings whose price actually moved. Deliberately
+            # still runs for those the sigma test skipped or could not judge. A flat history has a prior sigma of exactly 0,
             # so the z-test divides by nothing and sees no jump however large;
             # this is the only rule that catches those. One warning per
             # listing, so a jump on a jittery history is not reported twice.
-            if not flagged:
-                prev_price = row["prev_price"]
+            if not flagged and prev_price:
+                move = (current_price - prev_price) / prev_price
 
-                if prev_price:
-                    move = (current_price - prev_price) / prev_price
-
-                    if abs(move) > PRICE_MOVE_PCT:
-                        anomalies_found += 1
-                        results.append(CheckResult(
-                            f"price_move_{row['retailer']}",
-                            CheckResult.WARNING,
-                            f"{row['model']} @ {row['retailer']}: ${current_price:.0f} "
-                            f"({move * 100:+.1f}% from ${prev_price:.0f})",
-                        ))
+                if abs(move) > PRICE_MOVE_PCT:
+                    anomalies_found += 1
+                    results.append(CheckResult(
+                        f"price_move_{row['retailer']}",
+                        CheckResult.WARNING,
+                        f"{row['model']} @ {row['retailer']}: ${current_price:.0f} "
+                        f"({move * 100:+.1f}% from ${prev_price:.0f})",
+                    ))
 
         if anomalies_found == 0:
             results.append(CheckResult(

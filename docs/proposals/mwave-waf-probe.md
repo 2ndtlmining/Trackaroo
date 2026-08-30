@@ -103,6 +103,38 @@ bytes** -- the same length as the bare URL. The `page` query parameter appears
 to be **ignored**, so Mwave's real pagination scheme is still undiscovered and
 is a Task 4 discovery item, not a known constant.
 
+## Cadence sweep -- the answer, and it is not a delay
+
+Run 31-Aug from a confirmed cold state, 20 requests at **30s** apart:
+
+```
+req 1 -> 200   req 4 -> 200   req 7 -> 202
+req 2 -> 200   req 5 -> 200   req 8 -> 202  (stopped early)
+req 3 -> 200   req 6 -> 202
+```
+
+**Five served, challenged on the sixth** -- *identical to the 5s run*. Six times
+the spacing changed nothing.
+
+So the limit is a **count, not a rate**: roughly 5-6 requests per cold period,
+whatever the delay between them. `MWAVE_PAGE_DELAY` cannot fix this, because
+there is no delay that buys a sixth page. The plan's Task 3 premise -- that
+politeness is a matter of spacing -- is wrong for this site.
+
+The mechanism this points at is ordinary AWS WAF Challenge: a JS-less client
+gets a small free allowance and is then challenged until it presents an
+`aws-waf-token`, which is issued *by solving the JavaScript challenge*. A real
+browser solves it once and scrapes freely; `requests` + BeautifulSoup never can.
+That is the same wall as Centre Com, reached by a different route -- and it is
+why the count does not respond to spacing.
+
+**What is left, honestly:** a 20-page daily scrape needs ~4 cold periods. ~45
+minutes of idleness was enough to clear one, so a run spread over ~3 hours might
+work. That is technically viable for an unattended daily job and is the only
+remaining path short of a headless browser -- but it is a very different scraper
+from the one the plan describes, and it should be a deliberate choice rather
+than a constant tweak.
+
 ## What would change the verdict
 
 *(Answered above -- the cold probe returned 200, so Mwave does not belong beside

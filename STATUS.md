@@ -35,8 +35,17 @@ backup integrity.
   challenged on the sixth**, and challenged from then on. So
   `MWAVE_PAGE_DELAY = 5.0s` as the plan specifies would fail partway through
   every run - but a once-daily scraper has no time pressure, and 20 pages at 60s
-  apart is a 20-minute unattended job. **Next action is a cadence sweep at 30s
-  and 60s**, not scraper code and not another 5s run. Second discovery: `?page=1`
+  apart is a 20-minute unattended job. **The cadence sweep then ran, and killed the delay
+  theory**: 20 requests at **30s** apart from cold gave *exactly the same*
+  result - five served, challenged on the sixth. Six times the spacing changed
+  nothing, so the limit is a **count, not a rate**, and no `MWAVE_PAGE_DELAY`
+  buys a sixth page. That is ordinary AWS WAF Challenge behaviour: a JS-less
+  client gets a small allowance and is then challenged until it presents an
+  `aws-waf-token`, issued only by *solving the JavaScript*. Same wall as Centre
+  Com, reached by a different route. What remains is a run spread across ~4 cold
+  periods over ~3 hours (~45 min of idleness clears one) - technically viable
+  for an unattended daily job, but a **different scraper from the one the plan
+  describes**: a deliberate choice, not a constant tweak. Second discovery: `?page=1`
   through `?page=5` all returned exactly 159,078 bytes, the same as the bare URL,
   so the `page` parameter is **ignored** and Mwave's real pagination scheme is
   unknown - a Task 4 discovery item, not a constant. Two findings survive either way: the
@@ -70,8 +79,12 @@ backup integrity.
   $1921 prior mean` (4.3 sigma) that the old one **missed** because today's
   price dragged the mean far enough to damp it under 3. Pinned by a regression
   test that was confirmed to **fail** against the old implementation.
-  Regression green: pytest **660**, vitest **393**, e2e **68**, svelte-check 0
-  errors.
+  **31-Aug daily run recovered natively** (Docker is not running on this
+  machine, so the scheduled run had not fired): **440 snapshots**, 0 ingest
+  errors, backup written. A real gap remains in the record - **no snapshots
+  exist for 2026-08-29**, which the `missing_days` check reported.
+  Regression green: pytest **663**, vitest **393**, e2e **68**, svelte-check 0
+  errors (`web/` untouched since that run).
   **Noted, not fixed:** `DECISIONS.md` does not exist, though this file's own
   "How to update" section and the anomaly write-up both refer to it.
 
@@ -690,7 +703,10 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
    structurally cannot. (e) turned out to be load-bearing rather than optional:
    once today's point leaves the baseline, a flat price history has a prior
    sigma of exactly 0, so the z-test is blind to a jump of any size and the move
-   rule is the only rule that can see it. See the 31-Aug entry for the sqrt(N)
+   rule is the only rule that can see it. A same-day follow-up made it an
+   **event detector** too - only listings whose price actually changed since the
+   previous snapshot are evaluated - because otherwise a step change alarms every
+   day for weeks after the fact. See the 31-Aug entry for the sqrt(N)
    artefact this uncovered in the old implementation. Remaining option **(d)**,
    median + MAD, is *not* done and is still a reasonable future refinement if
    the sigma test proves noisy on real spikes.
@@ -756,7 +772,7 @@ Current, as of 31-Aug-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **660** | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **663** | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **393** | `npm test` (`web/`) |
 | Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
