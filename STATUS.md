@@ -659,6 +659,18 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
    the best value if the goal is catching real price events rather than
    validating the scraper.
 6. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3/4
+7. **Third retailer** — probed 30-Aug, written up in
+   [`docs/proposals/THIRD_RETAILER.md`](docs/proposals/THIRD_RETAILER.md).
+   Recommendation: **Mwave first, and only Mwave** — it is the largest
+   candidate, the only one already allowed by the schema's retailer `CHECK`,
+   and it probed as a clean server-rendered BeautifulSoup scrape. **Centre Com
+   is ruled out**: the whole site is behind an AWS WAF CAPTCHA, robots.txt
+   included. Umart and PLE both need a short URL-discovery pass first (PLE
+   looks like a client-rendered SPA — 2.1 MB of HTML with four occurrences of
+   "price"). The scraper is the small half: the retailer name is hardcoded in
+   nine places, and for anything other than Mwave the schema `CHECK` needs a
+   full SQLite table rebuild. The frontend already types and lists all six
+   retailers, so it needs no work.
 
 ## Next up (planned 18-Aug — picked up tomorrow)
 
