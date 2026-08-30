@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-28
+**Last updated:** 2026-08-30
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,49 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-08-30** - **Dashboard mover dedupe, staleness monitor scheduled, and a
+  silent Docker mount trap documented.**
+  The dashboard showed the RTX 5070 three times in "Biggest rises (7d)" with
+  three different percentages. Not a maths bug: `getMovers` is per-LISTING and
+  PCCG carries three MSI 5070 SKUs (Ventus 3X +45.0%, Shadow 2X +27.3%, Shadow
+  3X +26.6%), while `MoverRow` rendered only model + retailer and dropped
+  `variant_name`. Fixed with a new pure `web/src/lib/movers.ts`
+  (`topMoversByProduct`) collapsing the dashboard columns to **one row per
+  product**, and `MoverRow` now shows `retailer - variant`. `/movers` is
+  untouched: its per-listing detail is correct and has a Variant column.
+  Folded in a latent gap found on the way: the dashboard never filtered
+  `notEnoughHistory`, so a listing `/movers` badges as untrustworthy would read
+  as authoritative there. `topMoversByProduct` now excludes them.
+  **Grid blowout caught by e2e**, not by eye: `truncate` implies
+  `white-space: nowrap`, so a grid item's automatic minimum is min-content ==
+  the full untruncated string, which widened the shared track and overflowed
+  the phone viewport at 390px - visibly in the *Top deals* column, a sibling.
+  Fixed with `min-w-0` on the `CategorySection` columns.
+  **`check_staleness.py` is now actually scheduled** (it was written 27-Aug and
+  wired to nothing). `deploy/entrypoint-single.sh` runs it daily at
+  `STALENESS_CHECK_HOUR`, default **10**, in its own poll loop beside the spec
+  sync; the hour must stay after `RUN_AT_HOUR` or every morning reads as an
+  outage. **`DISCORD_WEBHOOK_ALERT` is still unset in `.env`** - until it is,
+  the monitor signals only through the container log.
+  **Duplicate listings: nothing to build.** Scorptec 155/337 (both SKU 118277,
+  forked 13-Aug by a slug rewrite) looked like it needed a repair script; a
+  `dedupe_listings.py` was written and then **deleted** on finding that
+  `migrate.py:390` already merges exactly these groups, and more carefully -
+  it preserves `scraped_at`, absorbs the newer URL and variant, and repairs the
+  survivor's timestamps. It runs on every container start and merged 155 into
+  337 during this session's verification. The local DB only carried the fork
+  because the container had not been running on this machine.
+  **New deployment trap documented**: in Git Bash on Windows, MSYS rewrites
+  `-v "$(pwd)/db:/app/db"` so the mount silently lands nowhere - the container
+  reports healthy while writing to its own layer, the exact state that cost 165
+  snapshots. The tell is `db;C` / `data;C` directories in the repo root (both
+  found here, empty). Use `MSYS_NO_PATHCONV=1` or PowerShell, and verify with
+  `docker inspect`. Linux and macOS hosts are unaffected.
+  Verified by building the image and booting it: dashboard HTTP 200, both
+  scheduler loops alive, `check_staleness.py` OK against the mounted DB.
+  Regression green: pytest **660**, svelte-check 0 errors, vitest **393**,
+  e2e **68**.
 
 - **2026-08-28** — **28-Aug snapshot recovered; the 27-Aug work landed in git.**
   The scheduled run had not fired — the container was not running on this

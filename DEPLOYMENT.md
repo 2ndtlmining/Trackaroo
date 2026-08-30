@@ -53,6 +53,23 @@ PowerShell uses backticks and `${PWD}` — see [README.md](README.md#docker-sing
 for that form, the named-volume alternative, and the pipeline-only /
 dashboard-only entrypoint overrides.
 
+> **Git Bash on Windows mangles the `-v` paths and the failure is silent.**
+> MSYS rewrites POSIX-looking arguments, so `-v "$(pwd)/db:/app/db"` reaches
+> Docker with the destination turned into a Windows path under
+> `\Program Files\Git\...` and a `;C` suffix glued onto the source. The
+> container starts, reports healthy and serves the dashboard — while writing to
+> its own layer, which is the exact state that cost this project 165 snapshots.
+> The tell is a `db;C` / `data;C` directory appearing in the repo root.
+> Prefix the command with `MSYS_NO_PATHCONV=1`, or use PowerShell. Always
+> confirm the mounts landed:
+>
+> ```bash
+> docker inspect trackaroo --format '{{range .Mounts}}{{.Source}} {{.Destination}}{{println}}{{end}}'
+> ```
+>
+> The destinations must read `/app/db` and `/app/data`. Linux and macOS hosts
+> are unaffected.
+
 | Mount | Contents |
 |---|---|
 | `./db` → `/app/db` | `trackaroo.db` (SQLite, WAL), `backups/`, `schema.sql`, `watchlist.csv` |
@@ -385,6 +402,20 @@ outage, but two days of silence means one was missed.
 **Alerts need `DISCORD_WEBHOOK_ALERT` set** (see `.env.example`). Without it the
 monitor still works, but signals only through its exit code — which is enough
 for a scheduler, cron `MAILTO`, or an uptime checker.
+
+### Scheduling it
+
+`deploy/entrypoint-single.sh` runs it **once a day at `STALENESS_CHECK_HOUR`**
+(default `10`), in its own hourly-poll loop alongside the weekly spec sync. The
+hour must sit *after* `RUN_AT_HOUR` (default `04`) — checking before the daily
+run has had its chance would report every morning as an outage.
+
+Running natively instead? Add it to cron, well clear of the pipeline:
+
+```cron
+# Staleness check at 10:00, six hours after the 04:00 pipeline.
+0 10 * * * cd /opt/trackaroo && /usr/bin/python3 check_staleness.py >> logs/staleness.log 2>&1
+```
 
 ## Config reference
 
