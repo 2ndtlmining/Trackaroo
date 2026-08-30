@@ -1,8 +1,11 @@
 # Mwave WAF viability probe — 31-Aug-2026
 
 Task 0 of [`docs/superpowers/plans/2026-08-31-mwave-scraper.md`](../superpowers/plans/2026-08-31-mwave-scraper.md).
-Verdict: **NO-GO on this measurement, pending one cold re-probe.** No scraper
-code was written.
+Verdict: **NO-GO at the plan's 5s cadence. Not a NO-GO on Mwave.** The cold
+re-probe changed the answer: the challenge is rate-state that clears with
+idleness, and the measured allowance is about **5 requests before it trips**.
+The open question is no longer *whether* Mwave can be scraped but *at what
+delay*. No scraper code was written.
 
 ## Step 1 — has yesterday's block aged out?
 
@@ -69,10 +72,47 @@ The cheapest true signal is **HTTP 202 with a ~2 KB body**; a served page is
 unlike Centre Com, whose robots.txt is itself a CAPTCHA. Mwave is not hostile by
 policy, only by rate rule.
 
+## Cold re-probe -- the decisive measurement
+
+After **~45 minutes of no contact**, a single request returned **200 / 159,056
+bytes**. So the challenge is not a standing block on JS-less clients; it is rate
+state, and it clears on its own.
+
+Re-running the plan's own gate from that clean state, 8 requests at 5s:
+
+```
+page 1 -> 200 159078      page 5 -> 200 159078
+page 2 -> 200 159078      page 6 -> 202 2453   <- trips here
+page 3 -> 200 159078      page 7 -> 202 2453
+page 4 -> 200 159078      page 8 -> 202 2453
+```
+
+**Five requests served, then challenged on the sixth**, and it stays challenged.
+That is repeatable and it is the number that matters: roughly **5 requests per
+~25s window** is the allowance at this spacing.
+
+This kills the plan's stated constant -- `MWAVE_PAGE_DELAY = 5.0s` is too fast
+and would fail partway through every run -- but it does *not* kill Mwave. A
+once-daily scraper is under no time pressure: 20 category pages at 60s apart is
+a 20-minute job that runs while nobody is watching. The next measurement is
+therefore a **cadence sweep** (30s, 60s) to find the delay that sustains 20
+requests, not another 5s run.
+
+Note also that `?page=1` through `?page=5` all returned **exactly 159,078
+bytes** -- the same length as the bare URL. The `page` query parameter appears
+to be **ignored**, so Mwave's real pagination scheme is still undiscovered and
+is a Task 4 discovery item, not a known constant.
+
 ## What would change the verdict
 
-One **cold** single request after several hours of no contact from this IP. If
-that returns 200 and a second 60s later also returns 200, the challenge is
-rate-state that a once-daily scraper would never enter, and Task 0 can be re-run
-properly. If it returns 202 cold, Mwave challenges every JS-less client by
-default and belongs beside Centre Com.
+*(Answered above -- the cold probe returned 200, so Mwave does not belong beside
+Centre Com.)*
+
+What is still unmeasured, and is the next thing to run:
+
+- **A cadence sweep.** From cold, 20 requests at 30s and at 60s. If either
+  sustains all 20, that delay becomes `MWAVE_PAGE_DELAY` and Task 0 passes.
+- **How long the trip lasts.** ~45 minutes of idleness was enough to clear it;
+  the floor is unknown. It matters only for retry policy: a challenged run
+  should abandon the day, not back off and retry within it.
+- **The real pagination parameter**, since `?page=` is ignored.
