@@ -2,6 +2,33 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> ## ⚠ SUPERSEDED IN PART -- read this before executing anything below
+>
+> Task 0 ran on 31-Aug and **did not pass as written**, and the follow-up probing
+> invalidated three of this plan's premises. See
+> [`docs/proposals/mwave-waf-probe.md`](../../proposals/mwave-waf-probe.md) and the
+> 31-Aug section of [`THIRD_RETAILER.md`](../../proposals/THIRD_RETAILER.md).
+>
+> 1. **The WAF limit is a count, not a rate.** 20 requests at 30s spacing gave
+>    exactly the same result as 5s spacing: five served, challenged on the sixth.
+>    `MWAVE_PAGE_DELAY` therefore fixes nothing, and **Task 3's premise that
+>    politeness is a matter of spacing is wrong.** The knob that matters is the
+>    number of requests per run, not the gap between them.
+> 2. **Category pages are not the listing.** `/graphics-cards` is a curated
+>    landing page of 31 cards with no pagination; `?page=N` and `?cnt=N` are both
+>    ignored. **Tasks 2 and 4 target the wrong URL.** The real endpoint is
+>    `/searchresult?w=graphics+card&cnt=100&srt=<offset>&af=categoryPath%3AGraphics+Card`,
+>    which returns 100 server-rendered products per request out of 278 total,
+>    paged by `srt=` offset.
+> 3. **Therefore a run is ~5 requests, not ~20** -- which fits the measured
+>    allowance exactly, with no headroom for a retry. A challenged fetch should
+>    abandon the day, not retry within the run.
+>
+> What still stands: the global constraints, the fixture-driven approach of Task
+> 1, the SKU-keyed listing rule (Mwave exposes a real SKU, e.g. `AC84825`), and
+> the nine hardcoded places in Task 5. Tasks 2-4 need rewriting against
+> `/searchresult` before this plan is executable.
+
 **Goal:** Add Mwave as Trackaroo's third retailer, so the daily pipeline collects CPU/GPU prices from Scorptec, PCCG and Mwave.
 
 **Architecture:** A new `scraper/mwave.py` following the `scraper/scorptec.py` shape — fetch server-rendered category pages, parse the product grid with BeautifulSoup, match against the watchlist, emit the standard snapshot envelope via `snapshot_io.save_snapshot`. Mwave sits behind AWS WAF, so a challenge-detecting fetch layer reusing PCCG's cooldown pattern comes *before* the parser. The retailer name is then threaded through the nine places it is hardcoded.

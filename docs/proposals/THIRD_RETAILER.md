@@ -135,6 +135,89 @@ it becomes the *easiest* of the four, like PCCG's Algolia) or a headless
 browser (worst case — a new heavyweight dependency this repo does not have).
 **Worth 30 minutes with devtools open on the network tab before committing.**
 
+## 31-Aug-2026: both candidates re-probed, and both assessments were wrong
+
+The 30-Aug spike got Mwave and Umart backwards in opposite directions. Neither
+conclusion survives contact with the actual sites.
+
+### Mwave is viable -- but not the way the plan describes
+
+The plan assumed category pages plus a polite page delay. Both are wrong:
+
+- `/graphics-cards` is a **curated landing page**: exactly 31 cards, and **no
+  pagination links at all**. `?page=N` is ignored (pages 1-5 returned byte-identical
+  responses), and so is `?cnt=500`.
+- The real listing endpoint is **`/searchresult`**, which takes a page size and an
+  offset and is fully server-rendered:
+
+  ```
+  /searchresult?w=graphics+card&cnt=100&srt=<offset>&isort=score&view=grid
+                &af=categoryPath%3AGraphics+Card
+  ```
+
+  One request returns **100 products** (`cnt` caps at 100 -- asking for 200 still
+  yields 100), and the page states the total: **278 Products** in Graphics Card.
+  Paging is by `srt=` offset, not a page number.
+- Each card carries everything the schema needs: name, `.SalesPrice`, stock, the
+  product URL, and a **stable SKU** (`AC84825`, also the URL suffix) -- so listings
+  can be keyed by SKU rather than by slug, as the constraints require.
+
+**So a daily run is ~3 requests for GPUs and ~2 for CPUs, not 20.** That lands
+right on the measured WAF allowance of ~5 requests per cold period, which is the
+catch: there is no headroom for a retry, and a single failed fetch cannot simply
+be re-attempted inside the run. A run should fetch, and on a challenge abandon
+the day rather than retry -- the cooldown pattern PCCG already uses.
+
+### Umart is server-rendered, and the URL scheme is now known
+
+The spike recorded Umart as "unassessed" after a guessed URL redirected to the
+homepage. That guess used the **wrong scheme entirely**: `_1350G.html` is the
+*goods* form. The real category URLs are path-based with a trailing numeric id,
+and they are listed on the homepage -- no guessing needed:
+
+| Category | URL | Pages |
+|---|---|---|
+| GPUs | `/pc-parts/computer-parts/graphics-cards-gpu-610` | 11 |
+| CPUs | `/pc-parts/computer-parts/cpu-processors-611` | 3 |
+
+20 products per page, `?page=N`, so **~14 requests a day** for both categories.
+`pagesize` is not a usable query parameter (the control is a `<span>` of UI
+state; `?pagesize=100` is ignored).
+
+The "client-rendered SPA" worry does **not** apply to Umart -- that was PLE. Each
+`.goods-item` card is in the HTML with name, brand, `.goods-price`, stock text,
+and a product URL whose numeric suffix is the SKU:
+
+```
+Asus Dual GeForce RTX 5060 8G OC   $ 579.00   In Stock   sku 95655
+Asus Dual Radeon RX 9060 XT 16G    $ 749.00   In Stock   sku 90401
+```
+
+*(A caution for whoever implements it: the price renders as `$&nbsp;579.00`, so a
+naive `\$[\d,]+` regex over the raw HTML finds **nothing** and the page looks
+client-rendered. It is not -- parse it with BeautifulSoup, which decodes the
+entity. This cost time twice, once in the 30-Aug spike and once on 31-Aug.)*
+
+Umart has **no WAF challenge**, and `robots.txt` permits product and category
+paths. So 14 plain requests a day carry none of Mwave's fragility.
+
+### Which to build first
+
+|  | Mwave | Umart |
+|---|---|---|
+| Requests/day | ~5 | ~14 |
+| WAF | AWS WAF, ~5-request budget -- **no retry headroom** | none |
+| Schema `CHECK` | already listed -- **no migration** | **needs the table rebuild** |
+| Parsing | server-rendered, SKU present | server-rendered, SKU present |
+| Restores lost coverage | unknown | **yes** -- stocks RTX 3060, GT 710/730 and other parts that Scorptec and PCCG have sold out of |
+
+The trade is now explicit: **Mwave is cheaper to integrate but operationally
+fragile; Umart is operationally safe but costs the `CHECK`-constraint migration
+up front.** Umart is also the one that answers the coverage problem found the
+same day -- 42 of 100 tracked products have no listing at Scorptec or PCCG
+because those two have sold out of the previous generation, and Umart still
+stocks a chunk of it.
+
 ## Suggested order
 
 0. **Measure the WAF first.** Before any code: confirm a polite, daily-cadence

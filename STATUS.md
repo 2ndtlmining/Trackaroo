@@ -14,6 +14,46 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-31 (evening)** - **Mwave and Umart both re-probed. Both earlier
+  assessments were wrong, in opposite directions, and both retailers are now
+  viable.**
+  **Mwave is not blocked - the plan was just aimed at the wrong URL.**
+  `/graphics-cards` is a *curated landing page*: 31 cards, no pagination links,
+  and `?page=N` and `?cnt=500` are both ignored (pages 1-5 came back
+  byte-identical). The real endpoint is **`/searchresult`**, which is fully
+  server-rendered and takes a page size and an offset:
+  `?w=graphics+card&cnt=100&srt=<offset>&af=categoryPath%3AGraphics+Card`.
+  One request returns **100 products**, and the page states the total: **278**
+  in Graphics Card. Each card has name, `.SalesPrice`, stock, URL and a **stable
+  SKU** (`AC84825`). So a daily run is **~3 requests for GPUs and ~2 for CPUs,
+  not 20** - which lands exactly on the measured 5-request WAF allowance. That is
+  the real catch: viable, but with **no headroom for a retry**, so a challenged
+  fetch must abandon the day rather than retry inside the run.
+  **Umart is server-rendered and the URL scheme is now known.** The 30-Aug spike
+  filed it "unassessed" after a guessed URL bounced to the homepage - the guess
+  used the *goods* form (`_1350G.html`) where categories are path-based with a
+  trailing id, and the real ones are simply **listed on the homepage**:
+  `/pc-parts/computer-parts/graphics-cards-gpu-610` (11 pages) and
+  `/cpu-processors-611` (3 pages), 20 per page, so **~14 requests a day**. No WAF,
+  permissive `robots.txt`. Each `.goods-item` carries name, brand,
+  `.goods-price`, stock and a numeric SKU from the URL suffix.
+  **A trap that cost time twice** and is now written into the proposal: Umart
+  renders prices as `$&nbsp;579.00`, so a `\$[\d,]+` regex over the raw HTML
+  matches **nothing** and the page reads as a client-rendered SPA. It is not -
+  BeautifulSoup decodes the entity and the grid is all there. The genuine SPA
+  among the candidates is PLE, not Umart.
+  **The choice is now an explicit trade**, written up in `THIRD_RETAILER.md`:
+  Mwave is cheaper to integrate (already in the schema `CHECK`, ~5 requests) but
+  operationally fragile; Umart is operationally safe but costs the
+  `CHECK`-constraint table rebuild up front. **Umart is also the one that answers
+  the coverage problem found earlier the same day** - it still stocks RTX 3060,
+  GT 710/730 and other parts that Scorptec and PCCG have sold out of, which is
+  exactly why 42 of 100 tracked products have no listing.
+  The Mwave plan is marked **superseded in part**: its Tasks 2-4 target the wrong
+  URL and Task 3's premise (that politeness is spacing) is disproved. Task 1's
+  fixture approach, the SKU-keyed rule and Task 5's nine hardcoded places stand.
+  No scraper code written; no decision taken on which to build.
+
 - **2026-08-31 (later)** - **Watchlist hygiene: there were no matching failures
   to fix. The data was right and the label was wrong.**
   The 30-Aug write-up split the no-listing products into three kinds - cards
