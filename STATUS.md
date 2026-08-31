@@ -123,7 +123,12 @@ backup integrity.
   test that was confirmed to **fail** against the old implementation.
   **31-Aug daily run recovered natively** (Docker is not running on this
   machine, so the scheduled run had not fired): **440 snapshots**, 0 ingest
-  errors, backup written. A real gap remains in the record - **no snapshots
+  errors, backup written. **Note for anyone picking this up cold:** prod runs on
+  a *separate host* which keeps its own DB, and that DB is current - so this
+  recovery, and every figure quoted in this entry, describes the **local working
+  copy**, not prod. Earlier entries (28-Aug, 30-Aug) describe recovering missed
+  runs "on this machine" as though the repo held the live data; that has not
+  been true since prod moved hosts. A real gap remains in the record - **no snapshots
   exist for 2026-08-29**, which the `missing_days` check reported.
   Regression green: pytest **663**, vitest **393**, e2e **68**, svelte-check 0
   errors (`web/` untouched since that run).
