@@ -51,16 +51,18 @@ class TestLoadWatchlist:
     """Test watchlist CSV loading."""
 
     def test_loads_all_products(self):
-        # 99 since RX 9070 XTX was retired on 30-Aug-2026 (see
-        # migrate.RETIRED_PRODUCTS). These counts are a guard against the
-        # watchlist being truncated or corrupted, so update them deliberately.
+        # 99 after RX 9070 XTX was retired on 30-Aug-2026 (see
+        # migrate.RETIRED_PRODUCTS), then 100 when Core i9-14900 was added on
+        # 31-Aug: PCCG stocks the non-F/non-K part and it was absent from the
+        # watchlist entirely. These counts are a guard against the watchlist
+        # being truncated or corrupted, so update them deliberately.
         products = load_watchlist(WATCHLIST_PATH)
-        assert len(products) == 99
+        assert len(products) == 100
 
     def test_cpu_count(self):
         products = load_watchlist(WATCHLIST_PATH)
         cpus = [p for p in products if p["category"] == "cpu"]
-        assert len(cpus) == 53
+        assert len(cpus) == 54
 
     def test_gpu_count(self):
         products = load_watchlist(WATCHLIST_PATH)

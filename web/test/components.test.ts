@@ -1054,6 +1054,7 @@ describe('CategorySection', () => {
 		title: 'GPUs',
 		href: '/products?category=gpu',
 		trackedCount: 47,
+		availableCount: 23,
 		cheapestPrice: 329,
 		deals: [],
 		drops: [],
@@ -1072,6 +1073,16 @@ describe('CategorySection', () => {
 		const html = renderComponent(CategorySection, base);
 		expect(html).toContain('Nothing below its recent average today.');
 		expect(html).toContain('No significant price moves in the last 7 days.');
+	});
+
+	it('says how many of the tracked products can actually be bought', () => {
+		// "47 tracked" counted the watchlist and presented it as coverage: on
+		// 31-Aug only 23 of those 47 GPUs had a listing at any retailer, the rest
+		// being end-of-life parts that have aged out of both catalogues.
+		const html = renderComponent(CategorySection, base);
+		expect(html).toContain('23');
+		expect(html).toContain('47');
+		expect(html.replace(/<[^>]*>/g, '')).toMatch(/23\s*of\s*47\s*tracked/);
 	});
 
 	it('omits the cheapest figure when there is no in-stock price', () => {

@@ -27,6 +27,7 @@
 				title={section.title}
 				href={section.href}
 				trackedCount={section.trackedCount}
+				availableCount={section.availableCount}
 				cheapestPrice={section.cheapestPrice}
 				deals={section.deals}
 				drops={section.drops}

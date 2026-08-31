@@ -1,4 +1,5 @@
 import {
+	getAvailableCounts,
 	getCategoryCounts,
 	getCheapestPerModel,
 	getDealCandidates,
@@ -27,6 +28,7 @@ export function load() {
 	const db = getDb();
 	const stats = getHeaderStats(db);
 	const counts = getCategoryCounts(db);
+	const available = getAvailableCounts(db);
 	// Same source as /deals, so the two surfaces can never disagree about
 	// what counts as a deal or how deep it is.
 	const allDeals = belowAverage(toDeals(getDealCandidates(db)));
@@ -45,6 +47,7 @@ export function load() {
 			title,
 			href: `/products?category=${category}`,
 			trackedCount: counts.get(category) ?? 0,
+			availableCount: available.get(category) ?? 0,
 			cheapestPrice: cheapest.reduce<number | null>(
 				(min, c) => (min === null || c.price < min ? c.price : min),
 				null

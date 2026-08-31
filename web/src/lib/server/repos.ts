@@ -435,6 +435,31 @@ export function getCategoryCounts(db: DB): Map<Category, number> {
 	return new Map(rows.map((r) => [r.category, r.n]));
 }
 
+/**
+ * Tracked products that have at least one active listing -- i.e. the ones you
+ * can actually buy right now.
+ *
+ * `getCategoryCounts` counts the watchlist, which is a statement of intent. On
+ * 31-Aug-2026 that was 99 products, 42 of which had no active listing at any
+ * retailer, so the dashboard's "47 tracked" GPUs described 23 buyable cards.
+ * The gap is not a data fault: those 42 are end-of-life parts (RTX 30/40
+ * series, RX 6000/7000, Intel 13th gen) that both retailers have sold out of,
+ * verified against their live catalogues. Reporting both numbers is what makes
+ * the headline honest, and it self-corrects if anything is restocked.
+ */
+export function getAvailableCounts(db: DB): Map<Category, number> {
+	const rows = db
+		.prepare(
+			`SELECT p.category AS category, COUNT(DISTINCT p.id) AS n
+			 FROM products p
+			 JOIN retailer_listings l ON l.product_id = p.id
+			 WHERE p.tracked = 1 AND l.status = 'active'
+			 GROUP BY p.category`
+		)
+		.all() as Array<{ category: Category; n: number }>;
+	return new Map(rows.map((r) => [r.category, r.n]));
+}
+
 export function getLatestListings(
 	db: DB,
 	filters: ListingFilters = {},

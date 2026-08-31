@@ -14,6 +14,41 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-31 (later)** - **Watchlist hygiene: there were no matching failures
+  to fix. The data was right and the label was wrong.**
+  The 30-Aug write-up split the no-listing products into three kinds - cards
+  that do not exist, cards not sold in AU, and **matching failures**. Checking
+  both retailers' live catalogues directly (PCCG via one Algolia query per
+  category, Scorptec via its category pages) shows the third kind is **empty**.
+  All 42 are genuinely absent from both catalogues today. Every apparent
+  near-miss is a *variant* SKU the matcher correctly distinguishes - Scorptec's
+  `rtx 4070 ti`, `rtx 3080 ti`, `rtx 3090 ti`, `i9 14900k`, `ryzen 9 7900x` -
+  and each maps to its own tracked entry that **does** have a live listing.
+  **The dominant kind is a fourth one nobody named: end-of-life.** RTX 30/40
+  series, RX 6000/7000, Intel 13th gen - sold here once, now aged out of the
+  channel as the 50-series and Ryzen 9000 took over. Four were caught in the
+  act: RX 6800, RX 7900 XT, RX 7900 XTX and RTX 4060 Ti all went `delisted`
+  between 10 and 27-Aug. Arc A770 is the genuine "not sold in AU" case -
+  Scorptec stocks A310/A380/B580 instead.
+  So the fix is **not** data cleaning. `getCategoryCounts` counts the watchlist,
+  which is a statement of *intent*, and the dashboard presented it as
+  *coverage*. New `getAvailableCounts` counts tracked products with at least one
+  active listing, and `CategorySection` now reads **"23 of 46 tracked"** for
+  GPUs and **"34 of 54"** for CPUs. Nothing is untracked, no per-product
+  judgement is needed, and it self-corrects if anything is restocked.
+  **A gap in the other direction:** PCCG stocks `Intel Core i9 14900` (the
+  non-F/non-K part) and it was missing from `watchlist.csv` entirely. Added and
+  seeded; the watchlist is 100 products (54 CPU / 46 GPU).
+  **Checked and cleared:** in isolation the Scorptec per-entry matcher looks
+  over-permissive - `core i9 14900kf` satisfies the `14900k` and `14900`
+  predicates too. It is not a bug. `scrape_scorptec` sorts the watchlist by
+  primary-term **length descending** and breaks on first match, so the most
+  specific entry always wins; the new `Core i9-14900` has the shortest term and
+  is therefore tested last. Live data confirms it: the KF listing sits under
+  `Core i9-14900KF`, the K under `Core i9-14900K`.
+  Regression green: pytest **663**, vitest **397**, e2e **68**, svelte-check 0
+  errors.
+
 - **2026-08-31** - **Mwave probed and parked; price-anomaly detection fixed,
   and the old check turned out to be worse than "slightly damped".**
   **Mwave: NO-GO at the plan's 5s cadence - but NOT a NO-GO on Mwave**, written
@@ -773,7 +808,7 @@ Current, as of 31-Aug-2026:
 | Suite | Tests | Command (from) |
 |---|---|---|
 | Backend (pytest) | **663** | `python -m pytest -q` (repo root) |
-| Frontend unit (vitest) | **393** | `npm test` (`web/`) |
+| Frontend unit (vitest) | **397** | `npm test` (`web/`) |
 | Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
 

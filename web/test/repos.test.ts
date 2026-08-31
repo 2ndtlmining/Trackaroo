@@ -7,6 +7,7 @@ import {
 	deleteAlert,
 	deriveListingBrand,
 	getCheapestPerModel,
+	getAvailableCounts,
 	getCategoryCounts,
 	getComparisonData,
 	getDealCandidates,
@@ -1124,5 +1125,69 @@ describe('getCategoryCounts', () => {
 	it('counts tracked products per category', () => {
 		const counts = getCategoryCounts(db);
 		expect((counts.get('gpu') ?? 0) + (counts.get('cpu') ?? 0)).toBeGreaterThan(0);
+	});
+});
+
+// The real 31-Aug shape: 42 of 99 tracked products had no active listing at any
+// retailer, so the dashboard's "47 tracked" for GPUs described 23 cards you
+// could actually buy. Four products here stand for the four cases that matter.
+function createCoverageDb(): { db: DB; close: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-coverage-'));
+	const file = path.join(dir, 'coverage.db');
+	const d = openDatabase(file, { readonly: false, fileMustExist: false });
+	d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+	const addProduct = d.prepare(
+		'INSERT INTO products (category, brand, model, tracked) VALUES (?, ?, ?, ?)'
+	);
+	addProduct.run('gpu', 'NVIDIA', 'RTX 5070', 1); // 1: stocked
+	addProduct.run('gpu', 'AMD', 'RX 7900 XTX', 1); // 2: delisted only
+	addProduct.run('gpu', 'NVIDIA', 'RTX 4090', 1); // 3: never listed anywhere
+	addProduct.run('gpu', 'Intel', 'Arc A770', 0); // 4: stocked but not tracked
+	const addListing = d.prepare(
+		'INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (?, ?, ?, ?)'
+	);
+	addListing.run(1, 'scorptec', 'https://x/1', 'active');
+	addListing.run(2, 'scorptec', 'https://x/2', 'delisted');
+	addListing.run(4, 'scorptec', 'https://x/4', 'active');
+	return {
+		db: d,
+		close: () => {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	};
+}
+
+describe('getAvailableCounts', () => {
+	it('counts only tracked products you can actually buy', () => {
+		const { db: d, close } = createCoverageDb();
+		try {
+			expect(getCategoryCounts(d).get('gpu')).toBe(3);
+			expect(getAvailableCounts(d).get('gpu')).toBe(1);
+		} finally {
+			close();
+		}
+	});
+
+	it('does not count a product whose only listing is delisted', () => {
+		const { db: d, close } = createCoverageDb();
+		try {
+			const rows = d
+				.prepare(
+					"SELECT p.model FROM products p JOIN retailer_listings l ON l.product_id = p.id WHERE l.status = 'active' AND p.tracked = 1"
+				)
+				.all() as Array<{ model: string }>;
+			expect(rows.map((r) => r.model)).toEqual(['RTX 5070']);
+		} finally {
+			close();
+		}
+	});
+
+	it('never exceeds the tracked count on real data', () => {
+		const tracked = getCategoryCounts(db);
+		const available = getAvailableCounts(db);
+		for (const category of ['gpu', 'cpu'] as const) {
+			expect(available.get(category) ?? 0).toBeLessThanOrEqual(tracked.get(category) ?? 0);
+		}
 	});
 });

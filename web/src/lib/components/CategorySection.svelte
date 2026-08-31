@@ -9,6 +9,7 @@
 		title,
 		href,
 		trackedCount,
+		availableCount,
 		cheapestPrice,
 		deals,
 		drops,
@@ -17,6 +18,7 @@
 		title: string;
 		href: string;
 		trackedCount: number;
+		availableCount: number;
 		cheapestPrice: number | null;
 		deals: Deal[];
 		drops: Mover[];
@@ -30,6 +32,7 @@
 	>
 		<h2 class="text-sm font-semibold text-text">{title}</h2>
 		<p class="text-xs text-text-muted">
+			<span class="num">{availableCount}</span> of
 			<span class="num">{trackedCount}</span> tracked
 			{#if cheapestPrice !== null}
 				· cheapest <span class="num">{formatAud(cheapestPrice)}</span>
