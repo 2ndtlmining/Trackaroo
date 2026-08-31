@@ -220,6 +220,24 @@ def _find_listing_by_key(
     return None
 
 
+def _snapshot_is_current(
+    conn: sqlite3.Connection, listing_id: int, snapshot_date: Optional[str]
+) -> bool:
+    """True when `snapshot_date` is at least as new as this listing's newest data.
+
+    An unknown date is treated as current, so callers that do not pass one keep
+    the previous behaviour rather than silently never reactivating.
+    """
+    if snapshot_date is None:
+        return True
+    row = conn.execute(
+        "SELECT MAX(snapshot_date) FROM price_snapshots WHERE retailer_listing_id = ?",
+        (listing_id,),
+    ).fetchone()
+    latest = row[0] if row else None
+    return latest is None or snapshot_date >= latest
+
+
 def find_or_create_listing(
     conn: sqlite3.Connection,
     product_id: int,
@@ -227,6 +245,7 @@ def find_or_create_listing(
     url: str,
     variant_name: Optional[str] = None,
     dry_run: bool = False,
+    snapshot_date: Optional[str] = None,
 ) -> Optional[int]:
     """Find existing retailer listing or create new one.
 
@@ -263,9 +282,17 @@ def find_or_create_listing(
                     "UPDATE retailer_listings SET variant_name = ? WHERE id = ?",
                     (variant_name, row[0]),
                 )
-        # We're scraping this exact URL live right now — if it had been retired
-        # (e.g. a delisted listing that was relisted), reactivate it.
-        if not dry_run:
+        # This URL appears in the snapshot being ingested, so if the listing had
+        # been retired (a delisted listing that was relisted) bring it back --
+        # but only when the snapshot is not older than what we already hold.
+        #
+        # Without that guard an old file undoes a delisting, and a full
+        # re-ingest is a supported operation (CLAUDE.md: "the DB must be
+        # rebuildable from them via ingest.py"). Measured on 31-Aug-2026: a bare
+        # `python ingest.py` over the whole history flipped all 12 delisted and
+        # 11 stale Scorptec listings back to active, because every one of them
+        # still appears in the JSON from the days before it was delisted.
+        if not dry_run and _snapshot_is_current(conn, row[0], snapshot_date):
             conn.execute(
                 "UPDATE retailer_listings SET status = 'active' WHERE id = ? AND status != 'active'",
                 (row[0],),
@@ -351,7 +378,8 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
             # Step 2: Find or create retailer listing (with variant name)
             variant_name = product_data.get("scraped_name", "")
             listing_id = find_or_create_listing(conn, product_id, retailer, url,
-                                                variant_name=variant_name, dry_run=dry_run)
+                                                variant_name=variant_name, dry_run=dry_run,
+                                                snapshot_date=snapshot_date)
             if listing_id is None:
                 stats["skipped"] += 1
                 continue

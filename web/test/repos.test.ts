@@ -26,7 +26,15 @@ import {
 	upsertAlert
 } from '../src/lib/server/repos';
 import { MIN_HISTORY_POINTS } from '../src/lib/constants';
+import { RETAILER_OPTIONS } from '../src/lib/filters';
 import { createSeededDb, DATA_DIR, SCHEMA_PATH, parseDateFromFilename, type SeededDb } from './helpers/seed';
+
+// Every retailer the display layer declares. Asserting against this rather
+// than a hardcoded pair means adding a retailer to the pipeline does not break
+// unrelated tests -- which is exactly what happened when umart landed: three
+// specs failed on /^(scorptec|pccg)$/ because the seeded DB is built from the
+// real data/ snapshots.
+const KNOWN_RETAILERS = RETAILER_OPTIONS.map((o) => o.value);
 
 let seeded: SeededDb;
 let db: DB;
@@ -48,7 +56,7 @@ describe('getLatestListings', () => {
 			expect(row.latestPrice).toBeGreaterThan(0);
 			expect(row.latestDate).toBeTruthy();
 			expect(row.category).toMatch(/^(cpu|gpu)$/);
-			expect(row.retailer).toMatch(/^(scorptec|pccg)$/);
+			expect(KNOWN_RETAILERS).toContain(row.retailer);
 			expect(row.listingUrl).toMatch(/^https/);
 		}
 	});
@@ -212,7 +220,7 @@ describe('getCheapestPerModel', () => {
 			for (const row of rows) {
 				expect(row.snapshotDate).toBe(latest.d);
 				expect(row.price).toBeGreaterThan(0);
-				expect(row.retailer).toMatch(/^(scorptec|pccg)$/);
+				expect(KNOWN_RETAILERS).toContain(row.retailer);
 			}
 		}
 	});
@@ -1110,7 +1118,7 @@ describe('getRetailerFreshness', () => {
 		const rows = getRetailerFreshness(db);
 		expect(rows.length).toBeGreaterThan(0);
 		for (const row of rows) {
-			expect(['scorptec', 'pccg']).toContain(row.retailer);
+			expect(KNOWN_RETAILERS).toContain(row.retailer);
 			expect(row.latestSnapshotDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 		}
 	});

@@ -148,3 +148,75 @@ class TestDailyRunnerRunsUmart:
             label, module = run_daily.SCRAPERS[retailer]
             assert label
             importlib.import_module(module)
+
+
+class TestOldSnapshotsDoNotResurrectListings:
+    """A stale JSON file must not undo a delisting.
+
+    `find_or_create_listing` reactivates a listing whose exact URL turns up in
+    a snapshot, on the reasoning that "we're scraping this URL live right now".
+    That holds for today's file and not for a three-week-old one -- and
+    CLAUDE.md makes a full re-ingest a *supported* operation ("the DB must be
+    rebuildable from them via ingest.py"), so the unguarded version silently
+    reverses every delisting the moment anyone rebuilds.
+
+    Observed on 31-Aug-2026: a bare `python ingest.py` over the whole history
+    flipped all 12 delisted and 11 stale Scorptec listings back to active.
+    """
+
+    def _db(self, tmp_path):
+        import ingest
+
+        db = tmp_path / "resurrect.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        conn.execute(
+            "INSERT INTO products (category, brand, model, tracked) "
+            "VALUES ('gpu', 'AMD', 'Radeon RX 6800', 1)"
+        )
+        conn.execute(
+            "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+            "VALUES (1, 'scorptec', 'https://scorptec/6800', 'delisted')"
+        )
+        # It last had data on the 30th; the delisting happened after that.
+        conn.execute(
+            "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+            "VALUES (1, '2026-08-30', 799.0, 'in_stock')"
+        )
+        conn.commit()
+        return conn
+
+    def _status(self, conn):
+        return conn.execute("SELECT status FROM retailer_listings WHERE id = 1").fetchone()[0]
+
+    def test_an_older_snapshot_leaves_a_delisted_listing_alone(self, tmp_path):
+        import ingest
+
+        conn = self._db(tmp_path)
+        ingest.find_or_create_listing(
+            conn, 1, "scorptec", "https://scorptec/6800", snapshot_date="2026-08-20"
+        )
+        assert self._status(conn) == "delisted"
+        conn.close()
+
+    def test_todays_snapshot_still_relists_it(self, tmp_path):
+        """A genuinely relisted product has to come back."""
+        import ingest
+
+        conn = self._db(tmp_path)
+        ingest.find_or_create_listing(
+            conn, 1, "scorptec", "https://scorptec/6800", snapshot_date="2026-08-31"
+        )
+        assert self._status(conn) == "active"
+        conn.close()
+
+    def test_the_same_days_snapshot_relists_it(self, tmp_path):
+        """Re-ingesting the newest file must be idempotent, not a downgrade."""
+        import ingest
+
+        conn = self._db(tmp_path)
+        ingest.find_or_create_listing(
+            conn, 1, "scorptec", "https://scorptec/6800", snapshot_date="2026-08-30"
+        )
+        assert self._status(conn) == "active"
+        conn.close()
