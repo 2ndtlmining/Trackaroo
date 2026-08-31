@@ -14,6 +14,56 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-31 (night)** - **Umart is live: third retailer scraping, ingesting
+  and wired end to end. Plus a data-integrity bug found the hard way.**
+  **The `CHECK`-constraint migration is done** - the thing THIRD_RETAILER.md
+  called "the sharp edge". Widened to the six slugs `types.ts:7` already
+  declares rather than moving to a `retailers` lookup table: the table's selling
+  point was that a new retailer becomes a row insert, but that is not true end
+  to end, since seven other files enumerate retailers in code as well. The
+  rebuild derives its DDL from the live table (a hardcoded column list would rot
+  the first time a column is added), turns on `legacy_alter_table` for the
+  rename (modern SQLite validates triggers during RENAME, and the trigger
+  references a table that does not exist between DROP and RENAME), and runs
+  `foreign_key_check` before COMMIT so a rebuild that orphaned snapshots rolls
+  back. Applied behind a fresh backup: 478 listings and 101 products unchanged,
+  zero FK violations, both indexes restored.
+  **`scraper/umart.py` worked on its first live run**: 59 CPUs over 3 pages,
+  217 GPUs over 11, **14 requests in ~36 seconds**, 182 matched listings, **180
+  rows ingested with zero errors**. Both discovery findings earned their keep -
+  the category URLs come from Umart's own homepage rather than a guess, and
+  prices are read from the microdata `content` attribute, so the `$&nbsp;`
+  entity that twice made this look like an SPA never comes into it. `data-id`
+  is the SKU and `link[itemprop=availability]` is the stock state, so nothing is
+  parsed out of rendered text at all.
+  **The wiring is now one list, not nine sites.** `config.ACTIVE_RETAILERS`
+  replaces the hardcoded pairs in ingest, health_checks (three), check_staleness,
+  query and run_daily, whose per-retailer flags are generated from it. Retailer
+  four is a line in that tuple. It is deliberately narrower than
+  `migrate.PERMITTED_RETAILERS` (what the DB accepts), so health checks do not
+  alarm about retailers with no scraper. Six existing tests failed on the change,
+  every one because a fixture assumed exactly two retailers - which is the wiring
+  working.
+  **Coverage, which is why Umart was picked over Mwave:** five tracked products
+  that had no listing at either existing retailer now have one - Core i5-13400F,
+  Core i9-13900F, Ryzen 9 7900, GeForce RTX 3070, Radeon RX 6900 XT. GPUs go
+  **23 -> 25 of 46** available, CPUs **34 -> 37 of 54**.
+  **The bug, found by causing it.** A bare `python ingest.py` over the whole
+  history **flipped all 12 delisted and 11 stale Scorptec listings back to
+  active** - `find_or_create_listing` reactivated any listing whose URL appeared
+  in the file being ingested, and every delisted listing still appears in the
+  JSON from before it was delisted. That silently reversed work
+  `check_delisted.py` had done by confirming 404s. The local DB was restored
+  from the backup taken minutes earlier, and reactivation is now gated on the
+  snapshot being at least as new as the listing's newest data. **This was a real
+  defect, not just a misuse:** CLAUDE.md makes a full re-ingest a supported
+  operation. `run_daily` was never exposed - it uses `ingest_today()`.
+  **Note for later:** Umart's grid lists only purchasable items (217 GPUs, all
+  in stock), so a listing vanishing there means out of stock, **not** delisted -
+  which matters if `check_delisted.py` is ever extended to it.
+  Regression green: pytest **709**, vitest **397**, e2e **68**, svelte-check 0
+  errors.
+
 - **2026-08-31 (evening)** - **Mwave and Umart both re-probed. Both earlier
   assessments were wrong, in opposite directions, and both retailers are now
   viable.**
@@ -861,7 +911,7 @@ Current, as of 31-Aug-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **663** | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **709** | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **397** | `npm test` (`web/`) |
 | Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
