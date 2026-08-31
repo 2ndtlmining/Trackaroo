@@ -382,6 +382,7 @@ Trackaroo/
 ├── db/
 │   ├── schema.sql      # SQLite schema with triggers
 │   ├── watchlist.csv   # 100-product watchlist (source of truth)
+│   │                   #   adding one? docs/ARCHITECTURE.md Part 2 §7
 │   ├── watchlist.py    # shared watchlist loader (parse_spec, load_watchlist)
 │   └── trackaroo.db    # SQLite database (generated)
 │

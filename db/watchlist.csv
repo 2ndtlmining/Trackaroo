@@ -6,7 +6,8 @@
 #   brand          — AMD, Intel, NVIDIA
 #   model          — canonical product name (used in DB as 'model')
 #   spec           — cores (CPU) or vram_gb label (GPU), e.g. "16c" or "16GB"
-#   gen_tier       — current / current-1 / current-2  (per SCOPE_RULES.md)
+#   gen_tier       — current / current-1 / current-2
+#                    (see docs/ARCHITECTURE.md, Part 2 — Product scope rules)
 #   search_aliases — pipe-separated list of keywords the scraper uses to find this
 #                    product on retailer pages. Include brand, model number, and any
 #                    common alternate spellings a retailer might use.
@@ -14,7 +15,11 @@
 # The seed script reads this file and populates the products table. If a product
 # already exists it is NOT overwritten — only new rows are inserted.
 #
-# Last verified against SCOPE_RULES.md: 2026-08-09
+# Adding a product? See docs/ARCHITECTURE.md, Part 2 §7 — it covers the alias
+# ordering rule and when spec data turns up. A malformed row is skipped with an
+# error naming the line and field; it no longer stops the pipeline.
+#
+# Last verified against Part 2 scope rules: 2026-08-09
 
 category,brand,model,spec,gen_tier,search_aliases
 cpu,AMD,Ryzen 5 5500,6c,current-2,"ryzen 5 5500|r5 5500|5500 amd"

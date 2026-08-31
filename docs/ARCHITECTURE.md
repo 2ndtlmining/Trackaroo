@@ -251,6 +251,78 @@ Intel's discrete GPU line is younger and has had far fewer generations than AMD/
 - Dropping a generation from scope means: stop taking new snapshots for those products going forward. Existing historical price data for dropped products should be retained, not deleted, in case it's useful later — just excluded from the active watchlist / "biggest movers" views.
 - Workstation/server CPUs (Threadripper, Xeon, EPYC) and professional GPUs (RTX PRO/Ada, Radeon Pro) remain **out of scope entirely**, per §3 of the main spec — this file only governs the consumer desktop CPU/GPU lines listed above.
 
+### 7. Adding or removing a product — the actual steps
+
+Part 2 above says *what* belongs in the watchlist. This section is *how*, because
+three things about the process are not obvious from the CSV.
+
+**1. Edit `db/watchlist.csv`.** One row per product:
+
+```
+category,brand,model,spec,gen_tier,search_aliases
+gpu,NVIDIA,GeForce RTX 5070,12GB,current,"rtx 5070|5070 nvidia|nvidia rtx 5070"
+```
+
+`spec` is cores for a CPU (`16c`) or VRAM for a GPU (`16GB`). Case and spacing
+are tolerated — `16c`, `16C` and ` 16 c ` all work — but the unit is required,
+because a bare `12` is ambiguous between cores and gigabytes and is rejected
+rather than guessed.
+
+**2. Mind the alias ordering — this is the one that bites.** `scrape_scorptec`
+and `scrape_umart` test watchlist entries by **primary search term length,
+descending**, and stop at the first match, so the most specific entry wins. That
+only holds while a base model's *first* alias is shorter than its variants':
+
+| Model | First alias | Length |
+|---|---|---|
+| `GeForce RTX 5070 Ti` | `rtx 5070 ti` | 11 |
+| `GeForce RTX 5070` | `rtx 5070` | 8 |
+
+Give the base model a first alias of `nvidia geforce rtx 5070` (23) and it
+outranks the Ti, silently claiming every Ti listing — the prices look plausible
+and nothing errors. `unit_testing/test_watchlist_validation.py` pins this: any
+base model whose primary alias is not shorter than a more specific sibling's
+fails the suite.
+
+**3. Run the seeder.** `python seed.py` inserts new rows; existing products are
+never overwritten, so re-running is safe.
+
+```bash
+python seed.py            # Inserted: 1, Skipped (already exists): 99
+```
+
+A malformed row is **skipped, not fatal** — it is reported with its line number
+and field (`watchlist row 21 [spec]: cannot read VRAM from '16gib'`) and the
+rest of the file loads. That matters because `deploy/entrypoint-single.sh` runs
+`seed.py` under `set -e`: before 31-Aug-2026 a single typo stopped the container
+from booting. The cost is now one missing product, which the log states plainly.
+
+**4. Specs arrive on the next weekly sync, not immediately.** `sync_specs.py`
+runs in-container on `SPEC_SYNC_DOW` at `SPEC_SYNC_HOUR` (default Sunday 03:00),
+so a product added on Monday shows no specs on its product page for six days.
+That is expected, not a fault. To pull them in immediately:
+
+```bash
+python sync_specs.py --category cpu --dry-run   # check it matches first
+python sync_specs.py --category cpu
+```
+
+Matching is deliberately conservative: anything not confidently matched is
+reported and left alone rather than guessed. Read the summary — `unmatched`
+means *a gap worth investigating*, while products the upstream source genuinely
+does not carry are listed separately under "no upstream specs (known)" and
+tracked in `sync_specs.SPECS_UNAVAILABLE_UPSTREAM` with a reason and a date.
+
+**5. Verify.** `check_spec_coverage` warns below `TRACKAROO_SPEC_COVERAGE_MIN_PCT`
+(default 80%), and the daily run reports per-retailer match counts. A new product
+that no retailer stocks is normal — it will show on `/products` with a
+"never listed" marker and count against available coverage on the dashboard,
+which is the honest reading rather than a bug.
+
+**Removing** a product: delete its row *and* add the model to
+`migrate.RETIRED_PRODUCTS`. Deleting the row alone is not enough — `seed.py`
+only ever INSERTs, so an existing database keeps `tracked=1` forever. Never
+delete price history; retired products get `tracked=0`.
 ---
 
 ## Part 3 — Decision log

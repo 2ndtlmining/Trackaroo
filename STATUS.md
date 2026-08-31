@@ -222,8 +222,10 @@ backup integrity.
   exist for 2026-08-29**, which the `missing_days` check reported.
   Regression green: pytest **663**, vitest **393**, e2e **68**, svelte-check 0
   errors (`web/` untouched since that run).
-  **Noted, not fixed:** `DECISIONS.md` does not exist, though this file's own
-  "How to update" section and the anomaly write-up both refer to it.
+  **Noted:** `DECISIONS.md` does not exist as a file. *(Corrected 31-Aug: it was
+  not lost -- it was merged verbatim into `docs/ARCHITECTURE.md` Part 3, along
+  with `SCOPE_RULES.md` as Part 2. The stale pointers to both have now been
+  repointed.)*
 
 - **2026-08-30 (later)** - **Watchlist hygiene started; anomaly-detection
   options written down.**
@@ -926,4 +928,4 @@ Backend suites added 23-Aug: `test_snapshot_io.py` (14),
 
 ## How to update this file
 
-Whoever (human or AI) makes progress on this project should update this file before ending their session: move completed items out of "Next concrete step" and into "What exists right now," add any newly settled decisions to the list above (with a corresponding entry in `DECISIONS.md` if it's a meaningful choice), and record any new open questions. This file is what lets the project be picked up cold — keep it honest and current rather than aspirational.
+Whoever (human or AI) makes progress on this project should update this file before ending their session: move completed items out of "Next concrete step" and into "What exists right now," add any newly settled decisions to the list above (with a corresponding entry in the decision log, `docs/ARCHITECTURE.md` Part 3, if it's a meaningful choice), and record any new open questions. This file is what lets the project be picked up cold — keep it honest and current rather than aspirational.

@@ -10,7 +10,7 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 | Doc | What's in it |
 |---|---|
 | [`README.md`](README.md) | Setup, commands, repo layout |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Spec (Part 1), watchlist scope rules (Part 2), decision log (Part 3) |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Spec (Part 1), watchlist scope rules + **how to add a product (Part 2 §7)**, decision log (Part 3) |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Running it — Docker and native |
 | [`STATUS.md`](STATUS.md) | Current state + changelog |
 | `docs/archive/` | Implemented/declined plans, kept for rationale |
@@ -18,11 +18,11 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 611 tests.
+**Backend** (repo root): `python -m pytest -q` — 743 tests.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 239 tests, ~5s)
+- **Unit tests**: `npm test` (Vitest, 397 tests, ~5s)
 - **Watch mode**: `npm run test:watch`
 - **E2E tests**: `npm run test:e2e` (Playwright, Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.

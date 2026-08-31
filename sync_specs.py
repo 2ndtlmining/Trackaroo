@@ -357,6 +357,35 @@ def parse_amd_record(html: str) -> Optional[Dict[str, Any]]:
     }
 
 
+# Watchlist products the upstream sources genuinely do not carry, with the
+# reason and the date it was checked. These are separated from the unmatched
+# report rather than suppressed: four permanent entries in that list train the
+# reader to skim it, which is how a *new* gap goes unnoticed.
+#
+# All four verified 31-Aug-2026: every amd.com URL form for them -- the
+# series path, /products/cpu/<slug>, and the numeric /product/<id> -- redirects
+# to the amd.com homepage. AMD has retired the pages, so no URL fix is possible.
+SPECS_UNAVAILABLE_UPSTREAM: Dict[str, str] = {
+    "Ryzen 5 5500": "amd.com product page retired (checked 31-Aug-2026)",
+    "Ryzen 5 5600": "amd.com product page retired (checked 31-Aug-2026)",
+    "Ryzen 7 5700X": "amd.com product page retired (checked 31-Aug-2026)",
+    "Ryzen 9 9900": "OEM part, never had an amd.com page (checked 31-Aug-2026)",
+}
+
+
+def record_unmatched(stats: Dict[str, Any], product: Dict[str, Any]) -> None:
+    """File a product that matched no spec record.
+
+    Products in SPECS_UNAVAILABLE_UPSTREAM go to ``known_missing`` instead, so
+    ``unmatched_products`` only ever contains gaps worth investigating.
+    """
+    entry = {"product_id": product["id"], "model": product["model"]}
+    if product["model"] in SPECS_UNAVAILABLE_UPSTREAM:
+        stats.setdefault("known_missing", []).append(entry)
+    else:
+        stats.setdefault("unmatched_products", []).append(entry)
+
+
 def amd_series_for(model: str) -> Optional[str]:
     """Map an AMD model to its amd.com series path segment (e.g. '9000-series')."""
     m = re.search(r"(\d{4})", model)
@@ -708,6 +737,7 @@ def sync_source(
         "matched_unchanged": 0,
         "conflicts": [],
         "unmatched_products": [],
+        "known_missing": [],
         "fetch_failed": fetch_failed or [],
     }
 
@@ -717,9 +747,7 @@ def sync_source(
         else:
             rec = match_cpu(product["model"], records)
         if rec is None:
-            stats["unmatched_products"].append(
-                {"product_id": product["id"], "model": product["model"]}
-            )
+            record_unmatched(stats, product)
             continue
 
         raw_json = json.dumps(rec["raw"], sort_keys=True, ensure_ascii=False)
@@ -854,6 +882,12 @@ def _log_summary(source_stats: List[Dict[str, Any]], failed_sources: List[Dict[s
                            c["model"], c["product_id"], c["source_record_key"])
         for u in st["unmatched_products"]:
             LOGGER.info("    unmatched: %s (product %d)", u["model"], u["product_id"])
+        for u in st.get("known_missing", []):
+            LOGGER.info(
+                "    no upstream specs (known): %s - %s",
+                u["model"],
+                SPECS_UNAVAILABLE_UPSTREAM.get(u["model"], ""),
+            )
     for f in failed_sources:
         LOGGER.error("  FAILED %-20s %s", f["source"], f["reason"])
 
