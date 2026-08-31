@@ -25,16 +25,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from config import DATA_DIR, DB_DATE_FORMAT, DB_PATH, FILE_DATE_FORMAT, SCHEMA_PATH, setup_logging
+from config import (
+    ACTIVE_RETAILERS,
+    DATA_DIR,
+    DB_DATE_FORMAT,
+    DB_PATH,
+    FILE_DATE_FORMAT,
+    SCHEMA_PATH,
+    setup_logging,
+)
 
 LOGGER = logging.getLogger(__name__)
 
 Stats = Dict[str, int]
 
-# Snapshot files follow '{cpu|gpu}_{scorptec|pccg}_{day}_{Month}_{year}.json'.
+# Snapshot files follow '{cpu|gpu}_{retailer}_{day}_{Month}_{year}.json', for
+# the retailers we actually scrape -- a file naming a retailer with no scraper
+# is malformed, not something to ingest.
 # data/ also holds non-snapshot JSON (spec_sync_report.json, pccg_cooldown.json,
 # *.backup*.json archives) — those must never be ingested.
-_SNAPSHOT_FILENAME_RE = re.compile(r"^(?:cpu|gpu)_(?:scorptec|pccg)_\d{1,2}_\w+_\d{4}\.json$")
+_SNAPSHOT_FILENAME_RE = re.compile(
+    r"^(?:cpu|gpu)_(?:" + "|".join(ACTIVE_RETAILERS) + r")_\d{1,2}_\w+_\d{4}\.json$"
+)
 
 
 def is_snapshot_file(filename: str) -> bool:
@@ -51,6 +63,9 @@ def is_snapshot_file(filename: str) -> bool:
 _LISTING_KEY_PATTERNS: Dict[str, str] = {
     "scorptec": r"/(\d{5,7})(?:-[^/]*)?$",
     "pccg": r"/products/(\d+)(?:/|$)",
+    # Umart product URLs end in the numeric id that the grid also exposes as
+    # `data-id`, e.g. /product/asus-dual-geforce-rtx-5060-...-95655
+    "umart": r"/product/.*-(\d+)$",
 }
 
 
@@ -58,7 +73,7 @@ def extract_listing_key(retailer: str, url: str) -> Optional[str]:
     """Extract a retailer's stable numeric listing key from a product URL.
 
     Args:
-        retailer: Retailer name ('scorptec'/'pccg').
+        retailer: Retailer name, e.g. 'scorptec', 'pccg' or 'umart'.
         url: Full listing URL.
 
     Returns:

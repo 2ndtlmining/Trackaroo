@@ -22,9 +22,10 @@ import subprocess
 import sys
 import time
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from config import (
+    ACTIVE_RETAILERS,
     BACKUP_KEEP,
     DATA_DIR,
     DB_DATE_FORMAT,
@@ -165,36 +166,63 @@ def notify_enabled(args: argparse.Namespace) -> bool:
     return not (args.dry_run or args.scrape_only or args.no_health or args.no_notify)
 
 
-def main(argv: Optional[List[str]] = None) -> None:
-    setup_logging()
+# Display label and module path per retailer, keyed by ACTIVE_RETAILERS. A
+# retailer added to that list without a scraper module raises a KeyError here
+# rather than being quietly skipped for a run.
+SCRAPERS: Dict[str, Tuple[str, str]] = {
+    "scorptec": ("Scorptec", "scraper.scorptec"),
+    "pccg": ("PCCG", "scraper.pccg"),
+    "umart": ("Umart", "scraper.umart"),
+}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI.
+
+    The per-retailer flags are generated from ACTIVE_RETAILERS rather than
+    written out, so a fourth retailer cannot end up unselectable.
+    """
     parser = argparse.ArgumentParser(description="Daily scrape-and-ingest runner")
-    parser.add_argument("--scorptec", action="store_true", help="Only run Scorptec scraper")
-    parser.add_argument("--pccg", action="store_true", help="Only run PCCG scraper")
+    for retailer in ACTIVE_RETAILERS:
+        parser.add_argument(
+            f"--{retailer}",
+            action="store_true",
+            help=f"Only run the {SCRAPERS[retailer][0]} scraper",
+        )
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     parser.add_argument("--scrape-only", action="store_true", help="Scrape but don't ingest")
     parser.add_argument("--no-health", action="store_true", help="Skip health checks")
     parser.add_argument("--no-notify", action="store_true", help="Skip the Discord digest")
     parser.add_argument("--no-backup", action="store_true", help="Skip the automatic DB backup")
+    return parser
+
+
+def selected_retailers(args: argparse.Namespace) -> List[str]:
+    """Retailers to scrape this run, in ACTIVE_RETAILERS order.
+
+    No retailer flag means all of them, so the scheduled run is unchanged.
+    """
+    chosen = [r for r in ACTIVE_RETAILERS if getattr(args, r, False)]
+    return chosen or list(ACTIVE_RETAILERS)
+
+
+def main(argv: Optional[List[str]] = None) -> None:
+    setup_logging()
+    parser = build_parser()
     args = parser.parse_args(argv)
 
-    # Determine which scrapers to run
-    run_scorptec = (not args.scorptec and not args.pccg) or args.scorptec
-    run_pccg = (not args.scorptec and not args.pccg) or args.pccg
-
-    if not run_scorptec and not run_pccg:
-        LOGGER.error("No scrapers selected. Use --scorptec, --pccg, or neither for both.")
-        sys.exit(1)
+    to_run = selected_retailers(args)
 
     LOGGER.info("Trackaroo daily run — %s", today_filename())
-    LOGGER.info("Scorptec: %s  |  PCCG: %s", "Yes" if run_scorptec else "No", "Yes" if run_pccg else "No")
+    LOGGER.info("Scraping: %s", "  |  ".join(SCRAPERS[r][0] for r in to_run))
 
     # ── Scrape ──────────────────────────────────────────────
     results: Dict[str, bool] = {}
-    if run_scorptec:
-        results["scorptec"] = run_scraper("Scorptec", "scraper.scorptec", "scorptec")
-        time.sleep(SCRAPER_GAP_SECONDS)  # Polite delay between scrapers
-    if run_pccg:
-        results["pccg"] = run_scraper("PCCG", "scraper.pccg", "pccg")
+    for i, retailer in enumerate(to_run):
+        if i:
+            time.sleep(SCRAPER_GAP_SECONDS)  # Polite delay between scrapers
+        label, module = SCRAPERS[retailer]
+        results[retailer] = run_scraper(label, module, retailer)
 
     # Report scrape results
     LOGGER.info("\n%s\nScrape summary:\n%s", "=" * 60, "=" * 60)

@@ -21,6 +21,7 @@ import pytest
 sys_path = str(Path(__file__).resolve().parent.parent)
 sys.path.insert(0, sys_path)
 
+from config import ACTIVE_RETAILERS
 from health_checks import (
     CheckResult,
     check_json_files,
@@ -83,7 +84,7 @@ class TestCheckJsonFiles:
         today = date.today().strftime("%d_%B_%Y")
 
         # Use counts above the new multi-variant thresholds (scorptec min_per_category=30, pccg=5)
-        for retailer in ["scorptec", "pccg"]:
+        for retailer in ACTIVE_RETAILERS:
             for category in ["cpu", "gpu"]:
                 _make_json_file(tmp_path, retailer, category, 35)
 
@@ -101,8 +102,9 @@ class TestCheckJsonFiles:
 
         results = check_json_files(today)
         warnings = [r for r in results if r.status == CheckResult.WARNING]
-        # Should have 3 warnings for missing files (scorptec_gpu, pccg_cpu, pccg_gpu)
-        assert len(warnings) == 3
+        # One warning per missing retailer/category file: every combination
+        # except the single scorptec_cpu file created above.
+        assert len(warnings) == len(ACTIVE_RETAILERS) * 2 - 1
         assert any("Missing" in r.message for r in warnings)
 
     def test_low_match_count(self, tmp_path, monkeypatch):
@@ -815,20 +817,33 @@ class TestCheckTodayCoverage:
         assert by_name["today_coverage_pccg"].status == CheckResult.WARNING
         assert "no snapshot for today" in by_name["today_coverage_pccg"].message
 
-    def test_both_retailers_reported(self, db_path):
+    def test_every_active_retailer_reported(self, db_path):
+        """One result per retailer we scrape -- not per retailer with data.
+
+        A retailer that reported nothing today has to appear saying so; if it
+        were simply absent from the results, a scraper that died would look the
+        same as a scraper that is fine.
+        """
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Test CPU', 1)")
-        conn.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'scorptec', 'https://x.com/1', 'active')")
-        conn.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'pccg', 'https://x.com/2', 'active')")
         today = date.today().strftime("%Y-%m-%d")
-        conn.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, ?, 100, 'in_stock')", (today,))
-        conn.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (2, ?, 110, 'in_stock')", (today,))
+        for i, retailer in enumerate(ACTIVE_RETAILERS, start=1):
+            conn.execute(
+                "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, ?, ?, 'active')",
+                (retailer, f"https://x.com/{i}"),
+            )
+            conn.execute(
+                "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (?, ?, 100, 'in_stock')",
+                (i, today),
+            )
         conn.commit()
         conn.close()
 
         results = check_today_coverage(db_path)
-        assert {r.check_name for r in results} == {"today_coverage_scorptec", "today_coverage_pccg"}
+        assert {r.check_name for r in results} == {
+            f"today_coverage_{r}" for r in ACTIVE_RETAILERS
+        }
         assert all(r.status == CheckResult.OK for r in results)
 
 

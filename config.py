@@ -46,6 +46,12 @@ Environment variables (all optional):
     TRACKAROO_SCORPTEC_PAGE_DELAY       Delay between Scorptec pages   (default: 0.5)
     TRACKAROO_SCORPTEC_MAX_PAGES        Scorptec pagination safety cap (default: 20)
 
+    TRACKAROO_UMART_TIMEOUT_SECONDS     Umart HTTP timeout             (default: 15)
+    TRACKAROO_UMART_MAX_RETRIES         Umart fetch retries            (default: 2)
+    TRACKAROO_UMART_RETRY_DELAY         Delay between Umart retries    (default: 2.0)
+    TRACKAROO_UMART_PAGE_DELAY          Delay between Umart pages      (default: 1.0)
+    TRACKAROO_UMART_MAX_PAGES           Umart pagination safety cap    (default: 30)
+
     TRACKAROO_ALGOLIA_HITS_PER_PAGE     Algolia hits per page          (default: 20)
     TRACKAROO_ALGOLIA_MAX_PAGES         Algolia pagination safety cap  (default: 10)
     TRACKAROO_ALGOLIA_BATCH_MAX_PAGES   Page cap for batch searches    (default: 3)
@@ -192,6 +198,26 @@ SCORPTEC_PAGE_DELAY = _env_float("TRACKAROO_SCORPTEC_PAGE_DELAY", 0.5)
 # misbehaving pagination link).
 SCORPTEC_MAX_PAGES = _env_int("TRACKAROO_SCORPTEC_MAX_PAGES", 20)
 # Per-run cap on how many stale listing pages check_delisted.py will fetch.
+# Retailers we actively scrape. This is the one list that ingest, the health
+# checks, the staleness monitor and the query CLI read, so adding retailer four
+# is a line here rather than the nine-site hunt THIRD_RETAILER.md warned about.
+#
+# Deliberately narrower than migrate.PERMITTED_RETAILERS, which is what the
+# database will *accept*: the schema tolerates six so its CHECK never needs
+# another table rebuild, but a health check that expected all six would alarm
+# every morning about retailers that have no scraper.
+ACTIVE_RETAILERS = ("scorptec", "pccg", "umart")
+
+# ── Umart ─────────────────────────────────────────────────────────────
+# Umart has no WAF and a permissive robots.txt, so these are ordinary
+# politeness settings rather than a budget: 20 products per page means roughly
+# 11 GPU pages and 3 CPU pages, i.e. ~14 requests once a day.
+UMART_TIMEOUT_SECONDS = _env_int("TRACKAROO_UMART_TIMEOUT_SECONDS", 15)
+UMART_MAX_RETRIES = _env_int("TRACKAROO_UMART_MAX_RETRIES", 2)
+UMART_RETRY_DELAY = _env_float("TRACKAROO_UMART_RETRY_DELAY", 2.0)
+UMART_PAGE_DELAY = _env_float("TRACKAROO_UMART_PAGE_DELAY", 1.0)
+UMART_MAX_PAGES = _env_int("TRACKAROO_UMART_MAX_PAGES", 30)
+
 SCORPTEC_DELIST_CHECK_MAX = _env_int("TRACKAROO_SCORPTEC_DELIST_CHECK_MAX", 100)
 # Slower gap between delisted-check fetches than grid scraping: a burst of
 # product-page requests gets throttled (403/429) by the CDN.

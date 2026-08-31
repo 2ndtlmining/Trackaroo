@@ -76,7 +76,8 @@ def _worst(results):
 
 def test_todays_data_is_not_stale(tmp_path):
     today = date(2026, 8, 27)
-    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-27")])
+    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-27"),
+                             ("umart", "2026-08-27")])
 
     results = check_staleness.evaluate(db_path=db, today=today)
 
@@ -87,7 +88,8 @@ def test_todays_data_is_not_stale(tmp_path):
 def test_yesterdays_data_is_tolerated_at_default_threshold(tmp_path):
     """A run that has not fired *yet today* is not an outage."""
     today = date(2026, 8, 27)
-    db = _make_db(tmp_path, [("scorptec", "2026-08-26"), ("pccg", "2026-08-26")])
+    db = _make_db(tmp_path, [("scorptec", "2026-08-26"), ("pccg", "2026-08-26"),
+                             ("umart", "2026-08-26")])
 
     results = check_staleness.evaluate(db_path=db, today=today)
 

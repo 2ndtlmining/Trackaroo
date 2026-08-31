@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
-from config import DB_PATH, BUSY_TIMEOUT_MS
+from config import ACTIVE_RETAILERS, DB_PATH, BUSY_TIMEOUT_MS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -218,7 +218,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Query the Trackaroo price database")
     parser.add_argument("--model", type=str, help="Search by model (partial match)")
     parser.add_argument("--category", type=str, choices=['cpu', 'gpu'], help="Filter by category")
-    parser.add_argument("--retailer", type=str, choices=['scorptec', 'pccg'], help="Filter by retailer")
+    parser.add_argument("--retailer", type=str, choices=list(ACTIVE_RETAILERS), help="Filter by retailer")
     parser.add_argument("--trends", action="store_true", help="Show price trends across dates")
     parser.add_argument("--biggest-movers", action="store_true", help="Show biggest price changes")
     args = parser.parse_args(argv)

@@ -36,6 +36,7 @@ from config import (
     FILE_DATE_FORMAT,
     MATCH_THRESHOLDS,
     MIN_HISTORY_FOR_ANOMALY,
+    ACTIVE_RETAILERS,
     PRICE_ANOMALY_STD_DEVS,
     PRICE_MOVE_PCT,
     SPEC_COVERAGE_MIN_PCT,
@@ -87,7 +88,7 @@ def check_json_files(target_date: Optional[str] = None) -> list[CheckResult]:
     if target_date is None:
         target_date = date.today().strftime(FILE_DATE_FORMAT)
 
-    expected_retailers = ["scorptec", "pccg"]
+    expected_retailers = list(ACTIVE_RETAILERS)
     expected_categories = ["cpu", "gpu"]
 
     for retailer in expected_retailers:
@@ -227,7 +228,7 @@ def check_db_freshness(db_path: Optional[Path] = None) -> list[CheckResult]:
 
         # Track which retailers have data
         retailers_with_data = {row["retailer"]: row for row in retailer_data}
-        expected_retailers = {"scorptec", "pccg"}
+        expected_retailers = set(ACTIVE_RETAILERS)
 
         for retailer in expected_retailers:
             if retailer not in retailers_with_data:
@@ -321,7 +322,7 @@ def check_today_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
         """, (today,)).fetchall()
 
         with_today = {row["retailer"]: row["today_variants"] for row in rows}
-        for retailer in ("scorptec", "pccg"):
+        for retailer in ACTIVE_RETAILERS:
             if retailer in with_today:
                 results.append(CheckResult(
                     f"today_coverage_{retailer}",

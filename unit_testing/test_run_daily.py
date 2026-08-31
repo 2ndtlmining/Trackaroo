@@ -18,6 +18,7 @@ import pytest
 sys_path = str(Path(__file__).resolve().parent.parent)
 import sys
 sys.path.insert(0, sys_path)
+from config import ACTIVE_RETAILERS
 from run_daily import today_filename
 
 
@@ -191,7 +192,7 @@ class TestNotifyGating:
 
         # Create valid files with matched count above multi-variant thresholds
         today = today_filename()
-        for retailer in ["scorptec", "pccg"]:
+        for retailer in ACTIVE_RETAILERS:
             for category in ["cpu", "gpu"]:
                 data = {
                     "retailer": retailer,

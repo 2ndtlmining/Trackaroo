@@ -34,7 +34,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
 
-from config import DB_PATH, setup_logging
+from config import ACTIVE_RETAILERS, DB_PATH, setup_logging
 from health_checks import CheckResult
 from notify_discord import send_alert
 
@@ -46,7 +46,9 @@ DEFAULT_THRESHOLD_DAYS = 1
 
 # Retailers the pipeline is expected to cover. A retailer absent from the DB
 # entirely is a warning, not an error: it may never have been scraped yet.
-EXPECTED_RETAILERS = ("scorptec", "pccg")
+# Sourced from config so a new scraper cannot be added without the monitor
+# learning to miss it.
+EXPECTED_RETAILERS = ACTIVE_RETAILERS
 
 _STATUS_RANK = {CheckResult.OK: 0, CheckResult.WARNING: 1, CheckResult.ERROR: 2}
 
