@@ -12,6 +12,7 @@ Covers:
 The legacy schema below is the pre-12-Aug-2026 shape: retailer_listings
 without the variant_name column, and no specs table.
 """
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -35,6 +36,8 @@ from migrate import (
     migrate_add_variant_name,
     migrate_backfill_retailer_sku,
     migrate_merge_duplicate_listings,
+    migrate_widen_retailer_check,
+    PERMITTED_RETAILERS,
 )
 
 LEGACY_SCHEMA = """
@@ -602,3 +605,164 @@ class TestMigrateUntrackRetiredProducts:
         )
         for model in RETIRED_PRODUCTS:
             assert f",{model}," not in csv, f"{model} is retired but still in watchlist.csv"
+
+
+# ── Widening the retailer CHECK constraint ──────────────────────────
+
+SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
+
+
+# The CHECK exactly as it shipped before 31-Aug-2026.
+NARROW_RETAILER_CHECK = "CHECK (retailer IN ('scorptec', 'pccg', 'mwave'))"
+
+
+def _current_schema_db(tmp_path):
+    """A DB as it existed *before* this migration: the real shipped schema with
+    the retailer CHECK wound back to its original three values.
+
+    Built from db/schema.sql rather than LEGACY_SCHEMA because the migration has
+    to survive the indexes, the foreign key from price_snapshots and the trigger
+    that writes back to retailer_listings -- none of which the legacy fixture
+    has. The CHECK is then narrowed again, because schema.sql now ships the wide
+    form and a fixture that already permits umart would test nothing.
+    """
+    schema = SCHEMA_PATH.read_text(encoding="utf-8")
+    wide = re.search(r"CHECK \(retailer IN \([^)]*\)\)", schema)
+    assert wide, "retailer CHECK not found in db/schema.sql"
+    schema = schema.replace(wide.group(0), NARROW_RETAILER_CHECK, 1)
+
+    db = tmp_path / "current.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(schema)
+    conn.execute(
+        "INSERT INTO products (category, brand, model, tracked) "
+        "VALUES ('gpu', 'NVIDIA', 'RTX 5070', 1)"
+    )
+    conn.execute(
+        "INSERT INTO retailer_listings (product_id, retailer, variant_name, "
+        "retailer_sku, listing_url, status) "
+        "VALUES (1, 'scorptec', 'ASUS Dual', 'SKU1', 'https://x/1', 'active')"
+    )
+    conn.execute(
+        "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+        "VALUES (1, '2026-08-30', 999.0, 'in_stock')"
+    )
+    conn.execute(
+        "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+        "VALUES (1, '2026-08-31', 949.0, 'in_stock')"
+    )
+    conn.commit()
+    return conn
+
+
+class TestMigrateWidenRetailerCheck:
+    """SQLite cannot ALTER a CHECK constraint, so this is a table rebuild.
+
+    The constraint shipped as CHECK (retailer IN ('scorptec','pccg','mwave')),
+    which rejects an umart INSERT outright. web/src/lib/types.ts:7 already
+    declares all six retailers, so the database is the odd one out.
+    """
+
+    def test_rejects_umart_before_the_migration(self, tmp_path):
+        """Guard: prove the constraint really does block the new retailer."""
+        conn = _current_schema_db(tmp_path)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+                "VALUES (1, 'umart', 'https://umart/1', 'active')"
+            )
+        conn.close()
+
+    def test_accepts_every_permitted_retailer_after(self, tmp_path):
+        conn = _current_schema_db(tmp_path)
+        migrate_widen_retailer_check(conn)
+        for i, slug in enumerate(PERMITTED_RETAILERS, start=10):
+            conn.execute(
+                "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+                "VALUES (1, ?, ?, 'active')",
+                (slug, f"https://{slug}/{i}"),
+            )
+        conn.commit()
+        got = {r[0] for r in conn.execute("SELECT DISTINCT retailer FROM retailer_listings")}
+        assert set(PERMITTED_RETAILERS) <= got
+        conn.close()
+
+    def test_still_rejects_an_unknown_retailer(self, tmp_path):
+        """Widening must not become 'anything goes' -- typos still have to fail."""
+        conn = _current_schema_db(tmp_path)
+        migrate_widen_retailer_check(conn)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+                "VALUES (1, 'not-a-retailer', 'https://x/9', 'active')"
+            )
+        conn.close()
+
+    def test_preserves_rows_and_their_columns(self, tmp_path):
+        conn = _current_schema_db(tmp_path)
+        before = conn.execute(
+            "SELECT id, product_id, retailer, variant_name, retailer_sku, listing_url, status "
+            "FROM retailer_listings"
+        ).fetchall()
+        migrate_widen_retailer_check(conn)
+        after = conn.execute(
+            "SELECT id, product_id, retailer, variant_name, retailer_sku, listing_url, status "
+            "FROM retailer_listings"
+        ).fetchall()
+        assert after == before
+        conn.close()
+
+    def test_keeps_the_snapshots_attached_to_their_listing(self, tmp_path):
+        """The rebuild drops and recreates the table the snapshots point at."""
+        conn = _current_schema_db(tmp_path)
+        migrate_widen_retailer_check(conn)
+        rows = conn.execute(
+            "SELECT ps.snapshot_date, ps.price_aud FROM price_snapshots ps "
+            "JOIN retailer_listings rl ON ps.retailer_listing_id = rl.id "
+            "ORDER BY ps.snapshot_date"
+        ).fetchall()
+        assert rows == [("2026-08-30", 999.0), ("2026-08-31", 949.0)]
+        conn.close()
+
+    def test_leaves_no_foreign_key_violations(self, tmp_path):
+        conn = _current_schema_db(tmp_path)
+        migrate_widen_retailer_check(conn)
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        conn.close()
+
+    def test_restores_the_indexes(self, tmp_path):
+        """Indexes are dropped with the old table and must be put back."""
+        conn = _current_schema_db(tmp_path)
+        migrate_widen_retailer_check(conn)
+        names = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='retailer_listings'"
+            )
+        }
+        assert "idx_retailer_listings_product" in names
+        assert "idx_retailer_listings_status" in names
+        conn.close()
+
+    def test_is_idempotent(self, tmp_path):
+        """It runs on every container start, so a second pass must be a no-op."""
+        conn = _current_schema_db(tmp_path)
+        migrate_widen_retailer_check(conn)
+        migrate_widen_retailer_check(conn)
+        conn.execute(
+            "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+            "VALUES (1, 'umart', 'https://umart/2', 'active')"
+        )
+        conn.commit()
+        assert conn.execute("SELECT COUNT(*) FROM retailer_listings").fetchone()[0] == 2
+        conn.close()
+
+    def test_dry_run_changes_nothing(self, tmp_path):
+        conn = _current_schema_db(tmp_path)
+        migrate_widen_retailer_check(conn, dry_run=True)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+                "VALUES (1, 'umart', 'https://umart/1', 'active')"
+            )
+        conn.close()

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -311,6 +312,20 @@ def _latest_scraped_at(conn: sqlite3.Connection, listing_id: int) -> Optional[st
 #
 # Radeon RX 9070 XTX — announced-but-never-released card; no retailer will ever
 # stock it (retired 30-Aug-2026).
+# Every retailer slug the database will accept. This is deliberately the same
+# set `web/src/lib/types.ts:7` already declares, so the schema stops being the
+# one layer that has to be rebuilt to add a retailer.
+#
+# Why widen the CHECK rather than move to a `retailers` lookup table, which
+# THIRD_RETAILER.md originally suggested: the lookup table's selling point was
+# that a new retailer becomes a row insert instead of a table rebuild, but that
+# is not true end to end. types.ts, filters.ts, ingest.py, health_checks.py,
+# check_staleness.py, query.py and run_daily.py all enumerate retailers in code
+# as well, so a new one is a code change either way. A lookup table would add a
+# table and a join to buy nothing; one rebuild covering every remaining
+# candidate buys the same thing for less.
+PERMITTED_RETAILERS = ("scorptec", "pccg", "mwave", "umart", "centrecom", "ple")
+
 RETIRED_PRODUCTS = ("Radeon RX 9070 XTX",)
 
 
@@ -348,6 +363,110 @@ def migrate_untrack_retired_products(conn: sqlite3.Connection, dry_run: bool = F
     conn.commit()
     for model in still_tracked:
         LOGGER.info("  [MIGRATE] Untracked retired product: %s", model)
+
+
+def _retailer_check_permits_all(conn: sqlite3.Connection) -> bool:
+    """True when retailer_listings' CHECK already lists every permitted slug."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'retailer_listings'"
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    return all(f"'{slug}'" in row[0] for slug in PERMITTED_RETAILERS)
+
+
+def migrate_widen_retailer_check(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Widen retailer_listings' CHECK to every slug in PERMITTED_RETAILERS.
+
+    SQLite cannot ALTER a CHECK constraint, so this is the full table rebuild:
+    create, copy, drop, rename, restore indexes. Three details make it less
+    routine than it looks, and each is the reason for a line below.
+
+    * The new DDL is **derived from the live table** rather than written out
+      here. Copying the column list into this file would silently rot the first
+      time a column is added elsewhere; rewriting only the CHECK clause cannot.
+    * ``PRAGMA legacy_alter_table`` is turned **on** for the rename. Modern
+      SQLite validates triggers during ALTER TABLE RENAME, and
+      ``trg_update_listing_last_snapshot`` (on price_snapshots) references
+      retailer_listings, which does not exist between the DROP and the RENAME.
+      Without the pragma the rename fails with "no such table".
+    * Foreign keys are off for the rebuild and ``PRAGMA foreign_key_check`` runs
+      before the commit, so a rebuild that orphaned price_snapshots rolls back
+      instead of committing damage. This project has lost data once already.
+
+    Idempotent: it runs on every container start via bootstrap-data.sh.
+
+    Args:
+        conn: Open SQLite connection.
+        dry_run: When True, only preview what would change without writing.
+    """
+    if _retailer_check_permits_all(conn):
+        LOGGER.info("  [SKIP] retailer CHECK already permits all %d retailers",
+                    len(PERMITTED_RETAILERS))
+        return
+
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would rebuild retailer_listings to permit: %s",
+                    ", ".join(PERMITTED_RETAILERS))
+        return
+
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'retailer_listings'"
+    ).fetchone()
+    if not row or not row[0]:
+        LOGGER.info("  [SKIP] no retailer_listings table to widen")
+        return
+
+    allowed = ", ".join(f"'{slug}'" for slug in PERMITTED_RETAILERS)
+    new_ddl, n = re.subn(
+        r"CHECK\s*\(\s*retailer\s+IN\s*\([^)]*\)\s*\)",
+        f"CHECK (retailer IN ({allowed}))",
+        row[0],
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if n != 1:
+        raise RuntimeError(
+            "could not find the retailer CHECK clause in retailer_listings; "
+            "refusing to rebuild the table blind"
+        )
+    new_ddl = new_ddl.replace("retailer_listings", "retailer_listings_new", 1)
+
+    indexes = [
+        r[0]
+        for r in conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' "
+            "AND tbl_name = 'retailer_listings' AND sql IS NOT NULL"
+        )
+    ]
+
+    conn.commit()
+    fk_was_on = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("PRAGMA legacy_alter_table = ON")
+    try:
+        conn.execute("BEGIN")
+        conn.execute(new_ddl)
+        conn.execute("INSERT INTO retailer_listings_new SELECT * FROM retailer_listings")
+        conn.execute("DROP TABLE retailer_listings")
+        conn.execute("ALTER TABLE retailer_listings_new RENAME TO retailer_listings")
+        for index_sql in indexes:
+            conn.execute(index_sql)
+        violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise RuntimeError(
+                f"rebuild left {len(violations)} foreign key violation(s); rolling back"
+            )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.execute("PRAGMA legacy_alter_table = OFF")
+        conn.execute(f"PRAGMA foreign_keys = {'ON' if fk_was_on else 'OFF'}")
+
+    LOGGER.info("  [MIGRATE] retailer_listings rebuilt; CHECK now permits: %s",
+                ", ".join(PERMITTED_RETAILERS))
 
 
 def migrate_merge_duplicate_listings(conn: sqlite3.Connection, dry_run: bool = False) -> None:
@@ -497,6 +616,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: Untrack products retired from the watchlist
         migrate_untrack_retired_products(conn, dry_run=args.dry_run)
+
+        # Migration: Widen the retailer CHECK so a new retailer needs no rebuild
+        migrate_widen_retailer_check(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify
