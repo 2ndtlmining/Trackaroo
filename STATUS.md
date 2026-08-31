@@ -48,6 +48,13 @@ backup integrity.
   `Core i9-14900KF`, the K under `Core i9-14900K`.
   Regression green: pytest **663**, vitest **397**, e2e **68**, svelte-check 0
   errors.
+  **Open at end of session:** three sessions' worth of change (anomaly baseline
+  + gate, the event detector, and the available-count headline) are committed
+  but **not yet deployed** - Docker is not running on this machine, so the prod
+  container has not been rebuilt and is still running the old checks. Nothing
+  else is pending: `DISCORD_WEBHOOK_ALERT` is confirmed set in prod, and the
+  only decision outstanding is Mwave (park it, build the ~3-hour spread scraper,
+  or start Umart and pay for the `CHECK`-constraint migration).
 
 - **2026-08-31** - **Mwave probed and parked; price-anomaly detection fixed,
   and the old check turned out to be worse than "slightly damped".**
@@ -178,7 +185,9 @@ backup integrity.
   `STALENESS_CHECK_HOUR`, default **10**, in its own poll loop beside the spec
   sync; the hour must stay after `RUN_AT_HOUR` or every morning reads as an
   outage. **`DISCORD_WEBHOOK_ALERT` is still unset in `.env`** - until it is,
-  the monitor signals only through the container log.
+  the monitor signals only through the container log. *(Closed 31-Aug: confirmed
+  set on the prod host. The local `.env` in this working copy still lacks it,
+  which only affects native runs from this machine.)*
   **Duplicate listings: nothing to build.** Scorptec 155/337 (both SKU 118277,
   forked 13-Aug by a slug rewrite) looked like it needed a repair script; a
   `dedupe_listings.py` was written and then **deleted** on finding that
