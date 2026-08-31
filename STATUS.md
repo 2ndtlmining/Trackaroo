@@ -14,6 +14,50 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-08-31 (late)** - **Audited how a product gets added and gets specs.
+  The spec pipeline is sound; the watchlist front door was not.**
+  **A one-character typo stopped the container booting.** `parse_spec` did a
+  literal `int(spec.replace("GB", ""))`, so a lowercase `16gb` raised
+  ValueError out of `load_watchlist`, exited `seed.py` with status **1**, and
+  `deploy/entrypoint-single.sh` runs `seed.py` under `set -e`. Every scraper
+  failed identically, since they all call `load_watchlist()`. Confirmed by
+  running it, not by reading it. Rows are now validated individually and
+  **skipped with an error naming the line and field** - `watchlist row 21
+  [spec]: cannot read VRAM from '16gib'; expected e.g. '16GB'` - so one bad row
+  costs one product rather than the whole pipeline. `parse_spec` also stopped
+  being case-sensitive (`16c` / `16C` / `" 16 c "` all work); the unit stays
+  required, because a bare `12` is ambiguous between cores and gigabytes.
+  **The alias-ordering trap is now documented and guarded.** Scorptec and Umart
+  test entries by primary search term **length descending** and break on first
+  match, so a base model whose first alias is longer than a variant's silently
+  claims that variant's listings - plausible prices, no error, nothing in the
+  logs. A test now fails if any base model outranks a more specific sibling.
+  **Four AMD parts had sat in the unmatched spec report for weeks** (Ryzen 5
+  5500 / 5 5600 / 7 5700X / 9 9900). Not a URL bug: *every* amd.com form for
+  them redirects to the homepage, so AMD retired the pages. They are now listed
+  separately as "no upstream specs (known)" with a reason and check date in
+  `SPECS_UNAVAILABLE_UPSTREAM`, taking the report from `unmatched=4` to
+  `unmatched=0`. The point is not tidiness - four permanent entries train you to
+  skim the list, which is how a genuinely new gap goes unnoticed.
+  **The process had no runbook**: Part 2 said *what* to track and stopped. New
+  **Part 2 §7** covers the edit, the alias rule, seeding, that specs arrive on
+  the next weekly sync rather than immediately (six days if you add on a
+  Monday), how to pull them in early, and that removing a product needs
+  `migrate.RETIRED_PRODUCTS` as well as deleting the row.
+  **What the audit found healthy**, for the record: `sync_specs` picks up new
+  products automatically (the dry run showed `new=1` - the `Core i9-14900` added
+  hours earlier), matching is conservative and reports rather than guesses,
+  every source reports `records/new/unchanged/conflicts/unmatched/fetch_failed`,
+  a failed sync leaves last-known-good data, and `check_spec_coverage` monitors
+  it (95/100, threshold 80%).
+  **Correction to this morning's note:** `DECISIONS.md` is not missing - it and
+  `SCOPE_RULES.md` were merged verbatim into `ARCHITECTURE.md` Parts 3 and 2.
+  The stale pointers in `watchlist.csv` and STATUS's own "how to update" section
+  now point at the right place. CLAUDE.md's test counts said 611/239 against an
+  actual 743/397.
+  Regression green: pytest **743**, vitest **397**, e2e **68**, svelte-check 0
+  errors.
+
 - **2026-08-31 (night)** - **Umart is live: third retailer scraping, ingesting
   and wired end to end. Plus a data-integrity bug found the hard way.**
   **The `CHECK`-constraint migration is done** - the thing THIRD_RETAILER.md
@@ -913,7 +957,7 @@ Current, as of 31-Aug-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **709** | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **743** | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **397** | `npm test` (`web/`) |
 | Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
