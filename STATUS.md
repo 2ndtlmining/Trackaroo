@@ -876,7 +876,12 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
 
 ## What's NOT done yet
 
-1. **Hardcoded values review** — Scan for magic numbers, hardcoded thresholds, paths that should be config-driven (e.g., health check limits, BATCH_SIZE, timeouts). Lower priority; can be done as a separate pass.
+1. **Hardcoded values review** — *partly done 31-Aug*: the retailer half is
+   closed. `config.ACTIVE_RETAILERS` (what we scrape) and
+   `migrate.PERMITTED_RETAILERS` (what the DB accepts) replaced the hardcoded
+   retailer lists in ingest, health_checks (three sites), check_staleness,
+   query and run_daily. Remaining: health check limits, `BATCH_SIZE`,
+   timeouts. Lower priority; a separate pass.
 2. **Frontend (Phase 3) — complete.** M0–M5 done: views, polish/verify, units + e2e. Remaining: final visual QA eyeball (any new filters/hardening belong to Phase 4).
 3. **Detailed deployment** — done: single Docker image + compose split verified. Optional extras for later: reverse proxy (Caddy/nginx/Traefik) for TLS, host-cron option docs already in DEPLOYMENT.md.
 4. **Hardening (Phase 4, remaining)** — reverse proxy/TLS, Prometheus-style monitoring, alerting on pipeline failure (current: exit codes + logs).
@@ -897,29 +902,39 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
    the sigma test proves noisy on real spikes.
 
 6. **RAM tracking (RAM_SCOPE.md)** — planned but not started; not required for Phase 3/4
-7. **Third retailer** — probed 30-Aug, written up in
-   [`docs/proposals/THIRD_RETAILER.md`](docs/proposals/THIRD_RETAILER.md), with
-   a step-by-step build plan ready to execute in
-   [`docs/superpowers/plans/2026-08-31-mwave-scraper.md`](docs/superpowers/plans/2026-08-31-mwave-scraper.md).
-   **Task 0 ran on 31-Aug and did not pass as written** - see
-   [`docs/proposals/mwave-waf-probe.md`](docs/proposals/mwave-waf-probe.md).
-   Mwave sits behind **AWS WAF**, but unlike Centre Com the challenge is rate
-   state that clears with idleness, not a standing block: a cold request returns
-   a real 159 KB page. The measured allowance is **5 requests before it trips**
-   at 5s spacing, which invalidates the plan's `MWAVE_PAGE_DELAY = 5.0s` but not
-   Mwave itself. **Next action: a cadence sweep at 30s and 60s from cold.** If
-   either sustains 20 requests, that becomes the delay and the plan proceeds
-   from Task 1.
-   Recommendation: **Mwave first, and only Mwave** — it is the largest
-   candidate, the only one already allowed by the schema's retailer `CHECK`,
-   and it probed as a clean server-rendered BeautifulSoup scrape. **Centre Com
-   is ruled out**: the whole site is behind an AWS WAF CAPTCHA, robots.txt
-   included. Umart and PLE both need a short URL-discovery pass first (PLE
-   looks like a client-rendered SPA — 2.1 MB of HTML with four occurrences of
-   "price"). The scraper is the small half: the retailer name is hardcoded in
-   nine places, and for anything other than Mwave the schema `CHECK` needs a
-   full SQLite table rebuild. The frontend already types and lists all six
-   retailers, so it needs no work.
+7. **Retailer four (Mwave) — decision pending.** *Retailer three shipped
+   31-Aug: Umart is scraping, ingesting and wired end to end (see that day's
+   entries).* The `CHECK`-constraint migration is done, so **mwave needs no
+   migration** — it is a scraper plus one line in `config.ACTIVE_RETAILERS`.
+
+   What the 31-Aug probing established: `/graphics-cards` is a curated landing
+   page, and the real endpoint is `/searchresult?...&cnt=100&srt=<offset>`,
+   server-rendered, **100 products per request** out of 278. **But the WAF limit
+   is a count, not a rate** — five requests then challenged, at 5s *and* 30s
+   spacing — so a ~5-request run sits exactly on the allowance with **no
+   headroom for a retry**. A challenged fetch must abandon the day.
+
+   **That fragility is the decision**, not a detail to engineer around: accept
+   intermittent gaps, or spread a run over ~4 cold periods (~3 hours), which is
+   a different scraper from anything here. Recorded in
+   [`THIRD_RETAILER.md`](docs/proposals/THIRD_RETAILER.md) and
+   [`mwave-waf-probe.md`](docs/proposals/mwave-waf-probe.md);
+   [`2026-08-31-mwave-scraper.md`](docs/superpowers/plans/2026-08-31-mwave-scraper.md)
+   is **superseded in part** (its Tasks 2-4 target the wrong URL).
+   **Centre Com stays ruled out**; PLE is a genuine client-rendered SPA.
+
+8. **Listings that never age out — the next piece of work.**
+   `check_delisted.py:141` hardcodes `WHERE l.retailer = 'scorptec'`, so nothing
+   ever ages out a PCCG or Umart listing. Measured 31-Aug: **13 active listings
+   (8 pccg, 5 scorptec) had not been seen for 7+ days** and would stay `active`
+   forever. That inflates the dashboard's "N of M tracked" headline, which is
+   the number added that same day to stop exactly this kind of overstatement.
+   Umart will drift fastest — its grid lists only purchasable items, so listings
+   churn in and out constantly. Planned as **Task 1** of
+   [`2026-09-01-next-steps.md`](docs/superpowers/plans/2026-09-01-next-steps.md),
+   including the guard that makes it safe: compare a listing against **its own
+   retailer's latest snapshot**, never against `now`, or a retailer in cooldown
+   gets its whole catalogue marked stale in one pass.
 
 ## Next up (planned 18-Aug — picked up tomorrow)
 
@@ -938,6 +953,13 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 5. ~~**RSS feed of biggest movers**~~ — dropped 27-Aug, not wanted.
 
 ## Next concrete steps
+
+> **Start here:** [`docs/superpowers/plans/2026-09-01-next-steps.md`](docs/superpowers/plans/2026-09-01-next-steps.md)
+> is the executable plan for the next session — deploy 31-Aug to prod (Task 0),
+> age out listings nobody has seen (Task 1, the real work), then decide on
+> retailer four (Task 2). Kick it off with:
+> `Work through docs/superpowers/plans/2026-09-01-next-steps.md, starting at Task 0.`
+
 
 1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 10 days, 09–18 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)
 2. **Reverse proxy + TLS** — put the dashboard behind Caddy/nginx/Traefik if internet-facing (docs in DEPLOYMENT.md)
