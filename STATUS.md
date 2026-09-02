@@ -14,6 +14,24 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-09-03 (later)** — **Fixed the pre-existing `test_full_coverage_ok`
+  failure flagged earlier today.** Root cause: `check_spec_coverage()` itself
+  is correct — it computes `days_since = (date.today() - last_date).days`
+  exactly like every other check in `health_checks.py` (none of them take an
+  injectable clock). The bug was in the test: `test_full_coverage_ok` and
+  `test_low_coverage_warns` hardcoded the spec's `last_synced_at` as the
+  absolute date `2026-08-18T04:21:36Z`, while every *other* date-sensitive
+  test in the file computes its date relative to `date.today()` (the sibling
+  `test_stale_spec_data_warns` a few lines down is the pattern: `date.today()
+  - timedelta(days=...)`). 18-Aug was "fresh" when the test was written;
+  16 days later it aged past `SPEC_STALE_THRESHOLD_DAYS` (14) on its own,
+  with no code change involved. Fixed both fixtures to use `date.today()`
+  directly, matching the rest of the file. `test_low_coverage_warns` didn't
+  actually assert on `spec_staleness`, so it was never failing, but was
+  fixed too for consistency (same landmine, one assertion away from
+  tripping). Regression: pytest **754/754** clean, no failures. Frontend
+  untouched (backend-only test file change).
+
 - **2026-09-03** — **Task 1 of the 1-Sep plan done: listings that never age
   out now do.** `check_delisted.py:141` only ever watched Scorptec, so a
   PCCG or Umart listing that quietly stopped appearing in its retailer's grid
@@ -994,11 +1012,6 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 > prod — needs the prod host, confirm separately whether 31-Aug already
 > went out) and **Task 2** (decide on Mwave as retailer four — no longer
 > blocked by Task 1, but not started).
->
-> Also newly open: `test_full_coverage_ok` in `unit_testing/test_health_checks.py`
-> fails on a real clock now (hardcodes an 18-Aug spec date against a 14-day
-> threshold with no `today` injection) — pre-existing, not introduced 3-Sep,
-> left alone as out of scope for Task 1. Worth a look before it's forgotten.
 
 
 1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 10 days, 09–18 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)
@@ -1019,7 +1032,7 @@ Current, as of 3-Sep-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **754** (1 pre-existing failure — see "Next concrete steps") | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **754**, all passing | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **397** | `npm test` (`web/`) |
 | Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
