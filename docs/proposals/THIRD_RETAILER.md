@@ -1,6 +1,11 @@
 # Adding a Third Retailer — Feasibility & Scope
 
-**Status:** proposal, not started. Probed 30-Aug-2026.
+**Status:** Scorptec, PCCG and Umart are live (Umart shipped 31-Aug-2026).
+**Mwave, the retailer-four candidate this document originally led to, was
+decided against 3-Sep-2026** — see the bottom of this file and the decision
+log (`docs/ARCHITECTURE.md` Part 3, "Retailer four: Mwave decided against,
+not attempted"). Kept for the historical WAF research, which is still
+accurate.
 
 Candidates considered: **Mwave, Umart, Centre Com, PLE.**
 
@@ -243,3 +248,35 @@ stocks a chunk of it.
   turns an outage into a degradation.
 - More independent price points make the anomaly detection meaningfully more
   trustworthy.
+
+## 3-Sep-2026: Mwave (retailer four) decided against
+
+By this date Scorptec, PCCG and Umart were all live (Umart shipped 31-Aug),
+and Umart had already delivered the coverage case above — 5 previously
+unlisted products restored, GPUs 23→25/46, CPUs 34→37/54. That left one open
+question for Mwave specifically, never measured until now: **does it restore
+coverage the way Umart did?**
+
+Checked all 39 tracked-but-unlisted products (22 GPU, 17 CPU) against
+Mwave's complete catalogue — all 3 GPU pages (276 of 278 products via
+`/searchresult?w=graphics+card&cnt=100&srt=<offset>`) and a CPU search
+(`w=processor`, 100 products; `w=cpu` itself returns zero results — the site
+doesn't index that term). That's exactly 5 requests, which also reconfirmed
+the WAF budget measured below: all 5 served, none challenged, right at the
+edge.
+
+**Result: 0 of 22 unlisted GPUs, 2 of 17 unlisted CPUs (`i5-14600KF`,
+`i9-14900F`).** A third apparent CPU hit (`Ryzen 9 7950X`) is refurbished
+stock only; three more were false positives from a loose substring
+matcher — Mwave stocks the KF/X3D/X variant, not the base part tracked.
+Mwave's catalogue is dominated by current-gen stock (RTX 50-series,
+RX 9000-series) exactly like the three retailers already live; the
+RX 6000/7000-series and RTX 30/40-series cards driving the gap are equally
+end-of-life there.
+
+**Decision: park it.** 2 real new listings out of 39 gaps doesn't justify a
+scraper with zero retry margin against a count-based WAF allowance (§ above:
+5 requests served, challenged on the 6th, regardless of spacing). No scraper
+code was written. Revisit only if a specific future watchlist addition is
+confirmed to live at Mwave and nowhere else — see the full writeup in
+`docs/ARCHITECTURE.md` Part 3.

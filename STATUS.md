@@ -14,6 +14,25 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-09-03 (evening)** — **Task 2 of the 1-Sep plan decided: Mwave
+  parked, not built.** The open question from `THIRD_RETAILER.md` was never
+  actually measured — does Mwave restore coverage the way Umart did? Checked
+  all 39 tracked-but-unlisted products (22 GPU, 17 CPU) against Mwave's
+  complete catalogue (all 3 GPU pages, 276/278 products; a CPU search, 100
+  products — exactly 5 requests, reconfirming the WAF's ~5-request budget:
+  all served, none challenged). **Result: 0 of 22 unlisted GPUs, 2 of 17
+  unlisted CPUs** (`i5-14600KF`, `i9-14900F`; a third apparent hit,
+  `Ryzen 9 7950X`, is refurbished-only stock). Mwave's catalogue is
+  dominated by current-gen stock exactly like the three retailers already
+  live — the RX 6000/7000 and RTX 30/40-series cards driving the gap are
+  equally end-of-life there. 2 real new listings out of 39 gaps doesn't
+  justify a scraper with zero retry margin against a count-based WAF
+  allowance. **Decided: park it.** No scraper code written. Recorded in
+  `docs/proposals/THIRD_RETAILER.md` and the decision log
+  (`docs/ARCHITECTURE.md` Part 3). Confirmed with the user: **Task 0 (deploy
+  to prod) is already done** on their end — both this and the earlier
+  3-Sep pieces of work are live.
+
 - **2026-09-03 (later)** — **Fixed the pre-existing `test_full_coverage_ok`
   failure flagged earlier today.** Root cause: `check_spec_coverage()` itself
   is correct — it computes `days_since = (date.today() - last_date).days`
@@ -1006,12 +1025,18 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 
 ## Next concrete steps
 
-> **Start here:** [`docs/superpowers/plans/2026-09-01-next-steps.md`](docs/superpowers/plans/2026-09-01-next-steps.md)
-> — Task 1 (age out listings nobody has seen) is **done, 3-Sep** (see Recent
-> changes). Still open: **Task 0** (deploy 31-Aug's *and* 3-Sep's work to
-> prod — needs the prod host, confirm separately whether 31-Aug already
-> went out) and **Task 2** (decide on Mwave as retailer four — no longer
-> blocked by Task 1, but not started).
+> [`docs/superpowers/plans/2026-09-01-next-steps.md`](docs/superpowers/plans/2026-09-01-next-steps.md)
+> is **fully closed out as of 3-Sep-2026**: Task 0 (deploy to prod) confirmed
+> done by the user, Task 1 (age out stale listings) shipped, Task 2 (Mwave)
+> decided — parked, not built (see Recent changes and
+> `docs/proposals/THIRD_RETAILER.md`). Task 3 (confirm the weekly spec sync
+> fires on prod) was never explicitly checked — worth a look next time
+> someone's on the prod host, but low urgency.
+>
+> No specific task is queued next. The remaining lower-priority backlog
+> lives in "What's NOT done yet" above — items 1 (hardcoded-values review,
+> partly done), 4 (reverse proxy/TLS, deferred by design), and 6 (RAM
+> tracking, not started, not required).
 
 
 1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 10 days, 09–18 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)

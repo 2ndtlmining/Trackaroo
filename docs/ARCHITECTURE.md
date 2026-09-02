@@ -542,4 +542,13 @@ Rebuilt as a dense index: one search box, one row per product, filtered **in the
 
 **That exposed a seeding bug worth its own note.** `db/watchlist.csv` calls itself the source of truth, but `seed.py` skipped every existing product outright, so a corrected `gen_tier` could never reach the database — the retag did nothing until `seed_products` learned to sync that one column (reported as `updated`, honoured by `--dry-run`). Only `generation_tier` is synced; the rest of the row is either immutable identity or enriched elsewhere.
 
+#### Retailer four: Mwave decided against, not attempted (2026-09-03)
+Supersedes the "Mwave removed from scope (2026-08-10)" entry above, which was itself superseded by the 30/31-Aug re-probes (`docs/proposals/mwave-waf-probe.md`, `THIRD_RETAILER.md`) that found it *is* scrapable — real 200s with real HTML, not the blanket CloudFront block first recorded. This entry is the final call on top of that research, not another reversal of the technical facts.
+
+Two things were true going into the decision: Mwave sits behind AWS WAF with a **count-based** allowance (not rate-based — 5s and 30s spacing gave identical results, 5 requests served then challenged on the 6th, repeatably) and **zero retry headroom** at the realistic daily cost (~5 requests via `/searchresult?cnt=100`); and Umart, which shipped 31-Aug as retailer three, was picked specifically because it *measurably* restored coverage (23→25/46 GPUs, 34→37/54 CPUs).
+
+Mwave's equivalent coverage value was never measured — until now. Checked all 39 tracked-but-unlisted products (22 GPU, 17 CPU, per `check_stale_listings`-adjacent DB query) against Mwave's complete GPU catalogue (all 3 pages, 276 of 278 products) and a CPU search (100 products), using the repo's own `scraper.scorptec.match_product`. **Zero of the 22 unlisted GPUs appear anywhere in Mwave's GPU catalogue** — it is dominated by current-gen stock (RTX 50-series, RX 9000-series) exactly like the three retailers already tracked, and the RX 6000/7000-series and RTX 30/40-series cards that make up the gap are equally end-of-life there. On CPUs, only 2 of 17 gaps are genuine current listings (`i5-14600KF`, `i9-14900F`); a third apparent hit (`Ryzen 9 7950X`) is refurbished stock only, and three more were matcher false positives (Mwave stocks the KF/X3D/X variant, not the base part tracked).
+
+**Decision: park Mwave.** 2 real new CPU listings and 0 new GPU listings out of 39 gaps does not justify building a scraper with no retry margin against a count-based WAF. No scraper code was written. Revisit only if a specific future watchlist addition is confirmed to live at Mwave and nowhere else.
+
 ---
