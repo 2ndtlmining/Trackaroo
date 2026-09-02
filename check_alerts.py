@@ -30,6 +30,8 @@ Configuration (env, optional — see .env.example):
     TRACKAROO_SMTP_FROM             From: address
     TRACKAROO_SMTP_TO               To: address
     TRACKAROO_ALERT_WEBHOOK_URL     Generic JSON webhook for channel='webhook'
+    TRACKAROO_RESTOCK_COOLDOWN_HOURS  Minimum hours between restock re-fires (default: 24)
+    TRACKAROO_NOTIFY_TIMEOUT_SECONDS  HTTP/SMTP delivery timeout (default: 10)
 
 Usage:
     python check_alerts.py             # Evaluate + notify
@@ -48,14 +50,10 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Dict, List, Optional
 
-from config import DB_PATH
+from config import DB_PATH, NOTIFY_TIMEOUT_SECONDS, RESTOCK_COOLDOWN_HOURS
 from notify_discord import load_dotenv
 
 LOGGER = logging.getLogger(__name__)
-
-# A restock may be announced at most once per this window (guards against a
-# double run on the same day re-firing the same OOS->in-stock transition).
-RESTOCK_COOLDOWN_HOURS = 24
 
 # Mirrors the dashboard's "cheapest in-stock variant" definition: the latest
 # snapshot per active, non-bundle listing, across tracked products.
@@ -232,7 +230,7 @@ def send_discord(webhook_url: str, title: str, body: str) -> None:
         webhook_url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=NOTIFY_TIMEOUT_SECONDS) as resp:
             resp.read()
     except Exception as e:  # noqa: BLE001 - alert delivery must not break the pipeline
         LOGGER.error("Discord alert delivery failed: %s", e)
@@ -245,7 +243,7 @@ def send_webhook(url: str, title: str, body: str) -> None:
         url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=NOTIFY_TIMEOUT_SECONDS) as resp:
             resp.read()
     except Exception as e:  # noqa: BLE001 - alert delivery must not break the pipeline
         LOGGER.error("Webhook alert delivery failed: %s", e)
@@ -268,7 +266,7 @@ def send_email(
     msg["To"] = recipient
     msg.set_content(body)
     try:
-        with smtplib.SMTP(host, port, timeout=10) as server:
+        with smtplib.SMTP(host, port, timeout=NOTIFY_TIMEOUT_SECONDS) as server:
             server.starttls()
             if username:
                 server.login(username, password)

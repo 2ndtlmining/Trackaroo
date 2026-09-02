@@ -67,6 +67,11 @@ Environment variables (all optional):
 
     TRACKAROO_SPEC_COVERAGE_MIN_PCT     Spec coverage threshold %      (default: 80.0)
     TRACKAROO_SPEC_STALE_THRESHOLD_DAYS Spec staleness threshold days  (default: 14)
+
+    TRACKAROO_DEFAULT_MIN_PER_CATEGORY  Match-count fallback threshold (default: 5)
+    TRACKAROO_DEFAULT_MIN_TOTAL         Match-count fallback threshold (default: 10)
+    TRACKAROO_NOTIFY_TIMEOUT_SECONDS    Alert delivery HTTP/SMTP timeout (default: 10)
+    TRACKAROO_RESTOCK_COOLDOWN_HOURS    Restock-alert re-fire cooldown (default: 24)
 """
 from __future__ import annotations
 
@@ -167,8 +172,8 @@ MIN_HISTORY_FOR_ANOMALY = _env_int("TRACKAROO_MIN_HISTORY_FOR_ANOMALY", 10)
 PRICE_MOVE_PCT = _env_float("TRACKAROO_PRICE_MOVE_PCT", 0.10)
 
 # Fallback thresholds applied to any retailer NOT in MATCH_THRESHOLDS
-DEFAULT_MIN_PER_CATEGORY = 5
-DEFAULT_MIN_TOTAL = 10
+DEFAULT_MIN_PER_CATEGORY = _env_int("TRACKAROO_DEFAULT_MIN_PER_CATEGORY", 5)
+DEFAULT_MIN_TOTAL = _env_int("TRACKAROO_DEFAULT_MIN_TOTAL", 10)
 
 # ── Scraper tuning ────────────────────────────────────────────────────
 # Per-scraper subprocess timeout in the daily runner
@@ -254,6 +259,17 @@ AMD_FETCH_DELAY_SECONDS = _env_float("TRACKAROO_AMD_FETCH_DELAY", 1.0)
 # ── Spec coverage tuning (health_checks.py check_spec_coverage) ──────
 SPEC_COVERAGE_MIN_PCT = _env_float("TRACKAROO_SPEC_COVERAGE_MIN_PCT", 80.0)
 SPEC_STALE_THRESHOLD_DAYS = _env_int("TRACKAROO_SPEC_STALE_THRESHOLD_DAYS", 14)
+
+# ── Notifications (check_alerts.py, notify_discord.py) ────────────────
+# Shared HTTP/SMTP timeout for outbound alert delivery (Discord webhooks,
+# generic webhooks, SMTP). These are best-effort, never-raise calls, so the
+# timeout only bounds how long a slow endpoint can hold up the run.
+NOTIFY_TIMEOUT_SECONDS = _env_int("TRACKAROO_NOTIFY_TIMEOUT_SECONDS", 10)
+
+# A restock alert may fire at most once per this window per listing -- guards
+# against a double run on the same day re-announcing the same
+# out-of-stock -> in-stock transition.
+RESTOCK_COOLDOWN_HOURS = _env_int("TRACKAROO_RESTOCK_COOLDOWN_HOURS", 24)
 
 
 # ── Logging ───────────────────────────────────────────────────────────

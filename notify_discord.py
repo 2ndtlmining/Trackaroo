@@ -17,6 +17,7 @@ Configuration (env, optional — see .env.example):
     TRACKAROO_PUBLIC_BASE_URL  Optional public base URL of the web app, used to
                                add a "Trackaroo page" link next to the retailer
                                link. Omit (or leave blank) for retailer links only.
+    TRACKAROO_NOTIFY_TIMEOUT_SECONDS  Webhook POST timeout (default: 10)
 
 The webhook is optional; with it unset the module is a no-op. Secrets
 never fail the daily run — a webhook error is logged, not raised.
@@ -38,7 +39,7 @@ from typing import Dict, List, Optional
 
 import requests
 
-from config import DB_PATH
+from config import DB_PATH, NOTIFY_TIMEOUT_SECONDS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -192,7 +193,7 @@ def build_embed(key: str, products: List[dict], public_base_url: str = "") -> di
 def send_embed(webhook_url: str, embed: dict) -> None:
     """POST one embed to a Discord webhook. Never raises on failure."""
     try:
-        resp = requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
+        resp = requests.post(webhook_url, json={"embeds": [embed]}, timeout=NOTIFY_TIMEOUT_SECONDS)
         resp.raise_for_status()
     except requests.RequestException as e:  # noqa: BLE001 - notify failures must not break the pipeline
         LOGGER.error("Discord webhook failed: %s", e)

@@ -101,6 +101,22 @@ class TestEnvOverrides:
         out = _config_value_with_env("TRACKAROO_SPEC_FETCH_TIMEOUT", "45", "SPEC_FETCH_TIMEOUT_SECONDS")
         assert out == "45"
 
+    def test_default_min_per_category_env_override(self):
+        out = _config_value_with_env("TRACKAROO_DEFAULT_MIN_PER_CATEGORY", "8", "DEFAULT_MIN_PER_CATEGORY")
+        assert out == "8"
+
+    def test_default_min_total_env_override(self):
+        out = _config_value_with_env("TRACKAROO_DEFAULT_MIN_TOTAL", "15", "DEFAULT_MIN_TOTAL")
+        assert out == "15"
+
+    def test_notify_timeout_env_override(self):
+        out = _config_value_with_env("TRACKAROO_NOTIFY_TIMEOUT_SECONDS", "25", "NOTIFY_TIMEOUT_SECONDS")
+        assert out == "25"
+
+    def test_restock_cooldown_hours_env_override(self):
+        out = _config_value_with_env("TRACKAROO_RESTOCK_COOLDOWN_HOURS", "48", "RESTOCK_COOLDOWN_HOURS")
+        assert out == "48"
+
 
 class TestMalformedOverrides:
     def test_non_numeric_int_falls_back(self):
@@ -127,6 +143,10 @@ class TestSharedConsumption:
         assert run_daily.DATA_DIR == config.DATA_DIR
         assert run_daily.DB_PATH == config.DB_PATH
         assert run_daily.SCRAPER_TIMEOUT_SECONDS == config.SCRAPER_TIMEOUT_SECONDS
+
+    def test_check_alerts_imports_same_cooldown(self):
+        import check_alerts
+        assert check_alerts.RESTOCK_COOLDOWN_HOURS == config.RESTOCK_COOLDOWN_HOURS
 
     def test_ingest_imports_same_paths(self):
         import ingest

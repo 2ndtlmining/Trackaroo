@@ -14,6 +14,34 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-09-03 (night)** — **Hardcoded-values cleanup, item 1 of "What's NOT
+  done yet".** The retailer half was closed 31-Aug; this closes the rest of
+  what STATUS.md named ("health check limits, BATCH_SIZE, timeouts") —
+  minus `BATCH_SIZE` itself, which turned out to already be env-configurable
+  and is now dead code rather than hardcoded (see CLAUDE.md's note that
+  retiring it is a separate cleanup; left alone here).
+  **Three genuine hardcoded thresholds found and fixed**, all now
+  `_env_int`-backed matching the rest of `config.py`'s convention: (1)
+  `DEFAULT_MIN_PER_CATEGORY`/`DEFAULT_MIN_TOTAL` — the match-count health
+  check's own fallback thresholds, previously bare literals unlike every
+  other value in the file; (2) a shared `NOTIFY_TIMEOUT_SECONDS` (new
+  `TRACKAROO_NOTIFY_TIMEOUT_SECONDS`, default 10) replacing four identical
+  hardcoded `timeout=10` call sites across `check_alerts.py` (Discord
+  webhook, generic webhook, SMTP) and `notify_discord.py` (Discord webhook)
+  — the only network calls left in the pipeline without a configurable
+  timeout; (3) `RESTOCK_COOLDOWN_HOURS` (new
+  `TRACKAROO_RESTOCK_COOLDOWN_HOURS`, default 24), moved from `check_alerts.py`
+  into `config.py` alongside its sibling `PCCG_COOLDOWN_HOURS`.
+  **Deliberately left alone**: `check_staleness.py`'s own
+  `DEFAULT_THRESHOLD_DAYS` (a distinct, intentionally-different-default
+  staleness concept for the standalone monitor — conflating it with
+  `config.STALE_THRESHOLD_DAYS` risked more confusion than it fixed), and
+  presentation-only constants (`notify_discord.TOP_N`, Discord embed hex
+  colors) — not thresholds anyone needs to tune without a code change.
+  5 new tests (`unit_testing/test_config.py`), following the file's existing
+  `_config_value_with_env` subprocess-import pattern. Regression: pytest
+  **759/759**, all passing. Frontend untouched (backend-only change).
+
 - **2026-09-03 (evening)** — **Task 2 of the 1-Sep plan decided: Mwave
   parked, not built.** The open question from `THIRD_RETAILER.md` was never
   actually measured — does Mwave restore coverage the way Umart did? Checked
@@ -955,12 +983,13 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
 
 ## What's NOT done yet
 
-1. **Hardcoded values review** — *partly done 31-Aug*: the retailer half is
-   closed. `config.ACTIVE_RETAILERS` (what we scrape) and
-   `migrate.PERMITTED_RETAILERS` (what the DB accepts) replaced the hardcoded
-   retailer lists in ingest, health_checks (three sites), check_staleness,
-   query and run_daily. Remaining: health check limits, `BATCH_SIZE`,
-   timeouts. Lower priority; a separate pass.
+1. ~~**Hardcoded values review**~~ — **done 3-Sep.** Retailer half closed
+   31-Aug (`config.ACTIVE_RETAILERS` / `migrate.PERMITTED_RETAILERS`). The
+   rest closed 3-Sep: match-count fallback thresholds, the shared alert
+   delivery timeout, and the restock cooldown are all `config.py` env knobs
+   now. `BATCH_SIZE` and three siblings are dead code (unused since the
+   Algolia catalogue-fetch rewrite), not hardcoded — retiring them is a
+   distinct cleanup, still open, tracked in CLAUDE.md.
 2. **Frontend (Phase 3) — complete.** M0–M5 done: views, polish/verify, units + e2e. Remaining: final visual QA eyeball (any new filters/hardening belong to Phase 4).
 3. **Detailed deployment** — done: single Docker image + compose split verified. Optional extras for later: reverse proxy (Caddy/nginx/Traefik) for TLS, host-cron option docs already in DEPLOYMENT.md.
 4. **Hardening (Phase 4, remaining)** — reverse proxy/TLS, Prometheus-style monitoring, alerting on pipeline failure (current: exit codes + logs).
@@ -1057,7 +1086,7 @@ Current, as of 3-Sep-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **754**, all passing | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **759**, all passing | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **397** | `npm test` (`web/`) |
 | Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
