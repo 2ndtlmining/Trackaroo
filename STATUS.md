@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-08-31
+**Last updated:** 2026-09-03
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,48 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-09-03** — **Task 1 of the 1-Sep plan done: listings that never age
+  out now do.** `check_delisted.py:141` only ever watched Scorptec, so a
+  PCCG or Umart listing that quietly stopped appearing in its retailer's grid
+  stayed `status='active'` forever — inflating the "N of M tracked" headline
+  that was built 31-Aug specifically to stop that kind of overstatement.
+  New `check_stale_listings.py` closes the gap for all retailers, built via
+  TDD (11 tests, `unit_testing/test_check_stale_listings.py`). **The rule
+  that keeps it safe**: a listing is judged against **its own retailer's
+  latest snapshot**, never against `today()` — one SQL query (two CTEs +
+  `julianday()`) marks a listing a candidate only when its retailer has a
+  snapshot within `TRACKAROO_STALE_LISTING_DAYS` (new config knob, default
+  **7**) of today *and* the listing itself does not. A retailer with no
+  recent data at all (e.g. mid-cooldown) contributes zero candidates,
+  however long its listings have been quiet — proven by a dedicated test
+  before anything else. `status='stale'` reuses the value already defined in
+  `db/schema.sql`'s CHECK constraint (and already written by
+  `migrate.py`'s retired-product path) — no migration needed. Wired into
+  `run_daily.py` right after the existing delisted check, in its own
+  best-effort `try/except`, not gated on any specific retailer's scrape
+  succeeding (unlike the Scorptec-only delisted check) since it judges each
+  retailer independently. `check_delisted.py` is untouched — `delisted`
+  stays the stronger, positive-confirmation signal; `stale` is the weaker,
+  retailer-agnostic "stopped appearing" net beneath it.
+  **Verified against the real local DB**: 14 candidates (8 pccg, 6
+  scorptec — a superset of 31-Aug's 13, one more scorptec bundle having
+  aged past the threshold since; correctly **zero** Umart, not because it
+  was excluded but because none of its listings have individually gone
+  quiet yet — all three retailers' latest snapshot was 2026-08-31, 3 days
+  before today, well inside the 7-day window). Backed up first
+  (`backup_db.py`), dry-run inspected, then applied for real; a second
+  dry-run confirmed 0 further candidates (idempotent).
+  Regression: pytest **754** (753 pass + 1 **pre-existing, unrelated**
+  failure — `test_full_coverage_ok` hardcodes an 18-Aug spec date against a
+  14-day staleness threshold with no `today` injection, so it now fails on
+  its own as real time has moved past it; confirmed failing identically on
+  `main` before this session's changes, left alone as out of scope), vitest
+  **397**, e2e **68**, svelte-check 0 errors.
+  **Not done this session**: Task 0 (deploy 31-Aug's work to prod) needs the
+  prod host, which this session couldn't reach — confirm separately whether
+  it's already been done. Task 2 (Mwave) stays explicitly gated on Task 1,
+  which is now satisfied, but wasn't started here.
 
 - **2026-08-31 (late)** - **Audited how a product gets added and gets specs.
   The spec pipeline is sound; the watchlist front door was not.**
@@ -923,18 +965,10 @@ This table replaced ~65 KB of inlined detail on 23-Aug-2026.
    is **superseded in part** (its Tasks 2-4 target the wrong URL).
    **Centre Com stays ruled out**; PLE is a genuine client-rendered SPA.
 
-8. **Listings that never age out — the next piece of work.**
-   `check_delisted.py:141` hardcodes `WHERE l.retailer = 'scorptec'`, so nothing
-   ever ages out a PCCG or Umart listing. Measured 31-Aug: **13 active listings
-   (8 pccg, 5 scorptec) had not been seen for 7+ days** and would stay `active`
-   forever. That inflates the dashboard's "N of M tracked" headline, which is
-   the number added that same day to stop exactly this kind of overstatement.
-   Umart will drift fastest — its grid lists only purchasable items, so listings
-   churn in and out constantly. Planned as **Task 1** of
-   [`2026-09-01-next-steps.md`](docs/superpowers/plans/2026-09-01-next-steps.md),
-   including the guard that makes it safe: compare a listing against **its own
-   retailer's latest snapshot**, never against `now`, or a retailer in cooldown
-   gets its whole catalogue marked stale in one pass.
+8. ~~**Listings that never age out**~~ — **done 3-Sep.** `check_delisted.py`
+   still only watches Scorptec, but `check_stale_listings.py` is now the
+   retailer-agnostic net beneath it, wired into `run_daily.py`. See the
+   3-Sep entry in Recent changes.
 
 ## Next up (planned 18-Aug — picked up tomorrow)
 
@@ -955,10 +989,16 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 ## Next concrete steps
 
 > **Start here:** [`docs/superpowers/plans/2026-09-01-next-steps.md`](docs/superpowers/plans/2026-09-01-next-steps.md)
-> is the executable plan for the next session — deploy 31-Aug to prod (Task 0),
-> age out listings nobody has seen (Task 1, the real work), then decide on
-> retailer four (Task 2). Kick it off with:
-> `Work through docs/superpowers/plans/2026-09-01-next-steps.md, starting at Task 0.`
+> — Task 1 (age out listings nobody has seen) is **done, 3-Sep** (see Recent
+> changes). Still open: **Task 0** (deploy 31-Aug's *and* 3-Sep's work to
+> prod — needs the prod host, confirm separately whether 31-Aug already
+> went out) and **Task 2** (decide on Mwave as retailer four — no longer
+> blocked by Task 1, but not started).
+>
+> Also newly open: `test_full_coverage_ok` in `unit_testing/test_health_checks.py`
+> fails on a real clock now (hardcodes an 18-Aug spec date against a 14-day
+> threshold with no `today` injection) — pre-existing, not introduced 3-Sep,
+> left alone as out of scope for Task 1. Worth a look before it's forgotten.
 
 
 1. **Accumulate more scrape data** — run daily scrapes to build historical depth (now 10 days, 09–18 Aug; anomaly detection sensitivity improves with each new ≥10-point listing)
@@ -975,11 +1015,11 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 
 ## Regression test count
 
-Current, as of 31-Aug-2026:
+Current, as of 3-Sep-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **743** | `python -m pytest -q` (repo root) |
+| Backend (pytest) | **754** (1 pre-existing failure — see "Next concrete steps") | `python -m pytest -q` (repo root) |
 | Frontend unit (vitest) | **397** | `npm test` (`web/`) |
 | Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |

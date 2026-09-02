@@ -19,6 +19,8 @@ Environment variables (all optional):
     TRACKAROO_BACKUP_DIR  Database backup directory        (default: <root>/db/backups)
 
     TRACKAROO_STALE_THRESHOLD_DAYS      Freshness threshold in days   (default: 3)
+    TRACKAROO_STALE_LISTING_DAYS        Days a listing may go unseen while its
+                                         retailer stays current (default: 7)
     TRACKAROO_MATCH_THRESHOLDS_JSON     Per-retailer match thresholds (JSON object)
     TRACKAROO_PRICE_ANOMALY_STD_DEVS    Price-anomaly sigma gate      (default: 3.0)
     TRACKAROO_MIN_HISTORY_FOR_ANOMALY   Min PRIOR points for the sigma test (default: 10)
@@ -138,6 +140,12 @@ MATCH_THRESHOLDS = _match_thresholds()
 
 # How many days without a snapshot before flagging a retailer as stale
 STALE_THRESHOLD_DAYS = _env_int("TRACKAROO_STALE_THRESHOLD_DAYS", 3)
+
+# Days a listing may go unseen -- while its own retailer IS being scraped --
+# before it is marked stale. Compared against the retailer's latest snapshot,
+# never against now: a retailer in cooldown is silent but healthy, and
+# comparing against now would mark its whole catalogue stale in one pass.
+STALE_LISTING_DAYS = _env_int("TRACKAROO_STALE_LISTING_DAYS", 7)
 
 # Price anomaly: flag if a price deviates more than this many standard
 # deviations from the historical mean for that product+retailer combo

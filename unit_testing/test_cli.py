@@ -162,6 +162,7 @@ class TestRunDailyMain:
         monkeypatch.setattr(run_daily, "check_today_coverage", lambda *a, **k: [])
         monkeypatch.setattr(run_daily, "check_match_count_anomalies", lambda *a, **k: [])
         monkeypatch.setattr("check_delisted.run", lambda *a, **k: None)
+        monkeypatch.setattr("check_stale_listings.run", lambda *a, **k: None)
         monkeypatch.setattr("notify_discord.run", lambda *a, **k: None)
         monkeypatch.setattr("notify_discord.send_alert", lambda *a, **k: None)
         monkeypatch.setattr("check_alerts.run", boom)

@@ -18,7 +18,7 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 743 tests.
+**Backend** (repo root): `python -m pytest -q` — 754 tests.
 
 **Frontend** (from `web/`):
 

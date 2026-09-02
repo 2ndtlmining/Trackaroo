@@ -320,6 +320,20 @@ def main(argv: Optional[List[str]] = None) -> None:
         except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
             LOGGER.error("Delisted check failed: %s", e)
 
+    # ── Stale-listing check (all retailers) ─────────────────────────
+    # Retailer-agnostic net beneath the delisted check above: a listing whose
+    # own retailer has recent data but which hasn't appeared itself in
+    # STALE_LISTING_DAYS is marked 'stale'. Never compares against now() --
+    # see check_stale_listings.py for why. Not gated on a specific retailer's
+    # scrape (unlike the delisted check) since it judges each retailer
+    # against its own latest snapshot. Best-effort: never breaks the run.
+    if not args.dry_run:
+        try:
+            from check_stale_listings import run as run_stale_listings
+            run_stale_listings()
+        except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
+            LOGGER.error("Stale-listing check failed: %s", e)
+
     # ── Discord digest (optional) ──────────────────────────────────────
     # Only on a real full run with passing health checks: a partial or
     # unchecked scrape shouldn't celebrate moves that may be artifacts.
