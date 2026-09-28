@@ -14,6 +14,57 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-09-29** — **Web-speed close-out (issues #28, #5): full regression
+  gate + a measured before/after against the built app.**
+  Work closed out on `feat/2026-09-28-prices-and-speed` (commits
+  `c412a9e..2bee0d7`): a `compression` wrapper server (`web/server.js`)
+  gzipping every response adapter-node itself leaves uncompressed, with a
+  hand-rolled graceful SIGTERM/SIGINT shutdown restored on top of it; `/products`
+  dropping the unused `listings` payload per group and the homepage no longer
+  querying the same day-level data twice; `/movers` reworked to surface real
+  movers first (no more `++$`, retailer names instead of ids, unchanged rows
+  now hidden rather than padding the page) plus a column-header-sort fix so
+  those hidden/unknown rows stay pinned last; and a `data_version`-keyed memo
+  cache in front of the day-level queries (invalidated only when SQLite's
+  `data_version` actually changes) with a 60s `cache-control` on the list
+  pages (`/`, `/deals`, `/movers`, `/products`).
+  **Full regression gate, run fresh from a clean tree**: backend
+  `python -m pytest -q` from the repo root — **863 passed**; frontend from
+  `web/`: `npm run check` — **0 errors, 0 warnings** (430 files); `npm test`
+  — **462 passed** (22 files); `npm run test:e2e` — **71 passed** (Chromium).
+  **Before/after, measured with `web/scripts/measure.sh`** (also switched its
+  default base URL from `http://localhost:3000` to `http://127.0.0.1:3000` —
+  `localhost` was adding ~200ms of DNS lookup on this Windows box and
+  distorting TTFB) against `npm run build` + `node server.js` served from the
+  real `db/trackaroo.db` (wire = gzip-requested bytes, raw = uncompressed
+  bytes; "now" cold = first request after a fresh server start, warm =
+  repeat run against the same process):
+
+  | Route | Task 0 local baseline (raw, uncompressed) | Live prod 28-Sep (raw, ms) | Now — cold (wire / raw / ttfb) | Now — warm (wire / raw / ttfb) |
+  |---|---|---|---|---|
+  | `/` | 42,786 B | 37,228 B, 100 ms | 7,623 / 42,794 / 5 ms | 7,623 / 42,794 / 4 ms |
+  | `/deals` | 59,824 B | 106,125 B, 60 ms | 7,856 / 59,824 / 5 ms | 7,856 / 59,824 / 7 ms |
+  | `/movers?window=7d` | 1,961,832 B | 1,523,484 B, 223 ms | 20,216 / 424,369 / 36 ms | 20,216 / 424,369 / 48 ms |
+  | `/products?category=gpu` | 405,650 B | 319,675 B, 35 ms | 7,239 / 109,535 / 4 ms | 7,239 / 109,535 / 4 ms |
+  | `/product/1` (prod row is `/product/86`) | 40,177 B | 73,748 B, 13 ms | 6,505 / 40,177 / 4 ms | 6,505 / 40,177 / 4 ms |
+
+  Raw-byte drops vs the Task 0 baseline land mostly on `/movers` (−78%, the
+  hidden-unchanged-rows work) and `/products?category=gpu` (−73%, dropping
+  `listings`); `/`, `/deals` and `/product/1` are essentially unchanged in raw
+  bytes (that work targeted query count and compression, not payload shape)
+  but ship at ~15–18% of their raw size on the wire once gzip is in front of
+  every response, not just the immutable assets. TTFB is single-digit
+  milliseconds everywhere against a local DB except `/movers`, which stays in
+  the 30–50ms range warm and cold alike — that's render/serialisation cost of
+  a still-large page (132 real movers rendered into both a table and a mobile
+  list), not a caching gap; Phase 4's single responsive layout is expected to
+  close it.
+  **Open follow-ups, not done here**: no CI smoke test runs against the real
+  `node server.js` (the e2e suite only exercises `vite dev`); #5 items 4 and 5
+  — group movers by product, and the segmented-control accessibility / one
+  shared responsive layout — remain for Phase 4. GitHub issue comments on #28
+  and #5 are deferred to the repo owner, per this task's controller ruling.
+
 - **2026-09-29** — **Task 7 close-out of the "correct prices" branch
   (`feat/2026-09-28-prices-and-speed`, Tasks 1–6): full regression gate +
   a local before/after against a real-data copy of the DB.**
