@@ -20,20 +20,21 @@ _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 # Applied to normalise()d text. Each yields groups that build the key.
 _GPU_PATTERNS = (
-    ("rtx", re.compile(r"\brtx ?(\d{4})(?!\d)(?: ?(ti)(?![a-z]))?(?: ?(super)(?![a-z]))?")),
+    ("rtx", re.compile(
+        r"\brtx ?(\d{4})(?!\d)(?: ?(ti)(?![a-z]))?(?: ?(super)(?![a-z]))?(?![a-z0-9])")),
     ("rx", re.compile(
         r"\b(?:rx|radeon) ?(\d{4})(?!\d)"
         # PowerColor puts its product line between the number and the
         # suffix ("RX 9070 Reaper GRE"), so skip at most one word that
         # is not itself the suffix before looking for it.
         r"(?:\s+(?!(?:xtx|xt|gre)(?![a-z]))[a-z]+)?"
-        r"(?: ?(xtx|xt|gre)(?![a-z]))?")),
-    ("arc", re.compile(r"\barc ?([ab]\d{3})(?!\d)")),
+        r"(?: ?(xtx|xt|gre)(?![a-z]))?(?![a-z0-9])")),
+    ("arc", re.compile(r"\barc ?([ab]\d{3})(?!\d)(?![a-z0-9])")),
 )
 _CPU_PATTERNS = (
     ("ryzen", re.compile(
         r"\b(?:ryzen ?[3579]|r[3579])(?: pro)? ?(\d{4,5})"
-        r"(?: ?(x3d\d?|xt|x|gt|ge|g|f)(?![a-z0-9]))?(?![0-9])")),
+        r"(?: ?(x3d\d?|xt|x|gt|ge|g|f)(?![a-z0-9]))?(?![a-z])(?![0-9])")),
     ("ultra", re.compile(
         r"\bultra ?[3579](?: processor)? ?(\d{3})(?!\d)(ks|kf|k|f|t)?(?![a-z])(?: ?(plus)(?![a-z]))?")),
     ("core", re.compile(r"\bi[3579] ?(?:processor )?(\d{4,5})(?!\d)(ks|kf|k|f|t)?(?![a-z])")),
