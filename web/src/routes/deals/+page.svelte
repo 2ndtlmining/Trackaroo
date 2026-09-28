@@ -119,7 +119,7 @@
 			<p
 				class="mt-2 rounded-lg border border-border bg-surface px-3 py-6 text-center text-sm text-text-muted"
 			>
-				No products are within {NEAR_ALL_TIME_LOW_PCT}% of their all-time low today.
+				No product has dropped to a new low today.
 			</p>
 		{/if}
 	</section>

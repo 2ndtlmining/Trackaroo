@@ -1219,9 +1219,15 @@ describe('getDealCandidates', () => {
 			const insertSnapshot = thirtyDb.prepare(
 				'INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) VALUES (?, ?, ?, ?, ?)'
 			);
-			// 2026-01-01 .. 2026-01-30 inclusive: exactly 30 consecutive in-stock days.
-			for (let day = 1; day <= 30; day += 1) {
-				const date = `2026-01-${String(day).padStart(2, '0')}`;
+			// 2025-12-31 .. 2026-01-30 inclusive: 31 consecutive in-stock days, one
+			// more than the window should admit. With the pre-#6/D4 `-30 days`
+			// window this whole 31-day run falls inside date(2026-01-30, '-30
+			// days') = 2025-12-31, so avg30Points would wrongly report 31 — the
+			// fixed `-29 days` window starts at 2026-01-01 and must exclude
+			// 2025-12-31, reporting exactly 30.
+			const start = Date.UTC(2025, 11, 31);
+			for (let day = 0; day < 31; day += 1) {
+				const date = new Date(start + day * 86_400_000).toISOString().slice(0, 10);
 				insertSnapshot.run(listingId, date, 200, 'in_stock', `${date}T04:00:00.000Z`);
 			}
 			const rows = getDealCandidates(thirtyDb);

@@ -984,7 +984,9 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 				(SELECT MIN(ps3.snapshot_date)
 				 FROM price_snapshots ps3
 				 JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
-				 WHERE l3.product_id = p.id AND ps3.stock_status = 'in_stock') AS history_start
+				 WHERE l3.product_id = p.id
+				   AND ps3.stock_status = 'in_stock'
+				   AND ${notBundle('l3')}) AS history_start
 			FROM products p
 			JOIN retailer_listings l ON l.product_id = p.id AND l.status = 'active'
 			JOIN price_snapshots ps
