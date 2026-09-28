@@ -11,7 +11,8 @@ import type { Category, ListingFilters } from '$lib/types';
 // The index ships the whole category to the browser and filters there, so this
 // load deliberately does less than it used to: no text search, no sort, no
 // per-listing or per-product sparkline queries, no facet counts. ~50 rows is a
-// few kilobytes, which is cheaper than a round trip per keystroke.
+// few kilobytes, which it now actually is: groups drop their per-listing
+// arrays (#28), since nothing on this page reads a group's `listings`.
 export function load({ url }: { url: URL }) {
 	const db = getDb();
 	const parsed: ListingFilters = parseFilters(url.searchParams);
@@ -33,7 +34,6 @@ export function load({ url }: { url: URL }) {
 		if (!group) {
 			return {
 				...product,
-				listings: [],
 				cheapestInStockPrice: null,
 				cheapestInStockRetailer: null,
 				inStockCount: 0,
@@ -43,8 +43,9 @@ export function load({ url }: { url: URL }) {
 			};
 		}
 		const stats = dealStats.get(group.productId);
+		const { listings: _listings, ...rest } = group;
 		return {
-			...group,
+			...rest,
 			avg30: stats?.avg30 ?? null,
 			avg30Points: stats?.avg30Points ?? 0,
 			neverListed: false
