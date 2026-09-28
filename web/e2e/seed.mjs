@@ -287,14 +287,22 @@ export function seedE2eDb(dbPath = DB_PATH) {
 
 	// Deterministic /deals fixtures. The seed builds from the live data/
 	// directory when it has files, so real scraped prices cannot be asserted
-	// on. These two products are synthetic and pinned:
+	// on. These products are synthetic and pinned:
 	//
 	//   E2E Deal Demo GPU  — today's price is 90% below its 30-day average and
-	//     equal to its all-time low, so it must rank FIRST in both sections.
-	//     Real hardware does not swing 90% in a month, which is what makes the
-	//     ordering assertion safe against live data.
+	//     equal to its all-time low, so it must rank FIRST in the below-average
+	//     section. It also clears the #6 floors (>=2%, >=$10) by a wide margin,
+	//     so under the #6 dedup rule it is shown ONLY there, not in the
+	//     at-a-new-low section too. Real hardware does not swing 90% in a
+	//     month, which is what makes the ordering assertion safe against live
+	//     data.
 	//   E2E Thin History GPU — 40% below its 2-day average, but only 2 days of
 	//     history, so MIN_HISTORY_POINTS must exclude it from both sections.
+	//   E2E New Low GPU (#6) — today's price is a new all-time low, earned by
+	//     a >=3% drop from within the window, but the 30-day average sits close
+	//     enough that it clears NEITHER #6 floor (2%, $10). It therefore shows
+	//     up ONLY in the at-a-new-low section, giving that section a fixture
+	//     that is never also a below-average deal.
 	//
 	// Snapshots are anchored to the DB's own latest date so the fixtures are
 	// always "today" regardless of which scrape files were loaded.
@@ -336,6 +344,16 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		addDealFixture('E2E Thin History GPU', '/p/e2e-thin-history', [
 			[1, 1000],
 			[0, 600]
+		]);
+		// avg30 = (520+510+505+502+500)/5 = 507.4 -- depth ~1.46%, saving ~$7.40,
+		// both under the #6 floors -- while windowHigh (520) sits >=3% above
+		// today's price (500 == allTimeLow), so it earns the new-low badge.
+		addDealFixture('E2E New Low GPU', '/p/e2e-new-low', [
+			[4, 520],
+			[3, 510],
+			[2, 505],
+			[1, 502],
+			[0, 500]
 		]);
 	}
 

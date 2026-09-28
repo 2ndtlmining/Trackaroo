@@ -134,6 +134,39 @@ docker build -t trackaroo .
 
 The data is in the mounts, not the container, so this is non-destructive.
 
+List pages (`/`, `/deals`, `/movers`, `/products`) send
+`cache-control: public, max-age=60, stale-while-revalidate=300`, so for a few
+minutes after a redeploy a browser may still show a pre-deploy page it served
+stale-while-revalidate style. Hard-refresh (Ctrl+F5) if you need to confirm
+the new build is live.
+
+### Repair mis-filed listings
+
+`repair_listings.py` re-applies the current watchlist matcher (`scraper/chip_key.py`)
+to every existing listing, so a matcher fix (e.g. #1, #2) also corrects listings
+filed under the wrong product *before* the fix shipped. (`ingest.py` also
+re-points a listing on its own the next time it sees a *current* snapshot that
+resolves differently — see #1/#2 in `find_or_create_listing` — but that only
+fires on the next scrape; this script fixes everything immediately.) It never
+deletes a `price_snapshots` row; a listing that no longer matches any tracked
+product is moved to a `tracked=0` "Unmatched CPU/GPU listing" holding product
+and marked `stale`, taking its prices out of the wrong product's history
+without discarding them.
+
+Before `--apply`, review any `UNMATCHED` **GPU** line whose title has no
+memory size (e.g. a bundle or "AI Box" listing) — the matcher resolves GPUs
+by chip key *and* VRAM, so a title lacking a size can only ever be unmatched
+here, but if the retailer's own description (not the title) names the VRAM,
+the next scrape can still re-point it away from the holding product later.
+
+After pulling a change that touches the matcher or the watchlist:
+
+```bash
+docker exec trackaroo python seed.py
+docker exec trackaroo python repair_listings.py            # dry run — review the output
+docker exec trackaroo python repair_listings.py --apply    # backs up the DB first
+```
+
 ### Backups
 
 `backup_db.py` writes retention-pruned copies into `db/backups/` on every real
@@ -253,14 +286,14 @@ docker run -d --name trackaroo-web \
   -v /opt/trackaroo/data:/app/data \
   -e TRACKAROO_DB=/app/db/trackaroo.db \
   --entrypoint /usr/bin/tini \
-  trackaroo -- node web/build/index.js
+  trackaroo -- node web/server.js
 ```
 
 ### Option B (adapter-node directly)
 
 ```bash
 cd web && npm ci && npm run build
-TRACKAROO_DB=../db/trackaroo.db PORT=3000 HOST=0.0.0.0 node build/index.js
+TRACKAROO_DB=../db/trackaroo.db PORT=3000 HOST=0.0.0.0 node server.js
 ```
 
 Put this behind a reverse proxy (Caddy / nginx / Traefik) for TLS if the host

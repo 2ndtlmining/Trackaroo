@@ -341,6 +341,24 @@ describe('getProductHistory', () => {
 			expect(history!.stats.avg30Points).toBeGreaterThan(0);
 		}
 	});
+
+	it('reports each retailer’s latest snapshot date (#4)', () => {
+		const history = getProductHistory(db, 1);
+		expect(history).not.toBeNull();
+		const retailers = db.prepare('SELECT DISTINCT retailer FROM retailer_listings').all() as Array<{
+			retailer: string;
+		}>;
+		for (const { retailer } of retailers) {
+			const expected = db
+				.prepare(
+					`SELECT MAX(s.snapshot_date) AS latest FROM price_snapshots s
+					 JOIN retailer_listings l ON l.id = s.retailer_listing_id
+					 WHERE l.retailer = ?`
+				)
+				.get(retailer) as { latest: string | null };
+			expect(history!.retailerLatest[retailer]).toBe(expected.latest);
+		}
+	});
 });
 
 describe('getProductStats', () => {
@@ -372,10 +390,12 @@ describe('getProductStats', () => {
 					  AND lower(l.variant_name) NOT LIKE '%combo%'
 					  AND lower(l.listing_url) NOT LIKE '%bundle%'
 					  AND lower(l.listing_url) NOT LIKE '%bdl-%'
-					  AND s.snapshot_date >= date(?, '-30 days')
+					  AND s.snapshot_date >= date(?, '-29 days')
 					GROUP BY s.snapshot_date
 				 ) dm`
 			)
+			// -29, not -30: a 30-day window covers 30 dates inclusive of today
+			// (#6/D4), mirroring getProductStats's own windowing fix.
 			.get(product.id, day.d) as { avg: number | null; points: number };
 		expect(avg30).toBeCloseTo(agg.avg as number, 6);
 		expect(avg30Points).toBe(agg.points);
@@ -387,8 +407,9 @@ describe('getProductStats', () => {
 			// Per-day cheapest: 8-15 $500, 8-16 $480, 8-17 $460 — the $100
 			// bundle and PCCG's out-of-stock $450 are ignored.
 			expect(getProductStats(mini.db, 1)).toEqual({ avg30: 480, avg30Points: 3 });
-			// A 1-day window keeps only 8-16 and 8-17.
-			expect(getProductStats(mini.db, 1, 1)).toEqual({ avg30: 470, avg30Points: 2 });
+			// A 1-day window covers 1 date inclusive of today (8-17 only), not
+			// today-plus-yesterday (#6/D4).
+			expect(getProductStats(mini.db, 1, 1)).toEqual({ avg30: 460, avg30Points: 1 });
 		} finally {
 			mini.close();
 		}
@@ -709,6 +730,22 @@ describe('getComparisonData', () => {
 			mini.close();
 		}
 	});
+
+	it('excludes a listing whose status is stale even if its last snapshot was in stock (#4)', () => {
+		const mini = createMiniCompareDbWithStaleListing();
+		try {
+			const entries = getComparisonData(mini.db, [1]);
+			expect(entries.length).toBe(1);
+			const byRetailer = Object.fromEntries(
+				entries[0].prices.map((p) => [p.retailer, p.price])
+			);
+			expect(byRetailer.scorptec).toBe(490);
+			expect(byRetailer.pccg).toBeUndefined();
+			expect(entries[0].cheapestInStock).toEqual({ price: 490, retailer: 'scorptec' });
+		} finally {
+			mini.close();
+		}
+	});
 });
 
 // One CPU product, one listing per retailer. Scorptec has snapshots on 8-16 and
@@ -744,6 +781,42 @@ function createMiniCompareDb(pccgInStock: boolean): { db: DB; close: () => void 
 		pccgInStock ? 'in_stock' : 'out_of_stock',
 		'2026-08-16T04:00:00.000Z'
 	);
+	return {
+		db,
+		close: () => {
+			db.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	};
+}
+
+// One CPU product: an active scorptec listing and a stale pccg listing whose
+// last snapshot was in stock. The stale listing must never surface a price
+// (#4) — a listing that stopped being seen cannot set a price.
+function createMiniCompareDbWithStaleListing(): { db: DB; close: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-mini-stale-'));
+	const file = path.join(dir, 'mini.db');
+	const db = openDatabase(file, { readonly: false, fileMustExist: false });
+	db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 7600', 'current', 1)"
+	).run();
+	const scorptecId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'scorptec', 'A', 'https://scorptec/a', 'active')"
+		).run().lastInsertRowid
+	);
+	const pccgId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'pccg', 'B', 'https://pccg/b', 'stale')"
+		).run().lastInsertRowid
+	);
+	const insertSnapshot = db.prepare(
+		'INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) VALUES (?, ?, ?, ?, ?)'
+	);
+	insertSnapshot.run(scorptecId, '2026-08-16', 500, 'in_stock', '2026-08-16T04:00:00.000Z');
+	insertSnapshot.run(scorptecId, '2026-08-17', 490, 'in_stock', '2026-08-17T04:00:00.000Z');
+	insertSnapshot.run(pccgId, '2026-08-16', 510, 'in_stock', '2026-08-16T04:00:00.000Z');
 	return {
 		db,
 		close: () => {
@@ -1110,6 +1183,60 @@ describe('getDealCandidates', () => {
 		const models = getDealCandidates(fixture.db).map((r) => r.model);
 		expect(models).not.toContain('RTX SoldOut');
 		expect(models).not.toContain('Ryzen Untracked');
+	});
+
+	it('reports the highest daily-cheapest price in the window (#6)', () => {
+		const rows = getDealCandidates(fixture.db);
+		// Per-day cheapest across 2026-08-18..20: 120, 140, 100 — the max is 140.
+		expect(rows[0].windowHigh).toBe(140);
+	});
+
+	it("reports the product's first in-stock snapshot date, regardless of the window (#6)", () => {
+		const rows = getDealCandidates(fixture.db);
+		// 2026-01-01 is the all-time low and well outside the avg30 window, but
+		// it is still the earliest in-stock snapshot on record.
+		expect(rows[0].historyStart).toBe('2026-01-01');
+	});
+
+	it('counts exactly 30 points for 30 consecutive in-stock days up to the latest date, not 31 (#6/D4)', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-deals-30d-'));
+		const file = path.join(dir, 'deals-30d.db');
+		const thirtyDb = openDatabase(file, { readonly: false, fileMustExist: false });
+		try {
+			thirtyDb.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			thirtyDb
+				.prepare(
+					"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Consecutive30', 'current', 1)"
+				)
+				.run();
+			const listingId = Number(
+				thirtyDb
+					.prepare(
+						"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'scorptec', 'Consecutive30 Variant', '/p/consecutive-30', 'active')"
+					)
+					.run().lastInsertRowid
+			);
+			const insertSnapshot = thirtyDb.prepare(
+				'INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) VALUES (?, ?, ?, ?, ?)'
+			);
+			// 2025-12-31 .. 2026-01-30 inclusive: 31 consecutive in-stock days, one
+			// more than the window should admit. With the pre-#6/D4 `-30 days`
+			// window this whole 31-day run falls inside date(2026-01-30, '-30
+			// days') = 2025-12-31, so avg30Points would wrongly report 31 — the
+			// fixed `-29 days` window starts at 2026-01-01 and must exclude
+			// 2025-12-31, reporting exactly 30.
+			const start = Date.UTC(2025, 11, 31);
+			for (let day = 0; day < 31; day += 1) {
+				const date = new Date(start + day * 86_400_000).toISOString().slice(0, 10);
+				insertSnapshot.run(listingId, date, 200, 'in_stock', `${date}T04:00:00.000Z`);
+			}
+			const rows = getDealCandidates(thirtyDb);
+			expect(rows).toHaveLength(1);
+			expect(rows[0].avg30Points).toBe(30);
+		} finally {
+			thirtyDb.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 

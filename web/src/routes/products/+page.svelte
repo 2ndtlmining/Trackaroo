@@ -15,7 +15,7 @@
 			inStockOnly: boolean;
 			trackedCount: number;
 			listedCount: number;
-			groups: (ProductGroup & { neverListed?: boolean })[];
+			groups: (Omit<ProductGroup, 'listings'> & { neverListed?: boolean })[];
 		};
 	} = $props();
 

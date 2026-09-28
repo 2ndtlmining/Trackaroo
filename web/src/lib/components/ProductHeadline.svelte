@@ -1,6 +1,6 @@
 <script lang="ts">
 	import PriceRangeBar from './PriceRangeBar.svelte';
-	import { RETAILER_OPTIONS } from '$lib/filters';
+	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
 	import { formatAud, formatPct } from '$lib/formats';
 	import { avgWindowLabel, deltaPresentation } from '$lib/offers';
 	import type { Headline } from '$lib/productHeadline';
@@ -18,10 +18,7 @@
 	} = $props();
 
 	const retailerLabel = $derived(
-		headline.currentRetailer
-			? (RETAILER_OPTIONS.find((o) => o.value === headline.currentRetailer)?.label ??
-				headline.currentRetailer)
-			: null
+		headline.currentRetailer ? lookupRetailerLabel(headline.currentRetailer) : null
 	);
 </script>
 

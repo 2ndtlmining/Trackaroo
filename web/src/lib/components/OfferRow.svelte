@@ -2,8 +2,16 @@
 	import Badge from './Badge.svelte';
 	import BrandIcon from './BrandIcon.svelte';
 	import StockBadge from './StockBadge.svelte';
-	import { RETAILER_OPTIONS } from '$lib/filters';
-	import { formatAud, formatPct, formatRelative, titleCase } from '$lib/formats';
+	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
+	import {
+		formatAud,
+		formatPct,
+		formatSeenDate,
+		formatShortDate,
+		formatSignedAud,
+		titleCase,
+		todayIso
+	} from '$lib/formats';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30, type ListingDisplay } from '$lib/offers';
 
 	let {
@@ -12,7 +20,10 @@
 		onToggleChart,
 		titleOverride,
 		detailHref,
-		avgPoints
+		avgPoints,
+		saving,
+		lowSince,
+		nearLowSince
 	}: {
 		offer: ListingDisplay;
 		avg30: number | null;
@@ -24,11 +35,21 @@
 		detailHref?: string;
 		// Days actually behind avg30, so the label states real evidence.
 		avgPoints?: number;
+		// Dollars below the 30-day average -- when set, replaces the plain
+		// delta with the actual saving (#6).
+		saving?: number | null;
+		// Set when the price actually IS the all-time low (or a new one) --
+		// the date "all-time" is measured from (#6).
+		lowSince?: string | null;
+		// Set when the price is only NEAR the all-time low (within the
+		// earned-low tolerance) but not actually at or below it -- shows a
+		// "Near low since" badge instead, so the row never overclaims (M3,
+		// 28-Sep finding). Mutually exclusive with lowSince; lowSince wins if
+		// both are somehow given.
+		nearLowSince?: string | null;
 	} = $props();
 
-	const retailerLabel = $derived(
-		RETAILER_OPTIONS.find((o) => o.value === offer.retailer)?.label ?? offer.retailer
-	);
+	const retailerLabel = $derived(lookupRetailerLabel(offer.retailer));
 
 	const title = $derived(
 		titleOverride ?? (titleCase(offer.variantName) || `${retailerLabel} listing`)
@@ -39,7 +60,10 @@
 	const deltaPct = $derived(deltaVsAvg30(offer.latestPrice, avg30));
 </script>
 
-<div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 hover:bg-surface-hover">
+<div
+	class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 hover:bg-surface-hover"
+	data-testid={titleOverride ? 'deal-row' : undefined}
+>
 	<div class="order-1 w-24 shrink-0">
 		{#if offer.latestPrice !== null}
 			<span class="num text-base font-semibold text-text">{formatAud(offer.latestPrice)}</span>
@@ -58,17 +82,24 @@
 		{:else}
 			<span class="block truncate text-sm font-medium text-text" title={title}>{title}</span>
 		{/if}
+		{#if titleOverride && offer.variantName}
+			<span class="block truncate text-xs text-text-muted">{titleCase(offer.variantName)}</span>
+		{/if}
 		<span class="flex items-center gap-1.5 text-xs text-text-muted">
 			<BrandIcon brand={offer.brand} size={12} />
 			{offer.brand} · {retailerLabel}
 			{#if offer.lastSeen}
-				· updated {formatRelative(offer.lastSeen)}
+				· seen {formatSeenDate(offer.lastSeen, todayIso())}
 			{/if}
 		</span>
 	</div>
 
 	<div class="order-3 shrink-0 text-xs">
-		{#if deltaPct !== null}
+		{#if typeof saving === 'number' && deltaPct !== null}
+			<span class={deltaPresentation(deltaPct).class}>
+				{formatSignedAud(-saving)} · {formatPct(deltaPct)} {avgWindowLabel(avgPoints)} ({formatAud(avg30 as number)})
+			</span>
+		{:else if deltaPct !== null}
 			{@const d = deltaPresentation(deltaPct)}
 			<span class={d.class}>
 				{d.arrow}
@@ -79,11 +110,18 @@
 		{/if}
 	</div>
 
-	<div class="order-4 shrink-0">
+	<div class="order-4 shrink-0 flex items-center gap-1.5">
 		{#if offer.delisted}
 			<Badge tone="stale" label="Delisted" />
+		{:else if offer.stale}
+			<Badge tone="stale" label={offer.lastSeen ? `Not seen since ${formatShortDate(offer.lastSeen)}` : 'Not seen recently'} />
 		{:else}
 			<StockBadge stock={offer.latestStock} />
+		{/if}
+		{#if lowSince}
+			<Badge tone="accent" label={`Lowest since ${formatShortDate(lowSince)}`} />
+		{:else if nearLowSince}
+			<Badge tone="accent" label={`Near low since ${formatShortDate(nearLowSince)}`} />
 		{/if}
 	</div>
 
@@ -104,8 +142,9 @@
 		href={offer.listingUrl}
 		target="_blank"
 		rel="noopener noreferrer"
+		aria-label="Buy at {retailerLabel} (opens in a new tab)"
 		class="order-6 shrink-0 text-xs text-accent"
 	>
-		View →
+		Buy at {retailerLabel} ↗
 	</a>
 </div>

@@ -2,7 +2,15 @@
 // unit-testable. Answers two different questions that must not be blended:
 // "is this cheap versus its own recent history" (below the 30-day average)
 // and "is this cheap versus all history" (at or near the all-time low).
-import { MIN_HISTORY_POINTS } from './constants';
+//
+// A deal must clear BOTH floors -- at least DEAL_MIN_PCT and DEAL_MIN_AUD
+// below its own 30-day average -- so a $0.13 (-0.1%) wobble or a 3% move on a
+// $9 part never gets labelled a deal (#6, 28-Sep finding). An all-time low
+// only counts as "earned" if the price was at least EARNED_LOW_RISE_PCT
+// higher at some point in the window -- a flat line isn't a drop. shownDeals
+// is the union both sections actually render, so the page's row count and its
+// facet counts always agree.
+import { DEAL_MIN_AUD, DEAL_MIN_PCT, EARNED_LOW_RISE_PCT, MIN_HISTORY_POINTS } from './constants';
 import { CATEGORY_OPTIONS } from './filters';
 import type { FacetOption } from './offers';
 import type { ListingDisplay } from './listingsPanel';
@@ -17,7 +25,16 @@ export const NEAR_ALL_TIME_LOW_PCT = 2;
 export interface Deal extends DealCandidate {
 	// Percent below the 30-day average. Positive = cheaper than average.
 	depthPct: number | null;
+	// Dollars below the 30-day average. Positive = cheaper.
+	savingAud: number | null;
 	nearAllTimeLow: boolean;
+	// Near the low AND the price was EARNED_LOW_RISE_PCT higher inside the
+	// window: a drop, not a flat line (#6).
+	earnedLow: boolean;
+	// True only when the price actually IS the (new) all-time low, not just
+	// within the near-low tolerance band -- distinguishes "Lowest since" from
+	// "Near low since" (M3, 28-Sep finding).
+	atNewLow: boolean;
 }
 
 export interface DealFilters {
@@ -48,11 +65,32 @@ export function isNearAllTimeLow(price: number, allTimeLow: number | null): bool
 	return price <= allTimeLow * (1 + NEAR_ALL_TIME_LOW_PCT / 100);
 }
 
+// Zero-tolerance version of isNearAllTimeLow: true only when the price
+// actually reached (or beat) the recorded all-time low, not merely within
+// NEAR_ALL_TIME_LOW_PCT of it. The "Lowest since" badge claims the former;
+// isNearAllTimeLow/earnedLow only guarantee the latter, which overclaimed
+// (M3, 28-Sep finding).
+export function isAtNewLow(price: number, allTimeLow: number | null): boolean {
+	if (allTimeLow === null) return false;
+	return price <= allTimeLow;
+}
+
+export function isEarnedLow(c: DealCandidate): boolean {
+	return (
+		isNearAllTimeLow(c.price, c.allTimeLow) &&
+		c.windowHigh !== null &&
+		c.windowHigh >= c.price * (1 + EARNED_LOW_RISE_PCT / 100)
+	);
+}
+
 export function toDeals(candidates: DealCandidate[]): Deal[] {
 	return candidates.filter(isEligible).map((c) => ({
 		...c,
 		depthPct: dealDepthPct(c.price, c.avg30),
-		nearAllTimeLow: isNearAllTimeLow(c.price, c.allTimeLow)
+		savingAud: c.avg30 === null ? null : Math.round((c.avg30 - c.price) * 100) / 100,
+		nearAllTimeLow: isNearAllTimeLow(c.price, c.allTimeLow),
+		earnedLow: isEarnedLow(c),
+		atNewLow: isAtNewLow(c.price, c.allTimeLow)
 	}));
 }
 
@@ -60,12 +98,28 @@ function byDepthDesc(a: Deal, b: Deal): number {
 	return (b.depthPct ?? 0) - (a.depthPct ?? 0) || a.model.localeCompare(b.model);
 }
 
-export function belowAverage(deals: Deal[]): Deal[] {
-	return deals.filter((d) => d.depthPct !== null && d.depthPct > 0).sort(byDepthDesc);
+function isRealDeal(d: Deal): boolean {
+	return (
+		d.depthPct !== null &&
+		d.depthPct >= DEAL_MIN_PCT &&
+		d.savingAud !== null &&
+		d.savingAud >= DEAL_MIN_AUD
+	);
 }
 
+export function belowAverage(deals: Deal[]): Deal[] {
+	return deals.filter(isRealDeal).sort(byDepthDesc);
+}
+
+// Earned lows that are NOT already listed above: one row per product (#6).
 export function atAllTimeLow(deals: Deal[]): Deal[] {
-	return deals.filter((d) => d.nearAllTimeLow).sort(byDepthDesc);
+	return deals.filter((d) => d.earnedLow && !isRealDeal(d)).sort(byDepthDesc);
+}
+
+// The union of both sections -- what the page actually renders, so the
+// facets it counts never overstate what's shown (#6, 28-Sep finding).
+export function shownDeals(deals: Deal[]): Deal[] {
+	return deals.filter((d) => isRealDeal(d) || d.earnedLow);
 }
 
 export function filterDeals(deals: Deal[], filters: DealFilters): Deal[] {
@@ -100,6 +154,7 @@ export function dealToOffer(deal: Deal): ListingDisplay {
 		latestPrice: deal.price,
 		latestStock: 'in_stock',
 		delisted: false,
+		stale: false,
 		inStock: true,
 		firstSeen: null,
 		lastSeen: deal.snapshotDate,

@@ -44,6 +44,7 @@ from config import (
     setup_logging,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
+from scraper.chip_key import Matcher
 from scraper.snapshot_io import build_snapshot, save_snapshot
 
 LOGGER = logging.getLogger(__name__)
@@ -84,53 +85,15 @@ def _is_bundle_product(name: str, url: str = "") -> bool:
 
 
 def match_product(scraped_name: str, watchlist_product: WatchlistProduct) -> bool:
-    """Check if a scraped product matches a watchlist entry."""
+    """Check if a scraped product matches a watchlist entry.
+
+    Matching is exact chip-key equality (see `scraper/chip_key.py`): search
+    terms no longer drive matching, only the Algolia queries.
+    """
     # Component bundles (CPU + motherboard) must not match a single component
     if _is_bundle_product(scraped_name):
         return False
-    name_lower = scraped_name.lower()
-    search_terms = watchlist_product["search_terms"]
-    if not search_terms:
-        return False
-    primary_term = search_terms[0].lower()
-    if primary_term not in name_lower:
-        return False
-    # Guard: ensure the match isnt a substring of a different variant
-    # e.g., "5800x" should not match "5800x3d", "9900" should not match "9900x",
-    # "rtx 5070" should not match "rtx 5070 ti"
-    match_end = name_lower.index(primary_term) + len(primary_term)
-    # Check if there's a space after the match (for space-separated variants)
-    had_space = match_end < len(name_lower) and name_lower[match_end] == " "
-    # Skip whitespace to find the next meaningful character
-    pos = match_end
-    while pos < len(name_lower) and name_lower[pos] == " ":
-        pos += 1
-    # Directly-attached variant: no space + alphanumeric char (e.g., "5800x" + "3d", "14700k" + "f")
-    if not had_space and pos < len(name_lower) and name_lower[pos].isalnum():
-        return False
-    # Space-separated variant: search term ends with digit + short word follows
-    # Short words (< 6 chars) like "Ti", "X", "3D" are variants;
-    # longer words like "Processor", "Windforce" are generic descriptors.
-    if primary_term and primary_term[-1].isdigit() and pos < len(name_lower):
-        if name_lower[pos].isalpha():
-            word_end = pos
-            while word_end < len(name_lower) and name_lower[word_end].isalnum():
-                word_end += 1
-            if word_end - pos < 6:
-                return False
-        elif name_lower[pos].isdigit():
-            return False
-    # GPU VRAM guard to prevent false matches
-    wp = watchlist_product
-    if wp["category"] == "gpu" and wp.get("vram_gb"):
-        model_num = wp["model"].lower().split()[-1]
-        if model_num in name_lower:
-            return True
-        vram_str = f"{wp["vram_gb"]}gb"
-        if vram_str in name_lower:
-            return True
-        return False
-    return True
+    return Matcher([watchlist_product]).resolve(scraped_name, watchlist_product["category"]) == 0
 
 
 def _parse_price(price_text: Any) -> float | None:
@@ -641,43 +604,37 @@ def scrape_category(
         wp["model"]: gi for gi, wp in enumerate(watchlist)
     }
 
-    # Track ALL matches per watchlist item
+    # Each product resolves to at most one watchlist row via the canonical
+    # chip-key Matcher (see scraper/chip_key.py): exact key equality, with
+    # VRAM used only to disambiguate GPU rows that share a key. One listing,
+    # one product — unlike the old per-watchlist-entry substring scan, a
+    # product can no longer be claimed by two different watchlist rows (#1).
+    matcher = Matcher(category_watchlist)
     all_matches: dict[int, list[Dict[str, Any]]] = {}  # global_idx -> matched product dicts
-
-    # Longest search term first = most specific, preserved from the batched
-    # implementation so log ordering stays familiar. Matching itself is
-    # order-independent: every watchlist entry sees the whole catalogue.
-    sorted_indices = sorted(
-        range(len(category_watchlist)),
-        key=lambda i: len(category_watchlist[i]["search_terms"][0]),
-        reverse=True,
-    )
-
-    for idx in sorted_indices:
-        wp = category_watchlist[idx]
+    for prod in catalogue:
+        if _is_bundle_product(prod["name"], prod.get("url", "")):
+            continue
+        local = matcher.resolve(prod["name"], category)
+        if local is None:
+            continue
+        wp = category_watchlist[local]
         global_idx = model_to_global.get(wp["model"])
         if global_idx is None:
             continue
-
-        for prod in catalogue:
-            if _is_bundle_product(prod["name"], prod.get("url", "")):
-                continue
-            if not match_product(prod["name"], wp):
-                continue
-            price = _parse_price(prod["price"])
-            if not price:
-                continue
-            all_matches.setdefault(global_idx, []).append({
-                "watchlist_model": wp["model"],
-                "watchlist_category": wp["category"],
-                "watchlist_brand": wp["brand"],
-                "watchlist_gen_tier": wp["gen_tier"],
-                "retailer": "pccg",
-                "scraped_name": prod["name"][:120],
-                "price_aud": price,
-                "stock_status": prod.get("stock_status", "unknown"),
-                "url": prod["url"],
-            })
+        price = _parse_price(prod["price"])
+        if not price:
+            continue
+        all_matches.setdefault(global_idx, []).append({
+            "watchlist_model": wp["model"],
+            "watchlist_category": wp["category"],
+            "watchlist_brand": wp["brand"],
+            "watchlist_gen_tier": wp["gen_tier"],
+            "retailer": "pccg",
+            "scraped_name": prod["name"][:120],
+            "price_aud": price,
+            "stock_status": prod.get("stock_status", "unknown"),
+            "url": prod["url"],
+        })
 
     # Save ALL matched variants for each watchlist item — regardless of stock
     # state. Sold-out and on-order cards keep their listings and price history.

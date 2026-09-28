@@ -24,6 +24,13 @@ const CATEGORIES: readonly string[] = CATEGORY_OPTIONS.map((o) => o.value);
 const RETAILERS: readonly string[] = RETAILER_OPTIONS.map((o) => o.value);
 const TIERS: readonly string[] = TIER_OPTIONS.map((o) => o.value);
 
+const RETAILER_LABELS = new Map(RETAILER_OPTIONS.map((o) => [o.value as string, o.label]));
+
+// The one place a retailer slug becomes a display name (#5).
+export function retailerLabel(slug: string): string {
+	return RETAILER_LABELS.get(slug) ?? slug;
+}
+
 export function parseFilters(searchParams: URLSearchParams): ListingFilters {
 	const filters: ListingFilters = {};
 	const category = searchParams.get('category');

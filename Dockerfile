@@ -21,7 +21,7 @@
 #   docker run -d --name trackaroo-pipeline -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" --entrypoint /usr/bin/tini trackaroo -- /usr/local/bin/trackaroo-entrypoint-pipeline
 #
 # Dashboard only, no pipeline:
-#   docker run -d --name trackaroo-web -p 3000:3000 -v "$(pwd)/db:/app/db" --entrypoint /usr/bin/tini trackaroo -- node web/build/index.js
+#   docker run -d --name trackaroo-web -p 3000:3000 -v "$(pwd)/db:/app/db" --entrypoint /usr/bin/tini trackaroo -- node web/server.js
 
 # ── Stage 1: build the SvelteKit frontend ──────────────────────────────────
 FROM node:24-bookworm-slim AS web
@@ -98,6 +98,7 @@ RUN set -eux; \
 # Web frontend runtime bits built in stage 1.
 COPY --from=web /app/web/node_modules ./web/node_modules
 COPY --from=web /app/web/build ./web/build
+COPY --from=web /app/web/server.js ./web/server.js
 COPY --from=web /app/web/package.json ./web/package.json
 COPY --from=web /app/web/svelte.config.js ./web/svelte.config.js
 

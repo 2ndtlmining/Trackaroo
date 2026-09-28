@@ -24,6 +24,7 @@ from config import (
     setup_logging,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
+from scraper.chip_key import Matcher
 from scraper.snapshot_io import build_snapshot, save_snapshot
 
 logger = logging.getLogger(__name__)
@@ -232,12 +233,13 @@ def _is_bundle_product(name: str, desc: str = "", url: str = "") -> bool:
 
 
 def match_product(scraped_name: str, scraped_desc: str, watchlist_product: WatchlistProduct) -> bool:
-    """Check if a scraped product matches a watchlist entry using search terms.
+    """Check if a scraped product matches a watchlist entry.
 
-    Uses the primary search term (e.g. 'rtx 5070') as the main matcher.
-    Brand names like 'Nvidia' or 'AMD' often don't appear in scraped product names
-    (e.g. 'ASUS Dual GeForce RTX 5070' has no 'Nvidia'), so we skip the brand check
-    and rely on the specific model number in the search term.
+    Matching is exact chip-key equality (see `scraper/chip_key.py`): the
+    scraped name is reduced to a canonical key such as `rtx 5060 ti` or
+    `ryzen 5500gt`, and it matches only when that key equals the watchlist
+    row's own key. Search terms are no longer used to match; they still
+    drive PCCG's Algolia search queries.
 
     Args:
         scraped_name: Name of the scraped product.
@@ -250,45 +252,17 @@ def match_product(scraped_name: str, scraped_desc: str, watchlist_product: Watch
     # Component bundles (CPU + motherboard) must not match a single component
     if _is_bundle_product(scraped_name, scraped_desc):
         return False
-
-    name_lower = scraped_name.lower()
-    desc_lower = scraped_desc.lower()
-    combined = f"{name_lower} {desc_lower}"
-
-    search_terms = watchlist_product["search_terms"]
-    if not search_terms:
-        return False
-
-    # Primary match: first search term must be in the combined text
-    # This is the key identifier (e.g. 'rtx 5070', 'ryzen 7 5800x3d')
-    primary_term = search_terms[0].lower()
-    if primary_term not in combined:
-        return False
-
-    # Extra guard: for GPUs, check VRAM matches if present in the scraped name
-    # This prevents 'rtx 5070' matching 'rtx 5070 ti' accidentally
-    wp = watchlist_product
-    if wp["category"] == "gpu" and wp.get("vram_gb"):
-        vram = wp["vram_gb"]
-        vram_str = f"{vram}gb"
-        # VRAM must appear OR the model must be distinctive enough
-        model_num = wp["model"].lower().split()[-1]  # e.g. '5070', '5090'
-        if model_num in name_lower:
-            return True
-        if vram_str in combined:
-            return True
-        # If neither VRAM nor exact model number matched, reject
-        return False
-
-    return True
+    return Matcher([watchlist_product]).resolve(
+        scraped_name, watchlist_product["category"], scraped_desc
+    ) == 0
 
 
 def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Scorptec and match against watchlist.
 
-    Key: when iterating the watchlist for each scraped product, we process
-    entries with LONGER primary search terms first. This prevents substring
-    conflicts — e.g. 'ryzen 5 5600' matching before 'ryzen 5 5600x' can.
+    Each scraped product resolves to at most one watchlist row via the
+    canonical chip-key `Matcher` (see `scraper/chip_key.py`): exact key
+    equality, with VRAM used only to disambiguate GPU rows that share a key.
 
     For each watchlist item, we capture ALL matching products and keep only
     the cheapest in-stock variant. This ensures we don't miss cheaper models
@@ -300,12 +274,7 @@ def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, A
     Returns:
         Tuple of (matched results, matched watchlist ids, all scraped products per category).
     """
-    # Build sorted index order: longer search terms first (more specific matches first)
-    watchlist_order = sorted(
-        range(len(watchlist)),
-        key=lambda i: len(watchlist[i]["search_terms"][0]),
-        reverse=True,
-    )
+    matcher = Matcher(watchlist)
 
     # Track ALL matches per watchlist item, then pick cheapest in-stock
     all_matches: Dict[int, List[Dict[str, Any]]] = {}  # watchlist_index -> list of matched product dicts
@@ -324,25 +293,24 @@ def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, A
         for scraped in scraped_products:
             if _is_bundle_product(scraped["name"], scraped.get("full_description", ""), scraped.get("url", "")):
                 continue
-            for i in watchlist_order:
-                wp = watchlist[i]
-                if match_product(scraped["name"], scraped["full_description"], wp):
-                    match_dict = {
-                        "watchlist_model": wp["model"],
-                        "watchlist_category": wp["category"],
-                        "watchlist_brand": wp["brand"],
-                        "watchlist_gen_tier": wp["gen_tier"],
-                        "retailer": "scorptec",
-                        "scraped_name": scraped["name"],
-                        "price_aud": scraped["price_aud"],
-                        "stock_status": scraped["stock_status"],
-                        "url": scraped["url"],
-                        "retailer_sku": scraped["retailer_sku"],
-                    }
-                    if i not in all_matches:
-                        all_matches[i] = []
-                    all_matches[i].append(match_dict)
-                    break  # One match per scraped product (avoid duplicate matches)
+            category = cat_key.split("_", 1)[0]  # "cpu_amd_am4" -> "cpu"
+            i = matcher.resolve(scraped["name"], category, scraped.get("full_description", ""))
+            if i is None:
+                continue
+            wp = watchlist[i]
+            match_dict = {
+                "watchlist_model": wp["model"],
+                "watchlist_category": wp["category"],
+                "watchlist_brand": wp["brand"],
+                "watchlist_gen_tier": wp["gen_tier"],
+                "retailer": "scorptec",
+                "scraped_name": scraped["name"],
+                "price_aud": scraped["price_aud"],
+                "stock_status": scraped["stock_status"],
+                "url": scraped["url"],
+                "retailer_sku": scraped["retailer_sku"],
+            }
+            all_matches.setdefault(i, []).append(match_dict)
 
     # Save ALL matched variants for each watchlist item — regardless of stock
     # state. An out-of-stock variant's price history still matters, and this

@@ -11,7 +11,8 @@
 		avg30,
 		avgPoints,
 		selected,
-		onToggleListing
+		onToggleListing,
+		retailerLatest = {}
 	}: {
 		series: Series[];
 		productBrand: string;
@@ -20,6 +21,9 @@
 		avgPoints?: number;
 		selected: ReadonlySet<number>;
 		onToggleListing: (listingId: number) => void;
+		// Latest snapshot_date per retailer, used to flag listings unseen for
+		// STALE_LISTING_DAYS+ even before the pipeline marks them stale (#4).
+		retailerLatest?: Record<string, string>;
 	} = $props();
 
 	// Out-of-stock listings are noise for someone shopping today, and on a
@@ -31,7 +35,7 @@
 	let query = $state('');
 	let expanded = $state(false);
 
-	const offers = $derived(toListingDisplays(series, productBrand, selected));
+	const offers = $derived(toListingDisplays(series, productBrand, selected, retailerLatest));
 	const filters = $derived<OfferFilters>({ inStockOnly, retailer, brand, query });
 	const view = $derived(buildOfferView(offers, filters, expanded));
 

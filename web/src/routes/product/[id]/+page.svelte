@@ -7,6 +7,7 @@
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
 	import type { AlertChannel } from '$lib/types';
 	import { formatDate, formatRelative, titleCase } from '$lib/formats';
+	import { retailerLabel } from '$lib/filters';
 	import { generationTierLabel } from '$lib/tiers';
 	import { buildHeadline } from '$lib/productHeadline';
 	import { toListingDisplays } from '$lib/listingsPanel';
@@ -39,7 +40,7 @@
 				listingId: s.listing.id,
 label:
 				titleCase(s.listing.variant_name ?? '') ||
-				`${s.listing.retailer} SKU ${s.listing.retailer_sku ?? '?'}`,
+				`${retailerLabel(s.listing.retailer)} SKU ${s.listing.retailer_sku ?? '?'}`,
 				points: s.points.map((p) => ({ date: p.snapshot_date, price: p.price_aud }))
 			}))
 	);
@@ -74,7 +75,9 @@ label:
 	);
 	const totalPoints = $derived(series.reduce((acc, s) => acc + s.points.length, 0));
 
-	const offers = $derived(toListingDisplays(series, product.brand, selected));
+	const offers = $derived(
+		toListingDisplays(series, product.brand, selected, data.retailerLatest)
+	);
 	const headline = $derived(buildHeadline(offers, data.band, data.stats));
 </script>
 
@@ -134,6 +137,7 @@ label:
 				avgPoints={headline.avgPoints}
 				{selected}
 				onToggleListing={toggleListing}
+				retailerLatest={data.retailerLatest}
 			/>
 		</div>
 	{:else}

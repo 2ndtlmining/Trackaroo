@@ -128,3 +128,32 @@ describe('priceRange', () => {
 		expect(priceRange(mixed)).toEqual({ min: 619, max: 619 });
 	});
 });
+
+describe('stale listings (#4)', () => {
+	it('a status=stale listing is not in stock even if its last snapshot said so', () => {
+		const s = series(9, 'ASUS TUF RTX 5090', [snapshot('2026-08-20', 7499, 'in_stock')], 'stale');
+		const [d] = toListingDisplays([s], 'NVIDIA', new Set());
+		expect(d.stale).toBe(true);
+		expect(d.inStock).toBe(false);
+	});
+
+	it('an active listing unseen for more than 7 days before its retailer latest is stale', () => {
+		const s = series(9, 'ASUS TUF RTX 5090', [snapshot('2026-08-20', 7499, 'in_stock')]);
+		const [d] = toListingDisplays([s], 'NVIDIA', new Set(), { scorptec: '2026-09-28' });
+		expect(d.stale).toBe(true);
+		expect(d.inStock).toBe(false);
+	});
+
+	it('a listing seen within the window stays buyable', () => {
+		const s = series(9, 'ASUS TUF RTX 5090', [snapshot('2026-09-25', 8999, 'in_stock')]);
+		const [d] = toListingDisplays([s], 'NVIDIA', new Set(), { scorptec: '2026-09-28' });
+		expect(d.stale).toBe(false);
+		expect(d.inStock).toBe(true);
+	});
+
+	it('priceRange ignores stale listings', () => {
+		const ghost = series(1, 'ghost', [snapshot('2026-08-20', 7499, 'in_stock')], 'stale');
+		const live = series(2, 'live', [snapshot('2026-09-28', 8999, 'in_stock')]);
+		expect(priceRange(toListingDisplays([ghost, live], 'NVIDIA', new Set()))).toEqual({ min: 8999, max: 8999 });
+	});
+});

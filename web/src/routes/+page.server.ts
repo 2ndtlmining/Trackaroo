@@ -1,13 +1,13 @@
 import {
 	getAvailableCounts,
 	getCategoryCounts,
-	getCheapestPerModel,
 	getDealCandidates,
-	getHeaderStats,
 	getMovers,
-	getRetailerFreshness
+	getRetailerFreshness,
+	type HeaderStats
 } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
+import { memo } from '$lib/server/cache';
 import { belowAverage, toDeals, type Deal } from '$lib/deals';
 import { topMoversByProduct } from '$lib/movers';
 import { retailerHealth } from '$lib/health';
@@ -24,18 +24,27 @@ const SECTIONS: Array<{ category: Category; title: string }> = [
 	{ category: 'cpu', title: 'CPUs' }
 ];
 
-export function load() {
+export async function load({
+	parent,
+	setHeaders
+}: {
+	parent: () => Promise<{ stats: HeaderStats }>;
+	setHeaders: (headers: Record<string, string>) => void;
+}) {
 	const db = getDb();
-	const stats = getHeaderStats(db);
-	const counts = getCategoryCounts(db);
-	const available = getAvailableCounts(db);
+	setHeaders({ 'cache-control': 'public, max-age=60, stale-while-revalidate=300' });
+	// The layout already computed this (it's on every page); no need to query
+	// it again here.
+	const { stats } = await parent();
+	const counts = memo(db, 'categoryCounts', () => getCategoryCounts(db));
+	const available = memo(db, 'availableCounts', () => getAvailableCounts(db));
+	const allCandidates = memo(db, 'dealCandidates', () => getDealCandidates(db));
 	// Same source as /deals, so the two surfaces can never disagree about
 	// what counts as a deal or how deep it is.
-	const allDeals = belowAverage(toDeals(getDealCandidates(db)));
-	const movers = getMovers(db, HOME_MOVER_DAYS);
+	const allDeals = belowAverage(toDeals(allCandidates));
+	const movers = memo(db, 'movers:7', () => getMovers(db, HOME_MOVER_DAYS));
 
 	const sections = SECTIONS.map(({ category, title }) => {
-		const cheapest = getCheapestPerModel(db, category);
 		// One row per product: getMovers is per-listing, and a retailer carrying
 		// several SKUs of one card (PCCG has three MSI RTX 5070s) would otherwise
 		// fill all three slots with what looks like the same row repeated.
@@ -48,10 +57,9 @@ export function load() {
 			href: `/products?category=${category}`,
 			trackedCount: counts.get(category) ?? 0,
 			availableCount: available.get(category) ?? 0,
-			cheapestPrice: cheapest.reduce<number | null>(
-				(min, c) => (min === null || c.price < min ? c.price : min),
-				null
-			),
+			cheapestPrice: allCandidates
+				.filter((c) => c.category === category)
+				.reduce<number | null>((min, c) => (min === null || c.price < min ? c.price : min), null),
 			deals: allDeals.filter((d: Deal) => d.category === category).slice(0, PER_COLUMN),
 			drops,
 			rises
@@ -59,7 +67,7 @@ export function load() {
 	});
 
 	return {
-		retailers: retailerHealth(getRetailerFreshness(db)),
+		retailers: retailerHealth(memo(db, 'retailerFreshness', () => getRetailerFreshness(db))),
 		latestSnapshotDate: stats.latestSnapshotDate,
 		snapshotDays: stats.snapshotDays,
 		snapshotCount: stats.snapshotCount,

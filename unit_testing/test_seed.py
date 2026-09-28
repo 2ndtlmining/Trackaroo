@@ -56,18 +56,19 @@ class TestLoadWatchlist:
         # 31-Aug: PCCG stocks the non-F/non-K part and it was absent from the
         # watchlist entirely. These counts are a guard against the watchlist
         # being truncated or corrupted, so update them deliberately.
+        # 105 on 28-Sep-2026: 245K and the four memory/GRE variants (#1, #2)
         products = load_watchlist(WATCHLIST_PATH)
-        assert len(products) == 100
+        assert len(products) == 105
 
     def test_cpu_count(self):
         products = load_watchlist(WATCHLIST_PATH)
         cpus = [p for p in products if p["category"] == "cpu"]
-        assert len(cpus) == 54
+        assert len(cpus) == 55
 
     def test_gpu_count(self):
         products = load_watchlist(WATCHLIST_PATH)
         gpus = [p for p in products if p["category"] == "gpu"]
-        assert len(gpus) == 46
+        assert len(gpus) == 50
 
     def test_all_have_brand(self):
         products = load_watchlist(WATCHLIST_PATH)
@@ -248,3 +249,28 @@ class TestGenerationTierSync:
             "SELECT generation_tier FROM products WHERE model = ?", (sample_gpu["model"],)
         ).fetchone()[0]
         assert tier == sample_gpu["generation_tier"]
+
+
+class TestSpecSync:
+    """The watchlist is the source of truth for vram_gb/cores too, not just
+    generation_tier. Arc B570 sat at 12GB in the DB for a month after the CSV
+    was corrected to 10GB, because seed_products only ever synced the tier
+    (#2). Identity columns (category, brand, model) are never touched.
+    """
+
+    def test_existing_product_spec_is_synced_from_csv(self, tmp_path):
+        conn = init_db(tmp_path / "t.db")
+        seed_products(conn, [{
+            "category": "gpu", "brand": "Intel", "model": "Arc B570",
+            "vram_gb": 12, "cores": None, "generation_tier": "current", "tracked": 1,
+        }])
+        stats = seed_products(conn, [{
+            "category": "gpu", "brand": "Intel", "model": "Arc B570",
+            "vram_gb": 10, "cores": None, "generation_tier": "current", "tracked": 1,
+        }])
+
+        assert stats["updated"] == 1
+        row = conn.execute(
+            "SELECT vram_gb FROM products WHERE model = 'Arc B570'"
+        ).fetchone()
+        assert row[0] == 10

@@ -43,7 +43,7 @@ from config import (
     setup_logging,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
-from scraper.scorptec import match_product
+from scraper.chip_key import Matcher
 from scraper.snapshot_io import build_snapshot, save_snapshot
 
 logger = logging.getLogger(__name__)
@@ -208,14 +208,11 @@ def scrape_umart(
 ) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Umart and match the watchlist against it.
 
-    Matching reuses ``scraper.scorptec.match_product`` rather than growing a
-    third copy: Umart's product names are the same shape (brand, model, spec),
-    and the bundle filtering and VRAM guard in that function are subtle enough
-    that two implementations would drift.
-
-    As in ``scrape_scorptec``, watchlist entries are tested **longest primary
-    search term first** and the loop breaks on the first hit, so `rtx 5070 ti`
-    claims a card before `rtx 5070` can.
+    Each scraped product resolves to at most one watchlist row via the
+    canonical chip-key ``Matcher`` (see ``scraper/chip_key.py``): exact key
+    equality, with VRAM used only to disambiguate GPU rows that share a key.
+    Bundle exclusion comes from the same matcher (``is_excluded`` covers
+    "bundle" and "combo").
 
     Args:
         watchlist: Watchlist entries to match against.
@@ -223,11 +220,7 @@ def scrape_umart(
     Returns:
         (results, matched watchlist indices, all scraped products per category).
     """
-    watchlist_order = sorted(
-        range(len(watchlist)),
-        key=lambda i: len(watchlist[i]["search_terms"][0]),
-        reverse=True,
-    )
+    matcher = Matcher(watchlist)
 
     results: List[Dict[str, Any]] = []
     matched_ids: Set[int] = set()
@@ -240,28 +233,25 @@ def scrape_umart(
         logger.info("  %d products total for %s", len(scraped), category)
 
         for product in scraped:
-            for i in watchlist_order:
-                wp = watchlist[i]
-                if wp["category"] != category:
-                    continue
-                if not match_product(product["name"], product["full_description"], wp):
-                    continue
-                results.append(
-                    {
-                        "watchlist_model": wp["model"],
-                        "watchlist_category": wp["category"],
-                        "watchlist_brand": wp["brand"],
-                        "watchlist_gen_tier": wp["gen_tier"],
-                        "retailer": "umart",
-                        "scraped_name": product["name"],
-                        "price_aud": product["price_aud"],
-                        "stock_status": product["stock_status"],
-                        "url": product["url"],
-                        "retailer_sku": product["retailer_sku"],
-                    }
-                )
-                matched_ids.add(i)
-                break  # one watchlist entry per scraped product
+            i = matcher.resolve(product["name"], category, product.get("full_description", ""))
+            if i is None:
+                continue
+            wp = watchlist[i]
+            results.append(
+                {
+                    "watchlist_model": wp["model"],
+                    "watchlist_category": wp["category"],
+                    "watchlist_brand": wp["brand"],
+                    "watchlist_gen_tier": wp["gen_tier"],
+                    "retailer": "umart",
+                    "scraped_name": product["name"],
+                    "price_aud": product["price_aud"],
+                    "stock_status": product["stock_status"],
+                    "url": product["url"],
+                    "retailer_sku": product["retailer_sku"],
+                }
+            )
+            matched_ids.add(i)
 
     return results, matched_ids, all_scraped
 

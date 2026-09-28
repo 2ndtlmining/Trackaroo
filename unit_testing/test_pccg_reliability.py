@@ -239,16 +239,19 @@ def test_partial_catalogue_keeps_its_matches_without_tripping(monkeypatch):
     """
     monkeypatch.setattr("scraper.pccg._write_cooldown", lambda reason: None)
     monkeypatch.setattr("scraper.pccg._clear_cooldown", lambda: None)
+    # Names must be real enough to yield a chip key (#1): matching now goes
+    # through scraper.chip_key.Matcher, which needs a recognisable model
+    # number (e.g. "RTX 5070"), not an arbitrary placeholder like "Found GPU".
     monkeypatch.setattr("scraper.pccg.algolia_fetch_catalogue", lambda *a, **k: [
-        {"name": "Gigabyte Found GPU Windforce 12GB", "price": 500,
+        {"name": "Gigabyte GeForce RTX 5070 Windforce 12GB", "price": 500,
          "url": "/p/x", "stock_status": "in_stock"},
     ])
 
     watchlist = [
-        {"category": "gpu", "model": "Found GPU", "brand": "NVIDIA", "gen_tier": "current",
-         "search_terms": ["found gpu"]},
-        {"category": "gpu", "model": "Missing GPU", "brand": "NVIDIA", "gen_tier": "current",
-         "search_terms": ["missing gpu"]},
+        {"category": "gpu", "model": "GeForce RTX 5070", "brand": "NVIDIA", "gen_tier": "current",
+         "vram_gb": 12, "search_terms": ["rtx 5070"]},
+        {"category": "gpu", "model": "GeForce RTX 5080", "brand": "NVIDIA", "gen_tier": "current",
+         "vram_gb": 16, "search_terms": ["rtx 5080"]},
     ]
     results, matched, tripped = scrape_category("gpu", watchlist)
 

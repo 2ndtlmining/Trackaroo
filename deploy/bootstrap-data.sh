@@ -95,4 +95,14 @@ fi
 
 log "Empty DB found — ingesting ${seed_files} baked data/*.json snapshots..."
 TRACKAROO_DATA_DIR=/app/seed-data python ingest.py
+
+# Old snapshot JSON carries the matcher's old decisions; re-apply today's rules
+# so a rebuilt DB does not resurrect mis-filed listings (#1, #2). Both
+# entrypoints already run `python seed.py` before this script, so the new
+# watchlist products this repair may re-point listings onto already exist.
+# Non-fatal like the other best-effort steps above: this script runs under
+# `set -e`, and a hard failure here would crash-loop the container once, then
+# the has_snapshots gate above would skip this block on every later boot --
+# silently skipping the repair forever instead of just this run.
+python repair_listings.py --apply || log "WARNING: repair_listings failed; run it by hand (see DEPLOYMENT.md)"
 log "Bootstrap hydrate complete."

@@ -1,14 +1,12 @@
 <script lang="ts">
-	import { RETAILER_OPTIONS } from '$lib/filters';
+	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
 	import { formatAud, formatPct, titleCase } from '$lib/formats';
 	import { deltaPresentation } from '$lib/offers';
 	import type { Mover } from '$lib/server/repos';
 
 	let { mover }: { mover: Mover } = $props();
 
-	const retailerLabel = $derived(
-		RETAILER_OPTIONS.find((o) => o.value === mover.retailer)?.label ?? mover.retailer
-	);
+	const retailerLabel = $derived(lookupRetailerLabel(mover.retailer));
 	// Which SKU moved. Several listings of one card share a model name, so
 	// without this the row can't be told apart from its siblings on /movers.
 	// Same first-clause treatment the /movers Variant column uses.

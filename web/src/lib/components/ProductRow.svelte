@@ -1,6 +1,6 @@
 <script lang="ts">
 	import BrandIcon from './BrandIcon.svelte';
-	import { RETAILER_OPTIONS } from '$lib/filters';
+	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
 	import { formatAud, formatPct } from '$lib/formats';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30 } from '$lib/offers';
 	import type { ProductGroup } from '$lib/server/repos';
@@ -13,17 +13,17 @@
 	}: {
 		// neverListed: tracked in the watchlist but no retailer has ever listed
 		// it — a different statement from "listed, currently out of stock".
-		group: ProductGroup & { neverListed?: boolean };
+		// The /products loader drops `listings` from each group (#28) — nothing
+		// here reads it — so the prop type omits it too, matching what actually
+		// arrives.
+		group: Omit<ProductGroup, 'listings'> & { neverListed?: boolean };
 		compareSelected?: boolean;
 		compareDisabled?: boolean;
 		onToggleCompare?: (productId: number) => void;
 	} = $props();
 
 	const retailerLabel = $derived(
-		group.cheapestInStockRetailer
-			? (RETAILER_OPTIONS.find((o) => o.value === group.cheapestInStockRetailer)?.label ??
-				group.cheapestInStockRetailer)
-			: null
+		group.cheapestInStockRetailer ? lookupRetailerLabel(group.cheapestInStockRetailer) : null
 	);
 
 	const deltaPct = $derived(deltaVsAvg30(group.cheapestInStockPrice, group.avg30 ?? null));

@@ -53,6 +53,28 @@ export function formatDate(dateStr: string): string {
 	return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+export function formatShortDate(isoDate: string): string {
+	const [y, m, d] = isoDate.split('-').map(Number);
+	return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+// Snapshots are dated, not timed: comparing a 'YYYY-MM-DD' against now() made
+// every row say "updated just now" (28-Sep finding). Whole days only.
+export function formatSeenDate(isoDate: string, today: string): string {
+	const days = Math.round((Date.parse(today) - Date.parse(isoDate)) / 86_400_000);
+	if (days <= 0) return 'today';
+	if (days === 1) return 'yesterday';
+	if (days < 7) return `${days} days ago`;
+	return formatShortDate(isoDate);
+}
+
+export function todayIso(now: Date = new Date()): string {
+	const y = now.getFullYear();
+	const m = String(now.getMonth() + 1).padStart(2, '0');
+	const d = String(now.getDate()).padStart(2, '0');
+	return `${y}-${m}-${d}`;
+}
+
 export function freshnessLabel(lastSnapshotAt: string | null, now: Date = new Date()): string {
 	if (!lastSnapshotAt) return 'no data';
 	const ageDays = Math.floor((now.getTime() - new Date(lastSnapshotAt).getTime()) / 86_400_000);

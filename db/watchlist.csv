@@ -15,9 +15,11 @@
 # The seed script reads this file and populates the products table. If a product
 # already exists it is NOT overwritten — only new rows are inserted.
 #
-# Adding a product? See docs/ARCHITECTURE.md, Part 2 §7 — it covers the alias
-# ordering rule and when spec data turns up. A malformed row is skipped with an
-# error naming the line and field; it no longer stops the pipeline.
+# Adding a product? See docs/ARCHITECTURE.md, Part 2 §7 — it covers
+# when spec data turns up. A malformed row is skipped with an error naming
+# the line and field; it no longer stops the pipeline. Matching is exact
+# chip-key equality (scraper/chip_key.py). Rows sharing a chip key must
+# differ in VRAM. Aliases only drive PCCG search queries.
 #
 # Last verified against Part 2 scope rules: 2026-08-09
 
@@ -72,11 +74,13 @@ cpu,Intel,Core i9-14900KF,24c,current-1,"core i9 14900kf|i9 14900kf|14900kf inte
 cpu,Intel,Core i9-14900F,24c,current-1,"core i9 14900f|i9 14900f|14900f intel"
 cpu,Intel,Core i9-14900KS,24c,current-1,"core i9 14900ks|i9 14900ks|14900ks intel"
 cpu,Intel,Core Ultra 5 245,14c,current,"core ultra 5 245|ultra 5 245|245 intel"
+cpu,Intel,Core Ultra 5 245K,14c,current,"core ultra 5 245k|ultra 5 245k|245k intel"
 cpu,Intel,Core Ultra 5 245KF,14c,current,"core ultra 5 245kf|ultra 5 245kf|245kf intel"
 cpu,Intel,Core Ultra 7 265K,20c,current,"core ultra 7 265k|ultra 7 265k|265k intel"
 cpu,Intel,Core Ultra 7 265KF,20c,current,"core ultra 7 265kf|ultra 7 265kf|265kf intel"
 cpu,Intel,Core Ultra 9 285K,24c,current,"core ultra 9 285k|ultra 9 285k|285k intel"
 gpu,NVIDIA,GeForce RTX 3050,8GB,current-2,"rtx 3050|3050 nvidia|nvidia rtx 3050"
+gpu,NVIDIA,GeForce RTX 3050 6GB,6GB,current-2,"rtx 3050 6gb|rtx 3050|3050 nvidia"
 gpu,NVIDIA,GeForce RTX 3060,12GB,current-2,"rtx 3060|3060 nvidia|nvidia rtx 3060"
 gpu,NVIDIA,GeForce RTX 3060 Ti,8GB,current-2,"rtx 3060 ti|3060ti|3060 ti nvidia"
 gpu,NVIDIA,GeForce RTX 3070,8GB,current-2,"rtx 3070|3070 nvidia|nvidia rtx 3070"
@@ -96,6 +100,7 @@ gpu,NVIDIA,GeForce RTX 4080 Super,16GB,current-1,"rtx 4080 super|4080s|4080 supe
 gpu,NVIDIA,GeForce RTX 4090,24GB,current-1,"rtx 4090|4090 nvidia|nvidia rtx 4090"
 gpu,NVIDIA,GeForce RTX 5060,8GB,current,"rtx 5060|5060 nvidia|nvidia rtx 5060"
 gpu,NVIDIA,GeForce RTX 5060 Ti,16GB,current,"rtx 5060 ti|5060ti|5060 ti nvidia"
+gpu,NVIDIA,GeForce RTX 5060 Ti 8GB,8GB,current,"rtx 5060 ti 8gb|rtx 5060 ti|5060ti"
 gpu,NVIDIA,GeForce RTX 5070,12GB,current,"rtx 5070|5070 nvidia|nvidia rtx 5070"
 gpu,NVIDIA,GeForce RTX 5070 Ti,16GB,current,"rtx 5070 ti|5070ti|5070 ti nvidia"
 gpu,NVIDIA,GeForce RTX 5080,16GB,current,"rtx 5080|5080 nvidia|nvidia rtx 5080"
@@ -115,7 +120,9 @@ gpu,AMD,Radeon RX 7900 GRE,16GB,current-1,"rx 7900 gre|7900gre|7900 gre amd"
 gpu,AMD,Radeon RX 7900 XT,20GB,current-1,"rx 7900 xt|7900xt|7900 xt amd"
 gpu,AMD,Radeon RX 7900 XTX,24GB,current-1,"rx 7900 xtx|7900xtx|7900 xtx amd"
 gpu,AMD,Radeon RX 9060 XT,16GB,current,"rx 9060 xt|9060xt|9060 xt amd"
+gpu,AMD,Radeon RX 9060 XT 8GB,8GB,current,"rx 9060 xt 8gb|rx 9060 xt|9060xt"
 gpu,AMD,Radeon RX 9070,16GB,current,"rx 9070|9070 amd|amd rx 9070"
+gpu,AMD,Radeon RX 9070 GRE,12GB,current,"rx 9070 gre|9070gre|9070 gre amd"
 gpu,AMD,Radeon RX 9070 XT,16GB,current,"rx 9070 xt|9070xt|9070 xt amd"
 gpu,Intel,Arc A380,6GB,current-1,"arc a380|a380 intel|intel arc a380"
 gpu,Intel,Arc A750,8GB,current-1,"arc a750|a750 intel|intel arc a750"

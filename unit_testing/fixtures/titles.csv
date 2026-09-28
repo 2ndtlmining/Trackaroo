@@ -1,0 +1,60 @@
+category,title,expected
+cpu,amd ryzen 5 5500 desktop processor,Ryzen 5 5500
+cpu,amd ryzen 5 5500gt desktop processor,
+cpu,AMD Ryzen 5 5500 with Wraith Stealth,Ryzen 5 5500
+cpu,AMD Ryzen 5 5600GT 6-Core,
+cpu,AMD Ryzen 5 5600 6-Core Processor,Ryzen 5 5600
+cpu,AMD Ryzen 7 5800XT Processor,
+cpu,AMD Ryzen 7 5800X Processor,Ryzen 7 5800X
+cpu,AMD Ryzen 7 5800X3D Processor,Ryzen 7 5800X3D
+cpu,AMD Ryzen 9 5900XT 16-Core,
+cpu,AMD Ryzen 7 7700X3D Processor,
+cpu,AMD Ryzen 7 7700X Processor,Ryzen 7 7700X
+cpu,AMD Ryzen 9 9950X3D2 Processor,
+cpu,AMD Ryzen 9 9950X3D Processor,Ryzen 9 9950X3D
+cpu,AMD R7 9800X3D,Ryzen 7 9800X3D
+cpu,AMD Ryzen 5 8600G with Radeon Graphics,Ryzen 5 8600G
+cpu,AMD Ryzen 5 5600 Gaming Processor,Ryzen 5 5600
+cpu,Intel Core i5-14400F Processor,Core i5-14400F
+cpu,Intel Core i5 14400 Processor,Core i5-14400
+cpu,Intel Core i9-14900KS,Core i9-14900KS
+cpu,Intel Core i7-14700K,Core i7-14700K
+cpu,Intel Core i7-14700KF,Core i7-14700KF
+cpu,Intel Core Ultra 5 245K Processor,Core Ultra 5 245K
+cpu,Intel Core Ultra 5 245 Processor,Core Ultra 5 245
+cpu,Intel Core Ultra 5 245KF,Core Ultra 5 245KF
+cpu,Intel Core Ultra 7 270K Plus,
+cpu,Intel Core Ultra 7 Processor 265K,Core Ultra 7 265K
+cpu,Gigabyte Z890 Ultra 5 Power Bundle,
+gpu,palit geforce rtx 5060 ti dual 8g,GeForce RTX 5060 Ti 8GB
+gpu,asus dual geforce rtx 5060 ti 16gb gddr7 oc edition,GeForce RTX 5060 Ti
+gpu,msi geforce rtx 5060 ti 16g shadow 2x oc plus,GeForce RTX 5060 Ti
+gpu,Gigabyte GeForce RTX 5060 Ti Eagle OC,
+gpu,MSI GeForce RTX5060Ti Ventus 2X 8GB,GeForce RTX 5060 Ti 8GB
+gpu,Asus Dual GeForce RTX 5060 Ti O16G Graphics Card - White (DUAL-RTX5060TI-O16G-WHITE),GeForce RTX 5060 Ti
+gpu,Asus Prime GeForce RTX 5060 Ti O8G Graphics Card (PRIME-RTX5060TI-O8G),GeForce RTX 5060 Ti 8GB
+gpu,Gigabyte GeForce RTX 5060 Windforce OC 8GB,GeForce RTX 5060
+gpu,ASUS GeForce RTX 5070 Ti SUPER 24GB,
+gpu,ASUS GeForce RTX 4070 Ti Super 16GB,GeForce RTX 4070 Ti Super
+gpu,ASUS GeForce RTX 4070 Ti 12GB,GeForce RTX 4070 Ti
+gpu,ASUS GeForce RTX 4070 Super 12GB,GeForce RTX 4070 Super
+gpu,gigabyte aorus rtx 5090 ai box. 32gb,
+gpu,asus rog astral geforce rtx 5090 oc edition. 32gb,GeForce RTX 5090
+gpu,MSI GeForce RTX 3050 Ventus 2X 6G OC,GeForce RTX 3050 6GB
+gpu,MSI GeForce RTX 3050 Ventus 2X 8G OC,GeForce RTX 3050
+gpu,MSI GeForce RTX 3060 Ventus 2X 8G,
+gpu,asus prime radeon rx 9070 xt oc edition. 16gb,Radeon RX 9070 XT
+gpu,asus prime radeon rx 9070 evo oc edition. 16gb,Radeon RX 9070
+gpu,Sapphire Pulse Radeon RX 9070GRE 12GB,Radeon RX 9070 GRE
+gpu,PowerColor Radeon RX 9070 Reaper GRE 12GB GDDR6,Radeon RX 9070 GRE
+gpu,PowerColor Radeon RX 9070 Hellhound GRE 12GB GDDR6,Radeon RX 9070 GRE
+gpu,XFX Radeon RX 9070 Quicksilver OC 16GB,Radeon RX 9070
+gpu,PowerColor Reaper Radeon RX 9060 XT 8GB,Radeon RX 9060 XT 8GB
+gpu,PowerColor Reaper Radeon RX 9060 XT 16GB,Radeon RX 9060 XT
+gpu,Sapphire Nitro+ Radeon RX 7900 XTX 24GB,Radeon RX 7900 XTX
+gpu,Sapphire Pulse Radeon RX 7900 GRE 16GB,Radeon RX 7900 GRE
+gpu,Intel Arc B580 Limited Edition 12GB,Arc B580
+gpu,ASRock Intel Arc B570 Challenger 10GB,Arc B570
+gpu,MSI RTX 4070S Ventus 12G,
+gpu,Palit RTX 5090D 32GB,
+cpu,AMD Ryzen 5 5600H,

@@ -10,6 +10,7 @@ export function offer(overrides: Partial<ListingDisplay> = {}): ListingDisplay {
 		latestPrice: 1299,
 		latestStock: 'in_stock',
 		delisted: false,
+		stale: false,
 		inStock: true,
 		firstSeen: '2026-03-12',
 		lastSeen: '2026-08-23',

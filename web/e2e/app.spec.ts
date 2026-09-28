@@ -484,6 +484,21 @@ test('movers link through to product pages', async ({ page }) => {
 		await expect(newHeader).not.toContainText('▲');
 		await expect(newHeader).not.toContainText('▼');
 	});
+
+	// #5 items 1-3, 6: no "++$" double sign, no raw retailer slugs, thin/unchanged
+	// listings hidden by default and demoted behind a click when shown.
+	test('shows real movers first, correctly labelled, without the double plus', async ({ page }) => {
+		const html = await (await page.request.get('/movers')).text();
+		expect(html).not.toContain('++$');
+		expect(html).not.toMatch(/>\s*(pccg|scorptec|umart)\s*</);
+
+		await goto(page, '/movers');
+		const first = page.locator('tbody tr').first();
+		await expect(first).not.toContainText('Not enough history');
+
+		await goto(page, '/movers?all=1');
+		await expect(page.getByText('Not enough history').first()).toBeVisible();
+	});
 });
 
 test.describe('product detail', () => {
@@ -570,10 +585,10 @@ test.describe('product detail offer list', () => {
 		// The offer list is capped at 8 rows with an expander stating the true
 		// total — it is not just rendering everything it has.
 		await expect(page.getByRole('button', { name: /Show all \d+ offers/ })).toBeVisible();
-		expect(await page.locator('a', { hasText: 'View →' }).count()).toBeLessThanOrEqual(8);
+		expect(await page.locator('a', { hasText: 'Buy at' }).count()).toBeLessThanOrEqual(8);
 
 		// Every offer row shows its retailer and links out.
-		const firstOffer = page.locator('a', { hasText: 'View →' }).first();
+		const firstOffer = page.locator('a', { hasText: 'Buy at' }).first();
 		await expect(firstOffer).toHaveAttribute('rel', 'noopener noreferrer');
 		await expect(firstOffer).toHaveAttribute('target', '_blank');
 	});
@@ -587,9 +602,9 @@ test.describe('product detail offer list', () => {
 		const expander = page.getByRole('button', { name: /Show all \d+ offers/ });
 		await expect(expander).toBeVisible();
 
-		const before = await page.locator('a', { hasText: 'View →' }).count();
+		const before = await page.locator('a', { hasText: 'Buy at' }).count();
 		await expander.click();
-		expect(await page.locator('a', { hasText: 'View →' }).count()).toBeGreaterThan(before);
+		expect(await page.locator('a', { hasText: 'Buy at' }).count()).toBeGreaterThan(before);
 	});
 
 	test('the "In stock only" checkbox actually filters the offer list', async ({ page }) => {
@@ -599,17 +614,17 @@ test.describe('product detail offer list', () => {
 		await page.getByRole('button', { name: /Show all \d+ offers/ }).click();
 		const checkbox = page.getByLabel(/In stock only/);
 		await expect(checkbox).toBeChecked();
-		const before = await page.locator('a', { hasText: 'View →' }).count();
+		const before = await page.locator('a', { hasText: 'Buy at' }).count();
 
 		await checkbox.uncheck();
-		const after = await page.locator('a', { hasText: 'View →' }).count();
+		const after = await page.locator('a', { hasText: 'Buy at' }).count();
 		expect(after).toBeGreaterThan(before);
 	});
 
 	test('a facet chip click narrows the offer list', async ({ page }) => {
 		await openGpuProduct(page);
 		await page.getByRole('button', { name: /Show all \d+ offers/ }).click();
-		const before = await page.locator('a', { hasText: 'View →' }).count();
+		const before = await page.locator('a', { hasText: 'Buy at' }).count();
 
 		// The RTX 5060 Ti is seeded across both retailers.
 		const pccgChip = page.getByRole('button', { name: /^PCCG/ });
@@ -618,7 +633,7 @@ test.describe('product detail offer list', () => {
 
 		await pccgChip.click();
 		await expect(pccgChip).toHaveAttribute('aria-pressed', 'true');
-		const after = await page.locator('a', { hasText: 'View →' }).count();
+		const after = await page.locator('a', { hasText: 'Buy at' }).count();
 		expect(after).toBeLessThan(before);
 	});
 
@@ -767,16 +782,66 @@ test.describe('deals', () => {
 		await expect(rows.first()).toHaveText('E2E Deal Demo GPU');
 	});
 
-	test('lists an at-all-time-low product in its own anchored section', async ({ page }) => {
+	// Changed for #6: E2E Deal Demo GPU clears the real-deal floors, so under
+	// the dedup rule it now appears ONLY in belowAverage. E2E New Low GPU is
+	// the fixture built to earn a new low without clearing those floors, so
+	// it is the one that appears here.
+	test('lists an at-a-new-low product in its own anchored section, once (#6)', async ({ page }) => {
 		await goto(page, '/deals');
 		const section = page.locator('#all-time-low');
 		await expect(section).toBeVisible();
-		await expect(section.getByText('E2E Deal Demo GPU')).toBeVisible();
+		await expect(
+			section.getByRole('link', { name: 'E2E New Low GPU', exact: true })
+		).toBeVisible();
+	});
+
+	// #6: a product that clears the real-deal floors is shown only in
+	// belowAverage, never duplicated into the at-a-new-low section too.
+	test('does not duplicate a below-average deal into the at-a-new-low section (#6)', async ({
+		page
+	}) => {
+		await goto(page, '/deals');
+		const rows = page.getByTestId('below-average-list').locator('a[href^="/product/"]');
+		await expect(rows.first()).toHaveText('E2E Deal Demo GPU');
+		const section = page.locator('#all-time-low');
+		await expect(section.getByText('E2E Deal Demo GPU')).toHaveCount(0);
 	});
 
 	test('excludes products without enough history to have an average', async ({ page }) => {
 		await goto(page, '/deals');
 		await expect(page.getByText('E2E Thin History GPU')).toHaveCount(0);
+	});
+
+	// #6: the deal-row count must equal the "All" facet count (the page can
+	// never claim more rows than it shows), and a below-average row's delta
+	// should never read as a near-zero move dressed up as a deal.
+	test('shows exactly the deals the facets count, with no near-zero below-average deltas (#6)', async ({
+		page
+	}) => {
+		await goto(page, '/deals');
+		const rows = page.getByTestId('deal-row');
+		const allChip = page.getByRole('button', { name: /^All\s/ }).first();
+		await expect(allChip).toBeVisible();
+		const allText = (await allChip.textContent()) ?? '';
+		const allCount = Number(allText.match(/\d+/)?.[0]);
+		expect(Number.isNaN(allCount)).toBe(false);
+		await expect(rows).toHaveCount(allCount);
+
+		// Scoped to below-average-list only: that section's implicit claim is
+		// "at least 2% below average" (DEAL_MIN_PCT), so its delta can never
+		// read as a near-zero move. The at-a-new-low section makes a different
+		// claim (an earned all-time low, not a below-average one) and can
+		// legitimately show a small or even negative saving on real data — a
+		// live run surfaced exactly such a row, which is correct, not a bug.
+		const belowAverageTexts = await page
+			.getByTestId('below-average-list')
+			.getByTestId('deal-row')
+			.allTextContents();
+		for (const text of belowAverageTexts) {
+			// formatPct/formatSignedAud render U+2212 "−", not an ASCII hyphen
+			// (fix round 1, I1) — match both so a real −0.1% row is caught.
+			expect(text).not.toMatch(/[-−]0\.\d%/);
+		}
 	});
 
 	test('filtering by retailer narrows the list via the URL', async ({ page }) => {

@@ -532,14 +532,23 @@ describe('OfferRow', () => {
 		expect(html).toContain('ASUS TUF RTX 5070 Ti OC 16GB');
 	});
 
-	it('renders titleOverride instead of the variant name', () => {
+	// Changed for #6: titleOverride now also shows the listing's variant name
+	// as a subtitle (e.g. "Palit Dual 8G"), so a buyer sees which listing they
+	// are actually buying, not just the product model.
+	it('renders titleOverride as the title, with the variant name as a subtitle (#6)', () => {
 		const html = renderComponent(OfferRow, {
 			offer: offerRow(),
 			avg30: 1400,
 			titleOverride: 'GeForce RTX 5070 Ti'
 		});
 		expect(html).toContain('GeForce RTX 5070 Ti');
-		expect(html).not.toContain('ASUS TUF RTX 5070 Ti OC 16GB');
+		expect(html).toContain('ASUS TUF RTX 5070 Ti OC 16GB');
+	});
+
+	it('omits the variant subtitle when there is no titleOverride (#6)', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		// The variant name is still the title itself, just not repeated below it.
+		expect(html).not.toContain('text-xs text-text-muted">ASUS TUF RTX 5070 Ti OC 16GB<');
 	});
 
 	it('links the title to detailHref when given', () => {
@@ -570,6 +579,97 @@ describe('OfferRow', () => {
 			titleOverride: 'GeForce RTX 5070 Ti'
 		});
 		expect(html).not.toContain('href="/product/');
+	});
+
+	// #6: snapshot dates are compared as whole calendar days, not instants —
+	// "updated just now" was misleading for a once-daily scrape.
+	it('labels freshness by calendar day, not relative time (#6)', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow({ lastSeen: '2026-08-23' }),
+			avg30: 1400
+		});
+		// 2026-08-23 is always more than a week in the past by the time this
+		// test runs, so formatSeenDate always falls through to the short-date
+		// form — deterministic regardless of the real clock.
+		expect(html).toContain('seen 23 Aug');
+		expect(html).not.toContain('updated');
+	});
+
+	// #6: below-average rows show the actual dollar saving and the average
+	// they are being compared against, not just a bare percentage.
+	it('shows the saving in dollars alongside the percentage when saving is given (#6)', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow({ latestPrice: 1288 }),
+			avg30: 1400,
+			avgPoints: 17,
+			saving: 112
+		});
+		expect(html).toContain('−$112');
+		expect(html).toContain('−8.0%');
+		expect(html).toContain('vs 17-day avg');
+		expect(html).toContain('$1,400');
+	});
+
+	it('shows a Lowest since badge when lowSince is given (#6)', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			lowSince: '2026-01-15'
+		});
+		expect(html).toContain('Lowest since 15 Jan');
+	});
+
+	it('omits the Lowest since badge when lowSince is not given (#6)', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).not.toContain('Lowest since');
+	});
+
+	// M3 (28-Sep finding): earnedLow tolerates a price up to 2% above the
+	// all-time low, so a "Lowest since" claim there would overclaim -- the
+	// page passes nearLowSince instead of lowSince for that case.
+	it('shows a Near low since badge when nearLowSince is given (M3)', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			nearLowSince: '2026-01-15'
+		});
+		expect(html).toContain('Near low since 15 Jan');
+		expect(html).not.toContain('Lowest since');
+	});
+
+	it('prefers lowSince over nearLowSince when both are given (M3)', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			lowSince: '2026-01-15',
+			nearLowSince: '2026-01-10'
+		});
+		expect(html).toContain('Lowest since 15 Jan');
+		expect(html).not.toContain('Near low since');
+	});
+
+	it('omits the Near low since badge when nearLowSince is not given (M3)', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).not.toContain('Near low since');
+	});
+
+	it('labels the outbound link "Buy at <retailer>" with an accessible name (#6)', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).toContain('Buy at Scorptec ↗');
+		expect(html).toContain('aria-label="Buy at Scorptec (opens in a new tab)"');
+		expect(html).not.toContain('View →');
+	});
+
+	it('marks the row with data-testid="deal-row" only when titleOverride is set (#6)', () => {
+		const withOverride = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			titleOverride: 'GeForce RTX 5070 Ti'
+		});
+		expect(withOverride).toContain('data-testid="deal-row"');
+
+		const without = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(without).not.toContain('data-testid="deal-row"');
 	});
 });
 

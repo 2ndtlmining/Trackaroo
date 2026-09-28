@@ -162,6 +162,14 @@ describe('buildHeadline', () => {
 		expect(h.rangePosition).toBeNull();
 	});
 
+	it('never takes the headline from a stale listing (#4)', () => {
+		const offers = [
+			offer({ listingId: 1, latestPrice: 7499, stale: true, inStock: false }),
+			offer({ listingId: 2, latestPrice: 8999 })
+		];
+		expect(buildHeadline(offers, [], { avg30: null, avg30Points: 0 }).currentPrice).toBe(8999);
+	});
+
 	it('handles an empty band', () => {
 		const h = buildHeadline([offer({ latestPrice: 1299 })], [], STATS);
 		expect(h.allTimeLow).toBeNull();

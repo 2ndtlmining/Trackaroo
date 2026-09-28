@@ -7,8 +7,10 @@ import {
 	dealDepthPct,
 	dealToOffer,
 	filterDeals,
+	isAtNewLow,
 	isEligible,
 	isNearAllTimeLow,
+	shownDeals,
 	toDeals
 } from '../src/lib/deals';
 import type { DealCandidate } from '../src/lib/server/repos';
@@ -28,6 +30,8 @@ function candidate(over: Partial<DealCandidate> = {}): DealCandidate {
 		allTimeLow: 880,
 		avg30: 1000,
 		avg30Points: 10,
+		windowHigh: null,
+		historyStart: null,
 		...over
 	};
 }
@@ -84,6 +88,41 @@ describe('isNearAllTimeLow', () => {
 	});
 });
 
+// M3 (28-Sep finding): earnedLow/isNearAllTimeLow allow a price up to 2%
+// above the all-time low, but the "Lowest since" badge claims the price IS
+// the all-time low. isAtNewLow is the stricter, zero-tolerance check the
+// page uses to pick "Lowest since" vs "Near low since".
+describe('isAtNewLow', () => {
+	it('accepts a price at the all-time low', () => {
+		expect(isAtNewLow(880, 880)).toBe(true);
+	});
+
+	it('accepts a new all-time low below the recorded one', () => {
+		expect(isAtNewLow(800, 880)).toBe(true);
+	});
+
+	it('rejects a price above the all-time low, even within the near-low band', () => {
+		expect(isAtNewLow(880 * 1.01, 880)).toBe(false);
+	});
+
+	it('rejects when there is no all-time low', () => {
+		expect(isAtNewLow(880, null)).toBe(false);
+	});
+});
+
+describe('Deal.atNewLow (M3, 28-Sep finding)', () => {
+	it('is true when the price is at or below the all-time low', () => {
+		const [deal] = toDeals([candidate({ price: 880, allTimeLow: 880 })]);
+		expect(deal.atNewLow).toBe(true);
+	});
+
+	it('is false when the price is only within the near-low band', () => {
+		const [deal] = toDeals([candidate({ price: 880 * 1.01, allTimeLow: 880 })]);
+		expect(deal.nearAllTimeLow).toBe(true);
+		expect(deal.atNewLow).toBe(false);
+	});
+});
+
 describe('toDeals / belowAverage', () => {
 	it('drops ineligible candidates entirely', () => {
 		const deals = toDeals([candidate({ avg30Points: 1 })]);
@@ -112,22 +151,69 @@ describe('toDeals / belowAverage', () => {
 	});
 });
 
+describe('deal floors (#6)', () => {
+	it('drops a -0.1% ($0.13) move', () => {
+		const d = toDeals([candidate({ price: 129.87, avg30: 130, avg30Points: 30 })]);
+		expect(belowAverage(d)).toEqual([]);
+	});
+	it('drops 3% when it is under $10', () => {
+		const d = toDeals([candidate({ price: 97, avg30: 100, avg30Points: 30 })]);
+		expect(belowAverage(d)).toEqual([]);
+	});
+	it('keeps 2% and $10 together', () => {
+		const d = toDeals([candidate({ price: 490, avg30: 500, avg30Points: 30 })]);
+		expect(belowAverage(d).map((x) => x.savingAud)).toEqual([10]);
+	});
+});
+
+describe('earned all-time low (#6)', () => {
+	it('a price that never moved is not a new low', () => {
+		const d = toDeals([
+			candidate({ price: 300, avg30: 300, allTimeLow: 300, windowHigh: 300, avg30Points: 30 })
+		]);
+		expect(atAllTimeLow(d)).toEqual([]);
+	});
+	it('a drop from 3%+ higher is an earned low', () => {
+		const d = toDeals([
+			candidate({ price: 300, avg30: 302, allTimeLow: 300, windowHigh: 310, avg30Points: 30 })
+		]);
+		expect(atAllTimeLow(d)).toHaveLength(1);
+	});
+	it('a product that is also below average appears only there', () => {
+		const d = toDeals([
+			candidate({ price: 450, avg30: 500, allTimeLow: 450, windowHigh: 520, avg30Points: 30 })
+		]);
+		expect(belowAverage(d)).toHaveLength(1);
+		expect(atAllTimeLow(d)).toEqual([]);
+		expect(shownDeals(d)).toHaveLength(1);
+		expect(belowAverage(d)[0].earnedLow).toBe(true);
+	});
+});
+
 describe('atAllTimeLow', () => {
-	it('selects only the near-all-time-low deals, deepest first', () => {
+	// Changed for #6: atAllTimeLow now requires an EARNED low (windowHigh
+	// at least EARNED_LOW_RISE_PCT above price), not just proximity to
+	// allTimeLow, and product 1's higher avg30/windowHigh gap no longer
+	// applies since it fails isNearAllTimeLow outright (>2% above the low).
+	it('selects only earned near-all-time-low deals, deepest first (#6)', () => {
 		const deals = atAllTimeLow(
 			toDeals([
-				candidate({ productId: 1, price: 900, avg30: 1000, allTimeLow: 880 }), // >2% above
-				candidate({ productId: 2, price: 880, avg30: 1000, allTimeLow: 880 }), // at low
-				candidate({ productId: 3, price: 700, avg30: 1000, allTimeLow: 700 }) // at low, deeper
+				candidate({ productId: 1, price: 900, avg30: 903, allTimeLow: 880, windowHigh: 930 }), // >2% above the low
+				candidate({ productId: 2, price: 880, avg30: 882, allTimeLow: 880, windowHigh: 910 }), // at low, earned, not a real deal
+				candidate({ productId: 3, price: 700, avg30: 703, allTimeLow: 700, windowHigh: 730 }) // at low, earned, deeper, not a real deal
 			])
 		);
 		expect(deals.map((d) => d.productId)).toEqual([3, 2]);
 	});
 
-	it('includes a product that is also below average — both claims are true', () => {
-		const all = toDeals([candidate({ productId: 7, price: 700, avg30: 1000, allTimeLow: 700 })]);
+	// Changed for #6: a product that is both a real deal AND an earned low is
+	// shown only once, under belowAverage — atAllTimeLow excludes it.
+	it('a product that is also a real deal is shown only in belowAverage (#6)', () => {
+		const all = toDeals([
+			candidate({ productId: 7, price: 700, avg30: 1000, allTimeLow: 700, windowHigh: 1000 })
+		]);
 		expect(belowAverage(all).map((d) => d.productId)).toEqual([7]);
-		expect(atAllTimeLow(all).map((d) => d.productId)).toEqual([7]);
+		expect(atAllTimeLow(all)).toEqual([]);
 	});
 });
 

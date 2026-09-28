@@ -88,9 +88,13 @@ class TestPCCGCPUMatching:
         wp = _make_watchlist_cpu("Ryzen 7 9800X3D", ["ryzen 7 9800x3d"])
         assert not pccg_match("Intel Core i9-14900K Processor", wp)
 
-    def test_empty_search_terms_no_match(self):
-        wp = _make_watchlist_cpu("Ryzen 7 9800X3D", [])
-        assert not pccg_match("AMD Ryzen 7 9800X3D Processor", wp)
+    # test_empty_search_terms_no_match deleted (#1): it asserted a mis-file --
+    # that an empty `search_terms` list makes a product unmatchable. That was
+    # only ever true because the old matcher used search_terms[0] as its
+    # primary key. Matching now goes through chip_key.Matcher on the model
+    # name alone; search_terms no longer drive matching at all (they still
+    # drive PCCG's Algolia search queries), so this case is no longer
+    # meaningful to assert.
 
 
 # ── GPU matching tests ──────────────────────────────────────────────
@@ -163,11 +167,47 @@ class TestBundleDetection:
         assert not scorptec_match("gigabyte z890 ultra 5 power bundle", "Intel Core Ultra 5 245 CPU + Z890 motherboard combo", wp)
 
     def test_scorptec_normal_cpu_still_matches(self):
+        # Was "...245k desktop processor" (#1): that asserted the exact
+        # absorption bug this task fixes -- the base "Core Ultra 5 245" row
+        # claiming a scraped "245K" listing, which is a real, separate
+        # watchlist row (db/watchlist.csv has 245, 245K and 245KF as three
+        # distinct products). Dropped the K so this exercises genuine
+        # same-product matching instead.
         wp = _make_watchlist_cpu("Core Ultra 5 245", ["core ultra 5 245"])
-        assert scorptec_match("intel core ultra 5 245k desktop processor", "Intel Core Ultra 5 245 desktop CPU", wp)
+        assert scorptec_match("intel core ultra 5 245 desktop processor", "Intel Core Ultra 5 245 desktop CPU", wp)
 
 
 # ── Price parsing tests ─────────────────────────────────────────────
+
+class TestChipKeyWiring:
+    """#1: suffixed siblings must not be absorbed; one listing, one product."""
+
+    def test_scorptec_5500_rejects_5500gt(self):
+        wp = _make_watchlist_cpu("Ryzen 5 5500", ["ryzen 5 5500"], cores=6)
+        assert not scorptec_match("amd ryzen 5 5500gt desktop processor", "", wp)
+
+    def test_pccg_5070_ti_rejects_5070_ti_super(self):
+        wp = _make_watchlist_gpu("GeForce RTX 5070 Ti", ["rtx 5070 ti"], vram_gb=16)
+        assert not pccg_match("ASUS GeForce RTX 5070 Ti SUPER 24GB", wp)
+
+    def test_scorptec_9070_rejects_gre(self):
+        wp = _make_watchlist_gpu("Radeon RX 9070", ["rx 9070"], vram_gb=16)
+        assert not scorptec_match("sapphire pulse radeon rx 9070gre 12gb", "", wp)
+
+    def test_pccg_never_claims_one_listing_for_two_products(self, monkeypatch):
+        from scraper import pccg
+        watchlist = [
+            _make_watchlist_gpu("GeForce RTX 4070 Ti", ["rtx 4070 ti"], vram_gb=12),
+            _make_watchlist_gpu("GeForce RTX 4070 Ti Super", ["rtx 4070 ti super"], vram_gb=16),
+        ]
+        for wp in watchlist:
+            wp.update(brand="NVIDIA", gen_tier="current-1")
+        monkeypatch.setattr(pccg, "algolia_fetch_catalogue", lambda _f: [
+            {"name": "ASUS GeForce RTX 4070 Ti Super 16GB", "price": "1299", "url": "https://x/1"},
+        ])
+        results, _matched, _tripped = pccg.scrape_category("gpu", watchlist)
+        assert [r["watchlist_model"] for r in results] == ["GeForce RTX 4070 Ti Super"]
+
 
 class TestParsePrice:
     """Test price text parsing."""
