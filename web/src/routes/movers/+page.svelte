@@ -6,7 +6,7 @@
 	import PriceChange from '$lib/components/PriceChange.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Sparkline from '$lib/components/Sparkline.svelte';
-	import { sortMovers, type MoverSortKey } from '$lib/movers';
+	import { moverColumnValue, sortMovers, type ColSortKey, type MoverSortKey } from '$lib/movers';
 	import type { Mover } from '$lib/server/repos';
 	import type { ChangeDirection } from '$lib/types';
 	import { nextSortDir, sortRows, type SortDir } from '$lib/tableSort';
@@ -56,7 +56,6 @@
 
 	// Column-header sorting is an orthogonal layer on top of the Abs/Pct/Price
 	// ordering: it re-orders whatever set the controls produced.
-	type ColSortKey = 'old' | 'new' | 'change' | 'points';
 	let colKey = $state<ColSortKey | null>(null);
 	let colDir = $state<SortDir>(null);
 
@@ -74,16 +73,9 @@
 		return colDir === 'asc' ? ' ▲' : ' ▼';
 	}
 
-	function colValue(m: Mover, key: ColSortKey): string | number | null {
-		if (key === 'old') return m.oldPrice;
-		if (key === 'new') return m.newPrice;
-		if (key === 'change') return m.change;
-		return m.historyPoints;
-	}
-
 	const ordered = $derived(
 		colKey !== null && colDir !== null
-			? sortRows(sorted, colDir, (m) => colValue(m, colKey!))
+			? sortRows(sorted, colDir, (m) => moverColumnValue(m, colKey!))
 			: sorted
 	);
 

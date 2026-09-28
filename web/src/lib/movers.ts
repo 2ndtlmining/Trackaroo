@@ -64,18 +64,43 @@ export function topMoversByProduct(
 
 export type MoverSortKey = 'abs' | 'pct' | 'price';
 
+// A row with no trustworthy change value: either too little history to trust
+// it (badged "Not enough history") or literally no prior price to compare
+// against. Shared by every sort on this page so an unknown row can never
+// out-rank a real, priced move under any sort key or direction (#5 follow-up:
+// the column-header sort used to pass a notEnoughHistory row's raw non-null
+// `change` straight through, so a 2-point row could still land among real
+// movers when sorted by the Change column).
+export function isUnknownMover(m: Mover): boolean {
+	return m.notEnoughHistory || m.change === null;
+}
+
 // Rows without a change ("Not enough history", null change) always sort last:
 // sorting by |change| treated null as -Infinity, whose magnitude is Infinity,
 // so brand-new listings led the page (#5).
 export function sortMovers(rows: Mover[], key: MoverSortKey): Mover[] {
-	const unknown = (m: Mover) => m.notEnoughHistory || m.change === null;
 	return [...rows].sort((a, b) => {
-		const ua = unknown(a);
-		const ub = unknown(b);
+		const ua = isUnknownMover(a);
+		const ub = isUnknownMover(b);
 		if (ua !== ub) return ua ? 1 : -1;
 		if (key === 'price') return b.newPrice - a.newPrice;
 		if (ua) return a.listingId - b.listingId;
 		if (key === 'abs') return Math.abs(b.change!) - Math.abs(a.change!) || a.listingId - b.listingId;
 		return (b.pctChange ?? 0) - (a.pctChange ?? 0) || a.listingId - b.listingId;
 	});
+}
+
+// Column-header sort layer (movers/+page.svelte): re-orders whatever set the
+// Abs/Pct/Price controls produced. `sortRows` (see $lib/tableSort) only pins
+// a literal `null` last, so any column that carries a "movement" value —
+// currently just Change — must itself return null for an unknown row rather
+// than the row's raw (and possibly non-null) value, or `sortRows` will sort
+// it in among real movers.
+export type ColSortKey = 'old' | 'new' | 'change' | 'points';
+
+export function moverColumnValue(m: Mover, key: ColSortKey): string | number | null {
+	if (key === 'old') return m.oldPrice;
+	if (key === 'new') return m.newPrice;
+	if (key === 'change') return isUnknownMover(m) ? null : m.change;
+	return m.historyPoints;
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { sortMovers, topMoversByProduct } from '../src/lib/movers';
+import { isUnknownMover, moverColumnValue, sortMovers, topMoversByProduct } from '../src/lib/movers';
+import { sortRows } from '../src/lib/tableSort';
 import type { Mover } from '../src/lib/server/repos';
 
 function mover(over: Partial<Mover> = {}): Mover {
@@ -258,5 +259,60 @@ describe('sortMovers (#5)', () => {
 		const snapshot = rows.map((m) => m.listingId);
 		sortMovers(rows, 'abs');
 		expect(rows.map((m) => m.listingId)).toEqual(snapshot);
+	});
+});
+
+describe('isUnknownMover / moverColumnValue (#5 fix round 1)', () => {
+	// A 2-snapshot listing (< MIN_HISTORY_POINTS) can still carry a non-null
+	// `change` (old vs. new price within the window) even though it's badged
+	// "Not enough history" -- e.g. the e2e seed's "E2E Thin History GPU"
+	// (1000 -> 600, 2 points). isUnknownMover must treat it as unknown
+	// regardless of that non-null change.
+	it('treats a notEnoughHistory row as unknown even with a non-null change', () => {
+		const thin = mover({ notEnoughHistory: true, historyPoints: 2, change: -400, pctChange: -40 });
+		expect(isUnknownMover(thin)).toBe(true);
+	});
+
+	it('treats a row with a real change and enough history as known', () => {
+		const real = mover({ notEnoughHistory: false, historyPoints: 16, change: -400 });
+		expect(isUnknownMover(real)).toBe(false);
+	});
+
+	it('moverColumnValue nulls the change column for an unknown row despite a non-null raw change', () => {
+		const thin = mover({ notEnoughHistory: true, historyPoints: 2, change: -400 });
+		expect(moverColumnValue(thin, 'change')).toBeNull();
+	});
+
+	it('moverColumnValue passes the change column through for a known row', () => {
+		const real = mover({ notEnoughHistory: false, change: -400 });
+		expect(moverColumnValue(real, 'change')).toBe(-400);
+	});
+
+	it('moverColumnValue does not null the old/new/points columns for an unknown row', () => {
+		const thin = mover({
+			notEnoughHistory: true,
+			historyPoints: 2,
+			change: -400,
+			oldPrice: 1000,
+			newPrice: 600
+		});
+		expect(moverColumnValue(thin, 'old')).toBe(1000);
+		expect(moverColumnValue(thin, 'new')).toBe(600);
+		expect(moverColumnValue(thin, 'points')).toBe(2);
+	});
+
+	// The actual bug: a notEnoughHistory row with a non-null change must sort
+	// last under the Change column header in BOTH directions, not just one --
+	// sortRows only pins a literal `null` last, so the fix has to be that
+	// moverColumnValue returns null, not that the comparator special-cases it.
+	it('sorts a notEnoughHistory row with a non-null change last under the Change header, both directions', () => {
+		const rows = [
+			mover({ listingId: 1, notEnoughHistory: true, historyPoints: 2, change: -400, pctChange: -40 }),
+			mover({ listingId: 2, notEnoughHistory: false, change: -50 }),
+			mover({ listingId: 3, notEnoughHistory: false, change: 20 })
+		];
+		const byChange = (m: Mover) => moverColumnValue(m, 'change');
+		expect(sortRows(rows, 'asc', byChange).at(-1)!.listingId).toBe(1);
+		expect(sortRows(rows, 'desc', byChange).at(-1)!.listingId).toBe(1);
 	});
 });
