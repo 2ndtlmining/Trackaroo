@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-29
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,56 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-09-29** — **Task 7 close-out of the "correct prices" branch
+  (`feat/2026-09-28-prices-and-speed`, Tasks 1–6): full regression gate +
+  a local before/after against a real-data copy of the DB.**
+  Tasks 1–6 (already committed going into this session): the canonical
+  chip-key matcher + all three scrapers resolving through it, `seed.py`
+  syncing `vram_gb`/`cores` for existing products, `repair_listings.py`
+  (backup-first, idempotent, re-points listings the old substring matcher
+  mis-filed) with ingest made authoritative over it, stale listings excluded
+  from the product-page headline/compare price, and `/deals` given a
+  2%/$10 floor + earned all-time-low section + one-row-per-product dedupe +
+  honest "vs N-day avg" labels.
+  **Full regression from a clean tree, counts measured fresh (not trusted
+  from earlier sessions)**: backend `python -m pytest -q` **853 passed**;
+  frontend from `web/`: `npm run check` **0 errors** (415 files), `npm test`
+  **425 passed** (19 files), `npm run test:e2e` **70 passed** (Chromium).
+  **Local before/after, run only against a scratch copy of `db/trackaroo.db`**
+  (via `TRACKAROO_DB` + `TRACKAROO_BACKUP_DIR` pointed at a temp dir — the
+  real `db/trackaroo.db` and `db/backups/` were never touched, confirmed by
+  `git status` staying clean throughout): `python seed.py` inserted 5 new
+  watchlist products (incl. the new `GeForce RTX 5060 Ti 8GB`) and synced 1
+  existing product's spec (`GeForce RTX 5060 Ti`, now correctly 16GB-only);
+  `python repair_listings.py --apply` then re-pointed **90 listings** — most
+  moving mis-filed 8GB/6GB/GRE/XT variants (5060 Ti, 9060 XT, RTX 3050,
+  RX 9070) onto their own new products, the rest a batch of CPU/GPU bundle
+  listings (`5900XT`, `7700X3D`, `5600GT`, `5500GT`, `9950X3D2`, Z890/B860
+  motherboard bundles, an "AI Box" 5090 listing) correctly reclassified
+  `UNMATCHED (stale)` rather than staying wrongly claimed by an unrelated
+  tracked product.
+  **Verified against the copy with `npm run dev` + curl/HTML (no browser)**:
+  (1) `/product/73` (`GeForce RTX 5060 Ti`) headline is **$949 at Scorptec**
+  backed by listing "msi geforce rtx 5060 ti 16g shadow 2x oc plus" — every
+  remaining offer on that page is a 16GB card, confirming the split actually
+  separated the variants. (2) `/product/104` (new `GeForce RTX 5060 Ti 8GB`)
+  exists with **36 listings · 348 snapshots**, 9–31 Aug 2026, headline
+  **$699 at Scorptec**. (3) `/deals`: **6 below-average** deals, all
+  comfortably clear of the 2%/$10 floor (4.0%–6.3%, $24.09–$61.90) + **5
+  all-time-low** deals = **11** total, matching both the "All 11" chip and
+  11 `data-testid="deal-row"` elements on the page. (4) `/product/77`
+  (`GeForce RTX 5090`) headline is **$7,199 at Scorptec**, "seen 31 Aug" —
+  no "Not seen since" text appears anywhere on the page.
+  **Deploy notes**: on redeploy, run `python seed.py`, then
+  `python repair_listings.py` **as a dry run first** — review the printed
+  re-points, especially any `UNMATCHED` line for a GPU with no memory size
+  in its title (that's the one case that means a genuine matcher gap, not
+  an expected split/stale reclassification) — then run
+  `python repair_listings.py --apply`.
+  **Not done here (deferred to the repo owner, per this task's brief)**:
+  commenting on GitHub issues #1, #2, #4, #6 with commit SHAs — left open
+  until the prod redeploy (roadmap Phase 6) confirms.
 
 - **2026-09-03 (night)** — **Hardcoded-values cleanup, item 1 of "What's NOT
   done yet".** The retailer half was closed 31-Aug; this closes the rest of
@@ -1082,13 +1132,13 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 
 ## Regression test count
 
-Current, as of 3-Sep-2026:
+Current, as of 29-Sep-2026:
 
 | Suite | Tests | Command (from) |
 |---|---|---|
-| Backend (pytest) | **759**, all passing | `python -m pytest -q` (repo root) |
-| Frontend unit (vitest) | **397** | `npm test` (`web/`) |
-| Frontend e2e (Playwright) | **68** | `npm run test:e2e` (`web/`) |
+| Backend (pytest) | **853**, all passing | `python -m pytest -q` (repo root) |
+| Frontend unit (vitest) | **425** | `npm test` (`web/`) |
+| Frontend e2e (Playwright) | **70** | `npm run test:e2e` (`web/`) |
 | Type + Svelte check | 0 errors | `npm run check` (`web/`) |
 
 The per-module breakdown that used to live here went stale every session;
