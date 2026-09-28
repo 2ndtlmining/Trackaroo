@@ -548,6 +548,9 @@ class TestScorptecSavesAllVariants:
                 "category": "gpu",
                 "brand": "NVIDIA",
                 "gen_tier": "current",
+                # vram_gb is required for the chip-key Matcher (#1) to
+                # disambiguate by VRAM when a title states a size.
+                "vram_gb": 8,
                 "search_terms": ["rtx 5060 ti"],
             },
         ]
@@ -590,6 +593,9 @@ class TestScorptecSavesAllVariants:
                 "category": "gpu",
                 "brand": "NVIDIA",
                 "gen_tier": "current",
+                # vram_gb is required for the chip-key Matcher (#1) to
+                # disambiguate by VRAM when a title states a size.
+                "vram_gb": 16,
                 "search_terms": ["rtx 5080"],
             },
         ]

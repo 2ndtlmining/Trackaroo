@@ -139,37 +139,18 @@ class TestLoadWatchlistSkipsBadRows:
 
 
 class TestTheRealWatchlistIsClean:
+    """Alias-ordering no longer decides matching (#1): scrapers now resolve
+    through the chip-key `Matcher`, which matches on an exact key rather than
+    a substring race between primary search terms. The alias-ordering trap
+    this class used to test for no longer exists; the equivalent guarantee —
+    every real watchlist row has a key and no two rows collide on it — is
+    `test_chip_key.py::test_every_watchlist_row_has_a_key_and_no_collisions`.
+    """
+
     def test_every_row_validates(self):
         """The shipped file must have no rows that would be skipped."""
         # 105 on 28-Sep-2026: 245K and the four memory/GRE variants (#1, #2)
         assert len(load_watchlist(strict=True)) == 105
-
-    def test_no_base_model_alias_outranks_its_own_variant(self):
-        """The alias-ordering trap, which is invisible until it steals data.
-
-        `scrape_scorptec` tests watchlist entries by primary search term
-        **length, descending**, and breaks on the first match, so the most
-        specific entry wins. That only holds while a base model's primary alias
-        is shorter than its variants'. Give `RTX 5070` the alias
-        `nvidia geforce rtx 5070` and it outranks `rtx 5070 ti`, silently
-        claiming every Ti listing.
-        """
-        products = load_watchlist(strict=True)
-        offenders = []
-        for base in products:
-            for variant in products:
-                if base is variant or base["category"] != variant["category"]:
-                    continue
-                # `variant` is a more specific name than `base`, e.g.
-                # "GeForce RTX 5070 Ti" vs "GeForce RTX 5070".
-                if not variant["model"].lower().startswith(base["model"].lower() + " "):
-                    continue
-                if len(base["search_terms"][0]) >= len(variant["search_terms"][0]):
-                    offenders.append(
-                        f"{base['model']} ({base['search_terms'][0]!r}) outranks "
-                        f"{variant['model']} ({variant['search_terms'][0]!r})"
-                    )
-        assert not offenders, offenders
 
 
 class TestKnownMissingSpecsAreSeparated:
