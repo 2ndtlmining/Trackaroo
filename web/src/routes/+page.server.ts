@@ -7,6 +7,7 @@ import {
 	type HeaderStats
 } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
+import { memo } from '$lib/server/cache';
 import { belowAverage, toDeals, type Deal } from '$lib/deals';
 import { topMoversByProduct } from '$lib/movers';
 import { retailerHealth } from '$lib/health';
@@ -23,18 +24,25 @@ const SECTIONS: Array<{ category: Category; title: string }> = [
 	{ category: 'cpu', title: 'CPUs' }
 ];
 
-export async function load({ parent }: { parent: () => Promise<{ stats: HeaderStats }> }) {
+export async function load({
+	parent,
+	setHeaders
+}: {
+	parent: () => Promise<{ stats: HeaderStats }>;
+	setHeaders: (headers: Record<string, string>) => void;
+}) {
 	const db = getDb();
+	setHeaders({ 'cache-control': 'public, max-age=60, stale-while-revalidate=300' });
 	// The layout already computed this (it's on every page); no need to query
 	// it again here.
 	const { stats } = await parent();
-	const counts = getCategoryCounts(db);
-	const available = getAvailableCounts(db);
-	const allCandidates = getDealCandidates(db);
+	const counts = memo(db, 'categoryCounts', () => getCategoryCounts(db));
+	const available = memo(db, 'availableCounts', () => getAvailableCounts(db));
+	const allCandidates = memo(db, 'dealCandidates', () => getDealCandidates(db));
 	// Same source as /deals, so the two surfaces can never disagree about
 	// what counts as a deal or how deep it is.
 	const allDeals = belowAverage(toDeals(allCandidates));
-	const movers = getMovers(db, HOME_MOVER_DAYS);
+	const movers = memo(db, 'movers:7', () => getMovers(db, HOME_MOVER_DAYS));
 
 	const sections = SECTIONS.map(({ category, title }) => {
 		// One row per product: getMovers is per-listing, and a retailer carrying
@@ -59,7 +67,7 @@ export async function load({ parent }: { parent: () => Promise<{ stats: HeaderSt
 	});
 
 	return {
-		retailers: retailerHealth(getRetailerFreshness(db)),
+		retailers: retailerHealth(memo(db, 'retailerFreshness', () => getRetailerFreshness(db))),
 		latestSnapshotDate: stats.latestSnapshotDate,
 		snapshotDays: stats.snapshotDays,
 		snapshotCount: stats.snapshotCount,

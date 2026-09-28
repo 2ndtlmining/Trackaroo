@@ -1,10 +1,14 @@
 import { getHeaderStats, getProductIndex } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
+import { memo } from '$lib/server/cache';
 
+// Runs on every page, so this is the highest-traffic day-level query on the
+// site (#28): the pipeline writes once a day, but without memo() this scanned
+// price_snapshots on every request.
 export function load() {
 	const db = getDb();
 	return {
-		stats: getHeaderStats(db),
-		productIndex: getProductIndex(db)
+		stats: memo(db, 'headerStats', () => getHeaderStats(db)),
+		productIndex: memo(db, 'productIndex', () => getProductIndex(db))
 	};
 }

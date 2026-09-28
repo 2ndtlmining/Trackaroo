@@ -28,10 +28,21 @@ afterAll(async () => {
 	seeded.close();
 });
 
+// No-op stand-in for SvelteKit's setHeaders, which the loaders now accept to
+// set a short browser cache on list pages (#28). The loaders below call it
+// directly (not through the framework), so a real request/response cycle
+// never happens here and there is nothing to assert about it.
+function noopSetHeaders() {
+	// intentionally empty
+}
+
 describe('/products payload (#28)', () => {
 	it('groups carry no per-listing arrays', async () => {
 		const { load } = await import('../src/routes/products/+page.server');
-		const data = load({ url: new URL('http://x/products?category=gpu') } as any);
+		const data = load({
+			url: new URL('http://x/products?category=gpu'),
+			setHeaders: noopSetHeaders
+		} as any);
 		for (const g of data.groups) expect(g).not.toHaveProperty('listings');
 	});
 });
@@ -44,7 +55,10 @@ describe('homepage (#28)', () => {
 		// Realistic parent(): +layout.server.ts always resolves to
 		// { stats: getHeaderStats(db), productIndex: ... }, so exercise the load
 		// against that real shape rather than an empty stub.
-		const data = await load({ parent: async () => ({ stats: getHeaderStats(getDb()) }) } as any);
+		const data = await load({
+			parent: async () => ({ stats: getHeaderStats(getDb()) }),
+			setHeaders: noopSetHeaders
+		} as any);
 		for (const s of data.sections) {
 			const prices = getDealCandidates(getDb())
 				.filter((c) => c.category === s.category)

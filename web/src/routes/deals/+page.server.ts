@@ -1,5 +1,6 @@
 import { getDealCandidates } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
+import { memo } from '$lib/server/cache';
 import {
 	atAllTimeLow,
 	belowAverage,
@@ -16,9 +17,18 @@ function param(url: URL, key: string): string | null {
 	return value && value.trim() !== '' ? value : null;
 }
 
-export function load({ url }: { url: URL }) {
+export function load({
+	url,
+	setHeaders
+}: {
+	url: URL;
+	setHeaders: (headers: Record<string, string>) => void;
+}) {
 	const db = getDb();
-	const candidates = getDealCandidates(db);
+	setHeaders({ 'cache-control': 'public, max-age=60, stale-while-revalidate=300' });
+	// Same key as the home page, so a request from either route shares one
+	// cached scan instead of each paying for its own (#28).
+	const candidates = memo(db, 'dealCandidates', () => getDealCandidates(db));
 	// Facets count the rows the page can actually show, so "All 42" can't sit
 	// above 32 rows (28-Sep finding).
 	const deals = shownDeals(toDeals(candidates));

@@ -1,20 +1,34 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { getProductAlerts, getProductHistory, upsertAlert, deleteAlert } from '$lib/server/repos';
+import {
+	getProductAlerts,
+	getProductHistory,
+	getRetailerLatest,
+	upsertAlert,
+	deleteAlert
+} from '$lib/server/repos';
 import { getDb, getWriteDb } from '$lib/server/db';
+import { memo } from '$lib/server/cache';
 import type { AlertChannel } from '$lib/types';
 
 const CHANNELS: AlertChannel[] = ['discord', 'email', 'webhook'];
 
+// The product page itself is deliberately NOT memoised or cache-control'd:
+// alert state must show up immediately after the create/delete redirect back
+// here. retailerLatest is the one query on this page that is day-level and
+// product-independent (a full price_snapshots scan), so it alone is worth
+// memoising (#28).
 export function load({ params }: { params: { id: string } }) {
 	const id = Number(params.id);
 	if (!Number.isInteger(id) || id <= 0) {
 		error(404, 'Product not found');
 	}
-	const data = getProductHistory(getDb(), id);
+	const db = getDb();
+	const retailerLatest = memo(db, 'retailerLatest', () => getRetailerLatest(db));
+	const data = getProductHistory(db, id, retailerLatest);
 	if (!data) {
 		error(404, 'Product not found');
 	}
-	return { ...data, alerts: getProductAlerts(getDb(), id) };
+	return { ...data, alerts: getProductAlerts(db, id) };
 }
 
 export const actions = {
