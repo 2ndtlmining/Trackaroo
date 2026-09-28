@@ -71,3 +71,32 @@ def test_cli_defaults_to_dry_run(conn, tmp_path, capsys):
     assert "DRY RUN" in out and "5500gt" in out
     c = sqlite3.connect(tmp_path / "t.db")
     assert c.execute("SELECT COUNT(*) FROM products WHERE brand='Unmatched'").fetchone()[0] == 0
+
+
+def test_apply_repairs_preserves_delisted_status(conn):
+    """M4 (28-Sep finding): parking a mis-filed listing must not erase that
+    it was independently confirmed removed from the retailer's site --
+    'delisted' carries real information 'stale' does not."""
+    conn.execute(
+        "UPDATE retailer_listings SET status = 'delisted' WHERE variant_name LIKE '%5500gt%'"
+    )
+    conn.commit()
+    rl.apply_repairs(conn, rl.plan_repairs(conn, WATCHLIST))
+    status = conn.execute(
+        "SELECT status FROM retailer_listings WHERE variant_name LIKE '%5500gt%'"
+    ).fetchone()[0]
+    assert status == "delisted"
+
+
+def test_product_id_forces_existing_holding_row_untracked(conn):
+    """M2 (28-Sep finding): a holding product rebuilt from exported JSON via
+    ingest.py's find_or_create_product could end up tracked=1 (a pre-fix bug).
+    _product_id(holding=True) must correct that back to 0 on an existing row,
+    not just on rows it creates itself."""
+    conn.execute(
+        "INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'Unmatched', 'Unmatched CPU listing', 1)"
+    )
+    conn.commit()
+    pid = rl._product_id(conn, "cpu", "Unmatched CPU listing", holding=True)
+    tracked = conn.execute("SELECT tracked FROM products WHERE id = ?", (pid,)).fetchone()[0]
+    assert tracked == 0

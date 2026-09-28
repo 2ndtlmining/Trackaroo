@@ -34,6 +34,7 @@ from config import (
     SCHEMA_PATH,
     setup_logging,
 )
+from repair_listings import HOLDING_BRAND
 
 LOGGER = logging.getLogger(__name__)
 
@@ -172,10 +173,15 @@ def find_or_create_product(
     elif category == "gpu":
         vram_gb = product_data.get("vram_gb")
 
+    # A rebuild from exported JSON (CLAUDE.md: "the DB must be rebuildable
+    # from them via ingest.py") sees repair_listings.py's holding-product
+    # brand too -- create it tracked=0, or the rebuild un-parks it (M2,
+    # 28-Sep finding).
+    tracked = 0 if brand == HOLDING_BRAND else 1
     conn.execute(
         """INSERT INTO products (category, brand, model, vram_gb, cores, generation_tier, tracked)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (category, brand, model, vram_gb, cores, gen_tier, 1),
+        (category, brand, model, vram_gb, cores, gen_tier, tracked),
     )
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -185,7 +191,7 @@ def _find_listing_by_key(
     retailer: str,
     key: str,
     active_only: bool = False,
-) -> Optional[Tuple[int, str]]:
+) -> Optional[Tuple[int, str, int, str]]:
     """Find an existing listing row for ``key``.
 
     New rows store ``retailer_sku`` (= the key); older rows predate that and
@@ -200,23 +206,25 @@ def _find_listing_by_key(
         active_only: When True, only consider active listings.
 
     Returns:
-        (listing_id, variant_name) tuple, or None.
+        (listing_id, variant_name, product_id, status) tuple, or None.
     """
     status_sql = " AND status = 'active'" if active_only else ""
     row = conn.execute(
-        f"SELECT id, variant_name FROM retailer_listings WHERE retailer = ? AND retailer_sku = ?{status_sql}",
+        f"SELECT id, variant_name, product_id, status FROM retailer_listings "
+        f"WHERE retailer = ? AND retailer_sku = ?{status_sql}",
         (retailer, key),
     ).fetchone()
     if row:
-        return (row[0], row[1])
+        return (row[0], row[1], row[2], row[3])
 
     rows = conn.execute(
-        f"SELECT id, variant_name, listing_url FROM retailer_listings WHERE retailer = ? AND retailer_sku IS NULL{status_sql}",
+        f"SELECT id, variant_name, listing_url, product_id, status FROM retailer_listings "
+        f"WHERE retailer = ? AND retailer_sku IS NULL{status_sql}",
         (retailer,),
     ).fetchall()
-    for rid, rname, rurl in rows:
+    for rid, rname, rurl, pid, status in rows:
         if extract_listing_key(retailer, rurl) == key:
-            return (rid, rname)
+            return (rid, rname, pid, status)
     return None
 
 
@@ -226,7 +234,9 @@ def _snapshot_is_current(
     """True when `snapshot_date` is at least as new as this listing's newest data.
 
     An unknown date is treated as current, so callers that do not pass one keep
-    the previous behaviour rather than silently never reactivating.
+    the previous behaviour rather than silently never reactivating. Used to
+    gate REACTIVATION (status -> 'active'); see `_snapshot_is_strictly_newer`
+    for the stricter guard used to gate re-pointing `product_id`.
     """
     if snapshot_date is None:
         return True
@@ -236,6 +246,75 @@ def _snapshot_is_current(
     ).fetchone()
     latest = row[0] if row else None
     return latest is None or snapshot_date >= latest
+
+
+def _snapshot_is_strictly_newer(
+    conn: sqlite3.Connection, listing_id: int, snapshot_date: Optional[str]
+) -> bool:
+    """True when `snapshot_date` is newer than this listing's newest existing
+    data, or the listing has no snapshot yet.
+
+    Gates re-pointing a listing's `product_id` (I1, 28-Sep finding). Unlike
+    `_snapshot_is_current` (>=, used for reactivation), an EQUAL date does not
+    count here: a bare re-ingest of the file a listing was last seen in (e.g.
+    a full `python ingest.py` rebuild) must never move it away from a
+    correction repair_listings.py made after that file was written. A daily
+    run is unaffected -- today's row isn't inserted before this check runs,
+    so today's date is always strictly newer than the listing's prior data.
+    """
+    if snapshot_date is None:
+        return True
+    row = conn.execute(
+        "SELECT MAX(snapshot_date) FROM price_snapshots WHERE retailer_listing_id = ?",
+        (listing_id,),
+    ).fetchone()
+    latest = row[0] if row else None
+    return latest is None or snapshot_date > latest
+
+
+def _is_holding_product(conn: sqlite3.Connection, product_id: int) -> bool:
+    """True when `product_id` is a repair_listings.py holding product."""
+    row = conn.execute("SELECT brand FROM products WHERE id = ?", (product_id,)).fetchone()
+    return bool(row) and row[0] == HOLDING_BRAND
+
+
+def _apply_ingest_repoint(
+    conn: sqlite3.Connection,
+    listing_id: int,
+    current_product_id: int,
+    new_product_id: int,
+    snapshot_date: Optional[str],
+) -> None:
+    """Reactivate/re-point a listing seen again in a freshly-ingested snapshot.
+
+    Two independent guards keep a re-ingest of old data from undoing a
+    correction (I1, 28-Sep finding):
+
+      * `product_id` only ever moves on STRICTLY newer data
+        (`_snapshot_is_strictly_newer`) -- an equal-or-older snapshot must
+        never undo a repointing made by repair_listings.py or a later scrape.
+      * a listing currently filed under a holding product (brand 'Unmatched',
+        see HOLDING_BRAND) is not reactivated by this call unless it is ALSO
+        being re-pointed to a (real, tracked) product in the same call --
+        otherwise a bare re-ingest of the listing's own old JSON would
+        resurrect a parked listing under the wrong product, active again.
+    """
+    will_repoint = new_product_id != current_product_id and _snapshot_is_strictly_newer(
+        conn, listing_id, snapshot_date
+    )
+    currently_holding = _is_holding_product(conn, current_product_id)
+    if (not currently_holding or will_repoint) and _snapshot_is_current(
+        conn, listing_id, snapshot_date
+    ):
+        conn.execute(
+            "UPDATE retailer_listings SET status = 'active' WHERE id = ? AND status != 'active'",
+            (listing_id,),
+        )
+    if will_repoint:
+        conn.execute(
+            "UPDATE retailer_listings SET product_id = ? WHERE id = ? AND product_id != ?",
+            (new_product_id, listing_id, new_product_id),
+        )
 
 
 def find_or_create_listing(
@@ -270,17 +349,18 @@ def find_or_create_listing(
     """
     # Check by retailer + URL (each URL = one listing, regardless of product mapping)
     cursor = conn.execute(
-        "SELECT id, variant_name FROM retailer_listings WHERE retailer = ? AND listing_url = ?",
+        "SELECT id, variant_name, product_id, status FROM retailer_listings WHERE retailer = ? AND listing_url = ?",
         (retailer, url),
     )
     row = cursor.fetchone()
     if row:
+        listing_id, existing_variant, current_product_id, _current_status = row
         # If variant_name is missing, backfill it from the scraped data
-        if not row[1] and variant_name:
+        if not existing_variant and variant_name:
             if not dry_run:
                 conn.execute(
                     "UPDATE retailer_listings SET variant_name = ? WHERE id = ?",
-                    (variant_name, row[0]),
+                    (variant_name, listing_id),
                 )
         # This URL appears in the snapshot being ingested, so if the listing had
         # been retired (a delisted listing that was relisted) bring it back --
@@ -292,23 +372,16 @@ def find_or_create_listing(
         # `python ingest.py` over the whole history flipped all 12 delisted and
         # 11 stale Scorptec listings back to active, because every one of them
         # still appears in the JSON from the days before it was delisted.
-        if not dry_run and _snapshot_is_current(conn, row[0], snapshot_date):
-            conn.execute(
-                "UPDATE retailer_listings SET status = 'active' WHERE id = ? AND status != 'active'",
-                (row[0],),
-            )
-            # Make the scraper authoritative over the matcher's current call:
-            # repair_listings.py (or the previous scrape) may have filed this
-            # listing under a stale product, and the matcher can also change
-            # its mind as new watchlist variants are added (#1, #2). Reusing
-            # the same current-snapshot guard as the reactivation above means
-            # re-ingesting OLD JSON can never move a listing away from a
-            # correction made after that file was written.
-            conn.execute(
-                "UPDATE retailer_listings SET product_id = ? WHERE id = ? AND product_id != ?",
-                (product_id, row[0], product_id),
-            )
-        return row[0]
+        #
+        # Make the scraper authoritative over the matcher's current call:
+        # repair_listings.py (or the previous scrape) may have filed this
+        # listing under a stale/holding product, and the matcher can also
+        # change its mind as new watchlist variants are added (#1, #2). But a
+        # re-ingest of OLD JSON must never undo a correction made after that
+        # file was written -- see _apply_ingest_repoint (I1, 28-Sep finding).
+        if not dry_run:
+            _apply_ingest_repoint(conn, listing_id, current_product_id, product_id, snapshot_date)
+        return listing_id
 
     # Fallback: reuse an existing listing whose URL key matches (a slug
     # rewrite of a listing we already track). Prefer an active row so a
@@ -319,24 +392,38 @@ def find_or_create_listing(
         if not key_row:
             key_row = _find_listing_by_key(conn, retailer, key)
         if key_row:
+            listing_id, existing_variant, current_product_id, _current_status = key_row
             if not dry_run:
                 conn.execute(
-                    "UPDATE retailer_listings SET listing_url = ?, retailer_sku = ?, status = 'active' WHERE id = ?",
-                    (url, key, key_row[0]),
+                    "UPDATE retailer_listings SET listing_url = ?, retailer_sku = ? WHERE id = ?",
+                    (url, key, listing_id),
                 )
-                if variant_name and not key_row[1]:
+                if variant_name and not existing_variant:
                     conn.execute(
                         "UPDATE retailer_listings SET variant_name = ? WHERE id = ?",
-                        (variant_name, key_row[0]),
+                        (variant_name, listing_id),
                     )
-                # Same re-pointing rule as the exact-URL match above, gated on
-                # the same current-snapshot guard (#1, #2).
-                if _snapshot_is_current(conn, key_row[0], snapshot_date):
+                # A slug rewrite always reactivates the row it adopts (existing
+                # behaviour, pinned by tests) -- but re-pointing product_id is
+                # gated on strictly-newer data, and a listing currently on a
+                # holding product is not reactivated unless this call is also
+                # re-pointing it to a tracked product (I1, 28-Sep finding; same
+                # rule as _apply_ingest_repoint, used by the exact-URL path
+                # above).
+                will_repoint = product_id != current_product_id and _snapshot_is_strictly_newer(
+                    conn, listing_id, snapshot_date
+                )
+                if not _is_holding_product(conn, current_product_id) or will_repoint:
+                    conn.execute(
+                        "UPDATE retailer_listings SET status = 'active' WHERE id = ? AND status != 'active'",
+                        (listing_id,),
+                    )
+                if will_repoint:
                     conn.execute(
                         "UPDATE retailer_listings SET product_id = ? WHERE id = ? AND product_id != ?",
-                        (product_id, key_row[0], product_id),
+                        (product_id, listing_id, product_id),
                     )
-            return key_row[0]
+            return listing_id
 
     if dry_run:
         return None  # Don't create in dry-run mode

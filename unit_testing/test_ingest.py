@@ -111,6 +111,23 @@ class TestFindOrCreateProduct:
         row = db.execute("SELECT tracked FROM products WHERE model = ?", ("RTX 4060",)).fetchone()
         assert row[0] == 1
 
+    def test_holding_brand_product_is_created_untracked(self, db):
+        """M2 (28-Sep finding): rebuilding from exported JSON must not turn a
+        repair_listings.py holding product ('Unmatched') back into a tracked
+        one -- exported JSON for a parked listing carries brand 'Unmatched'.
+        """
+        product_data = {
+            "watchlist_category": "cpu",
+            "watchlist_brand": "Unmatched",
+            "watchlist_model": "Unmatched CPU listing",
+            "watchlist_gen_tier": "current",
+        }
+        find_or_create_product(db, product_data)
+        row = db.execute(
+            "SELECT tracked FROM products WHERE model = ?", ("Unmatched CPU listing",)
+        ).fetchone()
+        assert row[0] == 0
+
 
 # ── Listing find-or-create tests ────────────────────────────────────
 
@@ -345,6 +362,57 @@ class TestFindOrCreateListing:
             "SELECT product_id FROM retailer_listings WHERE listing_url = ?", (url,)
         ).fetchone()[0]
         assert product_id == pid_a
+
+    def _create_holding_product(self, db, model="Unmatched CPU listing"):
+        """A tracked=0 holding product, as repair_listings.py would create."""
+        db.execute(
+            "INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'Unmatched', ?, 0)",
+            (model,),
+        )
+        return db.execute("SELECT id FROM products WHERE model = ?", (model,)).fetchone()[0]
+
+    def test_equal_date_does_not_repoint_or_reactivate_a_parked_listing(self, db):
+        """I1 (28-Sep finding): re-ingesting a listing's own last-seen file must
+        not undo a repair_listings.py correction. The listing is parked under
+        a holding product and marked stale; ingesting a snapshot dated the
+        same as its last-seen date (not strictly newer) under the OLD tracked
+        product must leave it exactly where repair_listings.py put it.
+        """
+        pid_holding = self._create_holding_product(db)
+        pid_old_tracked = self._create_product(db)  # the mis-filed product
+        url = "https://scorptec.com.au/products/12345"
+        lid = find_or_create_listing(db, pid_holding, "scorptec", url, snapshot_date="2026-09-01")
+        self._with_snapshot(db, lid, "2026-09-01")
+        db.execute("UPDATE retailer_listings SET status = 'stale' WHERE id = ?", (lid,))
+        db.commit()
+
+        # Re-ingest the file the listing was last seen in (same date, old
+        # tracked-product mapping) -- e.g. a bare `python ingest.py` rebuild.
+        lid2 = find_or_create_listing(db, pid_old_tracked, "scorptec", url, snapshot_date="2026-09-01")
+        assert lid2 == lid
+        product_id, status = db.execute(
+            "SELECT product_id, status FROM retailer_listings WHERE id = ?", (lid,)
+        ).fetchone()
+        assert (product_id, status) == (pid_holding, "stale")
+
+    def test_strictly_newer_date_repoints_and_reactivates_a_parked_listing(self, db):
+        """A genuinely newer snapshot resolving to a tracked product still
+        corrects a mis-filed listing going forward (#1, #2 authoritative
+        ingest), even from a holding product."""
+        pid_holding = self._create_holding_product(db)
+        pid_tracked = self._create_product(db)
+        url = "https://scorptec.com.au/products/12345"
+        lid = find_or_create_listing(db, pid_holding, "scorptec", url, snapshot_date="2026-09-01")
+        self._with_snapshot(db, lid, "2026-09-01")
+        db.execute("UPDATE retailer_listings SET status = 'stale' WHERE id = ?", (lid,))
+        db.commit()
+
+        lid2 = find_or_create_listing(db, pid_tracked, "scorptec", url, snapshot_date="2026-09-02")
+        assert lid2 == lid
+        product_id, status = db.execute(
+            "SELECT product_id, status FROM retailer_listings WHERE id = ?", (lid,)
+        ).fetchone()
+        assert (product_id, status) == (pid_tracked, "active")
 
 
 # ── Full ingestion tests ────────────────────────────────────────────

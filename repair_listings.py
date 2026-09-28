@@ -1,8 +1,13 @@
 """Re-point listings the old substring matcher filed under the wrong product.
 
 Fixing the matcher (scraper/chip_key.py) only affects new scrapes:
-ingest.find_or_create_listing never changes an existing listing's product. This
-applies the same matcher to every listing already in the DB.
+ingest.find_or_create_listing only re-points an existing listing's product on
+STRICTLY newer data (a snapshot dated after the listing's newest existing
+snapshot), and never reactivates a listing parked here under a holding
+product unless that same call is also re-pointing it to a tracked product
+(I1, 28-Sep finding) -- so a bare re-ingest of old JSON can't undo this
+script's work, but this script is still needed to fix everything already in
+the DB. This applies the same matcher to every listing already in the DB.
 
   * resolves to a different tracked product -> re-pointed there;
   * resolves to nothing (an untracked part such as a 5500GT, or an eGPU box)
@@ -65,10 +70,16 @@ def plan_repairs(conn: sqlite3.Connection, watchlist: Sequence[WatchlistProduct]
 
 def _product_id(conn: sqlite3.Connection, category: str, model: str, holding: bool) -> int:
     row = conn.execute(
-        "SELECT id FROM products WHERE category = ? AND model = ?", (category, model)
+        "SELECT id, tracked FROM products WHERE category = ? AND model = ?", (category, model)
     ).fetchone()
     if row:
-        return row[0]
+        pid, tracked = row
+        # An ingest.py rebuild from exported JSON could have (pre-M2, or from
+        # data written before that fix) recreated this holding row tracked=1
+        # -- force it back to 0 rather than leaving it looking tracked.
+        if holding and tracked:
+            conn.execute("UPDATE products SET tracked = 0 WHERE id = ?", (pid,))
+        return pid
     if not holding:
         raise LookupError(f"{model!r} is in the watchlist but not the DB: run seed.py first")
     cur = conn.execute(
@@ -86,8 +97,12 @@ def apply_repairs(conn: sqlite3.Connection, repairs: Sequence[Repair]) -> int:
         ).fetchone()[0]
         if r.to_model is None:
             pid = _product_id(conn, category, _holding_model(category), holding=True)
+            # 'delisted' is independently-confirmed information ('the
+            # retailer removed this page') that parking must not erase --
+            # only park an active listing to 'stale' (M4, 28-Sep finding).
             conn.execute(
-                "UPDATE retailer_listings SET product_id = ?, status = 'stale' WHERE id = ?",
+                "UPDATE retailer_listings SET product_id = ?, "
+                "status = CASE WHEN status = 'delisted' THEN status ELSE 'stale' END WHERE id = ?",
                 (pid, r.listing_id),
             )
         else:
