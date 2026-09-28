@@ -70,6 +70,7 @@ def test_chip_key(text, category, key):
 
 @pytest.mark.parametrize("text,vram", [
     ("dual 8g", 8), ("16GB GDDR7", 16), ("32g, 32gb", 32), ("no memory here", None), ("gddr7", None),
+    ("o16g", 16),
 ])
 def test_parse_vram(text, vram):
     assert parse_vram(text) == vram

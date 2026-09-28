@@ -38,7 +38,10 @@ _CPU_PATTERNS = (
         r"\bultra ?[3579](?: processor)? ?(\d{3})(?!\d)(ks|kf|k|f|t)?(?![a-z])(?: ?(plus)(?![a-z]))?")),
     ("core", re.compile(r"\bi[3579] ?(?:processor )?(\d{4,5})(?!\d)(ks|kf|k|f|t)?(?![a-z])")),
 )
-_VRAM = re.compile(r"\b(\d{1,2}) ?gb?(?![a-z0-9])")
+# Asus glues its "overclocked" prefix straight onto the VRAM digits
+# ("O8G", "O16G"), so the leading "o" is optional here rather than part of
+# the exclusion the plain \b boundary would otherwise impose.
+_VRAM = re.compile(r"\bo?(\d{1,2}) ?gb?(?![a-z0-9])")
 # Not a card or not a single part: an eGPU enclosure priced as a whole box,
 # laptops, docks and CPU+board bundles.
 _EXCLUDE = re.compile(r"\b(?:ai box|egpu|laptop|notebook|dock|bundle|combo)\b")
