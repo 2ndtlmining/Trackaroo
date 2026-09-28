@@ -53,6 +53,11 @@ export function formatDate(dateStr: string): string {
 	return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+export function formatShortDate(isoDate: string): string {
+	const [y, m, d] = isoDate.split('-').map(Number);
+	return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
 export function freshnessLabel(lastSnapshotAt: string | null, now: Date = new Date()): string {
 	if (!lastSnapshotAt) return 'no data';
 	const ageDays = Math.floor((now.getTime() - new Date(lastSnapshotAt).getTime()) / 86_400_000);

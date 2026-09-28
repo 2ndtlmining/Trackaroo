@@ -341,6 +341,24 @@ describe('getProductHistory', () => {
 			expect(history!.stats.avg30Points).toBeGreaterThan(0);
 		}
 	});
+
+	it('reports each retailer’s latest snapshot date (#4)', () => {
+		const history = getProductHistory(db, 1);
+		expect(history).not.toBeNull();
+		const retailers = db.prepare('SELECT DISTINCT retailer FROM retailer_listings').all() as Array<{
+			retailer: string;
+		}>;
+		for (const { retailer } of retailers) {
+			const expected = db
+				.prepare(
+					`SELECT MAX(s.snapshot_date) AS latest FROM price_snapshots s
+					 JOIN retailer_listings l ON l.id = s.retailer_listing_id
+					 WHERE l.retailer = ?`
+				)
+				.get(retailer) as { latest: string | null };
+			expect(history!.retailerLatest[retailer]).toBe(expected.latest);
+		}
+	});
 });
 
 describe('getProductStats', () => {
@@ -709,6 +727,22 @@ describe('getComparisonData', () => {
 			mini.close();
 		}
 	});
+
+	it('excludes a listing whose status is stale even if its last snapshot was in stock (#4)', () => {
+		const mini = createMiniCompareDbWithStaleListing();
+		try {
+			const entries = getComparisonData(mini.db, [1]);
+			expect(entries.length).toBe(1);
+			const byRetailer = Object.fromEntries(
+				entries[0].prices.map((p) => [p.retailer, p.price])
+			);
+			expect(byRetailer.scorptec).toBe(490);
+			expect(byRetailer.pccg).toBeUndefined();
+			expect(entries[0].cheapestInStock).toEqual({ price: 490, retailer: 'scorptec' });
+		} finally {
+			mini.close();
+		}
+	});
 });
 
 // One CPU product, one listing per retailer. Scorptec has snapshots on 8-16 and
@@ -744,6 +778,42 @@ function createMiniCompareDb(pccgInStock: boolean): { db: DB; close: () => void 
 		pccgInStock ? 'in_stock' : 'out_of_stock',
 		'2026-08-16T04:00:00.000Z'
 	);
+	return {
+		db,
+		close: () => {
+			db.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	};
+}
+
+// One CPU product: an active scorptec listing and a stale pccg listing whose
+// last snapshot was in stock. The stale listing must never surface a price
+// (#4) — a listing that stopped being seen cannot set a price.
+function createMiniCompareDbWithStaleListing(): { db: DB; close: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-mini-stale-'));
+	const file = path.join(dir, 'mini.db');
+	const db = openDatabase(file, { readonly: false, fileMustExist: false });
+	db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+	db.prepare(
+		"INSERT INTO products (category, brand, model, generation_tier, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 7600', 'current', 1)"
+	).run();
+	const scorptecId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'scorptec', 'A', 'https://scorptec/a', 'active')"
+		).run().lastInsertRowid
+	);
+	const pccgId = Number(
+		db.prepare(
+			"INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status) VALUES (1, 'pccg', 'B', 'https://pccg/b', 'stale')"
+		).run().lastInsertRowid
+	);
+	const insertSnapshot = db.prepare(
+		'INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at) VALUES (?, ?, ?, ?, ?)'
+	);
+	insertSnapshot.run(scorptecId, '2026-08-16', 500, 'in_stock', '2026-08-16T04:00:00.000Z');
+	insertSnapshot.run(scorptecId, '2026-08-17', 490, 'in_stock', '2026-08-17T04:00:00.000Z');
+	insertSnapshot.run(pccgId, '2026-08-16', 510, 'in_stock', '2026-08-16T04:00:00.000Z');
 	return {
 		db,
 		close: () => {

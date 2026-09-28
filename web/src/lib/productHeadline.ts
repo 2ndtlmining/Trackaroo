@@ -32,7 +32,7 @@ export function buildHeadline(
 	let currentPrice: number | null = null;
 	let currentRetailer: string | null = null;
 	for (const o of offers) {
-		if (!o.inStock || o.delisted || o.latestPrice === null) continue;
+		if (!o.inStock || o.delisted || o.stale || o.latestPrice === null) continue;
 		if (currentPrice === null || o.latestPrice < currentPrice) {
 			currentPrice = o.latestPrice;
 			currentRetailer = o.retailer;

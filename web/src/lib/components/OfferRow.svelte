@@ -3,7 +3,7 @@
 	import BrandIcon from './BrandIcon.svelte';
 	import StockBadge from './StockBadge.svelte';
 	import { RETAILER_OPTIONS } from '$lib/filters';
-	import { formatAud, formatPct, formatRelative, titleCase } from '$lib/formats';
+	import { formatAud, formatPct, formatRelative, formatShortDate, titleCase } from '$lib/formats';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30, type ListingDisplay } from '$lib/offers';
 
 	let {
@@ -82,6 +82,8 @@
 	<div class="order-4 shrink-0">
 		{#if offer.delisted}
 			<Badge tone="stale" label="Delisted" />
+		{:else if offer.stale}
+			<Badge tone="stale" label={offer.lastSeen ? `Not seen since ${formatShortDate(offer.lastSeen)}` : 'Not seen recently'} />
 		{:else}
 			<StockBadge stock={offer.latestStock} />
 		{/if}

@@ -165,6 +165,10 @@ export interface ProductHistory {
 	band: PriceBandPoint[];
 	// Trailing-30-day stats for the detail page's "30d avg" chip.
 	stats: ProductStats;
+	// Latest snapshot_date per retailer, across all products -- lets the display
+	// layer tell "this listing's own retailer hasn't been scraped in days"
+	// (not stale) apart from "everyone else moved on and this one didn't" (#4).
+	retailerLatest: Record<string, string>;
 }
 
 // Canonical display names for AIB/GPU partner brands, keyed by the lowercase
@@ -757,12 +761,25 @@ export function getProductHistory(db: DB, productId: number): ProductHistory | n
 		.prepare('SELECT * FROM specs WHERE product_id = ? ORDER BY last_synced_at DESC LIMIT 1')
 		.get(productId) as SpecRow | undefined;
 
+	const retailerLatest = Object.fromEntries(
+		(
+			db
+				.prepare(
+					`SELECT l.retailer AS retailer, MAX(s.snapshot_date) AS latest
+					 FROM price_snapshots s JOIN retailer_listings l ON l.id = s.retailer_listing_id
+					 GROUP BY l.retailer`
+				)
+				.all() as Array<{ retailer: string; latest: string }>
+		).map((r) => [r.retailer, r.latest])
+	);
+
 	return {
 		product,
 		series: [...listings.values()].map(({ listing, points }) => ({ listing, points })),
 		specs: spec ?? null,
 		band: getPriceBand(db, productId),
-		stats: getProductStats(db, productId)
+		stats: getProductStats(db, productId),
+		retailerLatest
 	};
 }
 
@@ -1112,6 +1129,7 @@ export function getComparisonData(db: DB, productIds: number[]): CompareEntry[] 
 		FROM retailer_listings l
 		JOIN latest lat ON lat.retailer_listing_id = l.id
 		WHERE l.product_id = ? AND lat.stock_status = 'in_stock'
+		  AND l.status = 'active'
 		  AND ${notBundle('l')}
 		GROUP BY l.retailer`
 	);

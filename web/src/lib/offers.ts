@@ -15,7 +15,7 @@ const TIER_ORDER: Record<OfferTier, number> = {
 };
 
 export function offerTier(o: ListingDisplay): OfferTier {
-	if (o.delisted) return 'delisted';
+	if (o.delisted || o.stale) return 'delisted';
 	return o.inStock ? 'in_stock' : 'out_of_stock';
 }
 

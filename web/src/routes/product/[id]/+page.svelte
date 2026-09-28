@@ -74,7 +74,9 @@ label:
 	);
 	const totalPoints = $derived(series.reduce((acc, s) => acc + s.points.length, 0));
 
-	const offers = $derived(toListingDisplays(series, product.brand, selected));
+	const offers = $derived(
+		toListingDisplays(series, product.brand, selected, data.retailerLatest)
+	);
 	const headline = $derived(buildHeadline(offers, data.band, data.stats));
 </script>
 
@@ -134,6 +136,7 @@ label:
 				avgPoints={headline.avgPoints}
 				{selected}
 				onToggleListing={toggleListing}
+				retailerLatest={data.retailerLatest}
 			/>
 		</div>
 	{:else}

@@ -100,6 +100,7 @@ export function dealToOffer(deal: Deal): ListingDisplay {
 		latestPrice: deal.price,
 		latestStock: 'in_stock',
 		delisted: false,
+		stale: false,
 		inStock: true,
 		firstSeen: null,
 		lastSeen: deal.snapshotDate,

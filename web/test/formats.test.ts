@@ -7,6 +7,7 @@ import {
 	formatCacheMb,
 	formatDate,
 	formatMhz,
+	formatShortDate,
 	formatPct,
 	formatProcess,
 	formatRelative,
@@ -106,6 +107,14 @@ describe('formatDate', () => {
 
 	it('returns the input unchanged when unparseable', () => {
 		expect(formatDate('not-a-date')).toBe('not-a-date');
+	});
+});
+
+describe('formatShortDate', () => {
+	it('formats a YYYY-MM-DD date without a year', () => {
+		// en-AU's Intl data abbreviates September as "Sept" (four letters), unlike
+		// most other months -- this pins the real runtime output, not a guess.
+		expect(formatShortDate('2026-09-12')).toBe('12 Sept');
 	});
 });
 
