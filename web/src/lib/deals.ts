@@ -31,6 +31,10 @@ export interface Deal extends DealCandidate {
 	// Near the low AND the price was EARNED_LOW_RISE_PCT higher inside the
 	// window: a drop, not a flat line (#6).
 	earnedLow: boolean;
+	// True only when the price actually IS the (new) all-time low, not just
+	// within the near-low tolerance band -- distinguishes "Lowest since" from
+	// "Near low since" (M3, 28-Sep finding).
+	atNewLow: boolean;
 }
 
 export interface DealFilters {
@@ -61,6 +65,16 @@ export function isNearAllTimeLow(price: number, allTimeLow: number | null): bool
 	return price <= allTimeLow * (1 + NEAR_ALL_TIME_LOW_PCT / 100);
 }
 
+// Zero-tolerance version of isNearAllTimeLow: true only when the price
+// actually reached (or beat) the recorded all-time low, not merely within
+// NEAR_ALL_TIME_LOW_PCT of it. The "Lowest since" badge claims the former;
+// isNearAllTimeLow/earnedLow only guarantee the latter, which overclaimed
+// (M3, 28-Sep finding).
+export function isAtNewLow(price: number, allTimeLow: number | null): boolean {
+	if (allTimeLow === null) return false;
+	return price <= allTimeLow;
+}
+
 export function isEarnedLow(c: DealCandidate): boolean {
 	return (
 		isNearAllTimeLow(c.price, c.allTimeLow) &&
@@ -75,7 +89,8 @@ export function toDeals(candidates: DealCandidate[]): Deal[] {
 		depthPct: dealDepthPct(c.price, c.avg30),
 		savingAud: c.avg30 === null ? null : Math.round((c.avg30 - c.price) * 100) / 100,
 		nearAllTimeLow: isNearAllTimeLow(c.price, c.allTimeLow),
-		earnedLow: isEarnedLow(c)
+		earnedLow: isEarnedLow(c),
+		atNewLow: isAtNewLow(c.price, c.allTimeLow)
 	}));
 }
 

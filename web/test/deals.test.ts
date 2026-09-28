@@ -7,6 +7,7 @@ import {
 	dealDepthPct,
 	dealToOffer,
 	filterDeals,
+	isAtNewLow,
 	isEligible,
 	isNearAllTimeLow,
 	shownDeals,
@@ -84,6 +85,41 @@ describe('isNearAllTimeLow', () => {
 
 	it('pins the threshold constant at 2', () => {
 		expect(NEAR_ALL_TIME_LOW_PCT).toBe(2);
+	});
+});
+
+// M3 (28-Sep finding): earnedLow/isNearAllTimeLow allow a price up to 2%
+// above the all-time low, but the "Lowest since" badge claims the price IS
+// the all-time low. isAtNewLow is the stricter, zero-tolerance check the
+// page uses to pick "Lowest since" vs "Near low since".
+describe('isAtNewLow', () => {
+	it('accepts a price at the all-time low', () => {
+		expect(isAtNewLow(880, 880)).toBe(true);
+	});
+
+	it('accepts a new all-time low below the recorded one', () => {
+		expect(isAtNewLow(800, 880)).toBe(true);
+	});
+
+	it('rejects a price above the all-time low, even within the near-low band', () => {
+		expect(isAtNewLow(880 * 1.01, 880)).toBe(false);
+	});
+
+	it('rejects when there is no all-time low', () => {
+		expect(isAtNewLow(880, null)).toBe(false);
+	});
+});
+
+describe('Deal.atNewLow (M3, 28-Sep finding)', () => {
+	it('is true when the price is at or below the all-time low', () => {
+		const [deal] = toDeals([candidate({ price: 880, allTimeLow: 880 })]);
+		expect(deal.atNewLow).toBe(true);
+	});
+
+	it('is false when the price is only within the near-low band', () => {
+		const [deal] = toDeals([candidate({ price: 880 * 1.01, allTimeLow: 880 })]);
+		expect(deal.nearAllTimeLow).toBe(true);
+		expect(deal.atNewLow).toBe(false);
 	});
 });
 

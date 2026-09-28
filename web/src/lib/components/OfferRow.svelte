@@ -22,7 +22,8 @@
 		detailHref,
 		avgPoints,
 		saving,
-		lowSince
+		lowSince,
+		nearLowSince
 	}: {
 		offer: ListingDisplay;
 		avg30: number | null;
@@ -37,9 +38,15 @@
 		// Dollars below the 30-day average -- when set, replaces the plain
 		// delta with the actual saving (#6).
 		saving?: number | null;
-		// Set when the row earned a new-low badge -- the date "all-time" is
-		// measured from (#6).
+		// Set when the price actually IS the all-time low (or a new one) --
+		// the date "all-time" is measured from (#6).
 		lowSince?: string | null;
+		// Set when the price is only NEAR the all-time low (within the
+		// earned-low tolerance) but not actually at or below it -- shows a
+		// "Near low since" badge instead, so the row never overclaims (M3,
+		// 28-Sep finding). Mutually exclusive with lowSince; lowSince wins if
+		// both are somehow given.
+		nearLowSince?: string | null;
 	} = $props();
 
 	const retailerLabel = $derived(
@@ -115,6 +122,8 @@
 		{/if}
 		{#if lowSince}
 			<Badge tone="accent" label={`Lowest since ${formatShortDate(lowSince)}`} />
+		{:else if nearLowSince}
+			<Badge tone="accent" label={`Near low since ${formatShortDate(nearLowSince)}`} />
 		{/if}
 	</div>
 

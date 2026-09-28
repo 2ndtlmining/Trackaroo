@@ -78,7 +78,8 @@
 						titleOverride={deal.model}
 						detailHref={`/product/${deal.productId}`}
 						saving={deal.savingAud}
-						lowSince={deal.earnedLow ? deal.historyStart : null}
+						lowSince={deal.earnedLow && deal.atNewLow ? deal.historyStart : null}
+						nearLowSince={deal.earnedLow && !deal.atNewLow ? deal.historyStart : null}
 					/>
 				{/each}
 			</div>
@@ -111,7 +112,8 @@
 						titleOverride={deal.model}
 						detailHref={`/product/${deal.productId}`}
 						saving={deal.savingAud}
-						lowSince={deal.earnedLow ? deal.historyStart : null}
+						lowSince={deal.earnedLow && deal.atNewLow ? deal.historyStart : null}
+						nearLowSince={deal.earnedLow && !deal.atNewLow ? deal.historyStart : null}
 					/>
 				{/each}
 			</div>

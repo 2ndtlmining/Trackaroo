@@ -624,6 +624,35 @@ describe('OfferRow', () => {
 		expect(html).not.toContain('Lowest since');
 	});
 
+	// M3 (28-Sep finding): earnedLow tolerates a price up to 2% above the
+	// all-time low, so a "Lowest since" claim there would overclaim -- the
+	// page passes nearLowSince instead of lowSince for that case.
+	it('shows a Near low since badge when nearLowSince is given (M3)', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			nearLowSince: '2026-01-15'
+		});
+		expect(html).toContain('Near low since 15 Jan');
+		expect(html).not.toContain('Lowest since');
+	});
+
+	it('prefers lowSince over nearLowSince when both are given (M3)', () => {
+		const html = renderComponent(OfferRow, {
+			offer: offerRow(),
+			avg30: 1400,
+			lowSince: '2026-01-15',
+			nearLowSince: '2026-01-10'
+		});
+		expect(html).toContain('Lowest since 15 Jan');
+		expect(html).not.toContain('Near low since');
+	});
+
+	it('omits the Near low since badge when nearLowSince is not given (M3)', () => {
+		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
+		expect(html).not.toContain('Near low since');
+	});
+
 	it('labels the outbound link "Buy at <retailer>" with an accessible name (#6)', () => {
 		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
 		expect(html).toContain('Buy at Scorptec ↗');
