@@ -56,18 +56,19 @@ class TestLoadWatchlist:
         # 31-Aug: PCCG stocks the non-F/non-K part and it was absent from the
         # watchlist entirely. These counts are a guard against the watchlist
         # being truncated or corrupted, so update them deliberately.
+        # 105 on 28-Sep-2026: 245K and the four memory/GRE variants (#1, #2)
         products = load_watchlist(WATCHLIST_PATH)
-        assert len(products) == 100
+        assert len(products) == 105
 
     def test_cpu_count(self):
         products = load_watchlist(WATCHLIST_PATH)
         cpus = [p for p in products if p["category"] == "cpu"]
-        assert len(cpus) == 54
+        assert len(cpus) == 55
 
     def test_gpu_count(self):
         products = load_watchlist(WATCHLIST_PATH)
         gpus = [p for p in products if p["category"] == "gpu"]
-        assert len(gpus) == 46
+        assert len(gpus) == 50
 
     def test_all_have_brand(self):
         products = load_watchlist(WATCHLIST_PATH)

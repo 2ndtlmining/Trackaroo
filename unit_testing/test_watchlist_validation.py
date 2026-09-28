@@ -141,7 +141,8 @@ class TestLoadWatchlistSkipsBadRows:
 class TestTheRealWatchlistIsClean:
     def test_every_row_validates(self):
         """The shipped file must have no rows that would be skipped."""
-        assert len(load_watchlist(strict=True)) == 100
+        # 105 on 28-Sep-2026: 245K and the four memory/GRE variants (#1, #2)
+        assert len(load_watchlist(strict=True)) == 105
 
     def test_no_base_model_alias_outranks_its_own_variant(self):
         """The alias-ordering trap, which is invisible until it steals data.
