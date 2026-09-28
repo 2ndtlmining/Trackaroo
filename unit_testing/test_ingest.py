@@ -284,6 +284,68 @@ class TestFindOrCreateListing:
         variant = db.execute("SELECT variant_name FROM retailer_listings WHERE id = ?", (lid,)).fetchone()[0]
         assert variant == "Original Variant"
 
+    def _second_product(self, db, model="Ryzen 9 5900X"):
+        pid2_data = {"watchlist_category": "cpu", "watchlist_brand": "AMD", "watchlist_model": model}
+        find_or_create_product(db, pid2_data)
+        return db.execute("SELECT id FROM products WHERE model = ?", (model,)).fetchone()[0]
+
+    def _with_snapshot(self, db, listing_id, snapshot_date, price=100.0):
+        """Give a listing a real price_snapshots row, so `_snapshot_is_current`
+        has a latest date to compare against (with none, every date is
+        treated as current, which would make the "older snapshot" case
+        vacuous)."""
+        db.execute(
+            "INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud) VALUES (?, ?, ?)",
+            (listing_id, snapshot_date, price),
+        )
+
+    def test_current_snapshot_repoints_a_mis_filed_listing(self, db):
+        """A listing on product A the matcher now resolves to B moves to B (#1, #2).
+
+        This is what makes ingest authoritative going forward: a listing left
+        wrong by repair_listings.py (or filed before a matcher fix) is
+        corrected the next time the scraper sees it with a current snapshot.
+        """
+        pid_a = self._create_product(db)
+        pid_b = self._second_product(db)
+        url = "https://scorptec.com.au/products/12345"
+        lid = find_or_create_listing(db, pid_a, "scorptec", url, snapshot_date="2026-09-01")
+        self._with_snapshot(db, lid, "2026-09-01")
+        # A later scrape resolves the same URL to product B.
+        lid2 = find_or_create_listing(db, pid_b, "scorptec", url, snapshot_date="2026-09-02")
+        assert lid2 == lid
+        product_id, status = db.execute(
+            "SELECT product_id, status FROM retailer_listings WHERE id = ?", (lid,)
+        ).fetchone()
+        assert (product_id, status) == (pid_b, "active")
+
+    def test_older_snapshot_does_not_repoint(self, db):
+        """A snapshot older than the listing's latest data must not move it."""
+        pid_a = self._create_product(db)
+        pid_b = self._second_product(db)
+        url = "https://scorptec.com.au/products/12345"
+        lid = find_or_create_listing(db, pid_a, "scorptec", url, snapshot_date="2026-09-10")
+        self._with_snapshot(db, lid, "2026-09-10")
+        # A stale/older file resolves the URL to product B — must be ignored.
+        find_or_create_listing(db, pid_b, "scorptec", url, snapshot_date="2026-09-01")
+        product_id = db.execute(
+            "SELECT product_id FROM retailer_listings WHERE listing_url = ?", (url,)
+        ).fetchone()[0]
+        assert product_id == pid_a
+
+    def test_dry_run_does_not_repoint(self, db):
+        """dry_run must never write the product_id change."""
+        pid_a = self._create_product(db)
+        pid_b = self._second_product(db)
+        url = "https://scorptec.com.au/products/12345"
+        lid = find_or_create_listing(db, pid_a, "scorptec", url, snapshot_date="2026-09-01")
+        self._with_snapshot(db, lid, "2026-09-01")
+        find_or_create_listing(db, pid_b, "scorptec", url, snapshot_date="2026-09-02", dry_run=True)
+        product_id = db.execute(
+            "SELECT product_id FROM retailer_listings WHERE listing_url = ?", (url,)
+        ).fetchone()[0]
+        assert product_id == pid_a
+
 
 # ── Full ingestion tests ────────────────────────────────────────────
 

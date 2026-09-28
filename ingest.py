@@ -297,6 +297,17 @@ def find_or_create_listing(
                 "UPDATE retailer_listings SET status = 'active' WHERE id = ? AND status != 'active'",
                 (row[0],),
             )
+            # Make the scraper authoritative over the matcher's current call:
+            # repair_listings.py (or the previous scrape) may have filed this
+            # listing under a stale product, and the matcher can also change
+            # its mind as new watchlist variants are added (#1, #2). Reusing
+            # the same current-snapshot guard as the reactivation above means
+            # re-ingesting OLD JSON can never move a listing away from a
+            # correction made after that file was written.
+            conn.execute(
+                "UPDATE retailer_listings SET product_id = ? WHERE id = ? AND product_id != ?",
+                (product_id, row[0], product_id),
+            )
         return row[0]
 
     # Fallback: reuse an existing listing whose URL key matches (a slug
@@ -317,6 +328,13 @@ def find_or_create_listing(
                     conn.execute(
                         "UPDATE retailer_listings SET variant_name = ? WHERE id = ?",
                         (variant_name, key_row[0]),
+                    )
+                # Same re-pointing rule as the exact-URL match above, gated on
+                # the same current-snapshot guard (#1, #2).
+                if _snapshot_is_current(conn, key_row[0], snapshot_date):
+                    conn.execute(
+                        "UPDATE retailer_listings SET product_id = ? WHERE id = ? AND product_id != ?",
+                        (product_id, key_row[0], product_id),
                     )
             return key_row[0]
 

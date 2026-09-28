@@ -138,11 +138,20 @@ The data is in the mounts, not the container, so this is non-destructive.
 
 `repair_listings.py` re-applies the current watchlist matcher (`scraper/chip_key.py`)
 to every existing listing, so a matcher fix (e.g. #1, #2) also corrects listings
-filed under the wrong product *before* the fix shipped — `ingest.py` never moves
-an existing listing on its own. It never deletes a `price_snapshots` row; a
-listing that no longer matches any tracked product is moved to a `tracked=0`
-"Unmatched CPU/GPU listing" holding product and marked `stale`, taking its
-prices out of the wrong product's history without discarding them.
+filed under the wrong product *before* the fix shipped. (`ingest.py` also
+re-points a listing on its own the next time it sees a *current* snapshot that
+resolves differently — see #1/#2 in `find_or_create_listing` — but that only
+fires on the next scrape; this script fixes everything immediately.) It never
+deletes a `price_snapshots` row; a listing that no longer matches any tracked
+product is moved to a `tracked=0` "Unmatched CPU/GPU listing" holding product
+and marked `stale`, taking its prices out of the wrong product's history
+without discarding them.
+
+Before `--apply`, review any `UNMATCHED` **GPU** line whose title has no
+memory size (e.g. a bundle or "AI Box" listing) — the matcher resolves GPUs
+by chip key *and* VRAM, so a title lacking a size can only ever be unmatched
+here, but if the retailer's own description (not the title) names the VRAM,
+the next scrape can still re-point it away from the holding product later.
 
 After pulling a change that touches the matcher or the watchlist:
 
