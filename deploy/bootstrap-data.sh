@@ -95,4 +95,9 @@ fi
 
 log "Empty DB found — ingesting ${seed_files} baked data/*.json snapshots..."
 TRACKAROO_DATA_DIR=/app/seed-data python ingest.py
+
+# Old snapshot JSON carries the matcher's old decisions; re-apply today's rules
+# so a rebuilt DB does not resurrect mis-filed listings (#1, #2).
+python seed.py
+python repair_listings.py --apply
 log "Bootstrap hydrate complete."

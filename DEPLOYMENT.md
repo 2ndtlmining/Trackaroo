@@ -134,6 +134,24 @@ docker build -t trackaroo .
 
 The data is in the mounts, not the container, so this is non-destructive.
 
+### Repair mis-filed listings
+
+`repair_listings.py` re-applies the current watchlist matcher (`scraper/chip_key.py`)
+to every existing listing, so a matcher fix (e.g. #1, #2) also corrects listings
+filed under the wrong product *before* the fix shipped — `ingest.py` never moves
+an existing listing on its own. It never deletes a `price_snapshots` row; a
+listing that no longer matches any tracked product is moved to a `tracked=0`
+"Unmatched CPU/GPU listing" holding product and marked `stale`, taking its
+prices out of the wrong product's history without discarding them.
+
+After pulling a change that touches the matcher or the watchlist:
+
+```bash
+docker exec trackaroo python seed.py
+docker exec trackaroo python repair_listings.py            # dry run — review the output
+docker exec trackaroo python repair_listings.py --apply    # backs up the DB first
+```
+
 ### Backups
 
 `backup_db.py` writes retention-pruned copies into `db/backups/` on every real
