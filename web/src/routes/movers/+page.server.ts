@@ -22,16 +22,19 @@ export function load({
 	const db = getDb();
 	setHeaders({ 'cache-control': 'public, max-age=60, stale-while-revalidate=300' });
 	const days = DAYS[window];
-	const all = memo(db, `movers:${days}`, () => getMovers(db, days));
-	const movers = showAll
-		? all
-		: all.filter((m) => !m.notEnoughHistory && m.change !== null && Math.abs(m.change) >= 0.005);
-	// showAll changes which listing ids need sparklines, so it must be in the
-	// key -- otherwise the second variant to load in a data_version would
-	// serve the first variant's (wrong) set of sparklines.
-	const sparklines = memo(db, `sparklines:${days}:${showAll}`, () =>
-		getSparklines(db, movers.map((m) => m.listingId), days)
-	);
+	// `all` and `sparklines` must be memoised together: if a pipeline commit
+	// landed between two separate memo() calls, the sparklines entry would be
+	// cached against the new data_version but built from the old listing ids
+	// (or vice versa), so movers would render without matching trend lines
+	// until the next commit invalidated the cache again.
+	const { all, movers, sparklines } = memo(db, `moversView:${days}:${showAll}`, () => {
+		const all = getMovers(db, days);
+		const movers = showAll
+			? all
+			: all.filter((m) => !m.notEnoughHistory && m.change !== null && Math.abs(m.change) >= 0.005);
+		const sparklines = getSparklines(db, movers.map((m) => m.listingId), days);
+		return { all, movers, sparklines };
+	});
 	return {
 		movers: movers.map((m) => ({
 			...m,

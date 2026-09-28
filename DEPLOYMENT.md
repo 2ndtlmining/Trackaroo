@@ -134,6 +134,12 @@ docker build -t trackaroo .
 
 The data is in the mounts, not the container, so this is non-destructive.
 
+List pages (`/`, `/deals`, `/movers`, `/products`) send
+`cache-control: public, max-age=60, stale-while-revalidate=300`, so for a few
+minutes after a redeploy a browser may still show a pre-deploy page it served
+stale-while-revalidate style. Hard-refresh (Ctrl+F5) if you need to confirm
+the new build is live.
+
 ### Repair mis-filed listings
 
 `repair_listings.py` re-applies the current watchlist matcher (`scraper/chip_key.py`)
@@ -280,14 +286,14 @@ docker run -d --name trackaroo-web \
   -v /opt/trackaroo/data:/app/data \
   -e TRACKAROO_DB=/app/db/trackaroo.db \
   --entrypoint /usr/bin/tini \
-  trackaroo -- node web/build/index.js
+  trackaroo -- node web/server.js
 ```
 
 ### Option B (adapter-node directly)
 
 ```bash
 cd web && npm ci && npm run build
-TRACKAROO_DB=../db/trackaroo.db PORT=3000 HOST=0.0.0.0 node build/index.js
+TRACKAROO_DB=../db/trackaroo.db PORT=3000 HOST=0.0.0.0 node server.js
 ```
 
 Put this behind a reverse proxy (Caddy / nginx / Traefik) for TLS if the host

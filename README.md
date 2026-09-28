@@ -256,7 +256,7 @@ docker run -d --name trackaroo-pipeline \
 # Dashboard only, no pipeline (read-only; DB written elsewhere)
 docker run -d --name trackaroo-web -p 3000:3000 \
   -v "$(pwd)/db:/app/db" \
-  --entrypoint /usr/bin/tini trackaroo -- node web/build/index.js
+  --entrypoint /usr/bin/tini trackaroo -- node web/server.js
 ```
 
 ### Verifying a deployment

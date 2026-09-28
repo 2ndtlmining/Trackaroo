@@ -110,7 +110,10 @@ backup integrity.
   re-points, especially any `UNMATCHED` line for a GPU with no memory size
   in its title (that's the one case that means a genuine matcher gap, not
   an expected split/stale reclassification) — then run
-  `python repair_listings.py --apply`.
+  `python repair_listings.py --apply`. Also: list pages send
+  `cache-control: public, max-age=60, stale-while-revalidate=300`, so a
+  browser can keep showing a pre-deploy page for a few minutes after this —
+  hard-refresh (Ctrl+F5) to confirm the new build.
   **Not done here (deferred to the repo owner, per this task's brief)**:
   commenting on GitHub issues #1, #2, #4, #6 with commit SHAs — left open
   until the prod redeploy (roadmap Phase 6) confirms.
