@@ -61,3 +61,21 @@ export function topMoversByProduct(
 		})
 		.slice(0, limit);
 }
+
+export type MoverSortKey = 'abs' | 'pct' | 'price';
+
+// Rows without a change ("Not enough history", null change) always sort last:
+// sorting by |change| treated null as -Infinity, whose magnitude is Infinity,
+// so brand-new listings led the page (#5).
+export function sortMovers(rows: Mover[], key: MoverSortKey): Mover[] {
+	const unknown = (m: Mover) => m.notEnoughHistory || m.change === null;
+	return [...rows].sort((a, b) => {
+		const ua = unknown(a);
+		const ub = unknown(b);
+		if (ua !== ub) return ua ? 1 : -1;
+		if (key === 'price') return b.newPrice - a.newPrice;
+		if (ua) return a.listingId - b.listingId;
+		if (key === 'abs') return Math.abs(b.change!) - Math.abs(a.change!) || a.listingId - b.listingId;
+		return (b.pctChange ?? 0) - (a.pctChange ?? 0) || a.listingId - b.listingId;
+	});
+}

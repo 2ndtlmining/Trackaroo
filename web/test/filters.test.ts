@@ -5,6 +5,7 @@ import {
 	TIER_OPTIONS,
 	hasActiveFilters,
 	parseFilters,
+	retailerLabel,
 	updateFilter
 } from '../src/lib/filters';
 
@@ -162,5 +163,19 @@ describe('six-retailer readiness', () => {
 	it('still rejects an unknown slug', () => {
 		const filters = parseFilters(new URLSearchParams('retailer=nope'));
 		expect(filters.retailer).toBeUndefined();
+	});
+});
+
+describe('retailerLabel (#5)', () => {
+	// The one place a retailer slug becomes a display name — everywhere else
+	// used to inline its own `RETAILER_OPTIONS.find(...)` lookup, which is how
+	// a raw slug like "pccg" leaked onto /movers unlabelled.
+	it.each([
+		['scorptec', 'Scorptec'],
+		['pccg', 'PCCG'],
+		['umart', 'Umart'],
+		['mystery', 'mystery']
+	])('retailerLabel(%s) = %s', (slug, label) => {
+		expect(retailerLabel(slug)).toBe(label);
 	});
 });

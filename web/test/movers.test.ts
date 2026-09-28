@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { topMoversByProduct } from '../src/lib/movers';
+import { sortMovers, topMoversByProduct } from '../src/lib/movers';
 import type { Mover } from '../src/lib/server/repos';
 
 function mover(over: Partial<Mover> = {}): Mover {
@@ -217,5 +217,46 @@ describe('topMoversByProduct', () => {
 		const snapshot = input.map((m) => m.listingId);
 		topMoversByProduct(input, 'gpu', 'up', 3);
 		expect(input.map((m) => m.listingId)).toEqual(snapshot);
+	});
+});
+
+describe('sortMovers (#5)', () => {
+	it.each(['abs', 'pct', 'price'] as const)('puts not-enough-history rows last under %s', (key) => {
+		const rows = [
+			mover({ listingId: 1, change: null, pctChange: null, notEnoughHistory: true, newPrice: 9999 }),
+			mover({ listingId: 2, change: -50, pctChange: -5, newPrice: 950 }),
+			mover({ listingId: 3, change: 20, pctChange: 2, newPrice: 1020 })
+		];
+		expect(sortMovers(rows, key).at(-1)!.listingId).toBe(1);
+	});
+
+	it('abs sorts by magnitude', () => {
+		const rows = [mover({ listingId: 3, change: 20 }), mover({ listingId: 2, change: -50 })];
+		expect(sortMovers(rows, 'abs').map((m) => m.listingId)).toEqual([2, 3]);
+	});
+
+	it('pct sorts by descending percentage change', () => {
+		const rows = [
+			mover({ listingId: 1, pctChange: 5 }),
+			mover({ listingId: 2, pctChange: 30 }),
+			mover({ listingId: 3, pctChange: -10 })
+		];
+		expect(sortMovers(rows, 'pct').map((m) => m.listingId)).toEqual([2, 1, 3]);
+	});
+
+	it('price sorts by descending new price', () => {
+		const rows = [
+			mover({ listingId: 1, newPrice: 500 }),
+			mover({ listingId: 2, newPrice: 1500 }),
+			mover({ listingId: 3, newPrice: 1000 })
+		];
+		expect(sortMovers(rows, 'price').map((m) => m.listingId)).toEqual([2, 3, 1]);
+	});
+
+	it('does not mutate the input array', () => {
+		const rows = [mover({ listingId: 1, change: 5 }), mover({ listingId: 2, change: -50 })];
+		const snapshot = rows.map((m) => m.listingId);
+		sortMovers(rows, 'abs');
+		expect(rows.map((m) => m.listingId)).toEqual(snapshot);
 	});
 });

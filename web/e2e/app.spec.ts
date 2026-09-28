@@ -484,6 +484,21 @@ test('movers link through to product pages', async ({ page }) => {
 		await expect(newHeader).not.toContainText('▲');
 		await expect(newHeader).not.toContainText('▼');
 	});
+
+	// #5 items 1-3, 6: no "++$" double sign, no raw retailer slugs, thin/unchanged
+	// listings hidden by default and demoted behind a click when shown.
+	test('shows real movers first, correctly labelled, without the double plus', async ({ page }) => {
+		const html = await (await page.request.get('/movers')).text();
+		expect(html).not.toContain('++$');
+		expect(html).not.toMatch(/>\s*(pccg|scorptec|umart)\s*</);
+
+		await goto(page, '/movers');
+		const first = page.locator('tbody tr').first();
+		await expect(first).not.toContainText('Not enough history');
+
+		await goto(page, '/movers?all=1');
+		await expect(page.getByText('Not enough history').first()).toBeVisible();
+	});
 });
 
 test.describe('product detail', () => {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import BrandIcon from './BrandIcon.svelte';
-	import { RETAILER_OPTIONS } from '$lib/filters';
+	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
 	import { formatAud, formatPct } from '$lib/formats';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30 } from '$lib/offers';
 	import type { ProductGroup } from '$lib/server/repos';
@@ -23,10 +23,7 @@
 	} = $props();
 
 	const retailerLabel = $derived(
-		group.cheapestInStockRetailer
-			? (RETAILER_OPTIONS.find((o) => o.value === group.cheapestInStockRetailer)?.label ??
-				group.cheapestInStockRetailer)
-			: null
+		group.cheapestInStockRetailer ? lookupRetailerLabel(group.cheapestInStockRetailer) : null
 	);
 
 	const deltaPct = $derived(deltaVsAvg30(group.cheapestInStockPrice, group.avg30 ?? null));

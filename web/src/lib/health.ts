@@ -1,7 +1,7 @@
 // Per-retailer data-health classification for the homepage strip. Pure, so the
 // boundaries are pinned by tests rather than by how a pill happens to render.
 import { daysBehindToday, stalenessLabel } from './formats';
-import { RETAILER_OPTIONS } from './filters';
+import { retailerLabel } from './filters';
 import type { RetailerFreshness } from './server/repos';
 
 export type FreshnessState = 'fresh' | 'recent' | 'stale' | 'never';
@@ -26,8 +26,6 @@ export function classifyFreshness(days: number | null): FreshnessState {
 	return 'stale';
 }
 
-const RETAILER_LABELS = new Map(RETAILER_OPTIONS.map((o) => [o.value as string, o.label]));
-
 export function retailerHealth(
 	rows: RetailerFreshness[],
 	now: Date = new Date()
@@ -39,7 +37,7 @@ export function retailerHealth(
 			retailer: row.retailer,
 			// An unknown slug falls back to itself so a newly-added retailer
 			// shows up rather than rendering blank.
-			label: RETAILER_LABELS.get(row.retailer) ?? row.retailer,
+			label: retailerLabel(row.retailer),
 			state,
 			days,
 			text: state === 'never' ? 'no data' : days === 0 ? 'today' : stalenessLabel(days as number)

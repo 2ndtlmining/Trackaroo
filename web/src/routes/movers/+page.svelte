@@ -2,9 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { formatAud, formatPct, formatSignedAud, titleCase } from '$lib/formats';
+	import { retailerLabel } from '$lib/filters';
 	import PriceChange from '$lib/components/PriceChange.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Sparkline from '$lib/components/Sparkline.svelte';
+	import { sortMovers, type MoverSortKey } from '$lib/movers';
 	import type { Mover } from '$lib/server/repos';
 	import type { ChangeDirection } from '$lib/types';
 	import { nextSortDir, sortRows, type SortDir } from '$lib/tableSort';
@@ -12,10 +14,16 @@
 	let {
 		data
 	}: {
-		data: { movers: Mover[]; window: string; windows: readonly string[] };
+		data: {
+			movers: Mover[];
+			window: string;
+			windows: readonly string[];
+			showAll: boolean;
+			hiddenCount: number;
+		};
 	} = $props();
 
-	type SortKey = 'abs' | 'pct' | 'price';
+	type SortKey = MoverSortKey;
 	type DirFilter = 'all' | ChangeDirection;
 
 	let sort = $state<SortKey>('abs');
@@ -43,17 +51,7 @@
 	);
 
 	const sorted = $derived.by(() => {
-		const arr = [...visible];
-		arr.sort((a, b) => {
-			const av = a.change ?? -Infinity;
-			const bv = b.change ?? -Infinity;
-			if (sort === 'abs') return Math.abs(bv) - Math.abs(av);
-			if (sort === 'price') return b.newPrice - a.newPrice;
-			const ap = a.pctChange ?? -Infinity;
-			const bp = b.pctChange ?? -Infinity;
-			return bp - ap;
-		});
-		return arr;
+		return sortMovers(visible, sort);
 	});
 
 	// Column-header sorting is an orthogonal layer on top of the Abs/Pct/Price
@@ -116,6 +114,14 @@
 			{/each}
 		</div>
 	</div>
+
+	{#if data.showAll}
+		<a class="text-xs text-accent" href="?window={data.window}">Hide unchanged and new listings</a>
+	{:else if data.hiddenCount > 0}
+		<a class="text-xs text-accent" href="?window={data.window}&all=1">
+			Show {data.hiddenCount} unchanged or new listings
+		</a>
+	{/if}
 
 	<div class="flex flex-wrap items-center gap-4 text-sm">
 		<div class="flex items-center gap-2">
@@ -244,7 +250,7 @@
 								>{m.model}</a
 								>
 							</td>
-							<td class="px-3 py-2 text-text">{m.retailer}</td>
+							<td class="px-3 py-2 text-text">{retailerLabel(m.retailer)}</td>
 							<td class="px-3 py-2 text-text-muted" title={titleCase(m.variantName) || undefined}>
 								{titleCase(m.variantName).split(',')[0].trim() || '—'}
 							</td>
@@ -267,7 +273,7 @@
 								{:else}
 									<PriceChange
 										direction={direction(m)}
-										label="{m.change > 0 ? '+' : ''}{formatSignedAud(m.change)} ({pctLabel(m)})"
+										label="{formatSignedAud(m.change)} ({pctLabel(m)})"
 									/>
 								{/if}
 							</td>
@@ -292,7 +298,7 @@
 								class="mt-0.5 truncate text-xs text-text-muted"
 								title={titleCase(m.variantName) || undefined}
 							>
-								{m.retailer} · {titleCase(m.variantName).split(',')[0].trim() || '—'}
+								{retailerLabel(m.retailer)} · {titleCase(m.variantName).split(',')[0].trim() || '—'}
 							</p>
 						</div>
 						<p class="num shrink-0 text-right text-sm text-text">{formatAud(m.newPrice)}</p>
@@ -306,7 +312,7 @@
 						{:else}
 							<PriceChange
 								direction={direction(m)}
-								label="{m.change > 0 ? '+' : ''}{formatSignedAud(m.change)} ({pctLabel(m)})"
+								label="{formatSignedAud(m.change)} ({pctLabel(m)})"
 							/>
 						{/if}
 						<span class="num text-text-muted">

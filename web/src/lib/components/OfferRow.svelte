@@ -2,7 +2,7 @@
 	import Badge from './Badge.svelte';
 	import BrandIcon from './BrandIcon.svelte';
 	import StockBadge from './StockBadge.svelte';
-	import { RETAILER_OPTIONS } from '$lib/filters';
+	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
 	import {
 		formatAud,
 		formatPct,
@@ -49,9 +49,7 @@
 		nearLowSince?: string | null;
 	} = $props();
 
-	const retailerLabel = $derived(
-		RETAILER_OPTIONS.find((o) => o.value === offer.retailer)?.label ?? offer.retailer
-	);
+	const retailerLabel = $derived(lookupRetailerLabel(offer.retailer));
 
 	const title = $derived(
 		titleOverride ?? (titleCase(offer.variantName) || `${retailerLabel} listing`)
