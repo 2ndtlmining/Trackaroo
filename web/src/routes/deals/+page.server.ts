@@ -5,6 +5,7 @@ import {
 	belowAverage,
 	categoryFacetCounts,
 	filterDeals,
+	shownDeals,
 	toDeals,
 	type DealFilters
 } from '$lib/deals';
@@ -17,7 +18,18 @@ function param(url: URL, key: string): string | null {
 
 export function load({ url }: { url: URL }) {
 	const db = getDb();
-	const deals = toDeals(getDealCandidates(db));
+	const candidates = getDealCandidates(db);
+	// Facets count the rows the page can actually show, so "All 42" can't sit
+	// above 32 rows (28-Sep finding).
+	const deals = shownDeals(toDeals(candidates));
+
+	// Earliest history across all candidates, not just the shown ones, so the
+	// subtitle states the true depth of "all-time" even when the deepest
+	// history belongs to a product with no current deal.
+	const historyStart = candidates.reduce<string | null>((earliest, c) => {
+		if (c.historyStart === null) return earliest;
+		return earliest === null || c.historyStart < earliest ? c.historyStart : earliest;
+	}, null);
 
 	const filters: DealFilters = {
 		category: param(url, 'category'),
@@ -47,6 +59,7 @@ export function load({ url }: { url: URL }) {
 			retailer: forRetailer.length,
 			brand: forBrand.length
 		},
-		eligibleCount: deals.length
+		eligibleCount: deals.length,
+		historyStart
 	};
 }

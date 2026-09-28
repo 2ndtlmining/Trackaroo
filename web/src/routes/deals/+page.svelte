@@ -4,6 +4,8 @@
 	import FacetChips from '$lib/components/FacetChips.svelte';
 	import OfferRow from '$lib/components/OfferRow.svelte';
 	import { dealToOffer, NEAR_ALL_TIME_LOW_PCT } from '$lib/deals';
+	import { DEAL_MIN_AUD, DEAL_MIN_PCT, EARNED_LOW_RISE_PCT } from '$lib/constants';
+	import { formatShortDate } from '$lib/formats';
 
 	let { data } = $props();
 
@@ -18,15 +20,17 @@
 		goto(qs ? `/deals?${qs}` : '/deals', { keepFocus: true, noScroll: true });
 	}
 
-	const resultCount = $derived(data.belowAverage.length);
+	const below = $derived(data.belowAverage.length);
+	const lows = $derived(data.atAllTimeLow.length);
 </script>
 
 <svelte:head><title>Deals · Trackaroo</title></svelte:head>
 
-<div class="mx-auto max-w-6xl px-4 py-6">
+<div>
 	<h1 class="text-xl font-semibold tracking-tight text-text">Deals</h1>
 	<p class="mt-1 text-sm text-text-muted">
-		Products whose cheapest in-stock price is below their own recent average (up to 30 days of history).
+		Cheapest in-stock price at least {DEAL_MIN_PCT}% <strong>and</strong> ${DEAL_MIN_AUD} below its
+		own 30-day average.
 	</p>
 
 	<div class="mt-4 flex flex-col gap-2">
@@ -54,8 +58,7 @@
 	</div>
 
 	<p class="mt-3 text-xs text-text-muted" aria-live="polite" data-testid="deals-count">
-		{resultCount}
-		{resultCount === 1 ? 'product' : 'products'} below their recent average
+		{below} below their average · {lows} at a new low
 	</p>
 
 	<section class="mt-4" aria-labelledby="below-average-heading">
@@ -74,6 +77,8 @@
 						avgPoints={deal.avg30Points}
 						titleOverride={deal.model}
 						detailHref={`/product/${deal.productId}`}
+						saving={deal.savingAud}
+						lowSince={deal.earnedLow ? deal.historyStart : null}
 					/>
 				{/each}
 			</div>
@@ -87,11 +92,11 @@
 	</section>
 
 	<section class="mt-8 scroll-mt-4" id="all-time-low" aria-labelledby="all-time-low-heading">
-		<h2 id="all-time-low-heading" class="text-sm font-semibold text-text">
-			At or near all-time low
-		</h2>
+		<h2 id="all-time-low-heading" class="text-sm font-semibold text-text">At a new low</h2>
 		<p class="mt-0.5 text-xs text-text-muted">
-			Within {NEAR_ALL_TIME_LOW_PCT}% of the lowest price ever recorded.
+			Within {NEAR_ALL_TIME_LOW_PCT}% of the lowest price since tracking began ({data.historyStart
+				? formatShortDate(data.historyStart)
+				: 'tracking began'}), after being at least {EARNED_LOW_RISE_PCT}% higher this month.
 		</p>
 		{#if data.atAllTimeLow.length > 0}
 			<div
@@ -105,6 +110,8 @@
 						avgPoints={deal.avg30Points}
 						titleOverride={deal.model}
 						detailHref={`/product/${deal.productId}`}
+						saving={deal.savingAud}
+						lowSince={deal.earnedLow ? deal.historyStart : null}
 					/>
 				{/each}
 			</div>

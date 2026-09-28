@@ -7,6 +7,7 @@ import {
 	formatCacheMb,
 	formatDate,
 	formatMhz,
+	formatSeenDate,
 	formatShortDate,
 	formatPct,
 	formatProcess,
@@ -116,6 +117,18 @@ describe('formatShortDate', () => {
 		// most other months -- this pins the real runtime output, not a guess.
 		expect(formatShortDate('2026-09-12')).toBe('12 Sept');
 	});
+});
+
+describe('formatSeenDate', () => {
+	it.each([
+		['2026-09-28', 'today'],
+		['2026-09-27', 'yesterday'],
+		['2026-09-24', '4 days ago'],
+		// Built from formatShortDate rather than hard-coded: en-AU renders
+		// September as "Sept" on this runtime (see the formatShortDate test
+		// above), so this pins the real fallback text, not a guess (#6).
+		['2026-09-12', formatShortDate('2026-09-12')]
+	])('%s -> %s', (d, out) => expect(formatSeenDate(d, '2026-09-28')).toBe(out));
 });
 
 describe('freshnessLabel', () => {

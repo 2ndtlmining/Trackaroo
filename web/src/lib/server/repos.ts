@@ -611,7 +611,10 @@ export function getProductStats(db: DB, productId: number, days = 30): ProductSt
 				GROUP BY s.snapshot_date
 			 ) day_min`
 		)
-		.get(productId, `-${days} days`) as { avg: number | null; points: number };
+		// -(days - 1): an N-day window covers N dates inclusive of today, not
+		// N+1 (#6/D4). Only this window arithmetic changes -- sparklines and
+		// movers keep the old boundary on purpose.
+		.get(productId, `-${days - 1} days`) as { avg: number | null; points: number };
 	return { avg30: row.avg, avg30Points: row.points };
 }
 
@@ -639,7 +642,8 @@ export function getProductDealStats(
 			 ) day_min
 			 GROUP BY day_min.product_id`
 		)
-		.all(...productIds, `-${days} days`) as Array<{
+		// -(days - 1): see getProductStats (#6/D4).
+		.all(...productIds, `-${days - 1} days`) as Array<{
 		productId: number;
 		avg: number | null;
 		points: number;
@@ -911,6 +915,13 @@ export interface DealCandidate {
 	allTimeLow: number | null;
 	avg30: number | null;
 	avg30Points: number;
+	// Highest daily-cheapest in-stock price within the avg30 window -- an
+	// earned all-time low needs the price to have actually come DOWN from
+	// somewhere, not just sat flat at the low (#6).
+	windowHigh: number | null;
+	// The product's first in-stock snapshot date across all history, for
+	// labelling how far back "all-time" actually reaches (#6).
+	historyStart: string | null;
 }
 
 // One row per tracked product: its cheapest in-stock listing on the latest
@@ -958,7 +969,22 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 					  AND ${notBundle('l3')}
 					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), @window)
 					GROUP BY ps3.snapshot_date
-				 ) dm) AS avg30_points
+				 ) dm) AS avg30_points,
+				(SELECT MAX(dm.price)
+				 FROM (
+					SELECT ps3.snapshot_date, MIN(ps3.price_aud) AS price
+					FROM price_snapshots ps3
+					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+					WHERE l3.product_id = p.id
+					  AND ps3.stock_status = 'in_stock'
+					  AND ${notBundle('l3')}
+					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), @window)
+					GROUP BY ps3.snapshot_date
+				 ) dm) AS window_high,
+				(SELECT MIN(ps3.snapshot_date)
+				 FROM price_snapshots ps3
+				 JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
+				 WHERE l3.product_id = p.id AND ps3.stock_status = 'in_stock') AS history_start
 			FROM products p
 			JOIN retailer_listings l ON l.product_id = p.id AND l.status = 'active'
 			JOIN price_snapshots ps
@@ -980,7 +1006,8 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 			GROUP BY p.id
 			ORDER BY p.model COLLATE NOCASE ASC`
 		)
-		.all({ window: `-${days} days` }) as Array<{
+		// -(days - 1): see getProductStats (#6/D4).
+		.all({ window: `-${days - 1} days` }) as Array<{
 		product_id: number;
 		category: Category;
 		model: string;
@@ -994,6 +1021,8 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 		all_time_low: number | null;
 		avg30: number | null;
 		avg30_points: number;
+		window_high: number | null;
+		history_start: string | null;
 	}>;
 
 	return rows.map((r) => ({
@@ -1009,7 +1038,9 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 		snapshotDate: r.snapshot_date,
 		allTimeLow: r.all_time_low,
 		avg30: r.avg30,
-		avg30Points: r.avg30_points
+		avg30Points: r.avg30_points,
+		windowHigh: r.window_high,
+		historyStart: r.history_start
 	}));
 }
 
