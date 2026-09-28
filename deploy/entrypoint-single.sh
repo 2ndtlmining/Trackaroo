@@ -151,7 +151,7 @@ trackaroo-bootstrap-data
 # healthy, but nothing inside is listening on 2222 and every request hangs.
 log "Dashboard listening INSIDE the container on port ${PORT}"
 log "Publish it with:  -p <HOST_PORT>:${PORT}   (right-hand number must be ${PORT}; set PORT to change it)"
-node web/build/index.js &
+node web/server.js &
 WEB_PID=$!
 log "Dashboard started."
 
@@ -187,7 +187,7 @@ while true; do
     # Keep the dashboard reachable even if the web process exits early.
     if ! kill -0 "$WEB_PID" 2>/dev/null; then
         log "Dashboard exited; restarting."
-        node web/build/index.js &
+        node web/server.js &
         WEB_PID=$!
     fi
 
