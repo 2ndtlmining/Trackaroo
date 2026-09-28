@@ -39,9 +39,12 @@ describe('/products payload (#28)', () => {
 describe('homepage (#28)', () => {
 	it('cheapestPrice equals the cheapest deal candidate in each category', async () => {
 		const { load } = await import('../src/routes/+page.server');
-		const { getDealCandidates } = await import('../src/lib/server/repos');
+		const { getDealCandidates, getHeaderStats } = await import('../src/lib/server/repos');
 		const { getDb } = await import('../src/lib/server/db');
-		const data = await load({ parent: async () => ({}) } as any);
+		// Realistic parent(): +layout.server.ts always resolves to
+		// { stats: getHeaderStats(db), productIndex: ... }, so exercise the load
+		// against that real shape rather than an empty stub.
+		const data = await load({ parent: async () => ({ stats: getHeaderStats(getDb()) }) } as any);
 		for (const s of data.sections) {
 			const prices = getDealCandidates(getDb())
 				.filter((c) => c.category === s.category)

@@ -60,10 +60,10 @@ export async function load({ parent }: { parent: () => Promise<{ stats: HeaderSt
 
 	return {
 		retailers: retailerHealth(getRetailerFreshness(db)),
-		latestSnapshotDate: stats?.latestSnapshotDate ?? null,
-		snapshotDays: stats?.snapshotDays ?? 0,
-		snapshotCount: stats?.snapshotCount ?? 0,
-		dbSizeBytes: stats?.dbSizeBytes ?? 0,
+		latestSnapshotDate: stats.latestSnapshotDate,
+		snapshotDays: stats.snapshotDays,
+		snapshotCount: stats.snapshotCount,
+		dbSizeBytes: stats.dbSizeBytes,
 		sections
 	};
 }

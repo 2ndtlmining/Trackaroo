@@ -13,7 +13,10 @@
 	}: {
 		// neverListed: tracked in the watchlist but no retailer has ever listed
 		// it — a different statement from "listed, currently out of stock".
-		group: ProductGroup & { neverListed?: boolean };
+		// The /products loader drops `listings` from each group (#28) — nothing
+		// here reads it — so the prop type omits it too, matching what actually
+		// arrives.
+		group: Omit<ProductGroup, 'listings'> & { neverListed?: boolean };
 		compareSelected?: boolean;
 		compareDisabled?: boolean;
 		onToggleCompare?: (productId: number) => void;
