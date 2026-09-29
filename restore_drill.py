@@ -21,7 +21,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from backup_db import BACKUP_NAME_RE, quick_check
+from backup_db import list_backups, quick_check
 from config import BACKUP_DIR, DB_PATH, setup_logging
 
 LOGGER = logging.getLogger(__name__)
@@ -30,10 +30,10 @@ TABLES = ("products", "retailer_listings", "price_snapshots")
 
 
 def newest_backup(backup_dir: Path) -> Optional[Path]:
-    if not backup_dir.is_dir():
-        return None
-    names = sorted(p.name for p in backup_dir.iterdir() if BACKUP_NAME_RE.match(p.name))
-    return backup_dir / names[-1] if names else None
+    """The most recent real backup in ``backup_dir`` (#10 F11: shared with
+    backup_db.prune_backups and health_checks.check_backups via list_backups)."""
+    backups = list_backups(backup_dir)
+    return backups[-1] if backups else None
 
 
 def _per_day(conn: sqlite3.Connection) -> Dict[str, int]:

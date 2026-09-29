@@ -9,12 +9,26 @@ corrupted DB cannot rotate the good backups out (#10). The online-backup API
 copies pages 1:1, so a corrupt live DB yields a failing backup: checking the
 backup covers both.
 
+Every backup is forced back to a self-contained rollback-journal file (not
+WAL) before it is checked: the online-backup API copies the source's WAL flag
+into the destination header, and without this fix-up every backup would leave
+``-wal``/``-shm`` sidecars behind that ``BACKUP_NAME_RE`` never sees or prunes
+(and WAL can fail outright on some network filesystems a mirror might sit on).
+
+A backup that fails ``PRAGMA quick_check`` is renamed to ``<name>.db.corrupt``
+-- kept on disk for forensics, but the ``.corrupt`` suffix drops it out of
+``BACKUP_NAME_RE`` so it is never counted as a real backup, never mirrored,
+never restored from, and never displaces a good same-day backup in retention.
+
 Backups land in ``db/backups/`` (TRACKAROO_BACKUP_DIR) as
 ``trackaroo_2026-08-15_213000.db``. Retention is by age: the newest backup of
 each of the last TRACKAROO_BACKUP_KEEP days, plus the 3 newest overall.
 With TRACKAROO_BACKUP_MIRROR_DIR set (a NAS mount), each backup is also
 copied there, verified, and pruned by the same rule; unset, nothing leaves
-the host.
+the host. The mirror directory must already exist (e.g. already mounted) --
+Trackaroo never creates it, so an unmounted mount point fails loudly with
+BackupMirrorError instead of silently receiving the "off-host" copy into a
+plain local directory.
 
 Usage:
     python backup_db.py                   # Backup to db/backups/, keep 14 days
@@ -74,6 +88,42 @@ def quick_check(path: Path) -> str:
     return "; ".join(str(r[0]) for r in rows[:5]) or "no result"
 
 
+def list_backups(directory: Path) -> List[Path]:
+    """Every ``trackaroo_*.db`` backup in ``directory``, oldest first.
+
+    The one place that lists backups by name (#10 F11) -- ``prune_backups``,
+    ``health_checks.check_backups`` and ``restore_drill.newest_backup`` all
+    call this instead of each re-globbing and re-filtering the directory.
+    Names sort chronologically, so this is also the newest-last order.
+    A ``.corrupt``-quarantined file never matches ``BACKUP_NAME_RE`` and so is
+    never returned. Returns ``[]`` if ``directory`` doesn't exist.
+    """
+    directory = Path(directory)
+    if not directory.is_dir():
+        return []
+    return sorted(
+        (p for p in directory.iterdir() if BACKUP_NAME_RE.match(p.name)),
+        key=lambda p: p.name,
+    )
+
+
+def _quarantine_corrupt(path: Path) -> Path:
+    """Rename a backup that failed quick_check to ``<name>.corrupt``.
+
+    Keeps it on disk for forensics while dropping it out of BACKUP_NAME_RE, so
+    it can never again be counted as a real backup, mirrored, restored from,
+    or allowed to displace a good same-day backup in retention (#10 I2).
+    Returns the new path, or the original path if the rename itself failed.
+    """
+    corrupt = path.with_name(path.name + ".corrupt")
+    try:
+        path.rename(corrupt)
+    except OSError:
+        LOGGER.warning("Could not rename corrupt backup %s to %s - left in place", path, corrupt)
+        return path
+    return corrupt
+
+
 def prune_backups(
     backup_dir: Path,
     keep_days: int,
@@ -88,15 +138,12 @@ def prune_backups(
     """
     today = today or date.today()
     dated = []
-    for p in backup_dir.iterdir():
+    for p in list_backups(backup_dir):
         m = BACKUP_NAME_RE.match(p.name)
-        if not m:
-            continue
         try:
             dated.append((p.name, date.fromisoformat(m.group(1)), p))
         except ValueError:
-            continue
-    dated.sort(key=lambda t: t[0])  # names sort chronologically
+            continue  # regex-matched but not a real calendar date - never touched
 
     keep = {name for name, _, _ in dated[-min_keep:]} if min_keep > 0 else set()
     newest_per_day = {}
@@ -119,15 +166,35 @@ def mirror_backup(
     keep_days: int = DEFAULT_KEEP,
     today: Optional[date] = None,
 ) -> Path:
-    """Copy ``backup`` into ``mirror_dir`` (atomically), verify it, prune there."""
-    mirror_dir.mkdir(parents=True, exist_ok=True)
+    """Copy ``backup`` into ``mirror_dir`` (atomically), verify it, prune there.
+
+    ``mirror_dir`` must already exist (#10 I3): an unmounted NAS mount point is
+    just an empty local directory to the filesystem, so this never creates it
+    -- creating it would let a backup silently land on local disk while an
+    operator believes it went off-host.
+    """
+    if not mirror_dir.is_dir():
+        raise BackupMirrorError(
+            f"Mirror directory {mirror_dir} does not exist. Trackaroo never creates it -- "
+            f"mount it (or create it) yourself first, so an unmounted NAS path fails loudly "
+            f"instead of silently receiving the \"off-host\" copy on local disk.")
     target = mirror_dir / backup.name
     tmp = mirror_dir / f".{backup.name}.partial"
-    shutil.copy2(backup, tmp)
-    os.replace(tmp, target)
+    try:
+        shutil.copy2(backup, tmp)
+        os.replace(tmp, target)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
     verdict = quick_check(target)
     if verdict != "ok":
-        raise BackupIntegrityError(f"mirror copy {target} failed quick_check: {verdict}")
+        corrupt = _quarantine_corrupt(target)
+        raise BackupIntegrityError(
+            f"mirror copy {target.name} failed quick_check: {verdict} - renamed to {corrupt.name} "
+            f"(kept for forensics)")
     prune_backups(mirror_dir, keep_days, today=today)
     LOGGER.info("Backup mirrored to %s", target)
     return target
@@ -172,6 +239,14 @@ def backup_database(
         dest_conn = sqlite3.connect(str(dest))
         try:
             src_conn.backup(dest_conn)
+            # The online-backup API copies the source's WAL flag into the
+            # destination's header, so without this the backup would start in
+            # WAL mode and leave -wal/-shm sidecars next to it that
+            # BACKUP_NAME_RE never sees or prunes (#10 I1). Forcing a
+            # rollback journal here checkpoints and removes them, leaving a
+            # single self-contained .db file -- also safer to copy onto a
+            # mirror filesystem that may not support WAL at all.
+            dest_conn.execute("PRAGMA journal_mode=DELETE")
         finally:
             dest_conn.close()
     finally:
@@ -179,9 +254,12 @@ def backup_database(
 
     verdict = quick_check(dest)
     if verdict != "ok":
-        LOGGER.error("Backup %s FAILED quick_check: %s - nothing pruned", dest, verdict)
+        corrupt = _quarantine_corrupt(dest)
+        LOGGER.error("Backup %s FAILED quick_check: %s - renamed to %s, nothing pruned",
+                     dest, verdict, corrupt.name)
         raise BackupIntegrityError(
-            f"{dest.name} failed PRAGMA quick_check: {verdict} - older backups kept (nothing pruned)")
+            f"{dest.name} failed PRAGMA quick_check: {verdict} - renamed to {corrupt.name} "
+            f"(kept for forensics), older backups kept (nothing pruned)")
 
     size_mb = dest.stat().st_size / (1024 * 1024)
     LOGGER.info("Backup created: %s (%.2f MB, quick_check ok)", dest, size_mb)

@@ -48,6 +48,19 @@ def _no_network(monkeypatch):
     monkeypatch.setattr(socket.socket, "connect_ex", guarded_ex)
 
 
+# ── No real off-host backup mirror, ever (#10 F17/I4) ──────────────────
+# backup_db.backup_database() falls back to config.BACKUP_MIRROR_DIR when no
+# mirror_dir is given, so ANY test that calls it (directly or through
+# run_daily) would silently copy a test backup to a real NAS mount if the
+# developer's shell happens to have TRACKAROO_BACKUP_MIRROR_DIR set. Autouse
+# and global -- not just in test_backup.py -- so every test is covered,
+# including ones (like test_restore_drill.py) that pass mirror_dir=None and
+# rely on that meaning "off" rather than "read the environment".
+@pytest.fixture(autouse=True)
+def _no_real_backup_mirror(monkeypatch):
+    monkeypatch.setattr("backup_db.BACKUP_MIRROR_DIR", None)
+
+
 def _make_connection(use_memory: bool = True) -> sqlite3.Connection:
     """Create a fresh connection with the schema applied."""
     if use_memory:

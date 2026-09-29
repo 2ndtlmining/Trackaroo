@@ -26,18 +26,17 @@ from backup_db import (
     BackupMirrorError,
     backup_database,
     backup_timestamp,
+    mirror_backup,
     prune_backups,
     quick_check,
 )
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
 
-
-@pytest.fixture(autouse=True)
-def _no_real_mirror(monkeypatch):
-    """Never copy to a real off-host mirror during tests, even if the
-    developer's shell has TRACKAROO_BACKUP_MIRROR_DIR set (F17)."""
-    monkeypatch.setattr("backup_db.BACKUP_MIRROR_DIR", None)
+# The autouse fixture that keeps every test off a real off-host mirror (even
+# if the developer's shell has TRACKAROO_BACKUP_MIRROR_DIR set) now lives in
+# conftest.py (_no_real_backup_mirror) so it covers every test file, not just
+# this one (#10 F17/I4).
 
 
 def _create_source_db(path: Path, rows: int = 3) -> None:
@@ -113,6 +112,22 @@ class TestBackupCreation:
         with pytest.raises(FileNotFoundError):
             backup_database(db_path=tmp_path / "does-not-exist.db", backup_dir=tmp_path / "backups")
 
+    def test_backup_leaves_no_wal_or_shm_sidecars(self, tmp_path):
+        """The online-backup API copies the source's WAL flag into the
+        destination header; without forcing it back to a rollback journal the
+        backup dir would fill with -wal/-shm files BACKUP_NAME_RE never sees
+        or prunes (#10 I1)."""
+        src = tmp_path / "source.db"
+        out = tmp_path / "backups"
+        _create_source_db(src)
+
+        backup_database(db_path=src, backup_dir=out, mirror_dir=None)
+
+        names = sorted(p.name for p in out.iterdir())
+        assert names, "expected at least the one backup file"
+        assert all(n.startswith("trackaroo_") and n.endswith(".db") for n in names)
+        assert all(not n.endswith(("-wal", "-shm")) for n in names)
+
 
 class TestRetention:
     """Newest backup per day for keep_days days, plus the min_keep newest (#10)."""
@@ -179,12 +194,31 @@ class TestIntegrity:
             backup_database(db_path=src, backup_dir=out, keep=1, mirror_dir=None)
         assert all(p.exists() for p in old)
 
+    def test_a_failing_check_is_quarantined_not_left_under_a_valid_name(self, tmp_path, monkeypatch):
+        """A corrupt backup must not sit under a name BACKUP_NAME_RE still
+        matches: it would be reported OK by check_backups, picked by
+        restore_drill, and counted (displacing a good same-day backup) by
+        retention (#10 I2)."""
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        out = tmp_path / "backups"
+        monkeypatch.setattr("backup_db.quick_check", lambda path: "*** in database main *** Page 3: btree corrupt")
+
+        with pytest.raises(BackupIntegrityError) as exc:
+            backup_database(db_path=src, backup_dir=out, mirror_dir=None)
+
+        assert list(out.glob("trackaroo_*.db")) == []  # dropped out of BACKUP_NAME_RE
+        [corrupt] = list(out.glob("trackaroo_*.db.corrupt"))
+        assert corrupt.exists()  # kept on disk for forensics
+        assert corrupt.name in str(exc.value)
+
 
 class TestMirror:
     def test_mirror_copies_and_verifies(self, tmp_path):
         src = tmp_path / "src.db"
         _create_source_db(src)
         mirror = tmp_path / "nas"
+        mirror.mkdir()  # simulates the NAS mount already being in place (#10 I3)
 
         dest = backup_database(db_path=src, backup_dir=tmp_path / "backups", mirror_dir=mirror)
 
@@ -199,6 +233,66 @@ class TestMirror:
         with pytest.raises(BackupMirrorError):
             backup_database(db_path=src, backup_dir=tmp_path / "backups", mirror_dir=not_a_dir)
         assert len(list((tmp_path / "backups").glob("trackaroo_*.db"))) == 1
+
+    def test_mirror_dir_must_already_exist(self, tmp_path):
+        """An unmounted NAS mount point is just an empty (or absent) local
+        directory to the filesystem -- Trackaroo must never mkdir it, or the
+        "off-host" copy silently lands on local disk instead (#10 I3)."""
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        mirror = tmp_path / "unmounted-nas"  # deliberately never created
+
+        with pytest.raises(BackupMirrorError) as exc:
+            backup_database(db_path=src, backup_dir=tmp_path / "backups", mirror_dir=mirror)
+
+        assert not mirror.exists()  # never created as a side effect
+        assert "does not exist" in str(exc.value)
+        assert len(list((tmp_path / "backups").glob("trackaroo_*.db"))) == 1  # local backup kept
+
+    def test_a_failing_mirror_check_is_quarantined(self, tmp_path, monkeypatch):
+        """Same quarantine rule as the local backup (#10 I2), applied to the
+        mirror copy: it must not sit under a name check_backups/restore_drill
+        would treat as a real backup."""
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        mirror = tmp_path / "nas"
+        mirror.mkdir()
+
+        real_quick_check = quick_check
+
+        def fake_quick_check(path):
+            # The local backup is real and must pass; only the mirror copy
+            # should look corrupt, so the local-backup assertions below still
+            # make sense.
+            if Path(path).parent == mirror:
+                return "*** in database main *** Page 1: btree corrupt"
+            return real_quick_check(path)
+
+        monkeypatch.setattr("backup_db.quick_check", fake_quick_check)
+
+        with pytest.raises(BackupMirrorError):
+            backup_database(db_path=src, backup_dir=tmp_path / "backups", mirror_dir=mirror)
+
+        assert list(mirror.glob("trackaroo_*.db")) == []  # dropped out of BACKUP_NAME_RE
+        assert len(list(mirror.glob("trackaroo_*.db.corrupt"))) == 1  # kept for forensics
+        assert len(list((tmp_path / "backups").glob("trackaroo_*.db"))) == 1  # local backup kept
+
+    def test_a_failed_copy_cleans_up_the_partial_file(self, tmp_path):
+        """A copy that fails partway (e.g. the NAS drops the connection) must
+        not leave a stray .partial file behind (#10 minor). Calls
+        mirror_backup directly so the failure (os.replace onto an existing
+        directory) is real, not a monkeypatch of the shared os module."""
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        backup = backup_database(db_path=src, backup_dir=tmp_path / "backups", mirror_dir=None)
+        mirror = tmp_path / "nas"
+        mirror.mkdir()
+        (mirror / backup.name).mkdir()  # occupies the target path so the copy must fail
+
+        with pytest.raises(OSError):
+            mirror_backup(backup, mirror)
+
+        assert list(mirror.glob(f".{backup.name}.partial")) == []
 
     def test_no_mirror_by_default(self, tmp_path, monkeypatch):
         monkeypatch.setattr("backup_db.BACKUP_MIRROR_DIR", None)

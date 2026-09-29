@@ -1136,3 +1136,19 @@ class TestCheckBackups:
     def test_no_backups_warns(self, tmp_path):
         [r] = check_backups(tmp_path / "absent", now=datetime(2026, 9, 29, 10, 0))
         assert r.status == CheckResult.WARNING
+
+    def test_an_impossible_date_is_skipped_not_raised(self, tmp_path):
+        """A name matching BACKUP_NAME_RE but not a real calendar date (e.g. a
+        corrupted or hand-edited filename) must be skipped, not crash the
+        check (#10 minor)."""
+        (tmp_path / "trackaroo_2026-09-31_040512.db").write_text("x")  # September has 30 days
+        [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.WARNING
+        assert "No database backups" in r.message
+
+    def test_a_future_dated_newest_backup_warns(self, tmp_path):
+        """A future timestamp must not be trusted as fresh forever (#10 minor)."""
+        (tmp_path / "trackaroo_2026-10-05_040512.db").write_text("x")
+        [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.WARNING
+        assert "future" in r.message.lower()

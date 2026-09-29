@@ -184,6 +184,14 @@ happened before it in the run:
   path and every backup is also copied there, verified and pruned the same way.
   It is unset by default, and Phase 6 switches it on. A mirror failure alerts
   but keeps the local backup.
+  **The operator must create/mount that directory before pointing
+  `TRACKAROO_BACKUP_MIRROR_DIR` at it — Trackaroo never creates it.** An
+  unmounted NAS mount point looks to the filesystem like an ordinary empty
+  local directory, so auto-creating it would let the "off-host" copy land
+  silently on local disk. A recommended pattern: drop a sentinel file (e.g.
+  `.mirror-mounted`) at the top of the real mount once, and check for it in
+  your mount unit / health monitoring — a missing sentinel means the mount
+  isn't there, well before Trackaroo would have noticed.
 - **Health:** `check_backups` warns when the newest backup is older than
   `TRACKAROO_BACKUP_MAX_AGE_HOURS` (default 36).
 

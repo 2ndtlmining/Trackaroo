@@ -1145,18 +1145,34 @@ def check_backups(
 
     Integrity is checked when each backup is taken (backup_db.quick_check, which
     alerts on failure); this catches backups that silently stopped happening.
+
+    A name that matches BACKUP_NAME_RE but isn't a real calendar date (e.g. a
+    corrupted or hand-edited filename) is skipped rather than raising, and a
+    newest backup timestamped in the future is reported rather than trusted
+    as fresh forever.
     """
-    from backup_db import BACKUP_NAME_RE
+    from backup_db import list_backups
     from config import BACKUP_DIR
 
     backup_dir = Path(backup_dir or BACKUP_DIR)
     now = now or datetime.now()
-    names = sorted(p.name for p in backup_dir.iterdir() if BACKUP_NAME_RE.match(p.name)) \
-        if backup_dir.is_dir() else []
-    if not names:
+
+    dated = []
+    for p in list_backups(backup_dir):
+        try:
+            taken = datetime.strptime(p.name[len("trackaroo_"):-len(".db")], "%Y-%m-%d_%H%M%S")
+        except ValueError:
+            continue  # regex-matched but not a real calendar date - not a usable backup
+        dated.append((taken, p.name))
+
+    if not dated:
         return [CheckResult("backup_age", CheckResult.WARNING, f"No database backups in {backup_dir}")]
-    newest = names[-1]
-    taken = datetime.strptime(newest[len("trackaroo_"):-len(".db")], "%Y-%m-%d_%H%M%S")
+
+    dated.sort()
+    taken, newest = dated[-1]
+    if taken > now:
+        return [CheckResult("backup_age", CheckResult.WARNING,
+                            f"Newest backup {newest} is timestamped in the future ({taken.isoformat()})")]
     age_h = (now - taken).total_seconds() / 3600
     if age_h > max_age_hours:
         return [CheckResult("backup_age", CheckResult.WARNING,
