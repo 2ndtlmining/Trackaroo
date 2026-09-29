@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import { goto, replaceState } from '$app/navigation';
-	import { page } from '$app/state';
 	import ProductRow from '$lib/components/ProductRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import { groupForIndex, type CatalogRow } from '$lib/productIndex';
 	import { searchProducts } from '$lib/productSearch';
 	import { MAX_COMPARE, parseCompareIds, withParams } from '$lib/urlState';
+	import { urlParams } from '$lib/urlParams';
 	import type { Category } from '$lib/types';
 
 	let {
@@ -25,15 +24,8 @@
 
 	// Search and compare selection live in the URL (#26): a shared
 	// /products?category=gpu&q=5070&compare=1,2 renders as it was sent, and Back
-	// from a product page restores it.
-	// In the browser the address bar is the truth, not page.url: replaceState
-	// (below) leaves page.url alone, and SvelteKit's popstate navigates Back to
-	// the URL the page was *loaded* with, dropping the shallow q/compare. By the
-	// time this component mounts or its effects re-run, `location` already holds
-	// the target URL (SvelteKit pushes history before it renders).
-	function urlParams(): URLSearchParams {
-		return browser ? new URLSearchParams(location.search) : page.url.searchParams;
-	}
+	// from a product page restores it. Read through urlParams(), not page.url
+	// (see $lib/urlParams for why).
 
 	let query = $state(urlParams().get('q') ?? '');
 	let searchEl: HTMLInputElement | undefined = $state();

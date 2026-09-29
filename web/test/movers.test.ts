@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { isUnknownMover, moverColumnValue, sortMovers, topMoversByProduct } from '../src/lib/movers';
+import {
+	groupMoversByProduct,
+	isUnknownMover,
+	moverColumnValue,
+	moversHref,
+	parseMoverView,
+	sortMovers,
+	topMoversByProduct
+} from '../src/lib/movers';
 import { sortRows } from '../src/lib/tableSort';
 import type { Mover } from '../src/lib/server/repos';
 
@@ -314,5 +322,56 @@ describe('isUnknownMover / moverColumnValue (#5 fix round 1)', () => {
 		const byChange = (m: Mover) => moverColumnValue(m, 'change');
 		expect(sortRows(rows, 'asc', byChange).at(-1)!.listingId).toBe(1);
 		expect(sortRows(rows, 'desc', byChange).at(-1)!.listingId).toBe(1);
+	});
+});
+
+describe('parseMoverView (#26, Review Focus 3)', () => {
+	it('reads sort, direction and grouping from the URL', () => {
+		expect(parseMoverView(new URLSearchParams('sort=pct&dir=down&group=0'))).toEqual({
+			sort: 'pct',
+			dir: 'down',
+			group: false
+		});
+	});
+
+	it('falls back to the defaults for anything it does not know', () => {
+		expect(parseMoverView(new URLSearchParams('sort=bogus&dir=sideways&group=maybe'))).toEqual({
+			sort: 'abs',
+			dir: 'all',
+			group: true
+		});
+	});
+});
+
+describe('moversHref', () => {
+	it('always names the window and only writes non-default view keys', () => {
+		expect(moversHref('7d', { sort: 'abs', dir: 'all', group: true }, false)).toBe('?window=7d');
+		expect(moversHref('30d', { sort: 'pct', dir: 'down', group: false }, true)).toBe(
+			'?window=30d&sort=pct&dir=down&group=0&all=1'
+		);
+	});
+});
+
+describe('groupMoversByProduct (#5 item 4)', () => {
+	const ordered = [
+		mover({ listingId: 11, productId: 1, change: -90 }),
+		mover({ listingId: 21, productId: 2, change: -50 }),
+		mover({ listingId: 12, productId: 1, change: -40 }),
+		mover({ listingId: 13, productId: 1, change: 10 })
+	];
+
+	it('keeps the given order: each product is led by its first row, groups in lead order', () => {
+		const groups = groupMoversByProduct(ordered);
+		expect(groups.map((g) => [g.productId, g.lead.listingId, g.rest.map((m) => m.listingId)])).toEqual([
+			[1, 11, [12, 13]],
+			[2, 21, []]
+		]);
+	});
+
+	it('never mutates the memo-shared input (Review Focus 5)', () => {
+		const frozen = Object.freeze(ordered.map((m) => Object.freeze({ ...m })));
+		expect(() => groupMoversByProduct(frozen)).not.toThrow();
+		expect(() => sortMovers(frozen, 'pct')).not.toThrow();
+		expect(frozen.map((m) => m.listingId)).toEqual([11, 21, 12, 13]);
 	});
 });

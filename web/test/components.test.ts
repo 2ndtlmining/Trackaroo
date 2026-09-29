@@ -19,6 +19,7 @@ import MoverRow from '../src/lib/components/MoverRow.svelte';
 import CategorySection from '../src/lib/components/CategorySection.svelte';
 import BuyPanel from '../src/lib/components/BuyPanel.svelte';
 import PriceDataTable from '../src/lib/components/PriceDataTable.svelte';
+import SegmentedControl from '../src/lib/components/SegmentedControl.svelte';
 import { offer as offerRow } from './helpers/offers';
 import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint, Mover } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
@@ -1542,5 +1543,23 @@ describe('ProductRow', () => {
 		expect(
 			checkboxState({ group: base, compareDisabled: true, onToggleCompare: () => {} }).disabled
 		).toBe(true);
+	});
+});
+
+describe('SegmentedControl (#5 item 5)', () => {
+	it('is a labelled group of buttons whose pressed state is exposed', () => {
+		const html = renderComponent(SegmentedControl, {
+			label: 'Sort',
+			options: [
+				{ value: 'abs', label: '$ change' },
+				{ value: 'pct', label: '% change' }
+			],
+			value: 'pct',
+			onChange: () => {}
+		});
+		expect(html).toContain('role="group"');
+		expect(html).toContain('aria-label="Sort"');
+		expect(html).toMatch(/aria-pressed="false"[^>]*>\s*\$ change/);
+		expect(html).toMatch(/aria-pressed="true"[^>]*>\s*% change/);
 	});
 });

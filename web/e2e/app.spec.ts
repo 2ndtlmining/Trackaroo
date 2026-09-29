@@ -619,7 +619,7 @@ await expect(page.locator('table')).toBeVisible();
 		await goto(page, '/movers?window=bogus');
 		await expect(page.getByRole('heading', { name: 'Movers' })).toBeVisible();
 		// Server defaults to 7d-tab highlighted
-		await expect(page.getByRole('button', { name: '7d' })).toHaveClass(/bg-surface-hover/);
+		await expect(page.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true');
 	});
 
 test('movers link through to product pages', async ({ page }) => {
@@ -660,6 +660,84 @@ test('movers link through to product pages', async ({ page }) => {
 
 		await goto(page, '/movers?all=1');
 		await expect(page.getByText('Not enough history').first()).toBeVisible();
+	});
+
+	test('groups listings under their product by default, and can list every SKU (#5 item 4)', async ({ page }) => {
+		await goto(page, '/movers?window=30d&all=1');
+		const leadHrefs = await page
+			.locator('tbody > tr:first-child a[href^="/product/"]')
+			.evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+		expect(new Set(leadHrefs).size).toBe(leadHrefs.length);
+
+		// The RTX 5060 Ti has many listings in both seeds; its "+N more" expands in
+		// place and relabels itself "Hide listings" (so re-query by the new name).
+		const rowsBefore = await page.locator('tbody tr').count();
+		await page.getByRole('button', { name: /^\+\d+ more listings?$/ }).first().click();
+		await expect(page.getByRole('button', { name: /^Hide listings?$/ }).first()).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		expect(await page.locator('tbody tr').count()).toBeGreaterThan(rowsBefore);
+
+		await page.getByRole('button', { name: 'Per listing' }).click();
+		await expect(page).toHaveURL(/group=0/);
+		await expect(page.getByRole('button', { name: /(more|Hide) listings?$/ })).toHaveCount(0);
+	});
+
+	test('sort, direction and grouping live in the URL (#26)', async ({ page }) => {
+		await goto(page, '/movers?window=30d&sort=pct&dir=down');
+		await expect(page.getByRole('button', { name: '% change' })).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('button', { name: 'Down', exact: true })).toHaveAttribute('aria-pressed', 'true');
+		await page.getByRole('button', { name: 'Price', exact: true }).click();
+		await expect(page).toHaveURL(/sort=price/);
+		await expect(page).toHaveURL(/dir=down/);
+
+		await page.getByRole('button', { name: '7d' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/window=7d.*sort=price|sort=price.*window=7d/);
+	});
+
+	// replaceState leaves page.url stale, so Back must restore the view from the
+	// address bar (see $lib/urlParams), both from a product page (remount) and
+	// between two /movers windows (same component, re-read on navigation).
+	test('Back restores the sort, direction and grouping written to the URL (#26)', async ({ page }) => {
+		await goto(page, '/movers?window=30d');
+		await page.getByRole('button', { name: 'Price', exact: true }).click();
+		await page.getByRole('button', { name: 'Per listing' }).click();
+		await expect(page).toHaveURL(/sort=price.*group=0/);
+
+		await page.locator('tbody tr a[href^="/product/"]').first().click();
+		await expect(page).toHaveURL(/\/product\/\d+$/);
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/window=30d.*sort=price.*group=0/);
+		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('button', { name: 'Per listing' })).toHaveAttribute('aria-pressed', 'true');
+
+		await page.getByRole('button', { name: '7d' }).click();
+		await expect(page).toHaveURL(/window=7d/);
+		await page.getByRole('button', { name: '% change' }).click();
+		await expect(page).toHaveURL(/window=7d.*sort=pct/);
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/window=30d.*sort=price/);
+		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('button', { name: '30d' })).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	test('sortable headers expose aria-sort, and every mover renders once (#5 items 5-6)', async ({ page }) => {
+		await goto(page, '/movers');
+		const newHeader = page.locator('th', { has: page.getByRole('button', { name: /^New/ }) });
+		await expect(newHeader).toHaveAttribute('aria-sort', 'none');
+		await page.getByRole('button', { name: /^New/ }).click();
+		await expect(newHeader).toHaveAttribute('aria-sort', 'ascending');
+
+		// No second, mobile-only copy of the list.
+		await expect(page.locator('main ul li a[href^="/product/"]')).toHaveCount(0);
+		const html = await (await page.request.get('/movers?group=0')).text();
+		const rows = (html.match(/data-testid="mover-row"/g) ?? []).length;
+		const links = (html.match(/<td[^>]*>\s*<a href="\/product\/\d+"/g) ?? []).length;
+		expect(links).toBe(rows);
 	});
 });
 

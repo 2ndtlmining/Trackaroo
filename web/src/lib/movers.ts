@@ -78,7 +78,7 @@ export function isUnknownMover(m: Mover): boolean {
 // Rows without a change ("Not enough history", null change) always sort last:
 // sorting by |change| treated null as -Infinity, whose magnitude is Infinity,
 // so brand-new listings led the page (#5).
-export function sortMovers(rows: Mover[], key: MoverSortKey): Mover[] {
+export function sortMovers(rows: readonly Mover[], key: MoverSortKey): Mover[] {
 	return [...rows].sort((a, b) => {
 		const ua = isUnknownMover(a);
 		const ub = isUnknownMover(b);
@@ -103,4 +103,54 @@ export function moverColumnValue(m: Mover, key: ColSortKey): string | number | n
 	if (key === 'new') return m.newPrice;
 	if (key === 'change') return isUnknownMover(m) ? null : m.change;
 	return m.historyPoints;
+}
+
+export type MoverDirFilter = 'all' | 'up' | 'down';
+
+// The /movers view that lives in the URL, so a shared link reproduces it (#26).
+export interface MoverView {
+	sort: MoverSortKey;
+	dir: MoverDirFilter;
+	group: boolean;
+}
+
+// Anything unrecognised (a hand-edited or stale link) degrades to the default.
+export function parseMoverView(params: URLSearchParams): MoverView {
+	const sort = params.get('sort');
+	const dir = params.get('dir');
+	return {
+		sort: sort === 'pct' || sort === 'price' ? sort : 'abs',
+		dir: dir === 'up' || dir === 'down' ? dir : 'all',
+		group: params.get('group') !== '0'
+	};
+}
+
+// Default keys are omitted, so the plain /movers?window=7d stays plain.
+export function moversHref(window: string, view: MoverView, showAll: boolean): string {
+	const p = new URLSearchParams({ window });
+	if (view.sort !== 'abs') p.set('sort', view.sort);
+	if (view.dir !== 'all') p.set('dir', view.dir);
+	if (!view.group) p.set('group', '0');
+	if (showAll) p.set('all', '1');
+	return `?${p.toString()}`;
+}
+
+export interface MoverGroup {
+	productId: number;
+	lead: Mover;
+	rest: Mover[];
+}
+
+// One entry per product, in the order given (#5 item 4). `ordered` is already
+// sorted by the Sort control and any column sort, so a product's first row is
+// its best under that order and groups follow their leads -- grouping can never
+// disagree with the sort. Builds new arrays: the input is memo-shared.
+export function groupMoversByProduct(ordered: readonly Mover[]): MoverGroup[] {
+	const byProduct = new Map<number, MoverGroup>();
+	for (const m of ordered) {
+		const g = byProduct.get(m.productId);
+		if (g) g.rest.push(m);
+		else byProduct.set(m.productId, { productId: m.productId, lead: m, rest: [] });
+	}
+	return [...byProduct.values()];
 }
