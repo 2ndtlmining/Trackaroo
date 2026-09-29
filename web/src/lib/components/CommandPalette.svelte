@@ -206,7 +206,7 @@
 								{:else}
 									<span
 										class="flex-1 truncate {row.item.snapshotCount === 0
-											? 'text-text-muted/60'
+											? 'text-text-muted'
 											: 'text-text'}"
 									>
 										{row.item.model}

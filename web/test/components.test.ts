@@ -67,6 +67,19 @@ describe('Badge', () => {
 		expect(body).toContain('bg-up');
 		expect(body).toContain('text-up');
 	});
+
+	it('renders stale text in the muted text colour, keeping the stale token for the dot (#24)', () => {
+		const body = renderComponent(Badge, { label: 'Delisted', tone: 'stale' });
+		expect(body).toContain('bg-stale');
+		expect(body).toContain('text-text-muted');
+		expect(body).not.toContain('text-stale');
+	});
+
+	it.each(['success', 'warning', 'danger'])('has a %s status tone', (tone) => {
+		const body = renderComponent(Badge, { label: 'x', tone });
+		expect(body).toContain(`bg-${tone}`);
+		expect(body).toContain(`text-${tone}`);
+	});
 });
 
 describe('BrandIcon', () => {
@@ -1089,6 +1102,18 @@ describe('HealthStrip', () => {
 		expect(html).toContain('today 04:12');
 		expect(html).toContain('182 matched');
 		expect(html).toContain('timeout at 05:01');
+	});
+
+	it('uses status tones, not price-direction colours (#24)', () => {
+		const html = renderComponent(HealthStrip, {
+			retailers: health,
+			latestSnapshotDate: '2026-08-25',
+			snapshotDays: 17,
+			snapshotCount: 4988
+		});
+		expect(html).toContain('text-success');
+		expect(html).toContain('text-warning');
+		expect(html).not.toMatch(/text-(up|down)\b/);
 	});
 });
 

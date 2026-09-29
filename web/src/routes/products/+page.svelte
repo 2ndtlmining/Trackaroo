@@ -116,7 +116,7 @@
 				type="search"
 				autocomplete="off"
 				placeholder={`Search ${data.groups.length} ${heading}…  (press / )`}
-				class="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
+				class="h-9 w-full rounded-md border border-border-input bg-surface px-3 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
 			/>
 		</div>
 		<label

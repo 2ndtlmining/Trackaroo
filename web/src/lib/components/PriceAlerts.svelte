@@ -39,13 +39,13 @@
 				aria-describedby={form?.error ? 'alert-error' : undefined}
 				value={form?.target_price ?? ''}
 				placeholder="0"
-				class="h-8 w-24 rounded-md border border-border bg-surface px-2 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
+				class="h-8 w-24 rounded-md border border-border-input bg-surface px-2 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
 			/>
 		</label>
 		<select
 			name="channel"
 			aria-label="Notification channel"
-			class="h-8 rounded-md border border-border bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none"
+			class="h-8 rounded-md border border-border-input bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none"
 		>
 			{#each CHANNELS as opt}
 				<option value={opt.value} selected={form?.channel === opt.value}>{opt.label}</option>
@@ -72,7 +72,7 @@
 	</form>
 
 	{#if form?.error}
-		<p id="alert-error" role="alert" class="mt-2 text-sm text-down">{form.error}</p>
+		<p id="alert-error" role="alert" class="mt-2 text-sm text-danger">{form.error}</p>
 	{/if}
 
 	{#if alerts.length > 0}

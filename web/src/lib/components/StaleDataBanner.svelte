@@ -8,6 +8,10 @@
 	 * as current whether the pipeline ran this morning or stopped a week ago.
 	 * Days have been lost silently before (16-Aug and 23-Aug 2026), so a gap
 	 * needs to be visible rather than inferred from a date in the header.
+	 *
+	 * The two-day-plus severity renders in the warning tone (#24) -- stale
+	 * data is a caution, not the "price fell" green, so it never borrows the
+	 * price-direction colours.
 	 */
 	let { latestSnapshotDate }: { latestSnapshotDate: string | null } = $props();
 
@@ -22,7 +26,7 @@
 		role="status"
 		class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-sm {severity ===
 		'error'
-			? 'border-down/40 bg-down/10 text-down'
+			? 'border-warning/40 bg-warning-soft text-warning'
 			: 'border-border bg-surface text-text-muted'}"
 	>
 		<svg

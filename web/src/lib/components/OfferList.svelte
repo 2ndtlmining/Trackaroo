@@ -97,7 +97,7 @@
 				aria-label="Filter offers by name"
 				placeholder="Filter by name…"
 				bind:value={query}
-				class="w-full min-w-0 flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
+				class="w-full min-w-0 flex-1 rounded-md border border-border-input bg-surface px-2.5 py-1.5 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
 			/>
 			{#if !view.stockFilterForcedOff}
 				<label class="flex items-center gap-1.5 text-xs text-text-muted">

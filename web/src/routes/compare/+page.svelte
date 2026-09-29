@@ -73,7 +73,7 @@
 								{#if value !== null}
 									{value}
 								{:else}
-									<span class="text-text-muted/60">N/A</span>
+									<span class="text-text-muted">N/A</span>
 								{/if}
 							</td>
 						{/each}
