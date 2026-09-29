@@ -1227,7 +1227,9 @@ export interface ProductMove {
 // day, on the first day inside the window vs the latest snapshot day. The
 // per-listing movers let one premium SKU rising headline "Biggest rises" while
 // the price a buyer actually pays -- the product's cheapest -- was falling.
-// The window boundary matches getMovers (`>= latest - N days`).
+// The window boundary matches getMovers (`>= latest - N days`). A product
+// needs MIN_HISTORY_POINTS days in that series, as the per-listing rows did
+// (their notEnoughHistory), so a 2-day product is never a "biggest drop".
 export function getProductMoves(db: DB, windowDays: number): ProductMove[] {
 	const rows = db
 		.prepare(
@@ -1245,6 +1247,9 @@ export function getProductMoves(db: DB, windowDays: number): ProductMove[] {
 				SELECT product_id, MIN(date) AS first, MAX(date) AS last
 				FROM day_min
 				GROUP BY product_id
+				-- Thin history is never summarised (Review Focus 1): the series
+				-- must span MIN_HISTORY_POINTS distinct in-stock days in the window.
+				HAVING COUNT(*) >= @minPoints
 			),
 			moves AS (
 				SELECT p.id AS product_id, p.category, p.brand, p.model,
@@ -1269,7 +1274,7 @@ export function getProductMoves(db: DB, windowDays: number): ProductMove[] {
 			FROM moves m
 			JOIN retailer_listings l ON l.id = m.listing_id`
 		)
-		.all({ window: `-${windowDays} days` }) as Array<{
+		.all({ window: `-${windowDays} days`, minPoints: MIN_HISTORY_POINTS }) as Array<{
 		product_id: number;
 		category: Category;
 		brand: string;

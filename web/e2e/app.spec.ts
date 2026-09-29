@@ -346,6 +346,23 @@ test.describe('homepage dashboard', () => {
 		await expect(drops).toContainText('90.0%');
 	});
 
+	// Thin history is never summarised (Review Focus 1): the fixture falls
+	// 1000 -> 600 over its only 2 days, which is under MIN_HISTORY_POINTS, so it
+	// must not headline "Biggest drops" as a -40% move.
+	test('a product with under MIN_HISTORY_POINTS days is not a homepage mover', async ({ page }) => {
+		await goto(page, '/');
+		const gpus = page.getByLabel('GPUs');
+		for (const column of ['biggest-drops', 'biggest-rises']) {
+			await expect(
+				gpus.getByTestId(column).getByRole('link', { name: 'E2E Thin History GPU', exact: true })
+			).toHaveCount(0);
+		}
+		// The page did render its movers: the long-history fixture is there.
+		await expect(
+			gpus.getByTestId('biggest-drops').getByRole('link', { name: 'E2E Deal Demo GPU', exact: true })
+		).toBeVisible();
+	});
+
 	test('no longer renders the filter-and-sort listing table', async ({ page }) => {
 		await goto(page, '/');
 		await expect(page.getByRole('table')).toHaveCount(0);

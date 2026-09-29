@@ -1531,17 +1531,31 @@ describe('getProductMoves (D7)', () => {
 		d.exec(`INSERT INTO products (id, category, brand, model, tracked) VALUES (1, 'gpu', 'NVIDIA', 'GeForce RTX 5090', 1);
 			INSERT INTO products (id, category, brand, model, tracked) VALUES (2, 'gpu', 'AMD', 'Radeon RX 9070', 1);
 			INSERT INTO products (id, category, brand, model, tracked) VALUES (3, 'gpu', 'AMD', 'Radeon RX 9060 XT', 1);
+			INSERT INTO products (id, category, brand, model, tracked) VALUES (4, 'gpu', 'NVIDIA', 'GeForce RTX 5060', 1);
+			INSERT INTO products (id, category, brand, model, tracked) VALUES (5, 'gpu', 'NVIDIA', 'GeForce RTX 5050', 1);
 			INSERT INTO retailer_listings (id, product_id, retailer, variant_name, listing_url, status) VALUES
 			  (1, 1, 'scorptec', 'ASUS ROG Astral 5090', 'https://x/1', 'active'),
 			  (2, 1, 'pccg', 'Palit 5090', 'https://x/2', 'active'),
 			  (3, 2, 'umart', 'Sapphire 9070', 'https://x/3', 'active'),
-			  (4, 3, 'umart', 'XFX 9060 XT', 'https://x/4', 'active');
+			  (4, 3, 'umart', 'XFX 9060 XT', 'https://x/4', 'active'),
+			  (5, 4, 'umart', 'Gigabyte 5060', 'https://x/5', 'active'),
+			  (6, 5, 'scorptec', 'Zotac 5050 A', 'https://x/6', 'active'),
+			  (7, 5, 'pccg', 'Zotac 5050 B', 'https://x/7', 'active');
 			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES
-			  (1, '2026-09-22', 2000, 'in_stock'), (1, '2026-09-29', 2500, 'in_stock'),
-			  (2, '2026-09-22', 1000, 'in_stock'), (2, '2026-09-29', 900, 'in_stock'),
-			  (3, '2026-09-22', 800, 'in_stock'), (3, '2026-09-29', 880, 'in_stock'),
+			  (1, '2026-09-22', 2000, 'in_stock'), (1, '2026-09-25', 2200, 'in_stock'), (1, '2026-09-29', 2500, 'in_stock'),
+			  (2, '2026-09-22', 1000, 'in_stock'), (2, '2026-09-25', 950, 'in_stock'), (2, '2026-09-29', 900, 'in_stock'),
+			  (3, '2026-09-22', 800, 'in_stock'), (3, '2026-09-25', 840, 'in_stock'), (3, '2026-09-29', 880, 'in_stock'),
 			  -- product 3: out of stock today, so it has no "today" price and no move
-			  (4, '2026-09-22', 500, 'in_stock'), (4, '2026-09-29', 450, 'out_of_stock');`);
+			  (4, '2026-09-22', 500, 'in_stock'), (4, '2026-09-25', 480, 'in_stock'), (4, '2026-09-29', 450, 'out_of_stock'),
+			  -- product 4: only 2 days of history (MIN_HISTORY_POINTS = 3), so a
+			  -- 1000 -> 600 "drop" is thin history, never a biggest drop
+			  (5, '2026-09-28', 1000, 'in_stock'), (5, '2026-09-29', 600, 'in_stock'),
+			  -- product 5: 3 distinct days, but only by combining two listings
+			  -- (the series is the product's cheapest per day, not one SKU's);
+			  -- the older out-of-window row does not count
+			  (6, '2026-08-01', 700, 'in_stock'),
+			  (6, '2026-09-27', 500, 'in_stock'), (7, '2026-09-28', 480, 'in_stock'),
+			  (6, '2026-09-29', 450, 'in_stock'), (7, '2026-09-29', 470, 'in_stock');`);
 		return {
 			d,
 			close: () => {
@@ -1567,6 +1581,27 @@ describe('getProductMoves (D7)', () => {
 			});
 			expect(byId.get(2)).toMatchObject({ oldPrice: 800, newPrice: 880, pctChange: 10 });
 			expect(byId.has(3)).toBe(false);
+		} finally {
+			close();
+		}
+	});
+
+	// Thin history is never summarised (Review Focus 1): the per-listing rows
+	// this replaced dropped anything under MIN_HISTORY_POINTS days, and the
+	// product-level query must keep that rule for its own series.
+	it('needs MIN_HISTORY_POINTS distinct in-stock days inside the window', () => {
+		const { d, close } = movesDb();
+		try {
+			const byId = new Map(getProductMoves(d, 7).map((m) => [m.productId, m]));
+			expect(byId.has(4)).toBe(false);
+			expect(byId.get(5)).toMatchObject({
+				oldPrice: 500,
+				newPrice: 450,
+				fromDate: '2026-09-27',
+				toDate: '2026-09-29'
+			});
+			// A 1-day window holds only 2 days (>= latest - 1), so nothing qualifies.
+			expect(getProductMoves(d, 1)).toEqual([]);
 		} finally {
 			close();
 		}
