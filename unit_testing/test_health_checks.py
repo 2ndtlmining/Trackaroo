@@ -795,7 +795,7 @@ class TestPriceMoveRule:
         assert not any(r.status == CheckResult.WARNING for r in results), results
 
     def test_threshold_is_a_sane_fraction(self):
-        """PRICE_MOVE_PCT is a fraction (0.10), not a percentage (20)."""
+        """PRICE_MOVE_PCT is a fraction (0.10), not a percentage (10)."""
         assert 0 < PRICE_MOVE_PCT < 1
 
 

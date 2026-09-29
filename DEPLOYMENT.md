@@ -293,10 +293,12 @@ host-run sync.
 ### PCCG scheduled retry (automatic, safe to run unconditionally)
 
 PCCG rate-limits aggressively; when it does, the scraper now fails fast via a
-circuit breaker (see docs/archive/IMPROVEMENT_16_Aug_V1.md §10). Because each run is cheap
-and respects the cooldown file, you can schedule a plain `run_daily.py --pccg`
-a few hours after the main daily run without any guard logic — it either picks
-up the missing PCCG data or exits quietly:
+circuit breaker (see docs/archive/IMPROVEMENT_16_Aug_V1.md §10). Because each
+run is cheap and respects the cooldown file, the hourly `run_daily.py
+--scheduled` retry (see [Retry until a cutoff](#retry-until-a-cutoff) below)
+already covers PCCG without any extra guard logic or a separate `--pccg`
+cron line — a pending PCCG retry either picks up the missing data or exits
+quietly on an active cooldown:
 
 ```cron
 # Native equivalent of the container scheduler: hourly, run_daily decides.
@@ -308,15 +310,19 @@ Key behaviours that make this safe:
 - **Cooldown:** when the circuit breaker trips, the scraper writes
   `data/pccg_cooldown.json`. Any run within the next
   `TRACKAROO_PCCG_COOLDOWN_HOURS` (default 4) skips scraping entirely and
-  exits `0` (expected handled behaviour, not a failure). A successful scrape
-  clears the file.
+  exits `3` (expected handled behaviour, not a failure — see the scraper
+  exit codes under [Health / operational checks](#health--operational-checks)). A successful
+  scrape clears the file.
 - **Idempotent ingestion:** re-ingesting an already-present snapshot is a
   no-op (existing "never delete, ingestion is idempotent" rule), so retries
   that do succeed never duplicate data.
 - **Visibility:** `health_checks.py` reports per-retailer whether today's date
   has a snapshot (`Today Coverage` section), so a blocked PCCG shows up as a
-  named warning — `pccg: no snapshot for today yet` — even when the retry
-  respected the cooldown and exited quietly.
+  named warning — `pccg: no snapshot for today (...) yet - scraper cooldown
+  active, expected` — even when the retry respected the cooldown and exited
+  quietly. Without an active cooldown to explain the gap, the same check
+  reports an ERROR instead (`pccg: no snapshot for today (...)`) and pages —
+  see the [Staleness monitor](#staleness-monitor--catching-the-run-that-never-happened) section.
 
 > **First run:** the pipeline scrapes live retailer sites, so the dashboard
 > populates over the first minutes.
@@ -337,6 +343,16 @@ cd /opt/trackaroo && python run_daily.py
 python backup_db.py          # standalone backup, keeps 14
 python backup_db.py --keep 30 --backup-dir /mnt/nas/trackaroo
 ```
+
+**A manual single-retailer run (e.g. `run_daily.py --scorptec`) pages for the
+others.** `check_today_coverage` treats every *other* active retailer as
+missing today until its own run happens, and that is now an ERROR (not a
+warning) unless a PCCG cooldown explains it — so an ad-hoc `--scorptec` run
+before the day's scheduled run alerts on PCCG/Umart too. Add `--no-notify` to ingest and run health checks normally (so you can still
+see the result in the log) without sending that alert or the digest, or
+`--no-health` to skip the checks entirely. `--dry-run` also never alerts
+(`alerts_enabled`/`notify_enabled` both treat it as silent), but it still
+scrapes and saves JSON to `data/` — it only skips writing to the DB.
 
 ### PCCG key rotation
 
