@@ -179,7 +179,7 @@ class TestRunDailyMain:
         monkeypatch.setattr(run_daily, "DATA_DIR", tmp_path)
         monkeypatch.setattr(
             run_daily, "ingest_today",
-            lambda conn, dry_run=False: {"inserted": 0, "skipped": 0, "errors": 0, "bad_files": []},
+            lambda conn, dry_run=False, filename=None: {"inserted": 0, "skipped": 0, "errors": 0, "bad_files": []},
         )
         monkeypatch.setattr(run_daily, "check_json_files", lambda *a, **k: [])
         monkeypatch.setattr(run_daily, "run_db_checks", lambda: [])

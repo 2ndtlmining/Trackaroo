@@ -6,6 +6,7 @@ import requests
 
 import heartbeat
 import run_daily
+from scraper.snapshot_io import build_snapshot, save_snapshot
 
 
 class TestPing:
@@ -70,9 +71,35 @@ def _args(*argv):
     return run_daily.build_parser().parse_args(list(argv))
 
 
+def _writing_scraper(data_dir, fail_first=frozenset()):
+    """A fake scraper that writes a real one-product snapshot when it
+    succeeds (final review I2b: pending_retailers now requires actual
+    price_snapshots data, not just an 'ok' scrape_runs row, so a heartbeat
+    test claiming "a complete clean day" must actually ingest something)."""
+    attempts = []
+
+    def scraper(name, module, label):
+        attempts.append(label)
+        if label in fail_first and attempts.count(label) == 1:
+            return run_daily.ScrapeOutcome(label, "failed", 1)
+        stamp = run_daily.today_filename()
+        product = {
+            "watchlist_model": "Ryzen 7 9800X3D", "watchlist_category": "cpu",
+            "watchlist_brand": "AMD", "watchlist_gen_tier": "current", "retailer": label,
+            "price_aud": 599.0, "stock_status": "in_stock",
+            "url": f"https://www.{label}.example/product/cpu/{len(attempts)}",
+        }
+        save_snapshot(data_dir / f"cpu_{label}_{stamp}.json",
+                      build_snapshot(label, stamp, "cpu", 1, [product], []))
+        return run_daily.ScrapeOutcome(label, "ok", 0)
+
+    return scraper, attempts
+
+
 class TestRunDailyPings:
     def test_a_complete_clean_day_pings(self, isolated_pipeline, monkeypatch):
-        monkeypatch.setattr(run_daily, "run_scraper", lambda n, m, label: run_daily.ScrapeOutcome(label, "ok", 0))
+        scraper, _ = _writing_scraper(isolated_pipeline.data_dir)
+        monkeypatch.setattr(run_daily, "run_scraper", scraper)
         run_daily.run(_args())
         assert isolated_pipeline.heartbeats == 1
 
@@ -84,13 +111,7 @@ class TestRunDailyPings:
         assert isolated_pipeline.heartbeats == 0
 
     def test_the_retry_that_completes_the_day_pings(self, isolated_pipeline, monkeypatch):
-        attempts = []
-
-        def scraper(n, m, label):
-            attempts.append(label)
-            failed = label == "umart" and attempts.count("umart") == 1
-            return run_daily.ScrapeOutcome(label, "failed" if failed else "ok", 1 if failed else 0)
-
+        scraper, attempts = _writing_scraper(isolated_pipeline.data_dir, fail_first={"umart"})
         monkeypatch.setattr(run_daily, "run_scraper", scraper)
         run_daily.run(_args())
         run_daily.run(_args("--pending-only"))

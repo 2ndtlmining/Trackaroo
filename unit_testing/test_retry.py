@@ -60,9 +60,23 @@ class TestRetailersPending:
         assert retailers_pending(db, TODAY, ["pccg"]) == ["pccg"]
 
     def test_only_the_latest_run_counts(self, db):
+        """final review I2b: an 'ok' row is only "done" once its data has
+        actually landed in price_snapshots."""
+        db.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'X', 1)")
+        db.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+                   "VALUES (1, 'pccg', 'https://x/1', 'active')")
+        db.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+                   "VALUES (1, ?, 100, 'in_stock')", (TODAY,))
         _record(db, "pccg", "failed")
         _record(db, "pccg", "ok")
         assert retailers_pending(db, TODAY, ["pccg"]) == []
+
+    def test_an_ok_row_with_no_snapshots_yet_is_still_pending(self, db):
+        """final review I2b: a crash between record_scrape_run and the ingest
+        commit (or a --scrape-only run) must not be believed as "done"."""
+        _record(db, "pccg", "failed")
+        _record(db, "pccg", "ok")
+        assert retailers_pending(db, TODAY, ["pccg"]) == ["pccg"]
 
     def test_yesterdays_ok_does_not_count_today(self, db):
         _record(db, "pccg", "ok", run_date="2000-01-01")

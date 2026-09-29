@@ -70,12 +70,20 @@ def record_scrape_run(
 def retailers_pending(conn: sqlite3.Connection, run_date: str, retailers: Sequence[str]) -> List[str]:
     """Retailers that still need a scrape on ``run_date`` (#8), in the given order.
 
-    A retailer is done when its latest scrape_runs row for the day is 'ok'.
-    Any other latest status -- degraded, skipped, auth, failed, timeout --
-    leaves it pending. With no row for the day, it is done only if it already
-    has snapshots for the day: that is the day a build without scrape_runs
-    did the scraping (the Phase 6 deploy day), and re-scraping it would only
-    spend retailer goodwill (Review Focus 3).
+    A retailer is done when its latest scrape_runs row for the day is 'ok'
+    AND it actually has price_snapshots for the day. Any other latest status
+    -- degraded, skipped, auth, failed, timeout -- leaves it pending. With no
+    row for the day, it is done only if it already has snapshots for the day:
+    that is the day a build without scrape_runs did the scraping (the Phase 6
+    deploy day), and re-scraping it would only spend retailer goodwill
+    (Review Focus 3).
+
+    The snapshot check also applies to an 'ok' row (not just a missing one):
+    ``run_daily`` writes the scrape_runs row before it ingests, so a crash
+    between that record and the ingest commit -- or a ``--scrape-only`` run,
+    which used to record 'ok' rows too -- can leave an 'ok' row with nothing
+    in the DB yet. Without this, no later retry would ever re-ingest it
+    (final review I2b).
     """
     ensure_ops_tables(conn)
     pending: List[str] = []
@@ -85,9 +93,8 @@ def retailers_pending(conn: sqlite3.Connection, run_date: str, retailers: Sequen
             "ORDER BY id DESC LIMIT 1",
             (retailer, run_date),
         ).fetchone()
-        if row is not None:
-            if row[0] != "ok":
-                pending.append(retailer)
+        if row is not None and row[0] != "ok":
+            pending.append(retailer)
             continue
         has_data = conn.execute(
             "SELECT 1 FROM price_snapshots ps "

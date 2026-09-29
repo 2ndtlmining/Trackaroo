@@ -184,6 +184,13 @@ def run_scraper(name: str, module: str, label: str) -> ScrapeOutcome:
         report_path.unlink()
     except OSError:
         pass
+    # RunReport.flush() writes to a "<path>.tmp" sibling and os.replace()s it
+    # onto report_path; a scraper killed by the timeout above mid-flush can
+    # leave that sibling behind since the replace never happened (T5).
+    try:
+        report_path.with_name(report_path.name + ".tmp").unlink(missing_ok=True)
+    except OSError:
+        pass
 
     outcome = ScrapeOutcome(
         label, status, exit_code, started_at=started, finished_at=_now(),
@@ -205,11 +212,20 @@ def run_scraper(name: str, module: str, label: str) -> ScrapeOutcome:
     return outcome
 
 
-def ingest_today(conn: Any, dry_run: bool = False) -> Dict[str, Any]:
+def ingest_today(conn: Any, dry_run: bool = False, filename: Optional[str] = None) -> Dict[str, Any]:
     """Ingest all JSON files for today's date.
 
     A file that cannot be read is skipped and named in ``bad_files`` rather
     than aborting the rest (#12).
+
+    Args:
+        filename: The run's date-stamp (``today_filename()`` format) to glob
+            for. ``run()`` computes this once at the start and passes it
+            through, so a run that happens to cross midnight still ingests
+            the files it actually scraped instead of re-deriving "today" at
+            ingest time and globbing for a date that has no files yet (final
+            review M7). Defaults to ``today_filename()`` for callers (tests)
+            that invoke this directly, same day, same call.
 
     Returns:
         Stats dict with inserted/skipped/errors counts and ``bad_files``, or
@@ -217,7 +233,7 @@ def ingest_today(conn: Any, dry_run: bool = False) -> Dict[str, Any]:
     """
     from ingest import ingest_file
 
-    today = today_filename()
+    today = filename if filename is not None else today_filename()
     files = sorted(DATA_DIR.glob(f"*_{today}.json"))
 
     if not files:
@@ -539,7 +555,15 @@ def main(argv: Optional[List[str]] = None) -> None:
 def run(args: argparse.Namespace) -> int:
     """One pipeline run. Returns the process exit code (RUN_EXIT_*)."""
     to_run = selected_retailers(args)
-    today_iso = date.today().isoformat()
+    # Computed once, here, and threaded through everything below that needs
+    # "today" -- ingest, the JSON health check, the JSON mirror -- rather
+    # than each re-deriving it from date.today() at its own point in time. A
+    # run that happens to cross midnight (a slow scrape, a retry that starts
+    # just before 00:00) must still record and ingest the day it started, not
+    # silently split across two calendar days (final review M7).
+    run_date = date.today()
+    today_iso = run_date.isoformat()
+    run_filename = run_date.strftime(FILE_DATE_FORMAT)
     # True when this run is a --pending-only/--scheduled retry that attempted
     # FEWER retailers than were selected, i.e. at least one was left out
     # because it already has a complete run today (#8 fix-round-1 I2). Used
@@ -561,7 +585,7 @@ def run(args: argparse.Namespace) -> int:
             return RUN_EXIT_OK
         retry_narrowed = len(to_run) < len(candidates)
 
-    LOGGER.info("Trackaroo daily run - %s", today_filename())
+    LOGGER.info("Trackaroo daily run - %s", run_filename)
     LOGGER.info("Scraping: %s", "  |  ".join(SCRAPERS[r][0] for r in to_run))
 
     # ── Scrape ──────────────────────────────────────────────
@@ -576,7 +600,10 @@ def run(args: argparse.Namespace) -> int:
     for name, outcome in results.items():
         LOGGER.info("  %s %s", outcome.status.upper(), name)
 
-    if not args.dry_run:
+    # --scrape-only never ingests (it only writes JSON), so a 'ok' scrape_runs
+    # row here would tell tomorrow's retailers_pending() the retailer is
+    # already done even though nothing reached the DB (final review I2a).
+    if not args.dry_run and not args.scrape_only:
         best_effort("Recording scrape runs", record_outcomes, list(results.values()), today_iso)
 
     report_results: List[CheckResult] = []
@@ -588,8 +615,12 @@ def run(args: argparse.Namespace) -> int:
 
     # "Nothing to ingest" means no scraper produced any data at all -- ok or
     # degraded both wrote JSON (a degraded scrape saved whatever categories
-    # it did match; #7/I2). Only skipped/auth/failed/timeout leave nothing.
-    if not any(o.status in ("ok", "degraded") for o in results.values()):
+    # it did match; #7/I2). A scraper that ends failed/timeout/auth can still
+    # have saved one or more categories before it died (per-category saves,
+    # #12/D6) -- its run report's matched count says so, and that JSON must
+    # not be left un-ingested until tomorrow's glob never finds it (final
+    # review I1).
+    if not any(o.status in ("ok", "degraded") or (o.matched or 0) > 0 for o in results.values()):
         if not scraper_lines:
             # Every selected scraper was deliberately skipped (a --pccg retry
             # during its cooldown): expected, and nothing new to ingest.
@@ -619,7 +650,7 @@ def run(args: argparse.Namespace) -> int:
     # ── Health check: validate JSON before ingestion ───────
     json_results: List[CheckResult] = []
     if not args.no_health:
-        json_results = guarded_check("check_json_files", lambda: check_json_files(today_filename()))
+        json_results = guarded_check("check_json_files", lambda: check_json_files(run_filename))
         _report_results(json_results, "JSON validation")
 
     # ── Ingest ──────────────────────────────────────────────
@@ -648,7 +679,7 @@ def run(args: argparse.Namespace) -> int:
             if not args.dry_run:
                 best_effort("Active-retailer sync", sync_active_retailers, conn, ACTIVE_RETAILERS)
 
-            stats = ingest_today(conn, dry_run=args.dry_run)
+            stats = ingest_today(conn, dry_run=args.dry_run, filename=run_filename)
 
             if stats:
                 mode = "(DRY RUN)" if args.dry_run else ""
@@ -677,7 +708,7 @@ def run(args: argparse.Namespace) -> int:
         if not args.dry_run:
             try:
                 from export_snapshots import run as run_export
-                totals = run_export(dates=[date.today().strftime(DB_DATE_FORMAT)],
+                totals = run_export(dates=[run_date.strftime(DB_DATE_FORMAT)],
                                     repair_only=True)
                 if totals["recovered"]:
                     LOGGER.warning(
