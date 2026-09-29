@@ -449,8 +449,23 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
     """
     stats = {"inserted": 0, "skipped": 0, "errors": 0, "new_products": 0, "new_listings": 0}
 
-    with open(file_path, encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        # One corrupt file used to abort the whole ingest -- and with it the
+        # remaining files, the JSON mirror, the health checks and the backup
+        # (#12). json.JSONDecodeError and UnicodeDecodeError are ValueErrors.
+        LOGGER.error("Skipping unreadable snapshot %s: %s", file_path.name, e)
+        stats["errors"] += 1
+        stats["unreadable"] = 1
+        return stats
+    if not isinstance(data, dict):
+        LOGGER.error("Skipping %s: expected a JSON object, got %s",
+                     file_path.name, type(data).__name__)
+        stats["errors"] += 1
+        stats["unreadable"] = 1
+        return stats
 
     products = data.get("products", [])
     snapshot_date = parse_date_from_filename(file_path.name)

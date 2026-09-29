@@ -21,8 +21,9 @@ import logging
 import subprocess
 import sys
 import time
-from datetime import date
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from config import (
     ACTIVE_RETAILERS,
@@ -57,20 +58,78 @@ def today_filename() -> str:
     return date.today().strftime(FILE_DATE_FORMAT)
 
 
-def run_scraper(name: str, module: str, label: str) -> bool:
-    """Run a scraper module and report success/failure.
+# Process exit codes for run_daily itself. The entrypoints log any non-zero as
+# "finished with errors" and carry on; DEPLOYMENT.md documents these.
+RUN_EXIT_OK = 0
+RUN_EXIT_ALL_FAILED = 1   # nothing was scraped, or the run crashed
+RUN_EXIT_DEGRADED = 2     # a scraper or health check failed; good data was kept
+
+# What one scraper run can end as. scrape_runs.status (Task 4) uses the same set.
+SCRAPE_STATUSES = ("ok", "degraded", "skipped", "auth", "failed", "timeout")
+
+_OUTCOME_TEXT = {
+    "degraded": "returned an incomplete result",
+    "skipped": "was skipped (cooldown active - expected)",
+    "auth": "was refused by the retailer (credentials rejected) - needs a human",
+    "failed": "failed",
+    "timeout": f"timed out after {SCRAPER_TIMEOUT_SECONDS}s",
+}
+
+
+@dataclass
+class ScrapeOutcome:
+    """What one scraper subprocess did (#7, #8, R3)."""
+    retailer: str
+    status: str                        # one of SCRAPE_STATUSES
+    exit_code: Optional[int] = None
+    started_at: str = ""               # local ISO8601, seconds
+    finished_at: str = ""
+    matched: Optional[int] = None      # products matched (from the run report)
+    detail: str = ""
+    report: Optional[Dict[str, Any]] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "ok"
+
+    @property
+    def needs_alert(self) -> bool:
+        """Everything except success and an expected cooldown skip pages someone."""
+        return self.status not in ("ok", "skipped")
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def status_for_exit(code: int) -> str:
+    """Map a scraper's exit code to a ScrapeOutcome status."""
+    return "ok" if code == 0 else "failed"
+
+
+def outcome_alert_line(o: ScrapeOutcome) -> str:
+    """One Discord bullet describing a scraper problem."""
+    label = SCRAPERS[o.retailer][0] if o.retailer in SCRAPERS else o.retailer.title()
+    text = _OUTCOME_TEXT.get(o.status, o.status)
+    if o.status == "failed" and o.exit_code is not None:
+        text += f" (exit code {o.exit_code})"
+    if o.detail:
+        text += f": {o.detail}"
+    return f"- Scraper **{label}** {text}"
+
+
+def run_scraper(name: str, module: str, label: str) -> ScrapeOutcome:
+    """Run a scraper module as a subprocess and classify what happened.
 
     Args:
         name: Display name (e.g. 'Scorptec')
-        module: Python module path (e.g. 'scraper.scorptec' or 'scraper.pccg')
-        label: Short label for summary (e.g. 'scorptec')
-
-    Returns:
-        True if the scraper ran successfully, False otherwise.
+        module: Python module path (e.g. 'scraper.scorptec')
+        label: Retailer slug (e.g. 'scorptec')
     """
     LOGGER.info("\n%s\nScraping %s...\n%s", "=" * 60, name, "=" * 60)
+    started = _now()
     start = time.time()
-
+    status, exit_code = "failed", None
     try:
         result = subprocess.run(
             [sys.executable, "-m", module],
@@ -78,34 +137,31 @@ def run_scraper(name: str, module: str, label: str) -> bool:
             text=True,
             timeout=SCRAPER_TIMEOUT_SECONDS,
         )
-        elapsed = time.time() - start
-        if result.returncode == 0:
-            LOGGER.info("\n%s completed in %.1fs", name, elapsed)
-            return True
-        LOGGER.error(
-            "\n%s failed (exit code %s) after %.1fs",
-            name,
-            result.returncode,
-            elapsed,
-        )
-        return False
+        exit_code = result.returncode
+        status = status_for_exit(exit_code)
     except subprocess.TimeoutExpired:
-        LOGGER.error("\n%s timed out after %ds", name, SCRAPER_TIMEOUT_SECONDS)
-        return False
+        status = "timeout"
     except Exception as e:  # noqa: BLE001 - CLI wrapper reports any failure
         LOGGER.error("\n%s error: %s", name, e)
-        return False
+
+    outcome = ScrapeOutcome(label, status, exit_code, started_at=started, finished_at=_now())
+    elapsed = time.time() - start
+    if outcome.ok:
+        LOGGER.info("\n%s completed in %.1fs", name, elapsed)
+    else:
+        LOGGER.error("\n%s %s (exit code %s) after %.1fs", name, status, exit_code, elapsed)
+    return outcome
 
 
-def ingest_today(conn: Any, dry_run: bool = False) -> Dict[str, int]:
+def ingest_today(conn: Any, dry_run: bool = False) -> Dict[str, Any]:
     """Ingest all JSON files for today's date.
 
-    Args:
-        conn: Open SQLite connection.
-        dry_run: When True, only report what would happen without writing.
+    A file that cannot be read is skipped and named in ``bad_files`` rather
+    than aborting the rest (#12).
 
     Returns:
-        Stats dict with inserted/skipped/errors counts.
+        Stats dict with inserted/skipped/errors counts and ``bad_files``, or
+        {} when there are no files for today.
     """
     from ingest import ingest_file
 
@@ -116,11 +172,19 @@ def ingest_today(conn: Any, dry_run: bool = False) -> Dict[str, int]:
         LOGGER.info("\nNo JSON files found for today (%s)", today)
         return {}
 
-    total_stats = {"inserted": 0, "skipped": 0, "errors": 0}
+    total_stats: Dict[str, Any] = {"inserted": 0, "skipped": 0, "errors": 0, "bad_files": []}
 
     for f in files:
         LOGGER.info("\n  Ingesting: %s", f.name)
-        stats = ingest_file(conn, f, dry_run=dry_run)
+        try:
+            stats = ingest_file(conn, f, dry_run=dry_run)
+        except Exception:  # noqa: BLE001 - one file must never stop the rest
+            LOGGER.exception("Ingest of %s crashed - skipping it", f.name)
+            total_stats["errors"] += 1
+            total_stats["bad_files"].append(f.name)
+            continue
+        if stats.get("unreadable"):
+            total_stats["bad_files"].append(f.name)
         total_stats["inserted"] += stats["inserted"]
         total_stats["skipped"] += stats["skipped"]
         total_stats["errors"] += stats["errors"]
@@ -166,6 +230,74 @@ def notify_enabled(args: argparse.Namespace) -> bool:
     return not (args.dry_run or args.scrape_only or args.no_health or args.no_notify)
 
 
+def alerts_enabled(args: argparse.Namespace) -> bool:
+    """True when pipeline-issue alerts may be sent.
+
+    Every real run alerts, including --no-health and --scrape-only ones; only a
+    dry run or an explicit --no-notify stays silent.
+    """
+    return not (args.dry_run or args.no_notify)
+
+
+def best_effort(label: str, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Run one best-effort pipeline step (#12, R4).
+
+    CLAUDE.md: steps after ingest must never break a run that already
+    collected good data. Any exception is logged with its traceback and
+    swallowed.
+
+    Returns:
+        ``fn``'s return value, or None when it raised.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception:  # noqa: BLE001 - best-effort by contract
+        LOGGER.exception("%s failed (best-effort; the run continues)", label)
+        return None
+
+
+def guarded_check(name: str, check: Callable[[], List[CheckResult]]) -> List[CheckResult]:
+    """Run one health check; a crash becomes an ERROR result, never an exception (R4)."""
+    try:
+        return list(check())
+    except Exception as e:  # noqa: BLE001 - a broken check must still be reported
+        LOGGER.exception("Health check %s crashed", name)
+        return [CheckResult(f"{name}_crashed", CheckResult.ERROR,
+                            f"{name} raised {type(e).__name__}: {e}")]
+
+
+def _db_checks() -> List[Tuple[str, Callable[[], List[CheckResult]]]]:
+    """The post-ingest DB checks, in report order.
+
+    Lambdas look the check functions up at call time, so tests can patch them
+    on this module.
+    """
+    return [
+        ("check_db_freshness", lambda: check_db_freshness(DB_PATH)),
+        ("check_today_coverage", lambda: check_today_coverage(DB_PATH)),
+        ("check_match_count_anomalies", lambda: check_match_count_anomalies(DB_PATH)),
+        ("check_price_anomalies", lambda: check_price_anomalies(DB_PATH)),
+        ("check_spec_coverage", lambda: check_spec_coverage(DB_PATH)),
+        ("check_json_db_parity", lambda: check_json_db_parity(db_path=DB_PATH)),
+        ("check_missing_days", lambda: check_missing_days(DB_PATH)),
+        ("check_scraper_cooldown", lambda: check_scraper_cooldown()),
+    ]
+
+
+def run_db_checks() -> List[CheckResult]:
+    """Every DB health check; one crashing check no longer skips the rest (R4)."""
+    results: List[CheckResult] = []
+    for name, check in _db_checks():
+        results.extend(guarded_check(name, check))
+    return results
+
+
+def send_pipeline_alert(lines: List[str]) -> None:
+    """Post a pipeline-issue alert to DISCORD_WEBHOOK_ALERT; never raises."""
+    from notify_discord import send_alert
+    best_effort("Pipeline alert", send_alert, lines)
+
+
 # Display label and module path per retailer, keyed by ACTIVE_RETAILERS. A
 # retailer added to that list without a scraper module raises a KeyError here
 # rather than being quietly skipped for a run.
@@ -208,179 +340,199 @@ def selected_retailers(args: argparse.Namespace) -> List[str]:
 
 def main(argv: Optional[List[str]] = None) -> None:
     setup_logging()
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    args = build_parser().parse_args(argv)
+    try:
+        code = run(args)
+    except Exception:  # noqa: BLE001 - last line of defence: a crash must still page
+        LOGGER.exception("Daily run crashed")
+        if alerts_enabled(args):
+            send_pipeline_alert(["- **Daily run crashed** - see the log for the traceback."])
+        code = RUN_EXIT_ALL_FAILED
+    if code:
+        sys.exit(code)
 
+
+def run(args: argparse.Namespace) -> int:
+    """One pipeline run. Returns the process exit code (RUN_EXIT_*)."""
     to_run = selected_retailers(args)
 
-    LOGGER.info("Trackaroo daily run — %s", today_filename())
+    LOGGER.info("Trackaroo daily run - %s", today_filename())
     LOGGER.info("Scraping: %s", "  |  ".join(SCRAPERS[r][0] for r in to_run))
 
     # ── Scrape ──────────────────────────────────────────────
-    results: Dict[str, bool] = {}
+    results: Dict[str, ScrapeOutcome] = {}
     for i, retailer in enumerate(to_run):
         if i:
             time.sleep(SCRAPER_GAP_SECONDS)  # Polite delay between scrapers
         label, module = SCRAPERS[retailer]
         results[retailer] = run_scraper(label, module, retailer)
 
-    # Report scrape results
     LOGGER.info("\n%s\nScrape summary:\n%s", "=" * 60, "=" * 60)
-    for name, ok in results.items():
-        status = "OK" if ok else "FAIL"
-        LOGGER.info("  %s %s", status, name)
+    for name, outcome in results.items():
+        LOGGER.info("  %s %s", outcome.status.upper(), name)
 
-    if not any(results.values()):
+    scraper_lines = [outcome_alert_line(o) for o in results.values() if o.needs_alert]
+
+    if not any(o.ok for o in results.values()):
+        if not scraper_lines:
+            # Every selected scraper was deliberately skipped (a --pccg retry
+            # during its cooldown): expected, and nothing new to ingest.
+            LOGGER.info("\nEvery selected scraper was skipped - nothing to ingest.")
+            return RUN_EXIT_OK
+        # Nothing new to ingest or back up -- but this is the run that most
+        # needs to page someone, and it used to exit before any alert (#12).
         LOGGER.error("\nAll scrapers failed. Aborting.")
-        sys.exit(1)
+        if alerts_enabled(args):
+            send_pipeline_alert(["- **All scrapers failed** - no new data this run."] + scraper_lines)
+        return RUN_EXIT_ALL_FAILED
 
     # ── Health check: validate JSON before ingestion ───────
     json_results: List[CheckResult] = []
     if not args.no_health:
-        json_results = check_json_files(today_filename())
+        json_results = guarded_check("check_json_files", lambda: check_json_files(today_filename()))
         _report_results(json_results, "JSON validation")
 
     # ── Ingest ──────────────────────────────────────────────
     if args.scrape_only:
-        LOGGER.info("\nScrape-only mode — skipping ingestion.")
+        LOGGER.info("\nScrape-only mode - skipping ingestion.")
         LOGGER.info("JSON files saved to data/")
-        return
+        # Controller ruling F1: alerts_enabled(args), not notify_enabled(args)
+        # -- a scrape-only run must still page on a scraper/JSON problem even
+        # though it never reaches the digest.
+        if alerts_enabled(args):
+            alert_lines = list(scraper_lines)
+            alert_lines += [
+                f"- Health check error: {r}" for r in json_results if r.status == CheckResult.ERROR
+            ]
+            if alert_lines:
+                send_pipeline_alert(alert_lines)
+        return RUN_EXIT_DEGRADED if scraper_lines else RUN_EXIT_OK
 
-    conn = init_db(DB_PATH)
-    try:
-        stats = ingest_today(conn, dry_run=args.dry_run)
-
-        if stats:
-            mode = "(DRY RUN)" if args.dry_run else ""
-            LOGGER.info("\n%s\nIngestion summary %s:\n%s", "=" * 60, mode, "=" * 60)
-            LOGGER.info("  Inserted: %d", stats["inserted"])
-            LOGGER.info("  Skipped:  %d", stats["skipped"])
-            LOGGER.info("  Errors:   %d", stats["errors"])
-            LOGGER.info("%s", "=" * 60)
-        else:
-            LOGGER.info("\nNo new data to ingest.")
-
-        if not args.dry_run:
-            conn.commit()
-    finally:
-        conn.close()
-
-    # ── Mirror the DB back out to JSON ──────────────────────────────
-    # data/*.json is the backup the DB is rebuilt from, so it must hold every
-    # snapshot the DB does. A scrape that partially fails (or one whose result
-    # was diverted by the no-downgrade guard in scraper/snapshot_io.py) leaves
-    # JSON short. Re-exporting today's date from the DB closes that gap on
-    # every run, so the invariant "JSON can rebuild the DB" always holds.
-    # Best-effort: a mirror failure must never break the daily run.
-    if not args.dry_run:
-        try:
-            from export_snapshots import run as run_export
-            totals = run_export(dates=[date.today().strftime(DB_DATE_FORMAT)],
-                                repair_only=True)
-            if totals["recovered"]:
-                LOGGER.warning(
-                    "JSON backup was short by %d snapshot(s) — repaired %d file(s).",
-                    totals["recovered"], totals["written"],
-                )
-        except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
-            LOGGER.error("JSON mirror failed: %s", e)
-
-
-    # ── Health check: validate DB state after ingestion ───
+    ingest_results: List[CheckResult] = []
     db_results: List[CheckResult] = []
-    if not args.no_health and not args.scrape_only:
-        db_results = (
-            check_db_freshness(DB_PATH)
-            + check_today_coverage(DB_PATH)
-            + check_match_count_anomalies(DB_PATH)
-            + check_price_anomalies(DB_PATH)
-            + check_spec_coverage(DB_PATH)
-            + check_json_db_parity(db_path=DB_PATH)
-            + check_missing_days(DB_PATH)
-            + check_scraper_cooldown()
-        )
-        _report_results(db_results, "DB validation")
-
-        ok_count = sum(1 for r in db_results if r.status == CheckResult.OK)
-        errors = [r for r in db_results if r.status == CheckResult.ERROR]
-        warnings = [r for r in db_results if r.status == CheckResult.WARNING]
-        if not errors and not warnings:
-            LOGGER.info("\nDB health: all %d checks passed", ok_count)
-
-    # ── Delisted listing check (Scorptec) ───────────────────
-    # Products delisted from the Scorptec grid never get a new snapshot, so
-    # their last (often in_stock) one stays latest forever. Fetch the product
-    # pages of listings missing from today's scrape and mark confirmed
-    # delistings. Gated on a successful Scorptec scrape (a failed scrape would
-    # make every listing look stale). Best-effort: never breaks the run.
-    if results.get("scorptec") and not args.dry_run:
+    failed: List[CheckResult] = []
+    try:
+        conn = init_db(DB_PATH)
         try:
-            from check_delisted import run as run_delisted
-            run_delisted()
-        except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
-            LOGGER.error("Delisted check failed: %s", e)
+            stats = ingest_today(conn, dry_run=args.dry_run)
 
-    # ── Stale-listing check (all retailers) ─────────────────────────
-    # Retailer-agnostic net beneath the delisted check above: a listing whose
-    # own retailer has recent data but which hasn't appeared itself in
-    # STALE_LISTING_DAYS is marked 'stale'. Never compares against now() --
-    # see check_stale_listings.py for why. Not gated on a specific retailer's
-    # scrape (unlike the delisted check) since it judges each retailer
-    # against its own latest snapshot. Best-effort: never breaks the run.
-    if not args.dry_run:
-        try:
-            from check_stale_listings import run as run_stale_listings
-            run_stale_listings()
-        except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
-            LOGGER.error("Stale-listing check failed: %s", e)
+            if stats:
+                mode = "(DRY RUN)" if args.dry_run else ""
+                LOGGER.info("\n%s\nIngestion summary %s:\n%s", "=" * 60, mode, "=" * 60)
+                LOGGER.info("  Inserted: %d", stats["inserted"])
+                LOGGER.info("  Skipped:  %d", stats["skipped"])
+                LOGGER.info("  Errors:   %d", stats["errors"])
+                LOGGER.info("%s", "=" * 60)
+                if stats.get("bad_files"):
+                    ingest_results.append(CheckResult(
+                        "ingest_unreadable_json", CheckResult.ERROR,
+                        "Skipped unreadable snapshot file(s): " + ", ".join(stats["bad_files"]),
+                    ))
+            else:
+                LOGGER.info("\nNo new data to ingest.")
 
-    # ── Discord digest (optional) ──────────────────────────────────────
-    # Only on a real full run with passing health checks: a partial or
-    # unchecked scrape shouldn't celebrate moves that may be artifacts.
-    if notify_enabled(args):
-        failed = health_errors(json_results, db_results)
-        if failed:
-            LOGGER.warning("Skipping Discord digest — %d health check error(s).", len(failed))
-        else:
-            from notify_discord import run as run_notify
-            run_notify()
+            if not args.dry_run:
+                conn.commit()
+        finally:
+            conn.close()
+        _report_results(ingest_results, "Ingest")
 
-        # Pipeline-issue alert: the digest is gated on a clean run, so any
-        # scraper failure or health error gets its own Discord message.
-        from notify_discord import send_alert
-        alert_lines = [
-            f"- Scraper **{name.title()}** failed" for name, ok in results.items() if not ok
-        ]
-        alert_lines += [f"- Health check error: {r}" for r in failed]
-        # A missed run leaves no other trace, so surface calendar gaps too.
-        alert_lines += [
-            f"- {r.message}"
-            for r in db_results
-            if r.check_name == "missing_days" and r.status == CheckResult.WARNING
-        ]
-        if alert_lines:
-            send_alert(alert_lines)
-
-        # ── Price-drop & restock alerts (optional) ────────────────────
-        # Same clean-run gating as the digest: a partial or unhealthy scrape
-        # shouldn't fire "buy now" alerts built on garbage data. Best-effort:
-        # a missing price_alerts table or delivery failure must never break
-        # the daily run (matching the delisted-check pattern).
-        if not failed:
+        # ── Mirror the DB back out to JSON ──────────────────────────────
+        # data/*.json is the backup the DB is rebuilt from, so it must hold
+        # every snapshot the DB does. Best-effort: never breaks the run.
+        if not args.dry_run:
             try:
-                from check_alerts import run as run_alerts
-                run_alerts()
+                from export_snapshots import run as run_export
+                totals = run_export(dates=[date.today().strftime(DB_DATE_FORMAT)],
+                                    repair_only=True)
+                if totals["recovered"]:
+                    LOGGER.warning(
+                        "JSON backup was short by %d snapshot(s) - repaired %d file(s).",
+                        totals["recovered"], totals["written"],
+                    )
             except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
-                LOGGER.error("Price alerts check failed: %s", e)
+                LOGGER.error("JSON mirror failed: %s", e)
 
-    # ── Backup (automatic) ──────────────────────────────────────────
-    # A real full run always snapshots the DB first (keeps the last
-    # BACKUP_KEEP days) so today's data is never lost. Opt out via
-    # --no-backup. Skips on dry-run / scrape-only (nothing was written).
-    if not args.no_backup and not args.dry_run and not args.scrape_only:
-        from backup_db import backup_database
-        LOGGER.info("\n%s\nBacking up database:\n%s", "=" * 60, "=" * 60)
-        backup_database(keep=BACKUP_KEEP)
+        # ── Health check: validate DB state after ingestion ───
+        if not args.no_health:
+            db_results = run_db_checks()
+            _report_results(db_results, "DB validation")
+            ok_count = sum(1 for r in db_results if r.status == CheckResult.OK)
+            if not any(r.status != CheckResult.OK for r in db_results):
+                LOGGER.info("\nDB health: all %d checks passed", ok_count)
+
+        # ── Delisted listing check (Scorptec) ───────────────────
+        # Gated on a successful Scorptec scrape: a failed or empty one would
+        # make every listing look delisted (#7d). Best-effort.
+        scorptec = results.get("scorptec")
+        if scorptec is not None and scorptec.ok and not args.dry_run:
+            try:
+                from check_delisted import run as run_delisted
+                run_delisted()
+            except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
+                LOGGER.error("Delisted check failed: %s", e)
+
+        # ── Stale-listing check (all retailers) ─────────────────────────
+        if not args.dry_run:
+            try:
+                from check_stale_listings import run as run_stale_listings
+                run_stale_listings()
+            except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
+                LOGGER.error("Stale-listing check failed: %s", e)
+
+        failed = health_errors(json_results, ingest_results, db_results)
+
+        # ── Discord digest ───────────────────────────────────────────────
+        # Only on a real, full run with health checks on and a clean result:
+        # a partial or unchecked scrape shouldn't celebrate moves that may be
+        # artifacts.
+        if notify_enabled(args):
+            if failed:
+                LOGGER.warning("Skipping Discord digest - %d health check error(s).", len(failed))
+            else:
+                from notify_discord import run as run_notify
+                best_effort("Discord digest", run_notify)
+
+            # ── Price-drop & restock alerts ───────────────────────────
+            # Same clean-run gating as the digest: no "buy now" built on
+            # garbage data. Controller ruling F1: these stay under
+            # notify_enabled (unlike the pipeline alert below), so --no-health
+            # / --scrape-only keep them off along with the digest.
+            if not failed:
+                try:
+                    from check_alerts import run as run_alerts
+                    run_alerts()
+                except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
+                    LOGGER.error("Price alerts check failed: %s", e)
+
+        # ── Pipeline-issue alert ──────────────────────────────────────────
+        # Controller ruling F1: gated on alerts_enabled(args), not
+        # notify_enabled(args) -- a --no-health or --scrape-only run must
+        # still page someone on a scraper or health-check problem even though
+        # its digest stays off. Only a dry run or an explicit --no-notify
+        # stays silent (a later task's backup alert also relies on this).
+        if alerts_enabled(args):
+            alert_lines = list(scraper_lines)
+            alert_lines += [f"- Health check error: {r}" for r in failed]
+            # A missed run leaves no other trace, so surface calendar gaps too.
+            alert_lines += [
+                f"- {r.message}"
+                for r in db_results
+                if r.check_name == "missing_days" and r.status == CheckResult.WARNING
+            ]
+            if alert_lines:
+                send_pipeline_alert(alert_lines)
+    finally:
+        # ── Backup (automatic) ──────────────────────────────────────────
+        # In a finally so that nothing above -- a crashed digest, a broken
+        # health check -- can skip it (#12). Scrape-only and dry runs wrote
+        # nothing and returned earlier / are excluded here.
+        if not args.no_backup and not args.dry_run:
+            from backup_db import backup_database
+            LOGGER.info("\n%s\nBacking up database:\n%s", "=" * 60, "=" * 60)
+            best_effort("Database backup", backup_database, keep=BACKUP_KEEP)
+
+    return RUN_EXIT_DEGRADED if (scraper_lines or failed) else RUN_EXIT_OK
 
 
 if __name__ == "__main__":

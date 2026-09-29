@@ -7,6 +7,7 @@ so tests don't touch the production DB.
 import os
 import sqlite3
 import tempfile
+import types
 from pathlib import Path
 
 import pytest
@@ -89,3 +90,64 @@ def sample_snapshot():
         "price_aud": 999.0,
         "stock_status": "in_stock",
     }
+
+
+# ── run_daily end-to-end harness ─────────────────────────────────────
+
+@pytest.fixture
+def isolated_pipeline(monkeypatch, tmp_path):
+    """Run ``run_daily.run()`` end to end with every side effect faked.
+
+    The DB is a real file DB (so several connections see the same rows), the
+    data dir is a temp dir, and the digest, alerts, price alerts, delisted
+    check, JSON mirror and backup are recorded instead of performed. Each test
+    still chooses what the scrapers return by patching ``run_daily.run_scraper``.
+    Health checks are off by default (``run_db_checks`` / ``check_json_files``
+    return nothing); a test that wants one re-patches it.
+    """
+    import run_daily
+
+    calls = types.SimpleNamespace(
+        alerts=[], digests=0, price_alert_runs=0, backups=0, delisted_runs=0,
+        db_path=tmp_path / "pipeline.db", data_dir=tmp_path / "data",
+    )
+    calls.data_dir.mkdir()
+    conn = sqlite3.connect(str(calls.db_path))
+    conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    conn.commit()
+    conn.close()
+
+    def fake_init_db(path):
+        c = sqlite3.connect(str(calls.db_path))
+        c.execute("PRAGMA foreign_keys = ON")
+        return c
+
+    def fake_digest(*a, **k):
+        calls.digests += 1
+
+    def fake_price_alerts(*a, **k):
+        calls.price_alert_runs += 1
+
+    def fake_backup(**k):
+        calls.backups += 1
+
+    def fake_delisted(*a, **k):
+        calls.delisted_runs += 1
+
+    monkeypatch.setattr(run_daily, "init_db", fake_init_db)
+    monkeypatch.setattr(run_daily, "DB_PATH", calls.db_path)
+    monkeypatch.setattr(run_daily, "DATA_DIR", calls.data_dir)
+    monkeypatch.setattr(run_daily, "SCRAPER_GAP_SECONDS", 0)
+    monkeypatch.setattr(run_daily, "check_json_files", lambda *a, **k: [])
+    monkeypatch.setattr(run_daily, "run_db_checks", lambda *a, **k: [])
+    monkeypatch.setattr("export_snapshots.run", lambda **k: {"recovered": 0, "written": 0})
+    monkeypatch.setattr("check_delisted.run", fake_delisted)
+    monkeypatch.setattr("check_stale_listings.run", lambda *a, **k: None)
+    monkeypatch.setattr("notify_discord.run", fake_digest)
+    monkeypatch.setattr(
+        "notify_discord.send_alert",
+        lambda lines, dry_run=False: calls.alerts.append(list(lines)) or 1,
+    )
+    monkeypatch.setattr("check_alerts.run", fake_price_alerts)
+    monkeypatch.setattr("backup_db.backup_database", fake_backup)
+    return calls
