@@ -17,13 +17,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from config import (
     ACTIVE_RETAILERS,
@@ -32,6 +33,8 @@ from config import (
     DB_DATE_FORMAT,
     DB_PATH,
     FILE_DATE_FORMAT,
+    RETRY_UNTIL_HOUR,
+    RUN_AT_HOUR,
     SCRAPER_GAP_SECONDS,
     SCRAPER_TIMEOUT_SECONDS,
     setup_logging,
@@ -49,7 +52,13 @@ from health_checks import (
     check_today_coverage,
 )
 from ingest import init_db
-from pipeline_state import sync_active_retailers
+from pipeline_state import (
+    claim_marker,
+    record_scrape_run,
+    release_marker,
+    retailers_pending,
+    sync_active_retailers,
+)
 from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED
 
 LOGGER = logging.getLogger(__name__)
@@ -317,11 +326,104 @@ def run_db_checks() -> List[CheckResult]:
     return results
 
 
+def _current_hour() -> int:
+    return datetime.now().hour
+
+
+def in_retry_window(hour: int, run_at: int, until: int) -> bool:
+    """True when ``hour`` is inside RUN_AT_HOUR..RETRY_UNTIL_HOUR, inclusive (#8).
+
+    A cutoff before the run hour (misconfiguration) degrades to "the run hour
+    only", never to "never".
+    """
+    if until < run_at:
+        return hour == run_at
+    return run_at <= hour <= until
+
+
+def pending_retailers(candidates: Sequence[str], run_date: str) -> List[str]:
+    """Which of ``candidates`` still need a scrape today. If the state cannot be
+    read, scrape them all: a wasted scrape beats a lost day."""
+    try:
+        conn = init_db(DB_PATH)
+        try:
+            return retailers_pending(conn, run_date, candidates)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("Could not read today's run state - scraping every selected retailer")
+        return list(candidates)
+
+
+def record_outcomes(outcomes: List[ScrapeOutcome], run_date: str) -> None:
+    """Persist this run's outcomes to scrape_runs (#8, R3)."""
+    conn = init_db(DB_PATH)
+    try:
+        for o in outcomes:
+            record_scrape_run(
+                conn, retailer=o.retailer, run_date=run_date,
+                started_at=o.started_at or _now(), finished_at=o.finished_at or _now(),
+                status=o.status, exit_code=o.exit_code, matched=o.matched,
+                detail=o.detail or None,
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def claim_once(name: str) -> bool:
+    """True the first time ``name`` is claimed today.
+
+    Hourly retries (#8) must not repeat the digest or an identical alert. This
+    errs towards True: a broken state table must never silence an alert.
+    """
+    try:
+        conn = init_db(DB_PATH)
+        try:
+            return claim_marker(conn, name, date.today().isoformat())
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("Could not read run markers - sending anyway")
+        return True
+
+
+def release_once(name: str) -> None:
+    """Undo a claim_once() claim (F2 controller ruling).
+
+    Called when the send that claim_once() gated on turned out to fail: the
+    claim must not survive a failed send, or the next hourly retry would
+    silently skip a resend of something that was never actually delivered.
+    """
+    try:
+        conn = init_db(DB_PATH)
+        try:
+            release_marker(conn, name, date.today().isoformat())
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("Could not release run marker %r - next retry may skip a resend", name)
+
+
 def send_pipeline_alert(lines: List[str]) -> None:
-    """Post a pipeline-issue alert to DISCORD_WEBHOOK_ALERT; never raises."""
-    def _send() -> None:
+    """Post a pipeline-issue alert to DISCORD_WEBHOOK_ALERT; never raises.
+
+    An alert identical to one already sent today is not repeated: an hourly
+    retry that fails the same way would otherwise post it up to 6 times (#8).
+
+    F2 controller ruling: the marker is claimed before the send is attempted
+    (so a second, concurrent retry cannot also send it), but released again if
+    the send itself failed -- a failed Discord post at 04:00 must still be
+    retried by the next hourly run, not silently swallowed.
+    """
+    key = "alert:" + hashlib.sha1("\n".join(lines).encode("utf-8")).hexdigest()[:16]
+    if not claim_once(key):
+        LOGGER.info("The same pipeline alert was already sent today - not repeating it.")
+        return
+
+    def _send() -> int:
         from notify_discord import send_alert
-        send_alert(lines)
+        return send_alert(lines)
 
     # The import lives inside the guarded callable (not above this call) so
     # an import failure is caught by best_effort too, same as a delivery
@@ -329,7 +431,8 @@ def send_pipeline_alert(lines: List[str]) -> None:
     # the all-failed/scrape-only/final-alert call sites) can trip main()'s
     # outer crash handler into sending a second, redundant "crashed" alert
     # (M2).
-    best_effort("Pipeline alert", _send)
+    if best_effort("Pipeline alert", _send) is None:
+        release_once(key)
 
 
 # Display label and module path per retailer, keyed by ACTIVE_RETAILERS. A
@@ -360,6 +463,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-health", action="store_true", help="Skip health checks")
     parser.add_argument("--no-notify", action="store_true", help="Skip the Discord digest")
     parser.add_argument("--no-backup", action="store_true", help="Skip the automatic DB backup")
+    parser.add_argument("--pending-only", action="store_true",
+                        help="Only scrape retailers without a complete run today (boot catch-up)")
+    parser.add_argument("--scheduled", action="store_true",
+                        help="Hourly scheduler entry: --pending-only, and a no-op outside "
+                             "RUN_AT_HOUR..RETRY_UNTIL_HOUR")
     return parser
 
 
@@ -389,6 +497,18 @@ def main(argv: Optional[List[str]] = None) -> None:
 def run(args: argparse.Namespace) -> int:
     """One pipeline run. Returns the process exit code (RUN_EXIT_*)."""
     to_run = selected_retailers(args)
+    today_iso = date.today().isoformat()
+
+    # ── What is left to do today (#8) ─────────────────────────
+    if args.scheduled and not in_retry_window(_current_hour(), RUN_AT_HOUR, RETRY_UNTIL_HOUR):
+        LOGGER.info("Outside the run window (%02d:00-%02d:59) - nothing to do.",
+                    RUN_AT_HOUR, RETRY_UNTIL_HOUR)
+        return RUN_EXIT_OK
+    if args.pending_only or args.scheduled:
+        to_run = pending_retailers(to_run, today_iso)
+        if not to_run:
+            LOGGER.info("Every selected retailer already has a complete run today - nothing to do.")
+            return RUN_EXIT_OK
 
     LOGGER.info("Trackaroo daily run - %s", today_filename())
     LOGGER.info("Scraping: %s", "  |  ".join(SCRAPERS[r][0] for r in to_run))
@@ -404,6 +524,9 @@ def run(args: argparse.Namespace) -> int:
     LOGGER.info("\n%s\nScrape summary:\n%s", "=" * 60, "=" * 60)
     for name, outcome in results.items():
         LOGGER.info("  %s %s", outcome.status.upper(), name)
+
+    if not args.dry_run:
+        best_effort("Recording scrape runs", record_outcomes, list(results.values()), today_iso)
 
     scraper_lines = [outcome_alert_line(o) for o in results.values() if o.needs_alert]
 
@@ -532,15 +655,25 @@ def run(args: argparse.Namespace) -> int:
                 # silent failure #7 describes.
                 LOGGER.warning("Skipping Discord digest - %d health check error(s), %d scraper problem(s).",
                                len(failed), len(scraper_lines))
+            elif not claim_once("digest"):
+                LOGGER.info("Discord digest already sent today - not repeating it.")
             else:
-                def _run_digest() -> None:
+                def _run_digest() -> bool:
                     from notify_discord import run as run_notify
                     run_notify()
+                    return True
 
                 # Import inside the guarded callable (M2): a notify_discord
                 # import failure must be caught by best_effort, not escape
                 # into the finally block and beyond.
-                best_effort("Discord digest", _run_digest)
+                #
+                # F2 controller ruling: the "digest" marker was already
+                # claimed above (before the send), so a failed send (raised
+                # exception, caught by best_effort as None) must release it
+                # again -- otherwise the next hourly retry silently skips a
+                # digest that was never actually delivered.
+                if best_effort("Discord digest", _run_digest) is None:
+                    release_once("digest")
 
             # ── Price-drop & restock alerts ───────────────────────────
             # Same clean-run gating as the digest: no "buy now" built on

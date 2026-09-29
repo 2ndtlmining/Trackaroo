@@ -42,6 +42,9 @@ Environment variables (all optional):
     TRACKAROO_BACKUP_KEEP               Backups to retain (days)      (default: 14)
     TRACKAROO_SCRAPER_GAP_SECONDS       Delay between the two scrapers (default: 2.0)
 
+    RUN_AT_HOUR                         Daily run hour, local 0-23      (default: 4)
+    RETRY_UNTIL_HOUR                    Last hourly retry, local 0-23   (default: 9)
+
     TRACKAROO_SCORPTEC_TIMEOUT_SECONDS  Scorptec HTTP timeout          (default: 15)
     TRACKAROO_SCORPTEC_MAX_RETRIES      Scorptec fetch retries         (default: 2)
     TRACKAROO_SCORPTEC_RETRY_DELAY      Delay between Scorptec retries (default: 2.0)
@@ -204,6 +207,15 @@ BACKUP_KEEP = _env_int("TRACKAROO_BACKUP_KEEP", 14)
 
 # Polite gap between the two scrapers in the daily runner.
 SCRAPER_GAP_SECONDS = _env_float("TRACKAROO_SCRAPER_GAP_SECONDS", 2.0)
+
+# ── Scheduling (deploy/entrypoint*.sh -> run_daily.py --scheduled) ─────
+# Same env names the entrypoints always used (no TRACKAROO_ prefix), so one
+# setting drives both. The daily run starts at RUN_AT_HOUR; a retailer that
+# failed or came back incomplete is retried hourly up to and including
+# RETRY_UNTIL_HOUR (#8). Keep RETRY_UNTIL_HOUR < STALENESS_CHECK_HOUR (10) so
+# the staleness monitor judges a finished day.
+RUN_AT_HOUR = _env_int("RUN_AT_HOUR", 4)
+RETRY_UNTIL_HOUR = _env_int("RETRY_UNTIL_HOUR", 9)
 
 # ── Scorptec scraper tuning ───────────────────────────────────────────
 SCORPTEC_TIMEOUT_SECONDS = _env_int("TRACKAROO_SCORPTEC_TIMEOUT_SECONDS", 15)

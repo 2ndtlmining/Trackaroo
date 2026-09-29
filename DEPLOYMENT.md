@@ -82,6 +82,7 @@ backup on `docker rm`.
 | Setting | Default | Override |
 |---|---|---|
 | Daily run hour (local) | `04` | `-e RUN_AT_HOUR=6` |
+| Last hourly retry (local) | `09` | `-e RETRY_UNTIL_HOUR=8` |
 | Timezone | `Australia/Melbourne` | `-e TZ=Europe/Berlin` |
 | Backups retained | 14 | `-e TRACKAROO_BACKUP_KEEP=30` |
 | Dashboard host port | 3000 | `-p 8080:3000` |
@@ -89,7 +90,8 @@ backup on `docker rm`.
 
 On boot the container seeds the DB if missing, hydrates a fresh one from the
 snapshot history baked into the image (a no-op once snapshots exist), starts
-the dashboard, and runs the pipeline immediately **if today has no data yet**.
+the dashboard, and runs the pipeline immediately **for whatever today is still
+missing** (`--pending-only`; see [Retry until a cutoff](#retry-until-a-cutoff)).
 Every real full run backs up the DB automatically (opt out with `--no-backup`).
 
 ### Choosing the dashboard port
@@ -421,16 +423,20 @@ python check_staleness.py --dry-run    # print the alert instead of posting
 python check_staleness.py --threshold-days 2
 ```
 
-Severity is split deliberately:
+Severity is split deliberately (updated 29-Sep-2026, #8):
 
 | Condition | Status | Effect |
 |---|---|---|
 | DB missing, unreadable, or empty | ERROR | exit 1 + Discord alert |
-| Newest snapshot across **all** retailers older than the threshold | ERROR | exit 1 + Discord alert |
-| One retailer lagging while others are current (e.g. PCCG cooldown) | WARNING | logged only — the pipeline is running, data is merely degraded |
+| Newest snapshot older than the threshold, or **any** active retailer missing today (including one that has never reported, R1) | ERROR | exit 1 + Discord alert |
+| A retailer missing today while its scraper cooldown is active (e.g. PCCG's circuit breaker) | WARNING | logged only — expected, and the pipeline is still running |
 
-Default threshold is **1 day**: a run that has not fired *yet today* is not an
-outage, but two days of silence means one was missed.
+Default threshold is **0 days**: by `STALENESS_CHECK_HOUR` the pipeline has
+already had its full run window (`RUN_AT_HOUR` through `RETRY_UNTIL_HOUR`,
+hourly per-retailer retries — see [Retry until a cutoff](#retry-until-a-cutoff)
+below), so anything less than today's data is an outage, not "not yet". The
+old default of 1 day read yesterday's data as fresh at 10:00 and only alerted
+a full day late.
 
 **Alerts need `DISCORD_WEBHOOK_ALERT` set** (see `.env.example`). Without it the
 monitor still works, but signals only through its exit code — which is enough
@@ -440,15 +446,55 @@ for a scheduler, cron `MAILTO`, or an uptime checker.
 
 `deploy/entrypoint-single.sh` runs it **once a day at `STALENESS_CHECK_HOUR`**
 (default `10`), in its own hourly-poll loop alongside the weekly spec sync. The
-hour must sit *after* `RUN_AT_HOUR` (default `04`) — checking before the daily
-run has had its chance would report every morning as an outage.
+hour must sit *after* `RETRY_UNTIL_HOUR` (default `09`) — checking before the
+last hourly retry has had its chance would report every morning as an outage.
+In practice a `09:xx` retry normally finishes well before `10:00`: each
+scraper run completes in well under an hour, so the retry that starts at the
+top of the `RETRY_UNTIL_HOUR` hour is done long before the staleness check
+fires at the top of the next one.
+
+**Known gap (documented, not fixed by this task):** `scrape_runs` only gets a
+row once a scraper run *finishes* (`run_daily.record_outcomes`, after the
+whole batch for that invocation completes) — there is no "started, not yet
+finished" row written at scrape start. If a `09:xx` retry were ever still
+running past `10:00` (a genuinely hung scraper, not the normal case above),
+`check_staleness.py` has no way to see "in progress" and would report that
+retailer as an outage rather than "still running". Making the staleness check
+distinguish those two cases would require writing a row at scrape start and
+updating it at finish — a real change to `run_scraper`'s write pattern, not a
+small one — so it is left as a known limitation rather than implemented here.
+If this ever bites in practice, prefer lowering `RETRY_UNTIL_HOUR` (leaving a
+wider gap before `STALENESS_CHECK_HOUR`) over racing the two closer together.
 
 Running natively instead? Add it to cron, well clear of the pipeline:
 
 ```cron
-# Staleness check at 10:00, six hours after the 04:00 pipeline.
+# Staleness check at 10:00, one hour after the last 09:00 retry.
 0 10 * * * cd /opt/trackaroo && /usr/bin/python3 check_staleness.py >> logs/staleness.log 2>&1
 ```
+
+### Retry until a cutoff
+
+The daily pipeline no longer runs just once. `deploy/entrypoint-single.sh` and
+`deploy/entrypoint.sh` call `python run_daily.py --scheduled` every hour;
+`run_daily.py` itself decides what to do (`run_daily.in_retry_window`,
+`pending_retailers`):
+
+- Outside `RUN_AT_HOUR..RETRY_UNTIL_HOUR` (default `04:00`–`09:59`), `--scheduled`
+  is a no-op.
+- Inside the window, only retailers whose latest `scrape_runs` row for today is
+  **not** `ok` (or that have no row and no snapshot yet — the deploy-day case)
+  are scraped. A retailer that already succeeded today is left alone.
+- A boot catch-up runs `--pending-only` once immediately (no window check), so
+  a container that was down over `RUN_AT_HOUR` does not lose the day.
+
+This means a retailer that fails at `04:00` gets retried at `05:00`, `06:00`,
+… up to and including `RETRY_UNTIL_HOUR` — and because `RETRY_UNTIL_HOUR`
+(default `9`) is before `STALENESS_CHECK_HOUR` (default `10`), a retailer that
+eventually succeeds during a retry still shows up as fresh at the `10:00`
+check, instead of waiting for the alert the next day. The Discord digest and
+any pipeline alert are each sent at most once per day (`run_daily.claim_once`)
+so the hourly retries do not spam Discord.
 
 ## Config reference
 

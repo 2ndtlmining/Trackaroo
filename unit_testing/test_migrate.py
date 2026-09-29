@@ -35,6 +35,8 @@ from migrate import (
     migrate_add_specs_columns,
     migrate_add_specs_table,
     migrate_add_variant_name,
+    migrate_add_run_markers_table,
+    migrate_add_scrape_runs_table,
     migrate_backfill_retailer_sku,
     migrate_merge_duplicate_listings,
     migrate_widen_retailer_check,
@@ -789,3 +791,16 @@ class TestMigrateActiveRetailersTable:
 
     def test_schema_sql_creates_it_too(self, db):
         assert check_table_exists(db, "active_retailers")
+
+
+class TestMigrateRetryTables:
+    def test_creates_both_and_is_idempotent(self, tmp_path):
+        conn = get_connection(_make_legacy_db(tmp_path))
+        try:
+            for _ in range(2):
+                migrate_add_scrape_runs_table(conn)
+                migrate_add_run_markers_table(conn)
+            assert check_table_exists(conn, "scrape_runs")
+            assert check_table_exists(conn, "run_markers")
+        finally:
+            conn.close()

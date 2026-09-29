@@ -605,6 +605,60 @@ def migrate_add_active_retailers_table(conn: sqlite3.Connection, dry_run: bool =
     LOGGER.info("  [OK] active_retailers table created")
 
 
+SCRAPE_RUNS_TABLE_SQL = """
+CREATE TABLE scrape_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    retailer     TEXT    NOT NULL,
+    run_date     TEXT    NOT NULL,   -- YYYY-MM-DD, local: the snapshot_date calendar
+    started_at   TEXT    NOT NULL,   -- local 'YYYY-MM-DDTHH:MM:SS'
+    finished_at  TEXT    NOT NULL,
+    status       TEXT    NOT NULL
+                 CHECK (status IN ('ok', 'degraded', 'skipped', 'auth', 'failed', 'timeout')),
+    exit_code    INTEGER,
+    matched      INTEGER,            -- products matched this run; NULL when unknown
+    detail       TEXT
+)
+"""
+
+RUN_MARKERS_TABLE_SQL = """
+CREATE TABLE run_markers (
+    name        TEXT    NOT NULL,
+    run_date    TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (name, run_date)
+)
+"""
+
+
+def migrate_add_scrape_runs_table(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Create scrape_runs: one row per scraper run (#8 retry state, R3 freshness)."""
+    if check_table_exists(conn, "scrape_runs"):
+        LOGGER.info("  [SKIP] scrape_runs table already exists")
+        return
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would create scrape_runs table")
+        return
+    LOGGER.info("  [MIGRATE] Creating scrape_runs table...")
+    conn.execute(SCRAPE_RUNS_TABLE_SQL)
+    conn.execute("CREATE INDEX idx_scrape_runs_retailer_date ON scrape_runs (retailer, run_date)")
+    conn.commit()
+    LOGGER.info("  [OK] scrape_runs table created")
+
+
+def migrate_add_run_markers_table(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Create run_markers: once-per-day claims (digest, identical alerts) (#8)."""
+    if check_table_exists(conn, "run_markers"):
+        LOGGER.info("  [SKIP] run_markers table already exists")
+        return
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would create run_markers table")
+        return
+    LOGGER.info("  [MIGRATE] Creating run_markers table...")
+    conn.execute(RUN_MARKERS_TABLE_SQL)
+    conn.commit()
+    LOGGER.info("  [OK] run_markers table created")
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -647,6 +701,8 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: bookkeeping tables (Phase 3 robustness)
         migrate_add_active_retailers_table(conn, dry_run=args.dry_run)
+        migrate_add_scrape_runs_table(conn, dry_run=args.dry_run)
+        migrate_add_run_markers_table(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify

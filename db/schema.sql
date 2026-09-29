@@ -178,3 +178,35 @@ CREATE TABLE active_retailers (
     retailer    TEXT    PRIMARY KEY,
     position    INTEGER NOT NULL
 );
+
+-- ─────────────────────────────────────────────────────────────
+-- scrape_runs: one row per scraper subprocess run, written by run_daily.py.
+-- Drives the hourly per-retailer retry (#8: a retailer is done today once its
+-- latest run today is 'ok') and the health strip's "today 04:12, 312 matched"
+-- (R3). Keep in step with migrate.SCRAPE_RUNS_TABLE_SQL.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE scrape_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    retailer     TEXT    NOT NULL,
+    run_date     TEXT    NOT NULL,   -- YYYY-MM-DD, local: the snapshot_date calendar
+    started_at   TEXT    NOT NULL,   -- local 'YYYY-MM-DDTHH:MM:SS'
+    finished_at  TEXT    NOT NULL,
+    status       TEXT    NOT NULL
+                 CHECK (status IN ('ok', 'degraded', 'skipped', 'auth', 'failed', 'timeout')),
+    exit_code    INTEGER,
+    matched      INTEGER,            -- products matched this run; NULL when unknown
+    detail       TEXT
+);
+
+CREATE INDEX idx_scrape_runs_retailer_date ON scrape_runs (retailer, run_date);
+
+-- ─────────────────────────────────────────────────────────────
+-- run_markers: once-per-day claims, so hourly retries do not repeat the
+-- Discord digest or an identical pipeline alert (#8).
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE run_markers (
+    name        TEXT    NOT NULL,
+    run_date    TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (name, run_date)
+);
