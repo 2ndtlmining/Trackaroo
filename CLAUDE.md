@@ -93,14 +93,28 @@ Never delete price or product data. Products that roll out of scope get
 ## Pipeline conventions
 
 - Steps after ingest (delisted check, JSON mirror, alerts, digest) are
-  **best-effort**: wrap in `try/except` so they can never break a run that has
-  already collected good data.
+  **best-effort**: route them through `run_daily.best_effort()` (or a
+  `try/except` that logs). Health checks go through `guarded_check()`, so a
+  crashing check becomes an ERROR result. The backup runs in a `finally`.
 - The Discord digest is gated on zero ERROR-level health results. Checks that
   are informational must return WARNING, not ERROR, or they will suppress it.
 - Entry points call `config.setup_logging()`, not `logging.basicConfig` — it
   adds the date-stamped `logs/trackaroo-*.log` file handler. Use a plain
   append `FileHandler`, never a rotating one: the scrapers are separate
   processes sharing the file and concurrent rotation corrupts it.
+- Scrapers exit `0` ok, `2` degraded (a category empty / breaker tripped),
+  `3` skipped (cooldown), `4` auth rejected (`scraper/run_report.py`), and
+  flush a `RunReport` after **each category**, saving that category's snapshot
+  at the same moment. Never go back to one save at the end of `main()`: the
+  300 s timeout would cost the whole day (R2).
+- The schedule lives in `run_daily.py --scheduled` / `--pending-only`, not in
+  the entrypoints. A retailer is done today when its latest `scrape_runs` row
+  is `ok`.
+- `active_retailers`, `scrape_runs` and `run_markers` are bookkeeping
+  tables: DDL in `migrate.py` + `db/schema.sql`, access through
+  `pipeline_state.py`.
+- `unit_testing/conftest.py` blocks every non-loopback socket. A test that
+  trips it was going online: mock it, don't loosen the guard.
 - **PCCG's Algolia key allows 100 queries per IP per hour.** That is a hard
   fact of the key, confirmed against `GET /1/keys/<key>`
   (`"maxQueriesPerIPPerHour": 100`), not a guess from observed 429s. The

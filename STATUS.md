@@ -14,6 +14,38 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-09-29** — **Phase 3 "robustness" (#12, #7, #8, #11a, #14, #13, #9,
+  #10, R1–R4; #15 in part) on `feat/2026-09-29-robustness`.** One exception
+  can no longer skip the digest gate, the alerts or the backup, and the all-fail
+  path now alerts. A bad JSON file is skipped and reported. Scrapers exit 0/2/3/4,
+  so an empty scrape or a rejected PCCG key alerts while a cooldown only warns.
+  Every active retailer shows on the health strip ("missing" if never reported)
+  with its last scrape time and matched count. Failed retailers are retried
+  hourly until `RETRY_UNTIL_HOUR` (9), and the staleness monitor alerts the same
+  morning. Scrapers save per category, so a timeout keeps partial results. Page and
+  card telemetry, real-HTML fixtures, selector-drift and trailing-median drop
+  rules are in. CI: pytest, vitest, svelte-check, Playwright, `node server.js`
+  smoke and an offline `docker build` + boot. `/healthz` plus a Docker HEALTHCHECK
+  and build stamp. Backups are `quick_check`ed, pruned by age, and have a
+  restore drill. **Built but OFF until Phase 6**: `TRACKAROO_HEARTBEAT_URL`,
+  `TRACKAROO_BACKUP_MIRROR_DIR`, and the `GIT_SHA` build arg in the redeploy
+  script. Gate: pytest **1017 passed, 0 failed**, vitest **475 passed** (23
+  files), Playwright **71 passed** (Chromium), svelte-check **0 errors, 0
+  warnings** (433 files). **Deploy notes (Phase 6):** `migrate.py`
+  (run by bootstrap on boot) adds `active_retailers`, `scrape_runs` and
+  `run_markers`. On deploy day, retailers that already have today's snapshots
+  are not re-scraped. `TRACKAROO_BACKUP_KEEP` now counts days. Remove
+  `ALGOLIA_*` from prod `.env` unless deliberately overriding. Create the
+  mirror directory before pointing `TRACKAROO_BACKUP_MIRROR_DIR` at it —
+  Trackaroo never creates it. Set `TRACKAROO_HEARTBEAT_URL` to switch the
+  heartbeat on. Build with `--build-arg GIT_SHA=$(git rev-parse --short HEAD)`
+  so `/healthz` reports the real version. The image's `HEALTHCHECK
+  --start-period=5m` has not been tested against a real first-boot hydrate
+  (only CI's offline boot, which has no snapshot history to load). CI's
+  docker job only runs after a push, not on every local change. **Left in
+  #15**: dead Algolia knobs, logs mount + Docker log rotation, requirements
+  split and pinning, the run lock, and alert-delete scoping.
+
 - **2026-09-29** — **Web-speed close-out (issues #28, #5): full regression
   gate + a measured before/after against the built app.**
   Work closed out on `feat/2026-09-28-prices-and-speed` (commits

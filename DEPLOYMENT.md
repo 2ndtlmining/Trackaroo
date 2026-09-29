@@ -82,17 +82,22 @@ backup on `docker rm`.
 | Setting | Default | Override |
 |---|---|---|
 | Daily run hour (local) | `04` | `-e RUN_AT_HOUR=6` |
-| Last hourly retry (local) | `09` | `-e RETRY_UNTIL_HOUR=8` |
+| Last hourly retry of a failed retailer | `09` | `-e RETRY_UNTIL_HOUR=8` (keep it before `STALENESS_CHECK_HOUR`) |
+| Staleness monitor hour | `10` | `-e STALENESS_CHECK_HOUR=11` |
 | Timezone | `Australia/Melbourne` | `-e TZ=Europe/Berlin` |
-| Backups retained | 14 | `-e TRACKAROO_BACKUP_KEEP=30` |
+| Backups retained (days, newest per day) | 14 | `-e TRACKAROO_BACKUP_KEEP=30` |
 | Dashboard host port | 3000 | `-p 8080:3000` |
 | Spec-sync day / hour | Sun / 03 | `-e SPEC_SYNC_DOW=1 -e SPEC_SYNC_HOUR=12` |
 
 On boot the container seeds the DB if missing, hydrates a fresh one from the
 snapshot history baked into the image (a no-op once snapshots exist), starts
-the dashboard, and runs the pipeline immediately **for whatever today is still
-missing** (`--pending-only`; see [Retry until a cutoff](#retry-until-a-cutoff)).
-Every real full run backs up the DB automatically (opt out with `--no-backup`).
+the dashboard, and scrapes **whatever today is still missing**
+(`run_daily.py --pending-only`). From then on it calls
+`run_daily.py --scheduled` hourly. That runs the pipeline from `RUN_AT_HOUR`
+and retries each retailer whose run today failed, timed out, came back empty or
+was skipped by a cooldown, until `RETRY_UNTIL_HOUR`. The digest and an
+identical alert go out at most once a day. Every real run ends with a verified
+DB backup.
 
 ### Choosing the dashboard port
 
@@ -294,9 +299,8 @@ a few hours after the main daily run without any guard logic — it either picks
 up the missing PCCG data or exits quietly:
 
 ```cron
-30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py >> /var/log/trackaroo_daily.log 2>&1
-30 12 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --pccg >> /var/log/trackaroo_pccg_retry.log 2>&1
-30 18 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --pccg >> /var/log/trackaroo_pccg_retry.log 2>&1
+# Native equivalent of the container scheduler: hourly, run_daily decides.
+0 * * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --scheduled >> logs/cron.log 2>&1
 ```
 
 Key behaviours that make this safe:
@@ -313,12 +317,6 @@ Key behaviours that make this safe:
   has a snapshot (`Today Coverage` section), so a blocked PCCG shows up as a
   named warning — `pccg: no snapshot for today yet` — even when the retry
   respected the cooldown and exited quietly.
-
-For the all-in-one Docker container (Option C), add a host crontab entry that
-runs the same image one-shot (`docker run --rm -v "$PWD/db:/app/db" -v "$PWD/data:/app/data" -e RUN_ONCE=1 trackaroo`) — note this runs the full pipeline, so
-pick a time clear of the main scheduled run, or run a second container with the
-pipeline-only entrypoint (`deploy/entrypoint.sh`). The cooldown file lives in
-the shared `data/` directory, so the scoring is identical either way.
 
 > **First run:** the pipeline scrapes live retailer sites, so the dashboard
 > populates over the first minutes.
@@ -403,9 +401,13 @@ is internet-facing.
   pings it only after a run that leaves every active retailer complete for the
   day, so a stopped container, a dead host and a partial day all alert.
 - Build stamp: `docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t trackaroo .`
-- Pipeline health: `run_daily.py` exits non-zero and the daily log contains
-  `DB health: all N checks passed` on a good day. `health_checks.py` also runs
-  standalone (`--json-only` / `--db-only`).
+- Pipeline health: `run_daily.py` exits `0` when the run was clean (a PCCG
+  cooldown skip counts as clean), `1` when nothing could be scraped or the run
+  crashed, and `2` when some scraper or health check failed or the backup had
+  a problem. Good data is still kept and backed up. Scrapers exit `0` ok,
+  `2` incomplete, `3` skipped (cooldown), `4` credentials rejected. Every run
+  also writes one `scrape_runs` row per retailer, and the homepage health strip
+  shows its time.
 - Backups: verify `db/backups/` contains recent files:
   `ls -la db/backups | head`.
 - JSON backup integrity: `python export_snapshots.py --repair --dry-run` should
@@ -524,15 +526,13 @@ Severity is split deliberately (updated 29-Sep-2026, #8):
 | Condition | Status | Effect |
 |---|---|---|
 | DB missing, unreadable, or empty | ERROR | exit 1 + Discord alert |
-| Newest snapshot older than the threshold, or **any** active retailer missing today (including one that has never reported, R1) | ERROR | exit 1 + Discord alert |
-| A retailer missing today while its scraper cooldown is active (e.g. PCCG's circuit breaker) | WARNING | logged only — expected, and the pipeline is still running |
+| No data today at all | ERROR | exit 1 + Discord alert |
+| Any active retailer with nothing today, or never reported | ERROR | exit 1 + Discord alert |
+| PCCG missing today while its cooldown is active | WARNING | logged only |
 
-Default threshold is **0 days**: by `STALENESS_CHECK_HOUR` the pipeline has
-already had its full run window (`RUN_AT_HOUR` through `RETRY_UNTIL_HOUR`,
-hourly per-retailer retries — see [Retry until a cutoff](#retry-until-a-cutoff)
-below), so anything less than today's data is an outage, not "not yet". The
-old default of 1 day read yesterday's data as fresh at 10:00 and only alerted
-a full day late.
+Default threshold is **0 days**. The monitor runs at `STALENESS_CHECK_HOUR`
+(10), after the last retry at `RETRY_UNTIL_HOUR` (9), so by then a missing
+day is an outage and it alerts that same morning (#8).
 
 **Alerts need `DISCORD_WEBHOOK_ALERT` set** (see `.env.example`). Without it the
 monitor still works, but signals only through its exit code — which is enough
@@ -607,3 +607,21 @@ so the hourly retries do not spam Discord.
 Every knob is overridable via environment — see `config.py` and `.env.example`
 for the full list (paths, health-check thresholds, scraper tuning). The web
 frontend honours `TRACKAROO_DB` identically.
+
+### Environment variables added in Phase 3 (29-Sep-2026)
+
+| Variable | Default | What it does | Switched on |
+|---|---|---|---|
+| `RETRY_UNTIL_HOUR` | `9` | Last local hour a failed/incomplete retailer is retried (hourly from `RUN_AT_HOUR`) | now |
+| `SKIP_PIPELINE` | `0` | `1` = dashboard only: no catch-up, no scheduler, never scrapes | CI only |
+| `TRACKAROO_MATCH_DROP_RATIO` | `0.6` | ERROR when today's listings per retailer/category fall below this fraction of the trailing median | now |
+| `TRACKAROO_MATCH_DROP_WINDOW_DAYS` | `7` | Trailing window for that median | now |
+| `TRACKAROO_MATCH_DROP_MIN_HISTORY` | `3` | Prior days needed before the drop rule judges | now |
+| `TRACKAROO_BACKUP_KEEP` | `14` | Now **days** (newest backup per day) plus the 3 newest, not a file count | now |
+| `TRACKAROO_BACKUP_MAX_AGE_HOURS` | `36` | `check_backups` warns past this age | now |
+| `TRACKAROO_BACKUP_MIRROR_DIR` | unset (off) | Verified off-host copy of every backup (a NAS mount) | Phase 6 |
+| `TRACKAROO_HEARTBEAT_URL` | unset (off) | GET after a complete, clean day (healthchecks.io / Uptime Kuma push) | Phase 6 |
+| `GIT_SHA` (build arg) | `dev` | Baked in as `TRACKAROO_VERSION`, shown by `/healthz` | Phase 6 redeploy script |
+| `TRACKAROO_RUN_REPORT` | set by `run_daily` | Internal: where a scraper writes its per-category counts. Never set it yourself. | internal |
+| `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` | code default | Now commented out in `.env.example`; set only per "PCCG key rotation" | on rotation |
+| `TRACKAROO_SYNTHETIC` | `0` | Set by CI (`.github/workflows/ci.yml`) to skip frontend tests that need real-scrape price/retailer variety a synthetic fixture doesn't have | CI/test only |

@@ -24,7 +24,7 @@ Environment variables (all optional):
     TRACKAROO_MATCH_THRESHOLDS_JSON     Per-retailer match thresholds (JSON object)
     TRACKAROO_PRICE_ANOMALY_STD_DEVS    Price-anomaly sigma gate      (default: 3.0)
     TRACKAROO_MIN_HISTORY_FOR_ANOMALY   Min PRIOR points for the sigma test (default: 10)
-    TRACKAROO_PRICE_MOVE_PCT            Day-over-day move flagged on its own (default: 0.20)
+    TRACKAROO_PRICE_MOVE_PCT            Day-over-day move flagged on its own (default: 0.10)
 
     TRACKAROO_SCRAPER_TIMEOUT_SECONDS   Per-scraper subprocess timeout (default: 300)
     TRACKAROO_BATCH_SIZE                Algolia batch size            (default: 16)
