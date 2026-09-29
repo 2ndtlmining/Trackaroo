@@ -1061,6 +1061,24 @@ class TestCheckRunReport:
         assert r.status == CheckResult.ERROR
         assert "5 of 20" in r.message
 
+    def test_pccg_selector_drift_is_skipped(self):
+        """F14: an empty PCCG Algolia catalogue is already a block/credentials
+        error caught upstream (circuit breaker / AlgoliaAuthError) -- this
+        rule must not double-alert on it."""
+        c = {"pages_attempted": 1, "pages_fetched": 1, "cards_seen": 0, "cards_dropped": 0}
+        assert check_run_report({"retailer": "pccg", "categories": {"gpu": c}}) == []
+
+    def test_pccg_unparsed_cards_still_fires(self):
+        """Fix round 1: unparsed_cards is NOT part of the F14 pccg skip -- it
+        catches partial field-shape drift (e.g. an Algolia hit schema rename
+        dropping products_name on some hits) that the empty-catalogue circuit
+        breaker cannot see, since the catalogue here isn't empty."""
+        c = {"pages_attempted": 1, "pages_fetched": 1, "cards_seen": 20, "cards_dropped": 5}
+        [r] = check_run_report({"retailer": "pccg", "categories": {"gpu": c}})
+        assert r.check_name == "unparsed_cards_pccg_gpu"
+        assert r.status == CheckResult.ERROR
+        assert "5 of 20" in r.message
+
 
 def _drop_db(db_path, series):
     """series: {date: listing count} for pccg/gpu."""

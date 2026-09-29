@@ -525,11 +525,15 @@ def check_run_report(report: dict) -> list[CheckResult]:
     - more than 10% of cards unparseable: ERROR, drift likely;
     - fewer pages fetched than attempted: WARNING, a pagination hole.
 
-    PCCG is skipped for the first two rules (#14 F14): an entirely empty PCCG
-    Algolia catalogue is already caught upstream as a circuit-breaker trip or
-    an AlgoliaAuthError (scraper/pccg.py scrape_category/algolia_fetch_catalogue)
-    -- alerting again here would just double up on the same event under a
-    different name.
+    PCCG is skipped for the selector_drift rule only (#14 F14): an entirely
+    empty PCCG Algolia catalogue is already caught upstream as a
+    circuit-breaker trip or an AlgoliaAuthError
+    (scraper/pccg.py scrape_category/algolia_fetch_catalogue) -- alerting
+    again here would just double up on the same event under a different name.
+    unparsed_cards is NOT skipped for PCCG: it catches partial field-shape
+    drift (e.g. an Algolia hit schema rename dropping products_name on some
+    hits) that the empty-catalogue circuit breaker cannot see, because the
+    catalogue isn't empty -- only some of its hits fail to parse.
     """
     results: list[CheckResult] = []
     retailer = report.get("retailer", "unknown")
@@ -539,18 +543,17 @@ def check_run_report(report: dict) -> list[CheckResult]:
         fetched = c.get("pages_fetched", 0)
         seen = c.get("cards_seen", 0)
         dropped = c.get("cards_dropped", 0)
-        if retailer != "pccg":
-            if fetched and not seen:
-                results.append(CheckResult(
-                    f"selector_drift_{retailer}_{category}", CheckResult.ERROR,
-                    f"selector drift at {where}: {fetched} page(s) fetched but 0 product cards "
-                    f"found - the retailer's markup probably changed",
-                ))
-            elif seen and dropped / seen > UNPARSED_CARD_RATIO:
-                results.append(CheckResult(
-                    f"unparsed_cards_{retailer}_{category}", CheckResult.ERROR,
-                    f"{where}: {dropped} of {seen} product cards could not be parsed - selector drift likely",
-                ))
+        if retailer != "pccg" and fetched and not seen:
+            results.append(CheckResult(
+                f"selector_drift_{retailer}_{category}", CheckResult.ERROR,
+                f"selector drift at {where}: {fetched} page(s) fetched but 0 product cards "
+                f"found - the retailer's markup probably changed",
+            ))
+        elif seen and dropped / seen > UNPARSED_CARD_RATIO:
+            results.append(CheckResult(
+                f"unparsed_cards_{retailer}_{category}", CheckResult.ERROR,
+                f"{where}: {dropped} of {seen} product cards could not be parsed - selector drift likely",
+            ))
         if fetched < attempted:
             results.append(CheckResult(
                 f"pagination_hole_{retailer}_{category}", CheckResult.WARNING,
