@@ -790,6 +790,15 @@ def run(args: argparse.Namespace) -> int:
             # finally, so an import failure here must not escape it either.
             best_effort("Database backup", _backup)
 
+    # ── External heartbeat (#9) ─────────────────────────────────────
+    # Only when this run was clean AND every active retailer now has a
+    # complete scrape today -- a partial day must stay silent so the
+    # external monitor notices. A no-op until TRACKAROO_HEARTBEAT_URL is set.
+    if not (scraper_lines or failed or args.dry_run):
+        if not pending_retailers(list(ACTIVE_RETAILERS), today_iso):
+            import heartbeat
+            best_effort("Heartbeat", heartbeat.ping)
+
     return RUN_EXIT_DEGRADED if (scraper_lines or failed) else RUN_EXIT_OK
 
 

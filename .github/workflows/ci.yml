@@ -69,6 +69,8 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/)
           cat server.log
           test "$code" = 200
+          curl -fsS http://127.0.0.1:3100/healthz | tee healthz.json
+          grep -q '"ok":true' healthz.json
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -83,20 +85,19 @@ jobs:
       # The Dockerfile bakes data/ in as seed history; it is gitignored, so
       # give the build an empty one (bootstrap-data.sh skips an empty dir).
       - run: mkdir -p data
-      - run: docker build -t trackaroo:ci .
+      - run: docker build --build-arg GIT_SHA=${GITHUB_SHA::7} -t trackaroo:ci .
       - name: Boot smoke test (no network, pipeline disabled)
         run: |
           docker run -d --name trackaroo-ci --network none -e SKIP_PIPELINE=1 trackaroo:ci
-          ok=
-          for i in $(seq 1 60); do
-            if docker exec trackaroo-ci node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status===200?0:1),()=>process.exit(1))"; then
-              ok=1
-              break
-            fi
-            sleep 2
+          status=
+          for i in $(seq 1 40); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' trackaroo-ci)
+            [ "$status" = healthy ] && break
+            sleep 10
           done
           docker logs trackaroo-ci
-          test -n "$ok"
+          test "$status" = healthy
+          docker exec trackaroo-ci node -e "fetch('http://127.0.0.1:3000/healthz').then(r=>r.json()).then(j=>{console.log(JSON.stringify(j));process.exit(j.ok&&j.version===process.argv[1]?0:1)})" "${GITHUB_SHA::7}"
           if docker logs trackaroo-ci 2>&1 | grep -E 'Starting pipeline|Scraping '; then
             echo "The container tried to scrape." >&2
             exit 1

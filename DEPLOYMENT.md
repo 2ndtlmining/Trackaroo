@@ -349,8 +349,16 @@ is internet-facing.
 
 ## Health / operational checks
 
-- Dashboard health endpoint: the app serves pages over HTTP; monitor
-  `/` returning 200.
+- Dashboard health endpoint: `GET /healthz` returns
+  `{"ok": true, "version": "<git sha>", "retailers": [...]}` (503 when the DB
+  cannot be opened). The image's `HEALTHCHECK` polls it, so `docker ps` shows
+  `healthy`. Freshness is in the body but never makes it unhealthy.
+- External heartbeat (off until Phase 6): create a check at healthchecks.io
+  (free tier) or an Uptime Kuma "push" monitor with a ~26h grace period, and
+  set `TRACKAROO_HEARTBEAT_URL` to its ping URL in `.env`. `run_daily.py`
+  pings it only after a run that leaves every active retailer complete for the
+  day, so a stopped container, a dead host and a partial day all alert.
+- Build stamp: `docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t trackaroo .`
 - Pipeline health: `run_daily.py` exits non-zero and the daily log contains
   `DB health: all N checks passed` on a good day. `health_checks.py` also runs
   standalone (`--json-only` / `--db-only`).

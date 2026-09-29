@@ -106,6 +106,19 @@ COPY --from=web /app/web/svelte.config.js ./web/svelte.config.js
 # needs the dirs to exist so an unmounted `docker run` still works.
 RUN mkdir -p /app/db/backups /app/data
 
+# Build stamp (#9, #3): what is actually running shows in /healthz.
+#   docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t trackaroo .
+# Declared last so a new SHA only rebuilds this layer.
+ARG GIT_SHA=dev
+ENV TRACKAROO_VERSION=$GIT_SHA
+
+# /healthz answers 200 once node is up and the DB opens. start-period covers a
+# first boot that hydrates the whole snapshot history before node starts.
+# Docker only *reports* unhealthy (docker ps); restarting on it needs autoheal
+# or an external monitor (Phase 6).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+
 EXPOSE 3000
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/trackaroo-entrypoint"]

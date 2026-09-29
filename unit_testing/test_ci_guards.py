@@ -47,3 +47,12 @@ def test_ci_workflow_boots_the_image_offline():
     assert "python -m pytest -q" in ci
     assert "npm run test:e2e" in ci
     assert "node server.js" in ci
+
+
+def test_dockerfile_has_a_healthcheck_on_healthz_and_a_version_stamp():
+    text = (REPO / "Dockerfile").read_text(encoding="utf-8")
+    assert "ARG GIT_SHA=dev" in text
+    assert "TRACKAROO_VERSION=$GIT_SHA" in text
+    [line] = [l for l in text.splitlines() if l.startswith("HEALTHCHECK")]
+    assert "--start-period=5m" in line
+    assert "/healthz" in text.split("HEALTHCHECK", 1)[1]
