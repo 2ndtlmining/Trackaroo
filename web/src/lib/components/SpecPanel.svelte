@@ -91,7 +91,7 @@
 			{/if}
 			{#if msrp}
 				<div class="flex items-center justify-between gap-3 px-3 py-2">
-					<span class="text-text-muted">Launch MSRP</span>
+					<span class="text-text-muted">US launch MSRP</span>
 					<span class="num font-medium text-text">{msrp}</span>
 				</div>
 			{/if}
@@ -122,7 +122,7 @@
 			{/if}
 			{#if msrp}
 				<div class="flex items-center justify-between gap-3 px-3 py-2">
-					<span class="text-text-muted">Launch MSRP</span>
+					<span class="text-text-muted">US launch MSRP</span>
 					<span class="num font-medium text-text">{msrp}</span>
 				</div>
 			{/if}

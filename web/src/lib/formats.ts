@@ -11,13 +11,17 @@ export function formatAud(value: number): string {
 	return formatAudFull(value);
 }
 
+// Launch MSRPs are US dollars. Printed as "$1,999" beside AUD prices they read
+// as AUD -- "$1,999" next to "$7,499" on the RTX 5090 page (U3). The prefix
+// is part of the value so no caller can forget it.
 export function formatUsd(value: number): string {
-	return new Intl.NumberFormat('en-US', {
+	const n = new Intl.NumberFormat('en-US', {
 		style: 'currency',
 		currency: 'USD',
 		minimumFractionDigits: 0,
 		maximumFractionDigits: 2
 	}).format(value);
+	return `US${n}`;
 }
 
 export function formatSignedAud(value: number): string {

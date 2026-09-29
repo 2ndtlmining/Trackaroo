@@ -13,6 +13,7 @@ import {
 	formatProcess,
 	formatRelative,
 	formatSignedAud,
+	formatUsd,
 	freshnessLabel,
 	stockLabel,
 	titleCase
@@ -48,6 +49,13 @@ describe('formatSignedAud', () => {
 
 	it('returns zero without a sign', () => {
 		expect(formatSignedAud(0)).toBe('$0');
+	});
+});
+
+describe('formatUsd (U3)', () => {
+	it('never renders a bare dollar sign next to AUD prices', () => {
+		expect(formatUsd(1999)).toBe('US$1,999');
+		expect(formatUsd(549.99)).toBe('US$549.99');
 	});
 });
 

@@ -310,8 +310,8 @@ describe('SpecPanel', () => {
 
 	it('shows the launch MSRP when present', () => {
 		const body = renderComponent(SpecPanel, { spec: specRow({ launch_msrp_usd: 1999 }) });
-		expect(body).toContain('Launch MSRP');
-		expect(body).toContain('$1,999');
+		expect(body).toContain('US launch MSRP');
+		expect(body).toContain('US$1,999');
 	});
 
 	it('shows GPU detail rows (die, bandwidth, process)', () => {

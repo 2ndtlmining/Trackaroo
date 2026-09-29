@@ -13,7 +13,7 @@ export function clock(mhz: number | null): string | null {
 
 const sharedSpecRows: CompareRow[] = [
 	{
-		label: 'Launch MSRP (USD)',
+		label: 'US launch MSRP',
 		value: (e) => (e.spec?.launch_msrp_usd ? formatUsd(e.spec.launch_msrp_usd) : null)
 	},
 	{

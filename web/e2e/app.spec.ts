@@ -148,6 +148,18 @@ test.describe('navigation & layout', () => {
 		);
 	});
 
+	test('/gpus and /cpus redirect to the category index (U2)', async ({ page }) => {
+		const gpus = await page.request.get('/gpus?q=5060', { maxRedirects: 0 });
+		expect(gpus.status()).toBe(301);
+		expect(gpus.headers()['location']).toBe('/products?category=gpu&q=5060');
+		const cpus = await page.request.get('/cpus', { maxRedirects: 0 });
+		expect(cpus.status()).toBe(301);
+		expect(cpus.headers()['location']).toBe('/products?category=cpu');
+
+		await goto(page, '/gpus');
+		await expect(page.getByRole('heading', { name: 'GPUs', level: 1 })).toBeVisible();
+	});
+
 	test('footer shows the product tagline on every page', async ({ page }) => {
 		await goto(page, '/products');
 		await expect(page.getByText('Trackaroo — AU CPU & GPU price tracker')).toBeVisible();

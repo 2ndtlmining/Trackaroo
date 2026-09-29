@@ -114,7 +114,7 @@ describe('buildCompareRows', () => {
 		for (const expected of [
 			'Best price — scorptec',
 			'Cheapest in stock',
-			'Launch MSRP (USD)',
+			'US launch MSRP',
 			'Architecture',
 			'GPU die',
 			'VRAM',
@@ -169,7 +169,7 @@ describe('buildCompareRows', () => {
 		const e = entry();
 		expect(byLabel.get('Best price — scorptec')!(e)).toContain('849');
 		expect(byLabel.get('Cheapest in stock')!(e)).toContain('849');
-		expect(byLabel.get('Launch MSRP (USD)')!(e)).toContain('299');
+		expect(byLabel.get('US launch MSRP')!(e)).toBe('US$299');
 		expect(byLabel.get('VRAM')!(e)).toBe('16GB');
 		expect(byLabel.get('Memory bus')!(e)).toBe('128-bit');
 		expect(byLabel.get('Base clock')!(e)).toBe('2.3 GHz');
