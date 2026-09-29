@@ -1,4 +1,5 @@
 """The external heartbeat (#9): opt-in, best-effort, only after a complete day."""
+import logging
 import unittest.mock
 
 import requests
@@ -28,6 +29,41 @@ class TestPing:
             raise requests.ConnectionError("down")
         monkeypatch.setattr(heartbeat.requests, "get", boom)
         assert heartbeat.ping("https://hc-ping.example/uuid") is False
+
+    def test_a_connection_error_never_logs_the_secret_token(self, monkeypatch, caplog):
+        """fix-round-1 I1: the ping URL's path is a healthchecks.io-style secret."""
+        token_url = "https://hc-ping.example/SENTINEL-TOKEN-ABC123"
+
+        def boom(*a, **k):
+            # requests/urllib3 embed the full URL in exception text -- this is
+            # exactly the shape a real MaxRetryError message takes.
+            raise requests.ConnectionError(
+                f"HTTPSConnectionPool(host='hc-ping.example', port=443): "
+                f"Max retries exceeded with url: {token_url}"
+            )
+
+        monkeypatch.setattr(heartbeat.requests, "get", boom)
+        with caplog.at_level(logging.WARNING):
+            assert heartbeat.ping(token_url) is False
+        assert "SENTINEL-TOKEN-ABC123" not in caplog.text
+        for record in caplog.records:
+            assert "SENTINEL-TOKEN-ABC123" not in record.getMessage()
+
+    def test_a_4xx_response_never_logs_the_secret_token(self, monkeypatch, caplog):
+        """fix-round-1 I1: same guard for an HTTPError carrying a response."""
+        token_url = "https://hc-ping.example/SENTINEL-TOKEN-XYZ789"
+        resp = unittest.mock.Mock(status_code=404)
+        resp.raise_for_status.side_effect = requests.HTTPError(
+            f"404 Client Error: Not Found for url: {token_url}", response=resp
+        )
+        monkeypatch.setattr(heartbeat.requests, "get", lambda *a, **k: resp)
+        with caplog.at_level(logging.WARNING):
+            assert heartbeat.ping(token_url) is False
+        assert "SENTINEL-TOKEN-XYZ789" not in caplog.text
+        for record in caplog.records:
+            assert "SENTINEL-TOKEN-XYZ789" not in record.getMessage()
+        # The status code is still useful and not secret -- keep reporting it.
+        assert "404" in caplog.text
 
 
 def _args(*argv):
