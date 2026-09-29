@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import ProductRow from '$lib/components/ProductRow.svelte';
+	import PageHead from '$lib/components/PageHead.svelte';
 	import { groupForIndex } from '$lib/productIndex';
 	import { searchProducts } from '$lib/productSearch';
 	import type { ProductGroup } from '$lib/server/repos';
@@ -86,9 +87,10 @@
 
 <svelte:window onkeydown={onWindowKey} />
 
-<svelte:head>
-	<title>Trackaroo — {heading}</title>
-</svelte:head>
+<PageHead
+	title={heading}
+	description={`Every tracked ${heading === 'CPUs' ? 'CPU' : 'GPU'} with today's cheapest AU price.`}
+/>
 
 <div>
 	<div class="flex flex-wrap items-baseline justify-between gap-2">

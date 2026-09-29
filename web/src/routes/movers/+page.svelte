@@ -6,6 +6,7 @@
 	import PriceChange from '$lib/components/PriceChange.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Sparkline from '$lib/components/Sparkline.svelte';
+	import PageHead from '$lib/components/PageHead.svelte';
 	import { moverColumnValue, sortMovers, type ColSortKey, type MoverSortKey } from '$lib/movers';
 	import type { Mover } from '$lib/server/repos';
 	import type { ChangeDirection } from '$lib/types';
@@ -82,9 +83,10 @@
 	const hasTrend = $derived(sorted.some((m) => (m.sparkline?.length ?? 0) >= 2));
 </script>
 
-<svelte:head>
-	<title>Trackaroo — Movers</title>
-</svelte:head>
+<PageHead
+	title="Movers"
+	description="The biggest AU CPU and GPU price changes over the last day, week or month."
+/>
 
 <div class="space-y-6">
 	<div class="flex flex-wrap items-center justify-between gap-4">

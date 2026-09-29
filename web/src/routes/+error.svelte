@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import PageHead from '$lib/components/PageHead.svelte';
 
 	/**
 	 * Without this, every failure — a 404 from an unknown product id, a 400 from
@@ -22,9 +23,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{status} — Trackaroo</title>
-</svelte:head>
+<PageHead title={String(status)} description={message} />
 
 <div class="mx-auto max-w-xl py-16 text-center">
 	<p class="num text-5xl font-semibold text-text-muted">{status}</p>

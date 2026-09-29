@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Badge from '$lib/components/Badge.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
+	import PageHead from '$lib/components/PageHead.svelte';
 	import { buildCompareRows } from '$lib/compareRows';
 	import type { CompareEntry } from '$lib/server/repos';
 
@@ -13,9 +14,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>Trackaroo — Compare</title>
-</svelte:head>
+<PageHead title="Compare" description="Specs and current best AU prices side by side." />
 
 <div class="space-y-6">
 	<div>

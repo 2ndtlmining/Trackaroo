@@ -123,11 +123,11 @@ test.describe('navigation & layout', () => {
 		const nav = page.getByRole('navigation', { name: 'Main' });
 
 		await nav.getByRole('link', { name: 'GPUs', exact: true }).click();
-		await expect(page).toHaveTitle('Trackaroo — GPUs');
+		await expect(page).toHaveTitle('GPUs · Trackaroo');
 		await expect(page).toHaveURL(/category=gpu/);
 
 		await nav.getByRole('link', { name: 'Movers', exact: true }).click();
-		await expect(page).toHaveTitle('Trackaroo — Movers');
+		await expect(page).toHaveTitle('Movers · Trackaroo');
 
 		await nav.getByRole('link', { name: 'Deals', exact: true }).click();
 		await expect(page).toHaveTitle('Deals · Trackaroo');
@@ -160,6 +160,35 @@ test.describe('navigation & layout', () => {
 		await expect(page.getByTitle('Distinct days with a snapshot')).toHaveCount(0);
 		await expect(page.getByTitle('SQLite database size')).toHaveCount(0);
 		await expect(page.getByLabel('Data health')).toBeVisible();
+	});
+
+	test('serves exactly one title and one description on every route (#25)', async ({ page }) => {
+		for (const path of [
+			'/',
+			'/deals',
+			'/movers',
+			'/products?category=gpu',
+			'/products?category=cpu',
+			'/compare',
+			'/product/1',
+			'/product/999999'
+		]) {
+			const html = await (await page.request.get(path)).text();
+			// Only <head>: Sparkline SVGs on /movers carry their own <title> for
+			// accessibility, so counting the whole document would over-count.
+			const head = html.split('</head>')[0];
+			expect(head.match(/<title>/g)?.length, path).toBe(1);
+			expect(head.match(/<meta name="description"/g)?.length, path).toBe(1);
+			expect(html, path).toContain('property="og:title"');
+			expect(html, path).toContain('rel="manifest"');
+		}
+	});
+
+	test('names the product, price and retailer in a product page title (#25)', async ({ page }) => {
+		await goto(page, '/product/1');
+		// Anchored to the real productPageTitle() format so a regression (e.g.
+		// dropping the price/retailer clause) actually fails this test.
+		await expect(page).toHaveTitle(/^.+ — \$[\d,.]+ at .+ · Trackaroo$/);
 	});
 });
 
@@ -200,6 +229,16 @@ test('respects a stored light theme on load', async ({ page }) => {
 		await page.reload();
 		await page.waitForLoadState('networkidle');
 		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+	});
+
+	test('native controls and browser chrome follow the theme (#25)', async ({ page }) => {
+		await page.addInitScript(() => localStorage.setItem('trackaroo-theme', 'light'));
+		await goto(page, '/');
+		await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
+		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f6f7f9');
+		await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+		await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
+		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#0f1117');
 	});
 });
 

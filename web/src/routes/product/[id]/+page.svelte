@@ -5,9 +5,11 @@
 	import OfferList from '$lib/components/OfferList.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
+	import PageHead from '$lib/components/PageHead.svelte';
 	import type { AlertChannel } from '$lib/types';
 	import { formatDate, formatRelative, titleCase } from '$lib/formats';
 	import { retailerLabel } from '$lib/filters';
+	import { productPageTitle } from '$lib/head';
 	import { generationTierLabel } from '$lib/tiers';
 	import { buildHeadline } from '$lib/productHeadline';
 	import { toListingDisplays } from '$lib/listingsPanel';
@@ -81,9 +83,14 @@ label:
 	const headline = $derived(buildHeadline(offers, data.band, data.stats));
 </script>
 
-<svelte:head>
-	<title>Trackaroo — {product.brand} {product.model}</title>
-</svelte:head>
+<PageHead
+	titleOverride={productPageTitle(
+		`${product.model}${product.variant ? ` · ${product.variant}` : ''}`,
+		headline.currentPrice,
+		headline.currentRetailer ? retailerLabel(headline.currentRetailer) : null
+	)}
+	description={`${product.brand} ${product.model}: AU price history, today's cheapest offer and where to buy.`}
+/>
 
 <div class="space-y-6">
 	<div>
