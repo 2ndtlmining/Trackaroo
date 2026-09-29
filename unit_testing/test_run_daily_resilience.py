@@ -34,6 +34,30 @@ GOOD = {
     }],
 }
 
+# Parses fine as JSON (a dict with a "products" list) but the third entry is
+# not itself a product object -- ingest_file's per-product except only
+# catches sqlite3.Error/KeyError/TypeError/ValueError, so the AttributeError
+# from `"not-a-product-object".get(...)` propagates out after the first two
+# entries have already been inserted (uncommitted) on the connection (I1).
+BAD_AFTER_TWO_GOOD = {
+    "retailer": "pccg", "category": "cpu", "matched": 2,
+    "products": [
+        {
+            "watchlist_model": "Ryzen 9 9950X3D", "watchlist_category": "cpu",
+            "watchlist_brand": "AMD", "watchlist_gen_tier": "current",
+            "retailer": "pccg", "price_aud": 899.0, "stock_status": "in_stock",
+            "url": "https://www.pccasegear.com/products/222222",
+        },
+        {
+            "watchlist_model": "Ryzen 5 9600X", "watchlist_category": "cpu",
+            "watchlist_brand": "AMD", "watchlist_gen_tier": "current",
+            "retailer": "pccg", "price_aud": 349.0, "stock_status": "in_stock",
+            "url": "https://www.pccasegear.com/products/222223",
+        },
+        "not-a-product-object",
+    ],
+}
+
 
 def _boom(*a, **k):
     raise sqlite3.OperationalError("no such table: products")
@@ -149,6 +173,22 @@ class TestBadJsonFile:
 
         assert stats["inserted"] == 1
         assert stats["bad_files"] == [bad.name]
+
+    def test_a_crashing_file_rolls_back_its_own_partial_inserts(self, db, tmp_path, monkeypatch):
+        """I1: ingest_file only commits once, at the end of its own loop, so a
+        crash partway through (a non-dict product after two valid ones) must
+        not leave those two rows to be swept up by a later commit -- neither
+        the next file's nor the run's own final one."""
+        monkeypatch.setattr(run_daily, "DATA_DIR", tmp_path)
+        _today_file(tmp_path, "scorptec", "cpu", json.dumps(GOOD))
+        bad = _today_file(tmp_path, "pccg", "cpu", json.dumps(BAD_AFTER_TWO_GOOD))
+
+        stats = run_daily.ingest_today(db)
+        db.commit()  # simulate run()'s own final commit
+
+        assert stats["bad_files"] == [bad.name]
+        assert stats["inserted"] == 1  # only the good file's row
+        assert db.execute("SELECT COUNT(*) FROM price_snapshots").fetchone()[0] == 1
 
     def test_the_run_reports_it_as_an_error_and_alerts(self, isolated_pipeline, monkeypatch):
         _today_file(isolated_pipeline.data_dir, "pccg", "cpu", "{not json")

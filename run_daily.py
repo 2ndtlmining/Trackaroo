@@ -180,6 +180,18 @@ def ingest_today(conn: Any, dry_run: bool = False) -> Dict[str, Any]:
             stats = ingest_file(conn, f, dry_run=dry_run)
         except Exception:  # noqa: BLE001 - one file must never stop the rest
             LOGGER.exception("Ingest of %s crashed - skipping it", f.name)
+            # ingest_file() only commits once, at the very end of its own
+            # loop (ingest.py) -- a crash partway through a file (e.g. a
+            # non-dict entry in "products") leaves whatever it already
+            # inserted uncommitted on this shared connection. Every earlier
+            # file already committed its own work via that same call, so the
+            # pending transaction at this point belongs entirely to the file
+            # that just crashed; rolling it back is exactly "this file wrote
+            # nothing" without touching any prior file's committed rows.
+            # Without this, those rows ride along on the next successful
+            # file's commit() (or this run's own final commit) even though
+            # the file is reported in bad_files (I1).
+            conn.rollback()
             total_stats["errors"] += 1
             total_stats["bad_files"].append(f.name)
             continue
@@ -294,8 +306,17 @@ def run_db_checks() -> List[CheckResult]:
 
 def send_pipeline_alert(lines: List[str]) -> None:
     """Post a pipeline-issue alert to DISCORD_WEBHOOK_ALERT; never raises."""
-    from notify_discord import send_alert
-    best_effort("Pipeline alert", send_alert, lines)
+    def _send() -> None:
+        from notify_discord import send_alert
+        send_alert(lines)
+
+    # The import lives inside the guarded callable (not above this call) so
+    # an import failure is caught by best_effort too, same as a delivery
+    # failure -- otherwise it escapes send_pipeline_alert entirely and (from
+    # the all-failed/scrape-only/final-alert call sites) can trip main()'s
+    # outer crash handler into sending a second, redundant "crashed" alert
+    # (M2).
+    best_effort("Pipeline alert", _send)
 
 
 # Display label and module path per retailer, keyed by ACTIVE_RETAILERS. A
@@ -490,8 +511,14 @@ def run(args: argparse.Namespace) -> int:
             if failed:
                 LOGGER.warning("Skipping Discord digest - %d health check error(s).", len(failed))
             else:
-                from notify_discord import run as run_notify
-                best_effort("Discord digest", run_notify)
+                def _run_digest() -> None:
+                    from notify_discord import run as run_notify
+                    run_notify()
+
+                # Import inside the guarded callable (M2): a notify_discord
+                # import failure must be caught by best_effort, not escape
+                # into the finally block and beyond.
+                best_effort("Discord digest", _run_digest)
 
             # ── Price-drop & restock alerts ───────────────────────────
             # Same clean-run gating as the digest: no "buy now" built on
@@ -528,9 +555,14 @@ def run(args: argparse.Namespace) -> int:
         # health check -- can skip it (#12). Scrape-only and dry runs wrote
         # nothing and returned earlier / are excluded here.
         if not args.no_backup and not args.dry_run:
-            from backup_db import backup_database
+            def _backup() -> None:
+                from backup_db import backup_database
+                backup_database(keep=BACKUP_KEEP)
+
             LOGGER.info("\n%s\nBacking up database:\n%s", "=" * 60, "=" * 60)
-            best_effort("Database backup", backup_database, keep=BACKUP_KEEP)
+            # Import inside the guarded callable (M2): this runs in a
+            # finally, so an import failure here must not escape it either.
+            best_effort("Database backup", _backup)
 
     return RUN_EXIT_DEGRADED if (scraper_lines or failed) else RUN_EXIT_OK
 
