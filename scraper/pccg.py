@@ -17,7 +17,7 @@ import random
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
 
 import requests
@@ -471,6 +471,7 @@ def algolia_fetch_catalogue(
     category_filter: str,
     hits_per_page: int = ALGOLIA_CATALOGUE_HITS_PER_PAGE,
     max_pages: int = ALGOLIA_CATALOGUE_MAX_PAGES,
+    stats: Optional[Dict[str, int]] = None,
 ) -> list[Dict[str, Any]]:
     """Fetch an entire PCCG category in as few Algolia queries as possible.
 
@@ -505,9 +506,11 @@ def algolia_fetch_catalogue(
     """
     filter_str = f'categories.lvl0:"{category_filter}"'
     all_products: list[Dict[str, Any]] = []
+    counts = stats if stats is not None else {}
     page = 0
 
     while page < max_pages:
+        counts["pages_attempted"] = counts.get("pages_attempted", 0) + 1
         params_dict = {
             "query": "",
             "hitsPerPage": hits_per_page,
@@ -550,7 +553,14 @@ def algolia_fetch_catalogue(
 
                 result = data["results"][0]
                 hits = result.get("hits", [])
-                all_products.extend(_extract_products(hits))
+                extracted = _extract_products(hits)
+                counts["pages_fetched"] = counts.get("pages_fetched", 0) + 1
+                counts["cards_seen"] = counts.get("cards_seen", 0) + len(hits)
+                counts["cards_dropped"] = counts.get("cards_dropped", 0) + len(hits) - len(extracted)
+                if len(extracted) < len(hits):
+                    LOGGER.warning("Dropped %d of %d Algolia hit(s) with no product name",
+                                   len(hits) - len(extracted), len(hits))
+                all_products.extend(extracted)
 
                 nb_pages = result.get("nbPages", 1)
                 retries_exhausted = False
@@ -585,6 +595,7 @@ def algolia_fetch_catalogue(
 def scrape_category(
     category: str,
     watchlist: list[WatchlistProduct],
+    report: Optional[RunReport] = None,
 ) -> Tuple[list[Dict[str, Any]], set[int], bool]:
     """Scrape a single category (cpu or gpu) from PCCG via Algolia API.
 
@@ -603,7 +614,9 @@ def scrape_category(
     breaker_tripped = False
 
     # One query for the whole category — the watchlist is matched locally.
-    catalogue = algolia_fetch_catalogue(category_filter)
+    catalogue = algolia_fetch_catalogue(
+        category_filter, stats=report.category(category) if report is not None else None
+    )
 
     # An entirely empty category is a block, not an empty shop: PCCG always
     # stocks GPUs and CPUs, so nothing back means the request never really
@@ -700,7 +713,7 @@ def main() -> int:
 
     try:
         for i, category in enumerate(["cpu", "gpu"]):
-            results, matched, tripped = scrape_category(category, watchlist)
+            results, matched, tripped = scrape_category(category, watchlist, report=report)
             # Saved per category so a timeout during GPUs keeps the CPUs (R2).
             save_category_snapshot(DATA_DIR, "pccg", category, today, watchlist, results, matched)
             report.set(category, matched=len(results))

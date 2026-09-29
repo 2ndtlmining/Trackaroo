@@ -394,15 +394,20 @@ class TestFetchPage:
         assert len(calls) == 1  # No retry on first success
 
     def test_non_200_then_200_retries(self, monkeypatch):
+        """#14: a 503 used to be retried immediately, a burst at a CDN that had
+        just said no. It now backs off before every retry."""
         from scraper.scorptec import fetch_page
+        import config
         responses = [self._resp(503), self._resp(200, "recovered")]
+        sleeps = []
 
         def _get(url, headers=None, timeout=None):
             return responses.pop(0)
 
         monkeypatch.setattr("scraper.scorptec.requests.get", _get)
-        monkeypatch.setattr("scraper.scorptec.time.sleep", lambda s: None)
+        monkeypatch.setattr("scraper.scorptec.time.sleep", sleeps.append)
         assert fetch_page("https://example.com") == "recovered"
+        assert sleeps == [config.SCORPTEC_RETRY_DELAY]
 
     def test_all_attempts_fail_returns_none(self, monkeypatch):
         from scraper.scorptec import fetch_page
@@ -573,7 +578,7 @@ class TestScorptecSavesAllVariants:
             },
         ]
 
-        def _fake_scrape(url, category_path="", max_pages=None):
+        def _fake_scrape(url, category_path="", max_pages=None, stats=None):
             if category_path == "graphics-cards/nvidia":
                 return scraped
             return []
@@ -610,7 +615,7 @@ class TestScorptecSavesAllVariants:
             },
         ]
 
-        def _fake_scrape(url, category_path="", max_pages=None):
+        def _fake_scrape(url, category_path="", max_pages=None, stats=None):
             if category_path == "graphics-cards/nvidia":
                 return scraped
             return []

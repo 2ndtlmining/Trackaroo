@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import statistics
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -34,6 +35,9 @@ from config import (
     DEFAULT_MIN_PER_CATEGORY,
     DEFAULT_MIN_TOTAL,
     FILE_DATE_FORMAT,
+    MATCH_DROP_MIN_HISTORY,
+    MATCH_DROP_RATIO,
+    MATCH_DROP_WINDOW_DAYS,
     MATCH_THRESHOLDS,
     MIN_HISTORY_FOR_ANOMALY,
     ACTIVE_RETAILERS,
@@ -508,6 +512,113 @@ def check_match_count_anomalies(db_path: Optional[Path] = None) -> list[CheckRes
     finally:
         conn.close()
 
+    return results
+
+
+UNPARSED_CARD_RATIO = 0.10
+
+
+def check_run_report(report: dict) -> list[CheckResult]:
+    """Scraper telemetry (scraper/run_report.py) -> health results (#14).
+
+    - a page fetched but no product cards on it: ERROR, selector drift;
+    - more than 10% of cards unparseable: ERROR, drift likely;
+    - fewer pages fetched than attempted: WARNING, a pagination hole.
+
+    PCCG is skipped for the first two rules (#14 F14): an entirely empty PCCG
+    Algolia catalogue is already caught upstream as a circuit-breaker trip or
+    an AlgoliaAuthError (scraper/pccg.py scrape_category/algolia_fetch_catalogue)
+    -- alerting again here would just double up on the same event under a
+    different name.
+    """
+    results: list[CheckResult] = []
+    retailer = report.get("retailer", "unknown")
+    for category, c in sorted((report.get("categories") or {}).items()):
+        where = f"{retailer}/{category}"
+        attempted = c.get("pages_attempted", 0)
+        fetched = c.get("pages_fetched", 0)
+        seen = c.get("cards_seen", 0)
+        dropped = c.get("cards_dropped", 0)
+        if retailer != "pccg":
+            if fetched and not seen:
+                results.append(CheckResult(
+                    f"selector_drift_{retailer}_{category}", CheckResult.ERROR,
+                    f"selector drift at {where}: {fetched} page(s) fetched but 0 product cards "
+                    f"found - the retailer's markup probably changed",
+                ))
+            elif seen and dropped / seen > UNPARSED_CARD_RATIO:
+                results.append(CheckResult(
+                    f"unparsed_cards_{retailer}_{category}", CheckResult.ERROR,
+                    f"{where}: {dropped} of {seen} product cards could not be parsed - selector drift likely",
+                ))
+        if fetched < attempted:
+            results.append(CheckResult(
+                f"pagination_hole_{retailer}_{category}", CheckResult.WARNING,
+                f"pagination hole at {where}: fetched {fetched} of {attempted} page(s)",
+            ))
+    return results
+
+
+def check_match_count_drop(
+    db_path: Optional[Path] = None,
+    today: Optional[date] = None,
+) -> list[CheckResult]:
+    """Today's listing count per retailer and category vs its trailing median (#7b).
+
+    The static thresholds sit far below normal volume, so a half-empty day
+    passed. A retailer with no rows today is skipped: check_today_coverage
+    reports that. Fewer than MATCH_DROP_MIN_HISTORY prior days: not judged.
+    """
+    if db_path is None:
+        db_path = DB_PATH
+    if not Path(db_path).exists():
+        return []
+    today = today or date.today()
+    end = today.strftime(DB_DATE_FORMAT)
+    start = (today - timedelta(days=MATCH_DROP_WINDOW_DAYS)).strftime(DB_DATE_FORMAT)
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute("""
+            SELECT rl.retailer, p.category, ps.snapshot_date, COUNT(DISTINCT rl.id)
+            FROM price_snapshots ps
+            JOIN retailer_listings rl ON rl.id = ps.retailer_listing_id
+            JOIN products p ON p.id = rl.product_id
+            WHERE ps.snapshot_date BETWEEN ? AND ?
+            GROUP BY rl.retailer, p.category, ps.snapshot_date
+        """, (start, end)).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    series: dict = {}
+    for retailer, category, day, n in rows:
+        series.setdefault((retailer, category), {})[day] = n
+
+    results: list[CheckResult] = []
+    for (retailer, category), by_day in sorted(series.items()):
+        today_n = by_day.get(end)
+        prior = [n for day, n in by_day.items() if day != end]
+        if today_n is None or len(prior) < MATCH_DROP_MIN_HISTORY:
+            continue
+        median = statistics.median(prior)
+        name = f"match_drop_{retailer}_{category}"
+        if today_n < MATCH_DROP_RATIO * median:
+            results.append(CheckResult(
+                name, CheckResult.ERROR,
+                f"{retailer}/{category}: {today_n} listings today vs a trailing "
+                f"{MATCH_DROP_WINDOW_DAYS}-day median of {median:g} ({today_n / median:.0%}; "
+                f"alert below {MATCH_DROP_RATIO:.0%})",
+            ))
+        else:
+            results.append(CheckResult(
+                name, CheckResult.OK,
+                f"{retailer}/{category}: {today_n} listings today (median {median:g})",
+            ))
     return results
 
 
@@ -1065,6 +1176,12 @@ def run_all_checks(
     match_results = check_match_count_anomalies(db_path)
     all_results.extend(match_results)
     for r in match_results:
+        LOGGER.info("  %s", r)
+
+    LOGGER.info("\n--- Match Count Drop (vs trailing median) ---")
+    drop_results = check_match_count_drop(db_path)
+    all_results.extend(drop_results)
+    for r in drop_results:
         LOGGER.info("  %s", r)
 
     # JSON/DB parity — can the JSON backup still rebuild this day?

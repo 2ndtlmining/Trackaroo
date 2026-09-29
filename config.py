@@ -73,6 +73,9 @@ Environment variables (all optional):
 
     TRACKAROO_DEFAULT_MIN_PER_CATEGORY  Match-count fallback threshold (default: 5)
     TRACKAROO_DEFAULT_MIN_TOTAL         Match-count fallback threshold (default: 10)
+    TRACKAROO_MATCH_DROP_RATIO          Relative match-drop alert ratio (default: 0.6)
+    TRACKAROO_MATCH_DROP_WINDOW_DAYS    Match-drop trailing window (days)  (default: 7)
+    TRACKAROO_MATCH_DROP_MIN_HISTORY    Match-drop min prior days needed   (default: 3)
     TRACKAROO_NOTIFY_TIMEOUT_SECONDS    Alert delivery HTTP/SMTP timeout (default: 10)
     TRACKAROO_RESTOCK_COOLDOWN_HOURS    Restock-alert re-fire cooldown (default: 24)
 """
@@ -180,6 +183,15 @@ PRICE_MOVE_PCT = _env_float("TRACKAROO_PRICE_MOVE_PCT", 0.10)
 # Fallback thresholds applied to any retailer NOT in MATCH_THRESHOLDS
 DEFAULT_MIN_PER_CATEGORY = _env_int("TRACKAROO_DEFAULT_MIN_PER_CATEGORY", 5)
 DEFAULT_MIN_TOTAL = _env_int("TRACKAROO_DEFAULT_MIN_TOTAL", 10)
+
+# Relative drop rule (#7b, #14): today's listings per retailer and category
+# below MATCH_DROP_RATIO of the trailing MATCH_DROP_WINDOW_DAYS median is an
+# ERROR. Needs MATCH_DROP_MIN_HISTORY prior days; below that the static
+# MATCH_THRESHOLDS are the cold-start fallback. PCCG had 54 against ~121 on
+# 25-Aug and passed the static floor of 20.
+MATCH_DROP_RATIO = _env_float("TRACKAROO_MATCH_DROP_RATIO", 0.6)
+MATCH_DROP_WINDOW_DAYS = _env_int("TRACKAROO_MATCH_DROP_WINDOW_DAYS", 7)
+MATCH_DROP_MIN_HISTORY = _env_int("TRACKAROO_MATCH_DROP_MIN_HISTORY", 3)
 
 # ── Scraper tuning ────────────────────────────────────────────────────
 # Per-scraper subprocess timeout in the daily runner

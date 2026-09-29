@@ -28,6 +28,8 @@ from health_checks import (
     check_db_freshness,
     check_today_coverage,
     check_match_count_anomalies,
+    check_match_count_drop,
+    check_run_report,
     check_price_anomalies,
     check_spec_coverage,
     run_all_checks,
@@ -1044,3 +1046,57 @@ class TestThresholds:
 
     def test_min_history_positive(self):
         assert MIN_HISTORY_FOR_ANOMALY > 0
+
+
+# ── Scraper telemetry -> health results (#14) ────────────────────────
+
+class TestCheckRunReport:
+    def test_a_clean_report_says_nothing(self):
+        c = {"pages_attempted": 3, "pages_fetched": 3, "cards_seen": 60, "cards_dropped": 1}
+        assert check_run_report({"retailer": "umart", "categories": {"gpu": c}}) == []
+
+    def test_many_unparseable_cards_is_an_error(self):
+        c = {"pages_attempted": 1, "pages_fetched": 1, "cards_seen": 20, "cards_dropped": 5}
+        [r] = check_run_report({"retailer": "umart", "categories": {"gpu": c}})
+        assert r.status == CheckResult.ERROR
+        assert "5 of 20" in r.message
+
+
+def _drop_db(db_path, series):
+    """series: {date: listing count} for pccg/gpu."""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('gpu', 'NVIDIA', 'RTX 5070', 1)")
+    most = max(series.values())
+    for i in range(1, most + 1):
+        conn.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+                     "VALUES (1, 'pccg', ?, 'active')", (f"https://x/{i}",))
+    for day, n in series.items():
+        for i in range(1, n + 1):
+            conn.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+                         "VALUES (?, ?, 100, 'in_stock')", (i, day))
+    conn.commit()
+    conn.close()
+
+
+class TestMatchCountDrop:
+    PRIOR = {f"2026-09-{d:02d}": 100 for d in range(22, 29)}
+
+    def test_45_percent_of_the_median_is_an_error(self, db_path):
+        """#7 acceptance: a PCCG day at 45% of its 7-day median produces an ERROR."""
+        _drop_db(db_path, {**self.PRIOR, "2026-09-29": 45})
+        [r] = check_match_count_drop(db_path, today=date(2026, 9, 29))
+        assert (r.check_name, r.status) == ("match_drop_pccg_gpu", CheckResult.ERROR)
+        assert "45 listings today" in r.message
+
+    def test_90_percent_is_fine(self, db_path):
+        _drop_db(db_path, {**self.PRIOR, "2026-09-29": 90})
+        [r] = check_match_count_drop(db_path, today=date(2026, 9, 29))
+        assert r.status == CheckResult.OK
+
+    def test_too_little_history_is_not_judged(self, db_path):
+        _drop_db(db_path, {"2026-09-27": 100, "2026-09-28": 100, "2026-09-29": 10})
+        assert check_match_count_drop(db_path, today=date(2026, 9, 29)) == []
+
+    def test_a_missing_day_is_left_to_today_coverage(self, db_path):
+        _drop_db(db_path, self.PRIOR)
+        assert check_match_count_drop(db_path, today=date(2026, 9, 29)) == []

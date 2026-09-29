@@ -79,9 +79,13 @@ def fetch_page(url: str, retries: Optional[int] = None) -> Optional[str]:
             r = requests.get(url, headers=HEADERS, timeout=SCORPTEC_TIMEOUT_SECONDS)
             if r.status_code == 200:
                 return r.text
-            logger.warning("Non-200 status %s for %s", r.status_code, url)
+            logger.warning("Non-200 status %s for %s (attempt %d/%d)",
+                           r.status_code, url, attempt + 1, retries + 1)
         except requests.RequestException as e:
             logger.warning("Attempt %d failed for %s: %s", attempt + 1, url, e)
+        # Back off before every retry. A non-200 used to be retried at once:
+        # a burst of requests at a CDN that had just refused one (#14).
+        if attempt < retries:
             time.sleep(SCORPTEC_RETRY_DELAY)
     return None
 
@@ -109,7 +113,12 @@ def get_next_page_url(html: str, base_url: str) -> Optional[str]:
     return None
 
 
-def scrape_all_pages(url: str, category_path: str, max_pages: int = SCORPTEC_MAX_PAGES) -> List[Dict[str, Any]]:
+def scrape_all_pages(
+    url: str,
+    category_path: str,
+    max_pages: int = SCORPTEC_MAX_PAGES,
+    stats: Optional[Dict[str, int]] = None,
+) -> List[Dict[str, Any]]:
     """Scrape all pages of a Scorptec category, following pagination links.
 
     Args:
@@ -117,10 +126,13 @@ def scrape_all_pages(url: str, category_path: str, max_pages: int = SCORPTEC_MAX
         category_path: URL path segment for constructing fallback product URLs.
         max_pages: Safety limit to avoid infinite loops. Defaults to
             config.SCORPTEC_MAX_PAGES.
+        stats: Optional counter dict updated with ``pages_attempted``,
+            ``pages_fetched``, ``cards_seen`` and ``cards_dropped`` (#14).
 
     Returns:
         All scraped products across all pages.
     """
+    counts = stats if stats is not None else {}
     all_products: List[Dict[str, Any]] = []
     page = 1
     current_url = url
@@ -129,12 +141,15 @@ def scrape_all_pages(url: str, category_path: str, max_pages: int = SCORPTEC_MAX
         logger.info("Page %d: %s", page, current_url)
         time.sleep(SCORPTEC_PAGE_DELAY)  # Be polite between pages
 
+        counts["pages_attempted"] = counts.get("pages_attempted", 0) + 1
         html = fetch_page(current_url)
         if not html:
-            logger.warning("Failed to fetch page %d, stopping pagination.", page)
+            logger.warning("Failed to fetch page %d, stopping pagination (%d product(s) kept from earlier pages).",
+                           page, len(all_products))
             break
+        counts["pages_fetched"] = counts.get("pages_fetched", 0) + 1
 
-        products = parse_product_grid(html, category_path=category_path)
+        products = parse_product_grid(html, category_path=category_path, stats=counts)
         all_products.extend(products)
         logger.info(
             "Found %d products on page %d (%d total)",
@@ -158,7 +173,9 @@ def scrape_all_pages(url: str, category_path: str, max_pages: int = SCORPTEC_MAX
     return all_products
 
 
-def parse_product_grid(html: str, category_path: str = "") -> List[Dict[str, Any]]:
+def parse_product_grid(
+    html: str, category_path: str = "", stats: Optional[Dict[str, int]] = None
+) -> List[Dict[str, Any]]:
     """Extract products from Scorptec product-grid elements using data attributes.
 
     Args:
@@ -167,13 +184,17 @@ def parse_product_grid(html: str, category_path: str = "") -> List[Dict[str, Any
             when the server-side <a> tag has an empty href (Scorptec populates
             some links client-side via JavaScript). E.g. "cpu/intel" or
             "graphics-cards/nvidia".
+        stats: Optional counter dict updated with ``cards_seen`` and
+            ``cards_dropped`` (#14).
 
     Returns:
         List of scraped product dicts.
     """
     soup = BeautifulSoup(html, "html.parser")
     products: List[Dict[str, Any]] = []
-    for grid in soup.select(".product-grid"):
+    grids = soup.select(".product-grid")
+    dropped = 0
+    for grid in grids:
         # Data attributes are the most reliable source
         name = str(grid.get("data-shortintro", ""))
         full_desc = str(grid.get("data-intro", ""))
@@ -215,6 +236,15 @@ def parse_product_grid(html: str, category_path: str = "") -> List[Dict[str, Any
                 "url": url,
                 "retailer_sku": sku,
             })
+        else:
+            dropped += 1
+            logger.debug("Dropped card sku=%r: name=%r price=%r", sku, name, price_str)
+
+    if stats is not None:
+        stats["cards_seen"] = stats.get("cards_seen", 0) + len(grids)
+        stats["cards_dropped"] = stats.get("cards_dropped", 0) + dropped
+    if dropped:
+        logger.warning("Dropped %d of %d product card(s): no name or unparseable price", dropped, len(grids))
     return products
 
 
@@ -259,7 +289,9 @@ def match_product(scraped_name: str, scraped_desc: str, watchlist_product: Watch
 
 
 def scrape_scorptec(
-    watchlist: List[WatchlistProduct], only_category: Optional[str] = None
+    watchlist: List[WatchlistProduct],
+    only_category: Optional[str] = None,
+    report: Optional["RunReport"] = None,
 ) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Scorptec and match against watchlist.
 
@@ -291,15 +323,16 @@ def scrape_scorptec(
 
         # Pass the category URL path so fallback URLs can be constructed
         fallback_path = CATEGORY_URL_PATHS.get(cat_key, "")
+        category = cat_key.split("_", 1)[0]  # "cpu_amd_am4" -> "cpu"
+        stats = report.category(category) if report is not None else None
         # Scrape ALL pages, not just page 1
-        scraped_products = scrape_all_pages(cat_url, category_path=fallback_path)
+        scraped_products = scrape_all_pages(cat_url, category_path=fallback_path, stats=stats)
         all_scraped[cat_key] = scraped_products
         logger.info("Total for %s: %d products across all pages", cat_key, len(scraped_products))
 
         for scraped in scraped_products:
             if _is_bundle_product(scraped["name"], scraped.get("full_description", ""), scraped.get("url", "")):
                 continue
-            category = cat_key.split("_", 1)[0]  # "cpu_amd_am4" -> "cpu"
             i = matcher.resolve(scraped["name"], category, scraped.get("full_description", ""))
             if i is None:
                 continue
@@ -466,7 +499,7 @@ def main() -> int:
     all_scraped: Dict[str, List[Dict[str, Any]]] = {}
     for category in ("cpu", "gpu"):
         logger.info("\nScraping Scorptec %s...", category.upper())
-        cat_results, cat_ids, cat_scraped = scrape_scorptec(watchlist, only_category=category)
+        cat_results, cat_ids, cat_scraped = scrape_scorptec(watchlist, only_category=category, report=report)
         # Saved the moment the category is done. run_daily kills a scraper at
         # SCRAPER_TIMEOUT_SECONDS, and results used to be saved only at the very
         # end, so a slow GPU pass cost the finished CPUs as well (R2).

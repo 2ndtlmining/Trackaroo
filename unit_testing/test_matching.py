@@ -202,7 +202,7 @@ class TestChipKeyWiring:
         ]
         for wp in watchlist:
             wp.update(brand="NVIDIA", gen_tier="current-1")
-        monkeypatch.setattr(pccg, "algolia_fetch_catalogue", lambda _f: [
+        monkeypatch.setattr(pccg, "algolia_fetch_catalogue", lambda _f, **_k: [
             {"name": "ASUS GeForce RTX 4070 Ti Super 16GB", "price": "1299", "url": "https://x/1"},
         ])
         results, _matched, _tripped = pccg.scrape_category("gpu", watchlist)

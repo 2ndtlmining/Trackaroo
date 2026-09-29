@@ -48,7 +48,9 @@ from health_checks import (
     check_json_db_parity,
     check_json_files,
     check_match_count_anomalies,
+    check_match_count_drop,
     check_missing_days,
+    check_run_report,
     check_scraper_cooldown,
     check_price_anomalies,
     check_spec_coverage,
@@ -337,6 +339,7 @@ def _db_checks() -> List[Tuple[str, Callable[[], List[CheckResult]]]]:
         ("check_db_freshness", lambda: check_db_freshness(DB_PATH)),
         ("check_today_coverage", lambda: check_today_coverage(DB_PATH)),
         ("check_match_count_anomalies", lambda: check_match_count_anomalies(DB_PATH)),
+        ("check_match_count_drop", lambda: check_match_count_drop(DB_PATH)),
         ("check_price_anomalies", lambda: check_price_anomalies(DB_PATH)),
         ("check_spec_coverage", lambda: check_spec_coverage(DB_PATH)),
         ("check_json_db_parity", lambda: check_json_db_parity(db_path=DB_PATH)),
@@ -574,6 +577,11 @@ def run(args: argparse.Namespace) -> int:
     if not args.dry_run:
         best_effort("Recording scrape runs", record_outcomes, list(results.values()), today_iso)
 
+    report_results: List[CheckResult] = []
+    if not args.no_health:
+        report_results = [r for o in results.values() if o.report for r in check_run_report(o.report)]
+        _report_results(report_results, "Scrape telemetry")
+
     scraper_lines = [outcome_alert_line(o) for o in results.values() if o.needs_alert]
 
     # "Nothing to ingest" means no scraper produced any data at all -- ok or
@@ -703,7 +711,7 @@ def run(args: argparse.Namespace) -> int:
             except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
                 LOGGER.error("Stale-listing check failed: %s", e)
 
-        failed = health_errors(json_results, ingest_results, db_results)
+        failed = health_errors(json_results, report_results, ingest_results, db_results)
 
         # ── Discord digest ───────────────────────────────────────────────
         # Only on a real, full run with health checks on and a clean result:

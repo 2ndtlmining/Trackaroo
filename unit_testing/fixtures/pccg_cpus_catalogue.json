@@ -1,0 +1,2371 @@
+{
+  "results": [
+    {
+      "hits": [
+        {
+          "products_model": "100-100001084WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 7 9800X3D Processor",
+          "products_price": 649,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/67543/amd-ryzen-7-9800x3d-processor",
+          "objectID": "67543",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The AMD Ryzen 7 9800X3D is equipped with 8 Cores 16 threads at 5.2GHz max boost clock (4.7GHz base), paired with AMD 3D V-Cache technology",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100001084WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 7 9800X3D Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The AMD Ryzen 7 9800X3D is equipped with 8 Cores 16 threads at 5.2GHz max boost clock (4.7GHz base), paired with AMD 3D V-Cache technology with 104MB total cache (8MB L2 cache, 96MB L3 cache) for the ultimate in gaming performance. Processor only, no cooler included. \n The AMD Ryzen 7 9800X3D joins the legendary X3D series as the first Zen 5 processor equipped with 3D V-Cache technology - designed to be the best gaming CPU. Push your gaming to new frontiers boosted by AMD's advanced \"Zen 5\" architecture and 4nm technology, you'll feel unmatched power in every moment of high-performance gaming.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100001084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100001084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100001084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100001084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00001084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0001084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "001084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "01084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "084WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "84WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "4WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 9000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000651POF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 7 5800X3D Gaming Processor 10th Anniversary Edition",
+          "products_price": 549,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/73263/amd-ryzen-7-5800x3d-gaming-processor-10th-anniversary-edition",
+          "objectID": "73263",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The AMD Ryzen 7 5800X3D 10th Anniversary Edition is the definitive enthusiast desktop processor expertly optimised to deliver next gen performance directly to enduring Socket AM4 gaming rigs",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000651POF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 7 5800X3D Gaming Processor 10th Anniversary Edition",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The AMD Ryzen 7 5800X3D 10th Anniversary Edition is the definitive enthusiast desktop processor expertly optimised to deliver next gen performance directly to enduring Socket AM4 gaming rigs. Commemorating a full decade of unmatched AM4 platform legacy, this special edition 105W TDP chip places an all time gaming icon back at the centre of the upgrade conversation, allowing PC builders to sidestep expensive motherboard and DDR5 memory transitions while achieving elite frame rates in modern titles. Driven by 8 cores and 16 threads operating at a 3.4 GHz base clock and up to a 4.5 GHz max boost clock, this 7nm Zen 3 processor features revolutionary AMD 3D V-Cache technology. By vertically stacking a massive 96 MB of L3 cache directly onto the processor die, reducing latency to ensure your 1 percent low frame rates remain beautifully smooth and perfectly stabilised during intense, data-heavy gameplay. For superior thermal management, the CPU is premium bundled with a next generation Carbice Ice Pad, a long lasting solid thermal interface material that simplifies installation by entirely replacing traditional thermal paste. This seamless drop-in solution for AMD 400 and 500 series motherboards, provides a highly durable, future-proof asset for gamers looking to extract absolute peak value out of their existing hardware configuration.  \n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "651POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "51POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1POF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM4 5000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000927BOX",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 5 5600 with Wraith Stealth",
+          "products_price": 169,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/57585/amd-ryzen-5-5600-with-wraith-stealth",
+          "objectID": "57585",
+          "_snippetResult": {
+            "products_description": {
+              "value": "(Epic Price!) AMD Ryzen 5 5600 6 Core 12 Thread CPU, 3.5GHz Base Clock, 4.4GHz Boost, 65W TDP, 32MB L3 cache. Includes AMD Wraith Stealth",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000927BOX",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 5 5600 with Wraith Stealth",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "(Epic Price!) AMD Ryzen 5 5600 6 Core 12 Thread CPU, 3.5GHz Base Clock, 4.4GHz Boost, 65W TDP, 32MB L3 cache. Includes AMD Wraith Stealth cooler.\n Please note: 2nd and 3rd Gen chipsets may require BIOS updates to support 4th Gen processors, if you plan to install a 4th Gen Ryzen into previous generation chipset, make sure to check if your BIOS will support it or whether your intended board supports BIOS Flashback without the need for a compatible CPU. If you would like us to update the BIOS for you, you can add this service to your cart here.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "927BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "27BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "7BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM4 5000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "BX80768270K",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "Intel",
+          "products_name": "Intel Core Ultra 7 270K Plus Processor",
+          "products_price": 529,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/72563/intel-core-ultra-7-270k-plus-processor",
+          "objectID": "72563",
+          "_snippetResult": {
+            "products_description": {
+              "value": "Redefine your high-end desktop performance with the Intel Core Ultra 7 270K Plus, a flagship-tier 24-core processor designed for the 2026 Arrow Lake Refresh (Series",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "BX80768270K",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "Intel",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "Intel Core Ultra 7 270K Plus Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "Redefine your high-end desktop performance with the Intel Core Ultra 7 270K Plus, a flagship-tier 24-core processor designed for the 2026 Arrow Lake Refresh (Series 2) lineup. Engineered for extreme efficiency and gaming speed, this processor features a powerful configuration of 8 performance-cores and 16 efficient-cores (24 threads), achieving a massive 5.5 GHz max turbo frequency. Built on a cutting-edge 3nm TSMC process, the 270K Plus introduces the Intel Binary Optimisation Tool (iBot) and increased die-to-die interconnect speeds to drastically reduce latency and boost gaming performance over previous generations. With 36 MB of Intel Smart Cache, native support for high-bandwidth DDR5-7200 memory, and a dedicated 13 TOPS AI NPU, this unlocked CPU offers elite-level multitasking and AI-accelerated workflows at a hyper-competitive price point. Compatible with the LGA 1851 socket, the 270K Plus is optimised for professional content creation and enthusiasts looking for a superior performance-to-value ratio on a modern platform.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "X80768270K",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "80768270K",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0768270K",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "768270K",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "68270K",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "8270K",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "270K",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > Intel 1851 Core Ultra",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100001973WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 7 9850X3D Processor",
+          "products_price": 745,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/71980/amd-ryzen-7-9850x3d-processor",
+          "objectID": "71980",
+          "_snippetResult": {
+            "products_description": {
+              "value": "Dominate the gaming landscape with the AMD Ryzen 7 9850X3D Processor, the definitive 8-core powerhouse built on the cutting-edge Zen 5 architecture for the AM5 platform",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100001973WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 7 9850X3D Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "Dominate the gaming landscape with the AMD Ryzen 7 9850X3D Processor, the definitive 8-core powerhouse built on the cutting-edge Zen 5 architecture for the AM5 platform. Featuring a massive 96MB of L3 cache powered by AMD's second-generation 3D V-Cache technology, this processor delivers ultra-low latency and superior frame rates, specifically engineered to outperform in the most demanding AAA titles. With 16 threads, a base clock of 4.7 GHz, and a blazing max boost clock of up to 5.6 GHz, the 9850X3D provides the perfect synergy of raw speed and high-efficiency gaming performance. Built on a 4nm FinFET process with a 120W default TDP, this enthusiast-grade CPU supports high-speed DDR5-5600 memory and PCIe 5.0 connectivity, ensuring your system is fully optimised for next-gen graphics cards and storage. Fully unlocked for overclocking and compatible with a wide range of chipsets including X870E and B850, the Ryzen 7 9850X3D is the ultimate \"Granite Ridge\" choice for gamers seeking the world's best and fastest gaming performance.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100001973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100001973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100001973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100001973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00001973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0001973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "001973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "01973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "973WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "73WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "3WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 9000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000910WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 7 7800X3D Processor",
+          "products_price": 549,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/61115/amd-ryzen-7-7800x3d-processor",
+          "objectID": "61115",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The future of game performance is here. The AMD Ryzen 7 7800X3D CPU makes gaming more enjoyable than ever thanks to the combination of an incredibly fast processor",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000910WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 7 7800X3D Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The future of game performance is here. The AMD Ryzen 7 7800X3D CPU makes gaming more enjoyable than ever thanks to the combination of an incredibly fast processor and AMD 3D V-Cache Technology.  With 8 CPU cores, 16 Threads and a massive 96MBs of L3 Cache the 7800X3D Processor lets you game at blazingly fast frame rates so you can win even the most demanding of games with ease. You can say goodbye to performance drops and stuttering and give yourself the ultimate gaming advantage.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "910WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "10WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 7000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000719WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 9 9950X3D Processor",
+          "products_price": 1029,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/68688/amd-ryzen-9-9950x3d-processor",
+          "objectID": "68688",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The AMD Ryzen 9 9950X3D Processor is the ultimate desktop processor, designed for gamers and content creators demanding outstanding performance. It features 16 cores and 32 threads and",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000719WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 9 9950X3D Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The AMD Ryzen 9 9950X3D Processor is the ultimate desktop processor, designed for gamers and content creators demanding outstanding performance. It features 16 cores and 32 threads and operates at a base clock speed of 4.3GHz, with a boost of up to an incredible 5.7GHz. Incorporating AMD's 2nd gen 3D V-Cache technology, it provides a substantial 144MB of total cache, which enhances gaming performance and multitasking efficiency. The Ryzen 9 9950X3D utilises the Zen 5 architecture and is compatible with the AM5 socket, with support for DDR5 memory and offers PCIe 5.0 connectivity, ensuring compatibility with the latest high-speed components.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "719WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "19WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "9WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 9000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000926WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 7 5700X Processor",
+          "products_price": 299,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/57567/amd-ryzen-7-5700x-processor",
+          "objectID": "57567",
+          "_snippetResult": {
+            "products_description": {
+              "value": "AMD Ryzen 7 5700X 8 Core 16 Thread CPU, 3.4GHz Base Clock, 4.7GHz Boost, 65W TDP, 32MB L3 cache. Does not include cooler.\n Please note: 2nd",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000926WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 7 5700X Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "AMD Ryzen 7 5700X 8 Core 16 Thread CPU, 3.4GHz Base Clock, 4.7GHz Boost, 65W TDP, 32MB L3 cache. Does not include cooler.\n Please note: 2nd and 3rd Gen chipsets may require BIOS updates to support 4th Gen processors, if you plan to install a 4th Gen Ryzen into previous generation chipset, make sure to check if your BIOS will support it or whether your intended board supports BIOS Flashback without the need for a compatible CPU. If you would like us to update the BIOS for you, you can add this service to your cart here.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "926WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "26WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "6WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM4 5000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100001015BOX",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 5 7600 Processor with Wraith Stealth",
+          "products_price": 285,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/60580/amd-ryzen-5-7600-processor-with-wraith-stealth",
+          "objectID": "60580",
+          "_snippetResult": {
+            "products_description": {
+              "value": "(Epic Price!) The AMD Ryzen 5 7600 is a 6-core desktop processor gaming performance optimized for efficiency, with a maximum clock speed of up to 5",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100001015BOX",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 5 7600 Processor with Wraith Stealth",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "(Epic Price!) The AMD Ryzen 5 7600 is a 6-core desktop processor gaming performance optimized for efficiency, with a maximum clock speed of up to 5.2GHz, 32MB of L3 Cache, 65W and comes with a Wraith Stealth Cooler. \n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100001015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100001015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100001015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100001015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00001015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0001015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "001015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "01015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "015BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "15BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "5BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 7000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100001978WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 9 9950X3D2 Dual Edition Processor",
+          "products_price": 1389,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/72647/amd-ryzen-9-9950x3d2-dual-edition-processor",
+          "objectID": "72647",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The AMD Ryzen 9 9950X3D2 Dual Edition is the ultimate powerhouse for professionals, developers, and enthusiasts who refuse to compromise. As the first consumer processor to feature dual",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100001978WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 9 9950X3D2 Dual Edition Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The AMD Ryzen 9 9950X3D2 Dual Edition is the ultimate powerhouse for professionals, developers, and enthusiasts who refuse to compromise. As the first consumer processor to feature dual 3D V-Cache chiplets, it delivers an unprecedented 208MB of total cache across 16 cores and 32 threads. Built on the Zen 5 architecture, it maintains a 4.3GHz base clock with a blistering boost of up to 5.6GHz across both cache-equipped chiplets. Designed for the AM5 socket, this 200W TDP flagship supports DDR5 memory and PCIe 5.0, providing the massive on-chip memory needed to accelerate complex simulations, AI workloads, and the most demanding creative projects.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100001978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100001978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100001978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100001978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00001978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0001978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "001978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "01978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "978WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "78WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "8WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 9000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "BX8071514400",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "Intel",
+          "products_name": "Intel Core i5 14400 Processor",
+          "products_price": 279,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/64527/intel-core-i5-14400-processor",
+          "objectID": "64527",
+          "_snippetResult": {
+            "products_description": {
+              "value": "Intel Core i5 14400 (4.7GHz max clock speed), 10 Cores, 16 Threads, Socket LGA 1700, BX8071514400.\n ",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "BX8071514400",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "Intel",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "Intel Core i5 14400 Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "Intel Core i5 14400 (4.7GHz max clock speed), 10 Cores, 16 Threads, Socket LGA 1700, BX8071514400.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "X8071514400",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "8071514400",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "071514400",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "71514400",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1514400",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "514400",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "14400",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "4400",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > Intel 1700 14th Gen",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100001404WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 7 9700X Processor",
+          "products_price": 455,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/66311/amd-ryzen-7-9700x-processor",
+          "objectID": "66311",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The AMD Ryzen 7 9700X is an 8-core desktop processor designed for enthusiast level gamers and content creators. Be prepared to decimate the competition with a base",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100001404WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 7 9700X Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The AMD Ryzen 7 9700X is an 8-core desktop processor designed for enthusiast level gamers and content creators. Be prepared to decimate the competition with a base clock speed of 3.8GHz and boost clock up to a blistering 5.5GHz, and 32MB of L3 Cache. Outfit your rig with the AMD Ryzen 9000 series, and experience true power with the most advanced desktop processors ever created. \n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100001404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100001404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100001404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100001404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00001404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0001404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "001404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "01404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "404WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "04WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "4WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 9000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000065BOX",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 5 5600X with Wraith Stealth",
+          "products_price": 219,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/52254/amd-ryzen-5-5600x-with-wraith-stealth",
+          "objectID": "52254",
+          "_snippetResult": {
+            "products_description": {
+              "value": "AMD Ryzen 5 5600X 6 Core 12 Thread CPU, 3.7GHz Base Clock, 4.6GHz Boost, 65W TDP, 32MB L3 cache. Includes AMD Wraith Stealth cooler.\n Please note",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000065BOX",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 5 5600X with Wraith Stealth",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "AMD Ryzen 5 5600X 6 Core 12 Thread CPU, 3.7GHz Base Clock, 4.6GHz Boost, 65W TDP, 32MB L3 cache. Includes AMD Wraith Stealth cooler.\n Please note: 2nd and 3rd Gen chipsets may require BIOS updates to support 4th Gen processors, if you plan to install a 4th Gen Ryzen into previous generation chipset, make sure to check if your BIOS will support it or whether your intended board supports BIOS Flashback without the need for a compatible CPU. If you would like us to update the BIOS for you, you can add this service to your cart here.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "065BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "65BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "5BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM4 5000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100001405WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 5 9600X Processor",
+          "products_price": 349,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/66310/amd-ryzen-5-9600x-processor",
+          "objectID": "66310",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The AMD Ryzen 5 9600X is a 6-core desktop processor designed for enthusiast level gamers and content creators. Be prepared to overwhelm the competition with a base",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100001405WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 5 9600X Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The AMD Ryzen 5 9600X is a 6-core desktop processor designed for enthusiast level gamers and content creators. Be prepared to overwhelm the competition with a base clock speed of 3.9GHz and boost clock up to 5.4GHz, and 32MB of L3 Cache. Outfit your rig with the AMD Ryzen 9000 series, and experience true power with the most advanced desktop processors ever created. \n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100001405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100001405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100001405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100001405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00001405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0001405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "001405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "01405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "405WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "05WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "5WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 9000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000457BOX",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 5 5500 with Wraith Stealth",
+          "products_price": 129,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/57586/amd-ryzen-5-5500-with-wraith-stealth",
+          "objectID": "57586",
+          "_snippetResult": {
+            "products_description": {
+              "value": "(Epic Price!) AMD Ryzen 5 5500 6 Core 12 Thread CPU, 3.6GHz Base Clock, 4.2GHz Boost, 65W TDP, 16MB L3 cache. Includes AMD Wraith Stealth",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000457BOX",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 5 5500 with Wraith Stealth",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "(Epic Price!) AMD Ryzen 5 5500 6 Core 12 Thread CPU, 3.6GHz Base Clock, 4.2GHz Boost, 65W TDP, 16MB L3 cache. Includes AMD Wraith Stealth cooler.\n Please note: 2nd and 3rd Gen chipsets may require BIOS updates to support 4th Gen processors, if you plan to install a 4th Gen Ryzen into previous generation chipset, make sure to check if your BIOS will support it or whether your intended board supports BIOS Flashback without the need for a compatible CPU. If you would like us to update the BIOS for you, you can add this service to your cart here.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "457BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "57BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "7BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM4 5000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100001489BOX",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 5 5500GT with Wraith Stealth",
+          "products_price": 179,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/64819/amd-ryzen-5-5500gt-with-wraith-stealth",
+          "objectID": "64819",
+          "_snippetResult": {
+            "products_description": {
+              "value": "AMD Ryzen 5 5500GT 6 Cores 12 Thread CPU, 3.6GHz Base Clock, 4.4GHz Boost, 45-65W cTDP, 16MB L3 cache. Includes AMD Wraith Stealth cooler.\n ",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100001489BOX",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 5 5500GT with Wraith Stealth",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "AMD Ryzen 5 5500GT 6 Cores 12 Thread CPU, 3.6GHz Base Clock, 4.4GHz Boost, 45-65W cTDP, 16MB L3 cache. Includes AMD Wraith Stealth cooler.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100001489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100001489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100001489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100001489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00001489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0001489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "001489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "01489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "489BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "89BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "9BOX",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM4 5000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000593WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 5 7600X Processor",
+          "products_price": 299,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/59327/amd-ryzen-5-7600x-processor",
+          "objectID": "59327",
+          "_snippetResult": {
+            "products_description": {
+              "value": "(Epic Price!) The AMD Ryzen 5 7600X is a 6-core desktop processor designed for enthusiast level gamers and content creators. Be prepared to overwhelm the competition",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000593WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 5 7600X Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "(Epic Price!) The AMD Ryzen 5 7600X is a 6-core desktop processor designed for enthusiast level gamers and content creators. Be prepared to overwhelm the competition with a base clock speed of 4.7GHz and boost clock up to 5.3GHz, and 32MB of L3 Cache. Outfit your rig with the AMD Ryzen 7000 series, and experience true power with the most advanced desktop processors ever created.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "593WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "93WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "3WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 7000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "BX8071512700",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "Intel",
+          "products_name": "Intel Core i7 12700 Processor",
+          "products_price": 449,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/56788/intel-core-i7-12700-processor",
+          "objectID": "56788",
+          "_snippetResult": {
+            "products_description": {
+              "value": "Intel Core i7 12700 3.6GHz (4.9GHz max clock speed), 12 Cores (8 Performance-cores, 4 Efficient-cores), 20 Thread (16 on Performance-cores, 4 on Efficient",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "BX8071512700",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "Intel",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "Intel Core i7 12700 Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "Intel Core i7 12700 3.6GHz (4.9GHz max clock speed), 12 Cores (8 Performance-cores, 4 Efficient-cores), 20 Thread (16 on Performance-cores, 4 on Efficient-cores) CPU, Socket LGA 1700, 25MB SmartCache,  65W processor base power, BX8071512700. Retail box including fan, heatsink and thermal paste.\n You can find a list of LGA 1700 compatible CPU coolers here.\n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "X8071512700",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "8071512700",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "071512700",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "71512700",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1512700",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "512700",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "12700",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "2700",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > Intel 1700 12th Gen",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100000662WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 9 9900X Processor",
+          "products_price": 629,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/66312/amd-ryzen-9-9900x-processor",
+          "objectID": "66312",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The AMD Ryzen 9 9900X Processor is a 12-core workhorse designed for enthusiast level gamers and content creators. Be prepared to overpower the competition with a base",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100000662WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 9 9900X Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The AMD Ryzen 9 9900X Processor is a 12-core workhorse designed for enthusiast level gamers and content creators. Be prepared to overpower the competition with a base clock speed of 4.4GHz and boost clock up to a blazing 5.6GHz, and 64MB of L3 Cache. Outfit your rig with the AMD Ryzen 9000 series, and experience true power with the most advanced desktop processors ever created. \n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100000662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100000662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100000662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100000662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00000662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0000662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "000662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "662WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "62WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "2WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 9000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "products_model": "100-100001277WOF",
+          "is_ETA_TBA": "0",
+          "manufacturers_name": "AMD",
+          "products_name": "AMD Ryzen 9 9950X Processor",
+          "products_price": 889,
+          "indicator": {
+            "label": "In stock",
+            "color": "green",
+            "filter": "In stock"
+          },
+          "Product_URL": "/products/66313/amd-ryzen-9-9950x-processor",
+          "objectID": "66313",
+          "_snippetResult": {
+            "products_description": {
+              "value": "The AMD Ryzen 9 9950X Processor is a 16-core powerhouse designed for the most demanding of gamers and content creators. Be prepared to devastate the competition with",
+              "matchLevel": "none"
+            }
+          },
+          "_highlightResult": {
+            "products_model": {
+              "value": "100-100001277WOF",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "manufacturers_name": {
+              "value": "AMD",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_name": {
+              "value": "AMD Ryzen 9 9950X Processor",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_description": {
+              "value": "The AMD Ryzen 9 9950X Processor is a 16-core powerhouse designed for the most demanding of gamers and content creators. Be prepared to devastate the competition with a base clock speed of 4.3GHz and boost clock up to a staggering 5.7GHz, and 64MB of L3 Cache. Outfit your rig with the AMD Ryzen 9000 series, and experience true power with the most advanced desktop processors ever created. \n ",
+              "matchLevel": "none",
+              "matchedWords": []
+            },
+            "products_model_suffixes": [
+              {
+                "value": "00-100001277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0-100001277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "-100001277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "100001277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "00001277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "0001277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "001277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "01277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "1277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "277WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "77WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              },
+              {
+                "value": "7WOF",
+                "matchLevel": "none",
+                "matchedWords": []
+              }
+            ],
+            "categories": {
+              "lvl0": [
+                {
+                  "value": "CPUs",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ],
+              "lvl1": [
+                {
+                  "value": "CPUs > AMD AM5 9000",
+                  "matchLevel": "none",
+                  "matchedWords": []
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "nbHits": 63,
+      "page": 0,
+      "nbPages": 1,
+      "hitsPerPage": 20,
+      "exhaustiveNbHits": true,
+      "exhaustiveTypo": true,
+      "exhaustive": {
+        "nbHits": true,
+        "typo": true
+      },
+      "query": "",
+      "params": "query=&hitsPerPage=20&page=0&attributesToRetrieve=products_name%2Cproducts_price%2Cproducts_model%2CProduct_URL%2Cmanufacturers_name%2Cindicator%2Cis_ETA_TBA&filters=categories.lvl0%3A%22CPUs%22",
+      "index": "pccg_products",
+      "renderingContent": {},
+      "processingTimeMS": 1,
+      "processingTimingsMS": {
+        "_request": {
+          "roundTrip": 15
+        },
+        "afterFetch": {
+          "format": {
+            "total": 1
+          }
+        },
+        "extensions": 1,
+        "total": 1
+      },
+      "serverTimeMS": 2
+    }
+  ]
+}

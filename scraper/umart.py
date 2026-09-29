@@ -125,7 +125,7 @@ def _stock_from(card: Any) -> str:
     return _AVAILABILITY.get(token, "unknown")
 
 
-def parse_product_grid(html: str) -> List[Dict[str, Any]]:
+def parse_product_grid(html: str, stats: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
     """Parse one category page into product dicts.
 
     A card missing a price or an id is skipped rather than raising: one broken
@@ -133,6 +133,8 @@ def parse_product_grid(html: str) -> List[Dict[str, Any]]:
 
     Args:
         html: A category page body.
+        stats: Optional counter dict updated with ``cards_seen`` and
+            ``cards_dropped`` (#14).
 
     Returns:
         One dict per parsed product, with name, price_aud, stock_status, url
@@ -140,11 +142,14 @@ def parse_product_grid(html: str) -> List[Dict[str, Any]]:
     """
     soup = BeautifulSoup(html, "html.parser")
     products: List[Dict[str, Any]] = []
+    cards = soup.find_all(class_="goods-item")
+    dropped = 0
 
-    for card in soup.find_all(class_="goods-item"):
+    for card in cards:
         sku = card.get("data-id")
         price = _price_from(card)
         if not sku or price is None:
+            dropped += 1
             continue
 
         link = card.find("a", href=re.compile(r"/product/"))
@@ -154,6 +159,7 @@ def parse_product_grid(html: str) -> List[Dict[str, Any]]:
         elif link is not None:
             name = link.get("title") or link.get_text(" ", strip=True)
         else:
+            dropped += 1
             continue
 
         products.append(
@@ -167,37 +173,59 @@ def parse_product_grid(html: str) -> List[Dict[str, Any]]:
             }
         )
 
+    if stats is not None:
+        stats["cards_seen"] = stats.get("cards_seen", 0) + len(cards)
+        stats["cards_dropped"] = stats.get("cards_dropped", 0) + dropped
+    if dropped:
+        logger.warning("Dropped %d of %d Umart card(s): no id, price or name", dropped, len(cards))
+
     return products
 
 
 def get_max_page(html: str) -> int:
     """Highest page number linked from a category page (1 when unpaginated)."""
     pages = [int(n) for n in re.findall(r"[?&]page=(\d+)", html)]
-    return min(max(pages), UMART_MAX_PAGES) if pages else 1
+    if not pages:
+        return 1
+    highest = max(pages)
+    if highest > UMART_MAX_PAGES:
+        # The cap used to apply silently, dropping every page past it (#14).
+        logger.warning("Umart lists %d pages but UMART_MAX_PAGES is %d - pages %d-%d will not be scraped",
+                       highest, UMART_MAX_PAGES, UMART_MAX_PAGES + 1, highest)
+    return min(highest, UMART_MAX_PAGES)
 
 
-def scrape_all_pages(category_url: str) -> List[Dict[str, Any]]:
+def scrape_all_pages(category_url: str, stats: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
     """Walk every page of one category.
 
     Page one is fetched first to learn the page count, rather than following
-    "next" links, because Umart renders the full pager on every page.
+    "next" links, because Umart renders the full pager on every page. Pages
+    attempted vs fetched go into ``stats`` so a hole is reported (#14).
     """
+    counts = stats if stats is not None else {}
+    counts["pages_attempted"] = counts.get("pages_attempted", 0) + 1
     first = fetch_page(category_url)
     if first is None:
+        logger.warning("Umart category page 1 failed - category skipped: %s", category_url)
         return []
+    counts["pages_fetched"] = counts.get("pages_fetched", 0) + 1
 
-    products = parse_product_grid(first)
+    products = parse_product_grid(first, stats=counts)
     last_page = get_max_page(first)
     logger.info("  page 1/%d: %d products", last_page, len(products))
 
     for page in range(2, last_page + 1):
         time.sleep(UMART_PAGE_DELAY)
+        counts["pages_attempted"] += 1
         html = fetch_page(f"{category_url}?page={page}")
         if html is None:
-            # A hole in the middle of a category is not worth abandoning the
-            # rest for: the missing products simply go unmatched today.
+            # A hole in the middle is not worth abandoning the rest for, but it
+            # is no longer silent: the count lands in the run report.
+            logger.warning("Umart page %d/%d failed - skipped (%d product(s) so far)",
+                           page, last_page, len(products))
             continue
-        page_products = parse_product_grid(html)
+        counts["pages_fetched"] += 1
+        page_products = parse_product_grid(html, stats=counts)
         logger.info("  page %d/%d: %d products", page, last_page, len(page_products))
         products.extend(page_products)
 
@@ -207,6 +235,7 @@ def scrape_all_pages(category_url: str) -> List[Dict[str, Any]]:
 def scrape_umart(
     watchlist: List[WatchlistProduct],
     only_category: Optional[str] = None,
+    report: Optional[RunReport] = None,
 ) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Umart and match the watchlist against it.
 
@@ -233,7 +262,7 @@ def scrape_umart(
         if only_category and category != only_category:
             continue
         logger.info("Scraping Umart %s -> %s", category.upper(), url)
-        scraped = scrape_all_pages(url)
+        scraped = scrape_all_pages(url, stats=report.category(category) if report is not None else None)
         all_scraped[category] = scraped
         logger.info("  %d products total for %s", len(scraped), category)
 
@@ -273,7 +302,7 @@ def main() -> int:
 
     for category in ("cpu", "gpu"):
         logger.info("\nScraping Umart %s...", category.upper())
-        products, matched_ids, _ = scrape_umart(watchlist, only_category=category)
+        products, matched_ids, _ = scrape_umart(watchlist, only_category=category, report=report)
         # Saved per category so a timeout during GPUs keeps the CPUs (R2).
         save_category_snapshot(DATA_DIR, "umart", category, today, watchlist, products, matched_ids)
         report.set(category, matched=len(products))
