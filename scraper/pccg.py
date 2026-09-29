@@ -45,7 +45,7 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.chip_key import Matcher
-from scraper.run_report import EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED, RunReport, exit_code_for
+from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED, RunReport, exit_code_for
 from scraper.snapshot_io import save_category_snapshot
 
 LOGGER = logging.getLogger(__name__)
@@ -201,6 +201,18 @@ def _log_api_status_error(r: Any) -> None:
         )
     else:
         LOGGER.error("Algolia API error: %s - %s", r.status_code, r.text[:200])
+
+
+class AlgoliaAuthError(RuntimeError):
+    """PCCG's public search key was rejected (HTTP 401/403).
+
+    Distinct from an empty catalogue (a block): backing off cannot fix a
+    rotated key, so no cooldown is written and a human is paged (#11a).
+    """
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"Algolia rejected the PCCG search key (HTTP {status})")
+        self.status = status
 
 
 # ── Circuit-breaker cooldown ─────────────────────────────────────────
@@ -487,6 +499,9 @@ def algolia_fetch_catalogue(
 
     Returns:
         List of product dicts for the whole category (empty on failure).
+
+    Raises:
+        AlgoliaAuthError: the key was rejected (401/403).
     """
     filter_str = f'categories.lvl0:"{category_filter}"'
     all_products: list[Dict[str, Any]] = []
@@ -518,6 +533,9 @@ def algolia_fetch_catalogue(
                     )
                     time.sleep(wait)
                     continue
+                if r.status_code in (401, 403):
+                    _log_api_status_error(r)
+                    raise AlgoliaAuthError(r.status_code)
                 if r.status_code != 200:
                     _log_api_status_error(r)
                     return all_products
@@ -680,23 +698,32 @@ def main() -> int:
     all_matched: set[int] = set()
     all_tripped: list[str] = []
 
-    for i, category in enumerate(["cpu", "gpu"]):
-        results, matched, tripped = scrape_category(category, watchlist)
-        # Saved per category so a timeout during GPUs keeps the CPUs (R2).
-        save_category_snapshot(DATA_DIR, "pccg", category, today, watchlist, results, matched)
-        report.set(category, matched=len(results))
-        report.flush()
-        all_results.extend(results)
-        all_matched.update(matched)
-        LOGGER.info("  %s: %d matched", category.upper(), len(results))
-        if tripped:
-            all_tripped.append(category)
-            report.note(f"circuit breaker tripped for {category} (empty catalogue - treated as a block)")
+    try:
+        for i, category in enumerate(["cpu", "gpu"]):
+            results, matched, tripped = scrape_category(category, watchlist)
+            # Saved per category so a timeout during GPUs keeps the CPUs (R2).
+            save_category_snapshot(DATA_DIR, "pccg", category, today, watchlist, results, matched)
+            report.set(category, matched=len(results))
             report.flush()
-        # Short pause between category passes -- same Algolia index and IP.
-        if i == 0:
-            LOGGER.info("  Pausing %.1fs before next category pass...", CATEGORY_PASS_DELAY)
-            time.sleep(CATEGORY_PASS_DELAY)
+            all_results.extend(results)
+            all_matched.update(matched)
+            LOGGER.info("  %s: %d matched", category.upper(), len(results))
+            if tripped:
+                all_tripped.append(category)
+                report.note(f"circuit breaker tripped for {category} (empty catalogue - treated as a block)")
+                report.flush()
+            # Short pause between category passes -- same Algolia index and IP.
+            if i == 0:
+                LOGGER.info("  Pausing %.1fs before next category pass...", CATEGORY_PASS_DELAY)
+                time.sleep(CATEGORY_PASS_DELAY)
+    except AlgoliaAuthError as e:
+        LOGGER.error(
+            "%s. No cooldown written: waiting cannot fix a rejected key. Update "
+            "ALGOLIA_API_KEY - see DEPLOYMENT.md, 'PCCG key rotation'.", e,
+        )
+        report.note(f"{e} - update ALGOLIA_API_KEY (DEPLOYMENT.md: 'PCCG key rotation')")
+        report.flush()
+        return EXIT_AUTH
 
     if not all_tripped:
         _clear_cooldown()

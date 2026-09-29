@@ -145,3 +145,15 @@ class TestRunScraperLogging:
 
         assert outcome.status == "failed"
         assert any(r.levelname == "ERROR" for r in caplog.records)
+
+
+def test_an_auth_outcome_alerts_with_the_fix(isolated_pipeline, monkeypatch):
+    monkeypatch.setattr(run_daily, "run_scraper", lambda n, m, label: run_daily.ScrapeOutcome(
+        label, "auth" if label == "pccg" else "ok", 4 if label == "pccg" else 0,
+        detail="Algolia rejected the PCCG search key (HTTP 403) - update ALGOLIA_API_KEY" if label == "pccg" else ""))
+
+    run_daily.run(_args())
+
+    [line] = [l for l in isolated_pipeline.alerts[0] if "PCCG" in l]
+    assert "credentials rejected" in line
+    assert "ALGOLIA_API_KEY" in line

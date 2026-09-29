@@ -296,6 +296,26 @@ python backup_db.py          # standalone backup, keeps 14
 python backup_db.py --keep 30 --backup-dir /mnt/nas/trackaroo
 ```
 
+### PCCG key rotation
+
+Symptom: a Discord alert "Scraper **PCCG** was refused by the retailer
+(credentials rejected) ... update ALGOLIA_API_KEY", and `logs/trackaroo-*.log`
+shows `Algolia auth rejected (403)`. PCC has rotated the public search key the
+site embeds. The scraper writes **no** cooldown for this: waiting cannot fix it.
+
+1. Open <https://www.pccasegear.com> in a browser, open DevTools -> Network,
+   filter on `algolia`, and search the site for anything.
+2. Click a `queries` request. Its request headers carry
+   `x-algolia-application-id` and `x-algolia-api-key`.
+3. Put both in `.env`: `ALGOLIA_APP_ID=...` and `ALGOLIA_API_KEY=...`.
+4. Restart the container (`docker restart trackaroo`), or wait: the next
+   hourly retry before `RETRY_UNTIL_HOUR` picks the new key up.
+5. Update the defaults in `scraper/pccg.py` in a PR, then comment the two
+   lines in `.env` out again, so a later rotation is not pinned by `.env`.
+
+Not yet verified: whether the key is in the page HTML or only in a JS bundle.
+The Network-tab method works either way.
+
 ---
 
 ## Dashboard-only deployment
