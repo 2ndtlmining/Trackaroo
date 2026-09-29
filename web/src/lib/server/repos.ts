@@ -413,6 +413,12 @@ export function getHeaderStats(db: DB): HeaderStats {
 export interface RetailerFreshness {
 	retailer: Retailer;
 	latestSnapshotDate: string | null;
+	// Latest scrape_runs row (R3): local wall-clock 'YYYY-MM-DDTHH:MM:SS', its
+	// status, and the products it matched. Optional so callers building rows by
+	// hand (tests, older data) need not supply them.
+	lastRunAt?: string | null;
+	lastRunStatus?: string | null;
+	lastRunMatched?: number | null;
 }
 
 // True when `name` is a table in this DB. The dashboard must keep rendering on a
@@ -450,10 +456,27 @@ export function getRetailerFreshness(db: DB): RetailerFreshness[] {
 		: [];
 	const inactive = [...latestBy.keys()].filter((r) => !active.includes(r)).sort();
 
-	return [...active, ...inactive].map((retailer) => ({
-		retailer: retailer as Retailer,
-		latestSnapshotDate: latestBy.get(retailer) ?? null
-	}));
+	const runs = tableExists(db, 'scrape_runs')
+		? (db
+				.prepare(
+					`SELECT r.retailer AS retailer, r.finished_at AS at, r.status AS status, r.matched AS matched
+					 FROM scrape_runs r
+					 WHERE r.id = (SELECT MAX(id) FROM scrape_runs WHERE retailer = r.retailer)`
+				)
+				.all() as Array<{ retailer: string; at: string; status: string; matched: number | null }>)
+		: [];
+	const runBy = new Map(runs.map((r) => [r.retailer, r]));
+
+	return [...active, ...inactive].map((retailer) => {
+		const run = runBy.get(retailer);
+		return {
+			retailer: retailer as Retailer,
+			latestSnapshotDate: latestBy.get(retailer) ?? null,
+			lastRunAt: run?.at ?? null,
+			lastRunStatus: run?.status ?? null,
+			lastRunMatched: run?.matched ?? null
+		};
+	});
 }
 
 export function getCategoryCounts(db: DB): Map<Category, number> {

@@ -44,8 +44,8 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.chip_key import Matcher
-from scraper.run_report import EXIT_DEGRADED, EXIT_OK
-from scraper.snapshot_io import build_snapshot, save_snapshot
+from scraper.run_report import EXIT_OK, RunReport, exit_code_for
+from scraper.snapshot_io import save_category_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +206,7 @@ def scrape_all_pages(category_url: str) -> List[Dict[str, Any]]:
 
 def scrape_umart(
     watchlist: List[WatchlistProduct],
+    only_category: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Umart and match the watchlist against it.
 
@@ -217,6 +218,7 @@ def scrape_umart(
 
     Args:
         watchlist: Watchlist entries to match against.
+        only_category: "cpu" or "gpu" to scrape one category; None for both.
 
     Returns:
         (results, matched watchlist indices, all scraped products per category).
@@ -228,6 +230,8 @@ def scrape_umart(
     all_scraped: Dict[str, List[Dict[str, Any]]] = {}
 
     for category, url in CATEGORY_URLS.items():
+        if only_category and category != only_category:
+            continue
         logger.info("Scraping Umart %s -> %s", category.upper(), url)
         scraped = scrape_all_pages(url)
         all_scraped[category] = scraped
@@ -263,40 +267,23 @@ def main() -> int:
     watchlist = load_watchlist()
     logger.info("  %d products in watchlist", len(watchlist))
 
-    logger.info("\nScraping Umart...")
-    results, matched_ids, _ = scrape_umart(watchlist)
-
-    logger.info("\n%s\nResults: %d matched / %d total", "=" * 60, len(results), len(watchlist))
-
-    unmatched_models = [wp["model"] for i, wp in enumerate(watchlist) if i not in matched_ids]
-
+    report = RunReport("umart")
     today = date.today().strftime(FILE_DATE_FORMAT)
     DATA_DIR.mkdir(exist_ok=True)
 
-    counts: Dict[str, int] = {}
     for category in ("cpu", "gpu"):
-        products = [p for p in results if p["watchlist_category"] == category]
-        counts[category] = len(products)
-        unmatched = [
-            m
-            for m in unmatched_models
-            if any(wp["model"] == m and wp["category"] == category for wp in watchlist)
-        ]
-        output_file = DATA_DIR / f"{category}_umart_{today}.json"
-        output_data = build_snapshot(
-            retailer="umart",
-            scrape_date=today,
-            category=category,
-            total_watchlist=len(watchlist),
-            products=products,
-            unmatched_models=unmatched,
-        )
-        save_snapshot(output_file, output_data)
+        logger.info("\nScraping Umart %s...", category.upper())
+        products, matched_ids, _ = scrape_umart(watchlist, only_category=category)
+        # Saved per category so a timeout during GPUs keeps the CPUs (R2).
+        save_category_snapshot(DATA_DIR, "umart", category, today, watchlist, products, matched_ids)
+        report.set(category, matched=len(products))
+        report.flush()
 
-    if not all(counts.values()):
-        logger.error("Umart scrape incomplete: %s", counts)
-        return EXIT_DEGRADED
-    return EXIT_OK
+    logger.info("\n%s\nResults: %d matched / %d total", "=" * 60, report.matched, len(watchlist))
+    code = exit_code_for(report)
+    if code != EXIT_OK:
+        logger.error("Umart scrape incomplete: %s", {c: v["matched"] for c, v in report.categories.items()})
+    return code
 
 
 if __name__ == "__main__":

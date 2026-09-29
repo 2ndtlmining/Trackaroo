@@ -45,8 +45,8 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.chip_key import Matcher
-from scraper.run_report import EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED
-from scraper.snapshot_io import build_snapshot, save_snapshot
+from scraper.run_report import EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED, RunReport, exit_code_for
+from scraper.snapshot_io import save_category_snapshot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -660,15 +660,21 @@ def main() -> int:
     watchlist = load_watchlist()
     LOGGER.info("  %d products", len(watchlist))
 
-    # Respect a circuit-breaker cooldown before doing anything else — a
-    # scheduled retry hitting a recently-blocking API would just add harm.
+    report = RunReport("pccg")
+
+    # Respect a circuit-breaker cooldown before doing anything else.
     if _cooldown_active():
         LOGGER.warning(
             "Skipping PCCG scrape: cooldown still active (file %s, window %.0fh). "
             "This is expected handled behaviour, not an error.",
             PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS,
         )
+        report.note(f"skipped: circuit-breaker cooldown active ({PCCG_COOLDOWN_HOURS:.0f}h window)")
+        report.flush()
         return EXIT_SKIPPED
+
+    today = date.today().strftime(FILE_DATE_FORMAT)
+    DATA_DIR.mkdir(exist_ok=True)
 
     all_results: list[Dict[str, Any]] = []
     all_matched: set[int] = set()
@@ -676,60 +682,36 @@ def main() -> int:
 
     for i, category in enumerate(["cpu", "gpu"]):
         results, matched, tripped = scrape_category(category, watchlist)
+        # Saved per category so a timeout during GPUs keeps the CPUs (R2).
+        save_category_snapshot(DATA_DIR, "pccg", category, today, watchlist, results, matched)
+        report.set(category, matched=len(results))
+        report.flush()
         all_results.extend(results)
         all_matched.update(matched)
         LOGGER.info("  %s: %d matched", category.upper(), len(results))
         if tripped:
             all_tripped.append(category)
-        # Short pause between category passes — both hit the same Algolia
-        # index from the same IP back-to-back.
+            report.note(f"circuit breaker tripped for {category} (empty catalogue - treated as a block)")
+            report.flush()
+        # Short pause between category passes -- same Algolia index and IP.
         if i == 0:
             LOGGER.info("  Pausing %.1fs before next category pass...", CATEGORY_PASS_DELAY)
             time.sleep(CATEGORY_PASS_DELAY)
 
-    # A full (non-tripped) scrape means PCCG is healthy — clear any stale
-    # cooldown so the default path next run is a normal scrape.
     if not all_tripped:
         _clear_cooldown()
     else:
-        LOGGER.error("PCCG scrape incomplete — circuit breaker tripped for: %s", ", ".join(all_tripped))
+        LOGGER.error("PCCG scrape incomplete - circuit breaker tripped for: %s", ", ".join(all_tripped))
 
-    # Report unmatched
     unmatched = [wp["model"] for i, wp in enumerate(watchlist) if i not in all_matched]
     LOGGER.info("\n%s\nTotal: %d matched / %d", "=" * 60, len(all_results), len(watchlist))
     LOGGER.info("Unmatched: %d", len(unmatched))
-    if unmatched:
-        LOGGER.info("\nUnmatched products:")
-        for m in unmatched:
-            LOGGER.info("  - %s", m)
+    for m in unmatched:
+        LOGGER.info("  - %s", m)
 
-    # Save to separate JSON files
-    today = date.today().strftime(FILE_DATE_FORMAT)
-    DATA_DIR.mkdir(exist_ok=True)
-
-    for category in ["cpu", "gpu"]:
-        cat_results = [p for p in all_results if p["watchlist_category"] == category]
-        cat_unmatched = [
-            m for m in unmatched
-            if any(wp["model"] == m and wp["category"] == category for wp in watchlist)
-        ]
-        output_file = DATA_DIR / f"{category}_pccg_{today}.json"
-        output_data = build_snapshot(
-            retailer="pccg",
-            scrape_date=today,
-            category=category,
-            total_watchlist=len(watchlist),
-            products=cat_results,
-            unmatched_models=cat_unmatched,
-        )
-        save_snapshot(output_file, output_data)
-
-    per_category = {c: sum(1 for p in all_results if p["watchlist_category"] == c)
-                    for c in ("cpu", "gpu")}
-    # The breaker used to only log; the run still exited 0 and read "OK" (#7).
-    if all_tripped or not all(per_category.values()):
+    if all_tripped:
         return EXIT_DEGRADED
-    return EXIT_OK
+    return exit_code_for(report)
 
 
 if __name__ == "__main__":

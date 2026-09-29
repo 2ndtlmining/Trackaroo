@@ -19,11 +19,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
+import os
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from config import (
@@ -59,7 +62,7 @@ from pipeline_state import (
     retailers_pending,
     sync_active_retailers,
 )
-from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED
+from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED, REPORT_ENV, read_run_report
 
 LOGGER = logging.getLogger(__name__)
 
@@ -140,6 +143,10 @@ def outcome_alert_line(o: ScrapeOutcome) -> str:
 def run_scraper(name: str, module: str, label: str) -> ScrapeOutcome:
     """Run a scraper module as a subprocess and classify what happened.
 
+    The scraper writes per-category counts to a temp run report as it goes
+    (scraper/run_report.py). The report survives the timeout kill below; the
+    exit code does not (R2, R3).
+
     Args:
         name: Display name (e.g. 'Scorptec')
         module: Python module path (e.g. 'scraper.scorptec')
@@ -148,6 +155,11 @@ def run_scraper(name: str, module: str, label: str) -> ScrapeOutcome:
     LOGGER.info("\n%s\nScraping %s...\n%s", "=" * 60, name, "=" * 60)
     started = _now()
     start = time.time()
+    fd, report_name = tempfile.mkstemp(prefix=f"trackaroo-{label}-", suffix=".json")
+    os.close(fd)
+    report_path = Path(report_name)
+    report_path.unlink()  # absence means "the scraper never reported"
+
     status, exit_code = "failed", None
     try:
         result = subprocess.run(
@@ -155,6 +167,7 @@ def run_scraper(name: str, module: str, label: str) -> ScrapeOutcome:
             capture_output=False,
             text=True,
             timeout=SCRAPER_TIMEOUT_SECONDS,
+            env={**os.environ, REPORT_ENV: str(report_path)},
         )
         exit_code = result.returncode
         status = status_for_exit(exit_code)
@@ -163,13 +176,27 @@ def run_scraper(name: str, module: str, label: str) -> ScrapeOutcome:
     except Exception as e:  # noqa: BLE001 - CLI wrapper reports any failure
         LOGGER.error("\n%s error: %s", name, e)
 
-    outcome = ScrapeOutcome(label, status, exit_code, started_at=started, finished_at=_now())
+    report = read_run_report(report_path)
+    try:
+        report_path.unlink()
+    except OSError:
+        pass
+
+    outcome = ScrapeOutcome(
+        label, status, exit_code, started_at=started, finished_at=_now(),
+        matched=report.get("matched") if report else None,
+        detail="; ".join(report.get("notes") or []) if report else "",
+        report=report,
+    )
     elapsed = time.time() - start
     if outcome.ok:
-        LOGGER.info("\n%s completed in %.1fs", name, elapsed)
+        LOGGER.info("\n%s completed in %.1fs (%s matched)", name, elapsed, outcome.matched)
     elif status == "skipped":
         # A cooldown skip is expected, handled behaviour, not a problem (#7/M3).
         LOGGER.warning("\n%s %s (exit code %s) after %.1fs", name, status, exit_code, elapsed)
+    elif status == "timeout":
+        LOGGER.error("\n%s timed out after %ds - kept %d matched product(s) saved before the kill",
+                     name, SCRAPER_TIMEOUT_SECONDS, outcome.matched or 0)
     else:
         LOGGER.error("\n%s %s (exit code %s) after %.1fs", name, status, exit_code, elapsed)
     return outcome

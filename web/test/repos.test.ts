@@ -1324,6 +1324,54 @@ describe('getRetailerFreshness lists every active retailer (R1)', () => {
 	});
 });
 
+describe('getRetailerFreshness carries the last scrape run (R3)', () => {
+	it('reports the latest run time, status and matched count per retailer', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-runs-'));
+		const d = openDatabase(path.join(dir, 'r.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec(`INSERT INTO active_retailers (retailer, position) VALUES ('scorptec', 0), ('umart', 1);
+				INSERT INTO scrape_runs (retailer, run_date, started_at, finished_at, status, matched)
+				VALUES ('scorptec', '2026-09-29', '2026-09-29T04:00:02', '2026-09-29T04:03:10', 'failed', NULL),
+				       ('scorptec', '2026-09-29', '2026-09-29T05:00:01', '2026-09-29T05:02:44', 'ok', 312);`);
+			expect(getRetailerFreshness(d)).toEqual([
+				{
+					retailer: 'scorptec',
+					latestSnapshotDate: null,
+					lastRunAt: '2026-09-29T05:02:44',
+					lastRunStatus: 'ok',
+					lastRunMatched: 312
+				},
+				{
+					retailer: 'umart',
+					latestSnapshotDate: null,
+					lastRunAt: null,
+					lastRunStatus: null,
+					lastRunMatched: null
+				}
+			]);
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('works without a scrape_runs table (Review Focus 5)', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-noruns-'));
+		const d = openDatabase(path.join(dir, 'r.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec(
+				"DROP TABLE scrape_runs; INSERT INTO active_retailers (retailer, position) VALUES ('umart', 0);"
+			);
+			expect(getRetailerFreshness(d)[0]).toMatchObject({ retailer: 'umart', lastRunAt: null });
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
 describe('getCategoryCounts', () => {
 	it('counts tracked products per category', () => {
 		const counts = getCategoryCounts(db);

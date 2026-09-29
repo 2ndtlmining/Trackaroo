@@ -82,17 +82,17 @@ class TestScraperExitCodes:
     def test_scorptec_with_an_empty_gpu_category_is_degraded(self, tmp_path, monkeypatch):
         monkeypatch.setattr(scorptec, "load_watchlist", lambda: WATCHLIST)
         monkeypatch.setattr(scorptec, "DATA_DIR", tmp_path)
-        monkeypatch.setattr(scorptec, "scrape_scorptec", lambda wl, **k: (
-            [_match("scorptec", "Ryzen 7 9800X3D", "cpu")], {0}, {}))
+        monkeypatch.setattr(scorptec, "scrape_scorptec", lambda wl, only_category=None, **k: (
+            [_match("scorptec", "Ryzen 7 9800X3D", "cpu")], {0}, {}) if only_category == "cpu" else ([], set(), {}))
 
         assert scorptec.main() == EXIT_DEGRADED
 
     def test_scorptec_with_both_categories_is_ok(self, tmp_path, monkeypatch):
         monkeypatch.setattr(scorptec, "load_watchlist", lambda: WATCHLIST)
         monkeypatch.setattr(scorptec, "DATA_DIR", tmp_path)
-        monkeypatch.setattr(scorptec, "scrape_scorptec", lambda wl, **k: (
-            [_match("scorptec", "Ryzen 7 9800X3D", "cpu"),
-             _match("scorptec", "GeForce RTX 5070", "gpu")], {0, 1}, {}))
+        monkeypatch.setattr(scorptec, "scrape_scorptec", lambda wl, only_category=None, **k: (
+            [_match("scorptec", "Ryzen 7 9800X3D", "cpu")], {0}, {}) if only_category == "cpu" else (
+            [_match("scorptec", "GeForce RTX 5070", "gpu")], {1}, {}))
 
         assert scorptec.main() == EXIT_OK
 

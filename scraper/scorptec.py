@@ -25,8 +25,8 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.chip_key import Matcher
-from scraper.run_report import EXIT_DEGRADED, EXIT_OK
-from scraper.snapshot_io import build_snapshot, save_snapshot
+from scraper.run_report import EXIT_OK, RunReport, exit_code_for
+from scraper.snapshot_io import save_category_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +258,9 @@ def match_product(scraped_name: str, scraped_desc: str, watchlist_product: Watch
     ) == 0
 
 
-def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
+def scrape_scorptec(
+    watchlist: List[WatchlistProduct], only_category: Optional[str] = None
+) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Scorptec and match against watchlist.
 
     Each scraped product resolves to at most one watchlist row via the
@@ -271,6 +273,7 @@ def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, A
 
     Args:
         watchlist: List of watchlist product dicts.
+        only_category: "cpu" or "gpu" to scrape one category; None for both.
 
     Returns:
         Tuple of (matched results, matched watchlist ids, all scraped products per category).
@@ -282,6 +285,8 @@ def scrape_scorptec(watchlist: List[WatchlistProduct]) -> Tuple[List[Dict[str, A
     all_scraped: Dict[str, List[Dict[str, Any]]] = {}  # Track all scraped products per category for debugging
 
     for cat_key, cat_url in CATEGORY_URLS.items():
+        if only_category and not cat_key.startswith(f"{only_category}_"):
+            continue
         logger.info("Scraping: %s -> %s", cat_key, cat_url)
 
         # Pass the category URL path so fallback URLs can be constructed
@@ -452,52 +457,33 @@ def main() -> int:
     watchlist = load_watchlist()
     logger.info("  %d products in watchlist", len(watchlist))
 
-    logger.info("\nScraping Scorptec...")
-    results, matched_ids, all_scraped = scrape_scorptec(watchlist)
-
-    # Report
-    logger.info("\n%s\nResults: %d matched / %d total", "=" * 60, len(results), len(watchlist))
-
-    # Analyze unmatched
-    delisted, matching_issues = analyze_unmatched(watchlist, matched_ids, all_scraped)
-
-    # Build unmatched list
-    unmatched_models = [wp["model"] for i, wp in enumerate(watchlist) if i not in matched_ids]
-
-    # Save to separate CPU and GPU JSON files
+    report = RunReport("scorptec")
     today = date.today().strftime(FILE_DATE_FORMAT)
     DATA_DIR.mkdir(exist_ok=True)
 
-    cpu_results = [p for p in results if p["watchlist_category"] == "cpu"]
-    gpu_results = [p for p in results if p["watchlist_category"] == "gpu"]
-    cpu_unmatched = [m for m in unmatched_models if any(
-        wp["model"] == m and wp["category"] == "cpu" for wp in watchlist
-    )]
-    gpu_unmatched = [m for m in unmatched_models if any(
-        wp["model"] == m and wp["category"] == "gpu" for wp in watchlist
-    )]
+    results: List[Dict[str, Any]] = []
+    matched_ids: Set[int] = set()
+    all_scraped: Dict[str, List[Dict[str, Any]]] = {}
+    for category in ("cpu", "gpu"):
+        logger.info("\nScraping Scorptec %s...", category.upper())
+        cat_results, cat_ids, cat_scraped = scrape_scorptec(watchlist, only_category=category)
+        # Saved the moment the category is done. run_daily kills a scraper at
+        # SCRAPER_TIMEOUT_SECONDS, and results used to be saved only at the very
+        # end, so a slow GPU pass cost the finished CPUs as well (R2).
+        save_category_snapshot(DATA_DIR, "scorptec", category, today, watchlist, cat_results, cat_ids)
+        report.set(category, matched=len(cat_results))
+        report.flush()
+        results.extend(cat_results)
+        matched_ids |= cat_ids
+        all_scraped.update(cat_scraped)
 
-    for category, products, unmatched in [
-        ("cpu", cpu_results, cpu_unmatched),
-        ("gpu", gpu_results, gpu_unmatched),
-    ]:
-        output_file = DATA_DIR / f"{category}_scorptec_{today}.json"
-        output_data = build_snapshot(
-            retailer="scorptec",
-            scrape_date=today,
-            category=category,
-            total_watchlist=len(watchlist),
-            products=products,
-            unmatched_models=unmatched,
-        )
-        save_snapshot(output_file, output_data)
+    logger.info("\n%s\nResults: %d matched / %d total", "=" * 60, len(results), len(watchlist))
+    analyze_unmatched(watchlist, matched_ids, all_scraped)
 
-    # A category that came back empty is a failed scrape, not a quiet shop:
-    # Scorptec always stocks both. It used to exit 0 and log "OK" (#7).
-    if not cpu_results or not gpu_results:
-        logger.error("Scorptec scrape incomplete: cpu=%d gpu=%d matched", len(cpu_results), len(gpu_results))
-        return EXIT_DEGRADED
-    return EXIT_OK
+    code = exit_code_for(report)
+    if code != EXIT_OK:
+        logger.error("Scorptec scrape incomplete: %s", {c: v["matched"] for c, v in report.categories.items()})
+    return code
 
 
 if __name__ == "__main__":

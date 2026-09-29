@@ -68,4 +68,54 @@ describe('retailerHealth', () => {
 		expect(row.state).toBe('never');
 		expect(row.text).toBe('missing');
 	});
+
+	it("shows today's run time and matched count (R3)", () => {
+		const [row] = retailerHealth(
+			[
+				{
+					retailer: 'umart',
+					latestSnapshotDate: '2026-08-25',
+					lastRunAt: '2026-08-25T04:12:33',
+					lastRunStatus: 'ok',
+					lastRunMatched: 182
+				}
+			],
+			NOW
+		);
+		expect(row).toMatchObject({ state: 'fresh', text: 'today 04:12', detail: '182 matched' });
+	});
+
+	it('flags a run that failed today as incomplete, even with older data present', () => {
+		const [row] = retailerHealth(
+			[
+				{
+					retailer: 'pccg',
+					latestSnapshotDate: '2026-08-24',
+					lastRunAt: '2026-08-25T05:01:00',
+					lastRunStatus: 'timeout',
+					lastRunMatched: 21
+				}
+			],
+			NOW
+		);
+		expect(row.state).toBe('incomplete');
+		expect(row.text).toBe('timeout at 05:01');
+	});
+
+	it("ignores yesterday's run when judging today", () => {
+		const [row] = retailerHealth(
+			[
+				{
+					retailer: 'pccg',
+					latestSnapshotDate: '2026-08-24',
+					lastRunAt: '2026-08-24T04:00:00',
+					lastRunStatus: 'failed',
+					lastRunMatched: null
+				}
+			],
+			NOW
+		);
+		expect(row.state).toBe('recent');
+		expect(row.detail).toBeNull();
+	});
 });
