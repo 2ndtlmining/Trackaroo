@@ -2,6 +2,7 @@
 	import PriceChart, { type ChartSeries } from '$lib/components/PriceChart.svelte';
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import ProductHeadline from '$lib/components/ProductHeadline.svelte';
+	import BuyPanel from '$lib/components/BuyPanel.svelte';
 	import OfferList from '$lib/components/OfferList.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
@@ -13,6 +14,7 @@
 	import { generationTierLabel } from '$lib/tiers';
 	import { buildHeadline } from '$lib/productHeadline';
 	import { toListingDisplays } from '$lib/listingsPanel';
+	import { asOfDate, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
 	import { type ProductHistory, type AlertRow } from '$lib/server/repos';
 
 	let {
@@ -81,6 +83,21 @@ label:
 		toListingDisplays(series, product.brand, selected, data.retailerLatest)
 	);
 	const headline = $derived(buildHeadline(offers, data.band, data.stats));
+
+	const lows = $derived(dailyLows(data.band));
+	const asOf = $derived(asOfDate(data.retailerLatest, lows));
+	const low = $derived(lowSummary(lows, headline.currentPrice));
+	const buyWindows = $derived(asOf ? [windowStats(lows, asOf, 30), windowStats(lows, asOf, 90)] : []);
+	const where = $derived(whereToBuy(offers));
+	// Memory / cores in the headline: "RTX 5060 Ti" alone does not say which card
+	// this is when an 8GB sibling exists (#31 core; Phase 1 #2 split them).
+	const specLabel = $derived(
+		product.category === 'gpu' && product.vram_gb
+			? `${product.vram_gb}GB`
+			: product.category === 'cpu' && product.cores
+				? `${product.cores} cores`
+				: null
+	);
 </script>
 
 <PageHead
@@ -102,8 +119,9 @@ label:
 			{product.model}{product.variant ? ` · ${product.variant}` : ''}
 		</h1>
 
-		<p class="mt-1 text-sm text-text-muted">
+		<p class="mt-1 text-sm text-text-muted" data-testid="product-meta">
 			{product.category?.toUpperCase()}
+			{#if specLabel}· {specLabel}{/if}
 			{#if product.generation_tier}
 				· {generationTierLabel(product.brand, product.category, product.generation_tier) ??
 					product.generation_tier}
@@ -124,6 +142,8 @@ label:
 			</p>
 		{/if}
 	</div>
+
+	<BuyPanel {low} windows={buyWindows} {where} />
 
 	{#if hasChartData}
 		<div class="space-y-4">

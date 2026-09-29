@@ -17,6 +17,7 @@ import ProductRow from '../src/lib/components/ProductRow.svelte';
 import HealthStrip from '../src/lib/components/HealthStrip.svelte';
 import MoverRow from '../src/lib/components/MoverRow.svelte';
 import CategorySection from '../src/lib/components/CategorySection.svelte';
+import BuyPanel from '../src/lib/components/BuyPanel.svelte';
 import { offer as offerRow } from './helpers/offers';
 import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint, Mover } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
@@ -973,14 +974,13 @@ describe('ProductHeadline', () => {
 		expect(html).toContain('Scorptec');
 	});
 
-	it('shows both deltas with arrows, not colour alone', () => {
+	it('shows the average delta with an arrow, not colour alone', () => {
 		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
 		expect(html).toContain('▼');
 		expect(html).toContain('vs 17-day avg');
-		expect(html).toContain('above all-time low');
-		// Verify actual percentages match the fixture values (not hardcoded)
 		expect(html).toContain('−7.2%');
-		expect(html).toContain('+4.0%');
+		// "vs the low" moved to BuyPanel, worded "Lowest since", not "all-time" (D5).
+		expect(html).not.toContain('all-time low');
 	});
 
 	it('demotes provenance to one muted line', () => {
@@ -998,7 +998,7 @@ describe('ProductHeadline', () => {
 		expect(html).toContain('No in-stock listings');
 	});
 
-	it('still shows the all-time low and high when nothing is in stock', () => {
+	it('still shows the recorded low and high when nothing is in stock', () => {
 		const html = renderComponent(ProductHeadline, {
 			headline: headline({ currentPrice: null, currentRetailer: null, rangePosition: null }),
 			...base
@@ -1035,6 +1035,76 @@ describe('ProductHeadline', () => {
 		expect(html).toContain('vs 17-day avg');
 	});
 });
+
+describe('BuyPanel (#31)', () => {
+	const low = {
+		low: 699,
+		lowDate: '2026-09-10',
+		since: '2026-08-09',
+		today: 729,
+		pctAbove: 4.29,
+		atLow: false
+	};
+	const windows = [
+		{ days: 30, points: 20, low: 699, median: 719, high: 749, enough: true },
+		{ days: 90, points: 2, low: 699, median: 714, high: 729, enough: false }
+	];
+	const where = [
+		{ retailer: 'scorptec', cheapest: 719, cheapestUrl: 'https://s/1', inStock: 1, listings: 2 },
+		{ retailer: 'umart', cheapest: null, cheapestUrl: null, inStock: 0, listings: 1 }
+	];
+
+	it('states the lowest price, its date, the first tracked day and today’s gap', () => {
+		const html = renderComponent(BuyPanel, { low, windows, where });
+		expect(html).toContain('Lowest since 9 Aug 2026');
+		expect(html).toContain('$699');
+		expect(html).toContain('10 Sep 2026');
+		expect(html).toContain('4.3%');
+		expect(html).not.toContain('all-time');
+	});
+
+	it('says so when today is the low', () => {
+		const html = renderComponent(BuyPanel, {
+			low: { ...low, today: 699, pctAbove: 0, atLow: true },
+			windows,
+			where
+		});
+		expect(html).toContain('Today is the lowest price since 9 Aug 2026');
+	});
+
+	it('shows the strip, and names thin windows instead of guessing (Review Focus 1)', () => {
+		const html = renderComponent(BuyPanel, { low, windows, where });
+		expect(html).toContain('30 days');
+		expect(html).toContain('$719');
+		expect(html).toContain('Gathering history (2 days)');
+	});
+
+	it('lists each retailer with its cheapest price, stock count and a labelled link', () => {
+		const html = renderComponent(BuyPanel, { low, windows, where });
+		expect(html).toContain('Scorptec');
+		expect(html).toContain('1 of 2');
+		expect(html).toContain('Buy at Scorptec for $719 (opens in a new tab)');
+		expect(html).toContain('Umart');
+		expect(html).toContain('0 of 1');
+	});
+
+	it('copes with a product that has never had a price (Review Focus 1)', () => {
+		const html = renderComponent(BuyPanel, { low: null, windows: [], where: [] });
+		expect(html).toContain('No in-stock price recorded yet');
+		expect(html).toContain('No retailer lists it right now');
+		expect(html).not.toContain('NaN');
+	});
+
+	it('says nothing is in stock today rather than printing a gap', () => {
+		const html = renderComponent(BuyPanel, {
+			low: { ...low, today: null, pctAbove: null },
+			windows,
+			where
+		});
+		expect(html).toContain('Nothing is in stock today');
+	});
+});
+
 describe('HealthStrip', () => {
 	const health = [
 		{ retailer: 'scorptec', label: 'Scorptec', state: 'fresh' as const, days: 0, text: 'today' },

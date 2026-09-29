@@ -932,3 +932,38 @@ test.describe('deals', () => {
 		await expect(page.getByText('E2E Deal Demo GPU')).toHaveCount(0);
 	});
 });
+
+test.describe('is now a good time to buy? (#31)', () => {
+	test('states the low, the recent spread and where to buy', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('link', { name: /^GeForce RTX 5060 Ti( 16GB)?$/ }).first().click();
+		await page.waitForLoadState('networkidle');
+
+		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
+		await expect(panel).toBeVisible();
+		await expect(panel.getByTestId('low-summary')).toContainText(/Lowest since|Today is the lowest price since/);
+		await expect(panel).not.toContainText('all-time');
+		await expect(panel.getByRole('rowheader', { name: '30 days' })).toBeVisible();
+		await expect(panel.getByRole('rowheader', { name: '90 days' })).toBeVisible();
+		// The RTX 5060 Ti is seeded at both retailers.
+		await expect(panel.getByRole('rowheader', { name: 'Scorptec' })).toBeVisible();
+		await expect(panel.getByRole('rowheader', { name: 'PCCG' })).toBeVisible();
+		await expect(panel.getByRole('link', { name: /^Buy at \w+ for \$/ }).first()).toHaveAttribute(
+			'rel',
+			'noopener noreferrer'
+		);
+	});
+
+	test('a product with two days of history says so instead of summarising (Review Focus 1)', async ({
+		page
+	}) => {
+		await goto(page, '/products?category=gpu');
+		const box = page.getByLabel(/^Search GPUs$/);
+		await box.fill('E2E Thin History');
+		await box.press('Enter');
+		await page.waitForLoadState('networkidle');
+		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
+		await expect(panel.getByText('Gathering history (2 days)').first()).toBeVisible();
+		await expect(panel).not.toContainText('NaN');
+	});
+});

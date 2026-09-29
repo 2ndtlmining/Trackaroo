@@ -36,13 +36,6 @@
 				{:else}
 					<span class="text-text-muted">Not enough history</span>
 				{/if}
-				{#if headline.vsAllTimeLowPct !== null && headline.vsAllTimeLowPct > 0}
-					<span class="text-text-muted">
-						▲ {formatPct(headline.vsAllTimeLowPct)} above all-time low
-					</span>
-				{:else if headline.vsAllTimeLowPct !== null}
-					<span class="text-down">At its all-time low</span>
-				{/if}
 			</span>
 		</div>
 		{#if retailerLabel}
@@ -52,9 +45,9 @@
 		<p class="text-sm text-text-muted">No in-stock listings right now.</p>
 		{#if headline.allTimeLow !== null && headline.allTimeHigh !== null}
 			<p class="text-sm text-text-muted">
-				All-time low <span class="num font-medium text-text">{formatAud(headline.allTimeLow)}</span>
+				Lowest recorded <span class="num font-medium text-text">{formatAud(headline.allTimeLow)}</span>
 				<span class="mx-1">·</span>
-				All-time high <span class="num font-medium text-text">{formatAud(headline.allTimeHigh)}</span>
+				Highest recorded <span class="num font-medium text-text">{formatAud(headline.allTimeHigh)}</span>
 			</p>
 		{/if}
 	{/if}
