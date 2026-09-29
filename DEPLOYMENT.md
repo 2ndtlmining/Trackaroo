@@ -190,6 +190,30 @@ location), so this works from any working directory.
 30 6 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py >> /var/log/trackaroo_daily.log 2>&1
 ```
 
+**Hourly per-retailer retry (#8), the way the Docker entrypoints do it.** The
+Docker image doesn't call plain `run_daily.py` on a fixed schedule like the
+one-liner above — it calls `run_daily.py --scheduled` every hour from
+`RUN_AT_HOUR` through `RETRY_UNTIL_HOUR` (defaults `4` and `9`; see
+[Retry until a cutoff](#retry-until-a-cutoff)). `--scheduled` is a no-op
+outside that window, and once every retailer has a complete run for today, so
+it is safe to call unconditionally every hour rather than only once. The
+native-cron equivalent, using the actual config defaults:
+
+```cron
+# Hourly from RUN_AT_HOUR (04:00) through RETRY_UNTIL_HOUR (09:00): the 04:00
+# call is the full run, later calls retry only whatever is still pending, and
+# a call after everything for today is complete is a no-op.
+0 4-9 * * * cd /opt/trackaroo && /usr/bin/env python3 run_daily.py --scheduled >> /var/log/trackaroo_daily.log 2>&1
+
+# Staleness check at STALENESS_CHECK_HOUR (10:00), after the last retry --
+# keep it scheduled AFTER the retry window's end, with at least an hour of
+# gap (see "Scheduling it" under Staleness monitor below).
+0 10 * * * cd /opt/trackaroo && /usr/bin/env python3 check_staleness.py >> /var/log/trackaroo_staleness.log 2>&1
+```
+
+If `RUN_AT_HOUR`/`RETRY_UNTIL_HOUR` are overridden from their defaults, update
+the `4-9` range (and the `0 10` staleness line) to match.
+
 ### Weekly spec sync (separate, best-effort)
 
 `sync_specs.py` refreshes the `specs` table from the external GPU/Intel/AMD
@@ -448,23 +472,33 @@ for a scheduler, cron `MAILTO`, or an uptime checker.
 (default `10`), in its own hourly-poll loop alongside the weekly spec sync. The
 hour must sit *after* `RETRY_UNTIL_HOUR` (default `09`) — checking before the
 last hourly retry has had its chance would report every morning as an outage.
-In practice a `09:xx` retry normally finishes well before `10:00`: each
-scraper run completes in well under an hour, so the retry that starts at the
-top of the `RETRY_UNTIL_HOUR` hour is done long before the staleness check
-fires at the top of the next one.
+
+**The retry loop does not tick exactly on the hour.** `sleep 3600` between
+iterations means each `--scheduled` call lands at (container boot time, or the
+previous run's finish time) + one hour, drifting by however long the pipeline
+itself took to run — it is not anchored to wall-clock `:00`. In practice a
+`RETRY_UNTIL_HOUR` retry still normally finishes well before
+`STALENESS_CHECK_HOUR`, because one scraper run takes well under an hour, but
+the two are not guaranteed to be an hour apart on the wall clock. Keep **at
+least a full hour** of gap between `RETRY_UNTIL_HOUR` and
+`STALENESS_CHECK_HOUR` (the default `9` vs `10` already does this) — a smaller
+gap risks a late-starting retry still being in flight when the staleness check
+fires, which the check would report as an outage (see the known gap below)
+rather than "still running".
 
 **Known gap (documented, not fixed by this task):** `scrape_runs` only gets a
 row once a scraper run *finishes* (`run_daily.record_outcomes`, after the
 whole batch for that invocation completes) — there is no "started, not yet
-finished" row written at scrape start. If a `09:xx` retry were ever still
-running past `10:00` (a genuinely hung scraper, not the normal case above),
-`check_staleness.py` has no way to see "in progress" and would report that
-retailer as an outage rather than "still running". Making the staleness check
-distinguish those two cases would require writing a row at scrape start and
-updating it at finish — a real change to `run_scraper`'s write pattern, not a
-small one — so it is left as a known limitation rather than implemented here.
-If this ever bites in practice, prefer lowering `RETRY_UNTIL_HOUR` (leaving a
-wider gap before `STALENESS_CHECK_HOUR`) over racing the two closer together.
+finished" row written at scrape start. If a retry were ever still running when
+`STALENESS_CHECK_HOUR` fires (a genuinely hung scraper, or too small a gap
+between the two hours), `check_staleness.py` has no way to see "in progress"
+and would report that retailer as an outage rather than "still running".
+Making the staleness check distinguish those two cases would require writing a
+row at scrape start and updating it at finish — a real change to
+`run_scraper`'s write pattern, not a small one — so it is left as a known
+limitation rather than implemented here. If this ever bites in practice,
+prefer widening the gap (lower `RETRY_UNTIL_HOUR` or raise
+`STALENESS_CHECK_HOUR`) over racing the two closer together.
 
 Running natively instead? Add it to cron, well clear of the pipeline:
 

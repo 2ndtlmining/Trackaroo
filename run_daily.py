@@ -415,13 +415,19 @@ def send_pipeline_alert(lines: List[str]) -> None:
     (so a second, concurrent retry cannot also send it), but released again if
     the send itself failed -- a failed Discord post at 04:00 must still be
     retried by the next hourly run, not silently swallowed.
+
+    Fix-round-1 I1: "failed" means whatever ``send_alert`` actually reports --
+    a falsy (``False``) return -- not just an exception. ``send_alert`` (and
+    the ``send_embed`` it calls) now report a real webhook outage/5xx/timeout
+    as ``False`` instead of quietly returning "sent" regardless, so a claim
+    is released on that too, not only on a raised exception.
     """
     key = "alert:" + hashlib.sha1("\n".join(lines).encode("utf-8")).hexdigest()[:16]
     if not claim_once(key):
         LOGGER.info("The same pipeline alert was already sent today - not repeating it.")
         return
 
-    def _send() -> int:
+    def _send() -> bool:
         from notify_discord import send_alert
         return send_alert(lines)
 
@@ -431,7 +437,11 @@ def send_pipeline_alert(lines: List[str]) -> None:
     # the all-failed/scrape-only/final-alert call sites) can trip main()'s
     # outer crash handler into sending a second, redundant "crashed" alert
     # (M2).
-    if best_effort("Pipeline alert", _send) is None:
+    #
+    # `not best_effort(...)` releases on BOTH an exception (best_effort
+    # returns None) AND a real, non-raising delivery failure (send_alert
+    # returns False) -- not just the exception case (fix-round-1 I1).
+    if not best_effort("Pipeline alert", _send):
         release_once(key)
 
 
@@ -498,6 +508,13 @@ def run(args: argparse.Namespace) -> int:
     """One pipeline run. Returns the process exit code (RUN_EXIT_*)."""
     to_run = selected_retailers(args)
     today_iso = date.today().isoformat()
+    # True when this run is a --pending-only/--scheduled retry that attempted
+    # FEWER retailers than were selected, i.e. at least one was left out
+    # because it already has a complete run today (#8 fix-round-1 I2). Used
+    # below so a retry that only reattempts, say, PCCG and fails again is
+    # reported as a retry failure, not "all scrapers failed" -- the other
+    # retailers' data from earlier today is not "no new data this run".
+    retry_narrowed = False
 
     # ── What is left to do today (#8) ─────────────────────────
     if args.scheduled and not in_retry_window(_current_hour(), RUN_AT_HOUR, RETRY_UNTIL_HOUR):
@@ -505,10 +522,12 @@ def run(args: argparse.Namespace) -> int:
                     RUN_AT_HOUR, RETRY_UNTIL_HOUR)
         return RUN_EXIT_OK
     if args.pending_only or args.scheduled:
-        to_run = pending_retailers(to_run, today_iso)
+        candidates = to_run
+        to_run = pending_retailers(candidates, today_iso)
         if not to_run:
             LOGGER.info("Every selected retailer already has a complete run today - nothing to do.")
             return RUN_EXIT_OK
+        retry_narrowed = len(to_run) < len(candidates)
 
     LOGGER.info("Trackaroo daily run - %s", today_filename())
     LOGGER.info("Scraping: %s", "  |  ".join(SCRAPERS[r][0] for r in to_run))
@@ -539,6 +558,20 @@ def run(args: argparse.Namespace) -> int:
             # during its cooldown): expected, and nothing new to ingest.
             LOGGER.info("\nEvery selected scraper was skipped - nothing to ingest.")
             return RUN_EXIT_OK
+        if retry_narrowed:
+            # Fix-round-1 I2: this retry only reattempted a subset of today's
+            # retailers (the rest already have a complete run today), and
+            # that subset failed again. That is a degraded retry, not "no new
+            # data this run" -- the other retailers' data from earlier today
+            # is unaffected.
+            names = ", ".join(SCRAPERS[r][0] for r in to_run)
+            LOGGER.error("\nRetry of %s failed - other retailers already have today's data.", names)
+            if alerts_enabled(args):
+                send_pipeline_alert(
+                    [f"- **Retry of {names} failed** - other retailers already have today's data."]
+                    + scraper_lines
+                )
+            return RUN_EXIT_DEGRADED
         # Nothing new to ingest or back up -- but this is the run that most
         # needs to page someone, and it used to exit before any alert (#12).
         LOGGER.error("\nAll scrapers failed. Aborting.")
@@ -658,21 +691,24 @@ def run(args: argparse.Namespace) -> int:
             elif not claim_once("digest"):
                 LOGGER.info("Discord digest already sent today - not repeating it.")
             else:
-                def _run_digest() -> bool:
+                def _run_digest() -> int:
                     from notify_discord import run as run_notify
-                    run_notify()
-                    return True
+                    return run_notify()
 
                 # Import inside the guarded callable (M2): a notify_discord
                 # import failure must be caught by best_effort, not escape
                 # into the finally block and beyond.
                 #
                 # F2 controller ruling: the "digest" marker was already
-                # claimed above (before the send), so a failed send (raised
-                # exception, caught by best_effort as None) must release it
-                # again -- otherwise the next hourly retry silently skips a
-                # digest that was never actually delivered.
-                if best_effort("Discord digest", _run_digest) is None:
+                # claimed above (before the send), so a failed send must
+                # release it again -- otherwise the next hourly retry
+                # silently skips a digest that was never actually delivered.
+                # Fix-round-1 I1: "failed" means whatever notify_discord.run()
+                # actually reports (0 embeds delivered), not just an
+                # exception -- `not best_effort(...)` releases on both an
+                # exception (best_effort returns None) and a real,
+                # non-raising "every embed failed" result (0, falsy).
+                if not best_effort("Discord digest", _run_digest):
                     release_once("digest")
 
             # ── Price-drop & restock alerts ───────────────────────────

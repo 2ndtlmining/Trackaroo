@@ -124,6 +124,7 @@ def isolated_pipeline(monkeypatch, tmp_path):
 
     def fake_digest(*a, **k):
         calls.digests += 1
+        return 1  # notify_discord.run() returns an embed count; 1 == "delivered" (fix-round-1 I1).
 
     def fake_price_alerts(*a, **k):
         calls.price_alert_runs += 1

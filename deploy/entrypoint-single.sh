@@ -37,8 +37,14 @@
 #   SPEC_SYNC_DOW        Spec-sync day of week, cron style 0=Sun..6=Sat (default 0)
 #   SPEC_SYNC_HOUR       Spec-sync hour of day, 0-23 (default 3)
 #   STALENESS_CHECK_HOUR Staleness-monitor hour, 0-23 (default 10). Must be
-#                        LATER than RUN_AT_HOUR: before the daily run has had
-#                        its chance, "no data today" is not yet an outage.
+#                        LATER than RETRY_UNTIL_HOUR: before the last hourly
+#                        retry has had its chance, "no data today" is not yet
+#                        an outage. Leave at least an hour of gap -- the retry
+#                        loop ticks hourly from whenever the container booted
+#                        (not necessarily on the hour) and drifts by however
+#                        long each pipeline run takes, so a retry started late
+#                        in its hour can still be running a few minutes into
+#                        the next one.
 #   DISCORD_WEBHOOK_ALERT  Webhook the staleness monitor posts to. Unset means
 #                        the check still runs but signals only via the log.
 #   DISCORD_WEBHOOK_URL  Discord webhook for the CPU+GPU digest (optional)

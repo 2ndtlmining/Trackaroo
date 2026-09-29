@@ -53,10 +53,11 @@ docker logs -f trackaroo
   correctness, not cosmetics: the scrapers stamp snapshots with `date.today()`,
   so a UTC container running before 10:00 AEST files data under the previous
   day and forks the history.
-- Both entrypoints schedule on a **wall clock** (`RUN_AT_HOUR`, default 04) with
-  a boot catch-up when today has no data. Do not go back to
-  `sleep ${RUN_INTERVAL_HOURS}h` — it drifts on every restart and can skip a
-  day outright.
+- Both entrypoints schedule on a **wall clock** (`RUN_AT_HOUR`, default 04),
+  retry hourly per retailer up to `RETRY_UNTIL_HOUR` (default 09, #8), and run
+  an immediate boot catch-up (`--pending-only`) for whatever today is still
+  missing. Do not go back to `sleep ${RUN_INTERVAL_HOURS}h` — it drifts on
+  every restart and can skip a day outright.
 - `deploy/entrypoint-single.sh` is the default entrypoint (pipeline +
   dashboard); `RUN_ONCE=1` runs one pipeline then exits.
   `trackaroo-entrypoint-pipeline` (`deploy/entrypoint.sh`) is the pipeline-only
