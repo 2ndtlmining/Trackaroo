@@ -8,10 +8,14 @@ REPO = Path(__file__).resolve().parent.parent
 
 
 def test_the_suite_blocks_outbound_connections():
+    # 192.0.2.1 is TEST-NET-1 (RFC 5737): guaranteed non-routable, so this
+    # never dials a real host even if the guard failed to block it. The short
+    # timeout means a broken guard fails fast instead of hanging.
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.5)
     try:
         with pytest.raises(RuntimeError, match="Blocked outbound connection"):
-            s.connect(("93.184.216.34", 80))
+            s.connect(("192.0.2.1", 80))
     finally:
         s.close()
 

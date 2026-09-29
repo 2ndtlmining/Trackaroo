@@ -36,6 +36,12 @@ jobs:
     defaults:
       run:
         working-directory: web
+    env:
+      # A handful of vitest/Playwright assertions depend on retailer/price
+      # variety only the real scrape produces; they self-skip under this flag
+      # (test/helpers/seed.ts, e2e/app.spec.ts). Job-level so it reaches the
+      # test runner processes themselves, not just webServer's child process.
+      TRACKAROO_SYNTHETIC: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -8,7 +8,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // Set when the DB was seeded from CI's synthetic snapshots (write-synthetic-data.mjs)
 // rather than a real scrape (#13). Some assertions depend on retailer/price
 // variety that only the real, much larger scrape history happens to produce.
-const SYNTHETIC = !!process.env.TRACKAROO_DATA_DIR;
+// A DEDICATED flag, not derived from TRACKAROO_DATA_DIR: that var only says
+// where the data lives and CI itself never sets it (write-synthetic-data.mjs
+// writes straight into the default ../data), so gating on TRACKAROO_DATA_DIR
+// would never trigger the skip in CI at all (fix round 1, C1). Set as a
+// job-level env in .github/workflows/ci.yml so this test process (not just
+// the webServer child) sees it.
+const SYNTHETIC = process.env.TRACKAROO_SYNTHETIC === '1';
 
 async function goto(page: Page, path: string) {
 	await page.goto(path);

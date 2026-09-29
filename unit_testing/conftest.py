@@ -22,19 +22,30 @@ SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
 # to Discord from a developer's .env) cannot pass by accident. Loopback stays
 # open for tests that run a local server; AF_UNIX is untouched.
 _REAL_CONNECT = socket.socket.connect
+_REAL_CONNECT_EX = socket.socket.connect_ex
 _LOOPBACK = ("127.", "::1", "localhost")
+
+
+def _is_blocked(self, address):
+    return self.family in (socket.AF_INET, socket.AF_INET6) and not str(address[0]).startswith(
+        _LOOPBACK
+    )
 
 
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch):
     def guarded(self, address):
-        if self.family in (socket.AF_INET, socket.AF_INET6):
-            host = str(address[0])
-            if not host.startswith(_LOOPBACK):
-                raise RuntimeError(f"Blocked outbound connection to {address!r}: tests must mock HTTP")
+        if _is_blocked(self, address):
+            raise RuntimeError(f"Blocked outbound connection to {address!r}: tests must mock HTTP")
         return _REAL_CONNECT(self, address)
 
+    def guarded_ex(self, address):
+        if _is_blocked(self, address):
+            raise RuntimeError(f"Blocked outbound connection to {address!r}: tests must mock HTTP")
+        return _REAL_CONNECT_EX(self, address)
+
     monkeypatch.setattr(socket.socket, "connect", guarded)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_ex)
 
 
 def _make_connection(use_memory: bool = True) -> sqlite3.Connection:

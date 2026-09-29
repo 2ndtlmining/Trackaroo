@@ -56,6 +56,9 @@
 #   SKIP_PIPELINE        1 = dashboard only: no boot catch-up, no scheduler, no
 #                        spec sync, no staleness loop -- nothing ever scrapes.
 #                        Used by CI's boot smoke test (--network none).
+#                        CI only -- never set in production: it stops
+#                        scraping AND the staleness alert that would
+#                        otherwise catch a pipeline that never runs.
 #
 # A single pipeline iteration can be run and then exit with RUN_ONCE=1
 # (used for one-shot `docker run` from a host scheduler).
