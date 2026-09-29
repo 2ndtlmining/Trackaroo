@@ -5,6 +5,7 @@ Provides an isolated in-memory SQLite database with the full schema,
 so tests don't touch the production DB.
 """
 import os
+import socket
 import sqlite3
 import tempfile
 import types
@@ -14,6 +15,26 @@ import pytest
 
 # Path to the schema SQL
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
+
+# ── No real network, ever (#13) ──────────────────────────────────────
+# Tests must mock HTTP. Any connect() to a non-loopback address fails loudly
+# naming the address, so a test that would have scraped a retailer (or posted
+# to Discord from a developer's .env) cannot pass by accident. Loopback stays
+# open for tests that run a local server; AF_UNIX is untouched.
+_REAL_CONNECT = socket.socket.connect
+_LOOPBACK = ("127.", "::1", "localhost")
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    def guarded(self, address):
+        if self.family in (socket.AF_INET, socket.AF_INET6):
+            host = str(address[0])
+            if not host.startswith(_LOOPBACK):
+                raise RuntimeError(f"Blocked outbound connection to {address!r}: tests must mock HTTP")
+        return _REAL_CONNECT(self, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded)
 
 
 def _make_connection(use_memory: bool = True) -> sqlite3.Connection:

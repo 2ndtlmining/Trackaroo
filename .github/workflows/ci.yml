@@ -1,0 +1,97 @@
+# Trackaroo CI (#13). Three jobs; none of them may touch a retailer:
+# - backend: pytest (unit_testing/conftest.py blocks every non-loopback socket);
+# - web: svelte-check, vitest, Playwright, then a smoke test of the real
+#   production entry (node server.js) against a seeded DB -- e2e itself runs
+#   vite dev, so this is the only automated run of server.js;
+# - docker: build the image and boot it with --network none and
+#   SKIP_PIPELINE=1, so the container cannot scrape even by mistake.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      # data/ is gitignored (real scrapes); use the synthetic snapshots
+      # e2e/seed.mjs already falls back to.
+      - run: node e2e/write-synthetic-data.mjs ../data
+      - run: npm run check
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Smoke test the production entry (node server.js)
+        run: |
+          npm run build
+          node e2e/seed.mjs
+          TRACKAROO_DB="$PWD/e2e/e2e.db" HOST=127.0.0.1 PORT=3100 node server.js > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:3100/ && break
+            sleep 1
+          done
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/)
+          cat server.log
+          test "$code" = 200
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: web/test-results
+          if-no-files-found: ignore
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The Dockerfile bakes data/ in as seed history; it is gitignored, so
+      # give the build an empty one (bootstrap-data.sh skips an empty dir).
+      - run: mkdir -p data
+      - run: docker build -t trackaroo:ci .
+      - name: Boot smoke test (no network, pipeline disabled)
+        run: |
+          docker run -d --name trackaroo-ci --network none -e SKIP_PIPELINE=1 trackaroo:ci
+          ok=
+          for i in $(seq 1 60); do
+            if docker exec trackaroo-ci node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status===200?0:1),()=>process.exit(1))"; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          docker logs trackaroo-ci
+          test -n "$ok"
+          if docker logs trackaroo-ci 2>&1 | grep -E 'Starting pipeline|Scraping '; then
+            echo "The container tried to scrape." >&2
+            exit 1
+          fi

@@ -53,6 +53,9 @@
 #   TRACKAROO_DISCORD_WEBHOOK_URL / TRACKAROO_SMTP_* / TRACKAROO_ALERT_WEBHOOK_URL
 #                        Price-alert delivery (check_alerts.py) — all optional,
 #                        see .env.example
+#   SKIP_PIPELINE        1 = dashboard only: no boot catch-up, no scheduler, no
+#                        spec sync, no staleness loop -- nothing ever scrapes.
+#                        Used by CI's boot smoke test (--network none).
 #
 # A single pipeline iteration can be run and then exit with RUN_ONCE=1
 # (used for one-shot `docker run` from a host scheduler).
@@ -147,6 +150,12 @@ log "Publish it with:  -p <HOST_PORT>:${PORT}   (right-hand number must be ${POR
 node web/server.js &
 WEB_PID=$!
 log "Dashboard started."
+
+if [ "${SKIP_PIPELINE:-0}" = "1" ]; then
+    log "SKIP_PIPELINE=1 - dashboard only: no catch-up, no scheduler, no scraping."
+    wait "$WEB_PID"
+    exit $?
+fi
 
 if [ "$RUN_ONCE" = "1" ]; then
     run_pipeline

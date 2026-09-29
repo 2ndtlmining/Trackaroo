@@ -54,7 +54,7 @@ function parseDateFromFilename(filename) {
 // 5060 Ti, all three brands and both retailers are present, there is a
 // current-2 tier row, and listings carry price history for sparklines,
 // movers, and the 90-day-low chips.
-function buildSyntheticSources() {
+export function buildSyntheticSources() {
 	const dates = ['18_August_2026', '19_August_2026', '20_August_2026'];
 	// model -> [category, brand, gen_tier]
 	const defs = {

@@ -7,7 +7,15 @@ import { openDatabase } from '../../src/lib/server/db';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const SCHEMA_PATH = path.resolve(here, '..', '..', '..', 'db', 'schema.sql');
-export const DATA_DIR = path.resolve(here, '..', '..', '..', 'data');
+// Overridable like the backend's TRACKAROO_DATA_DIR, so CI (no data/) and a
+// local check against synthetic data can point elsewhere.
+export const DATA_DIR = process.env.TRACKAROO_DATA_DIR
+	? path.resolve(process.env.TRACKAROO_DATA_DIR)
+	: path.resolve(here, '..', '..', '..', 'data');
+// Set when the suite is seeded from CI's synthetic snapshots rather than a
+// real scrape, so tests that assert a fact only real data has can skip
+// themselves instead of asserting something the fixture never promised (#13).
+export const SYNTHETIC = !!process.env.TRACKAROO_DATA_DIR;
 
 const MONTHS: Record<string, number> = {
 	January: 1,
@@ -50,8 +58,7 @@ export function seedDatabase(file: string): DB {
 	const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
 	db.exec(schema);
 
-	const files = fs
-		.readdirSync(DATA_DIR)
+	const files = (fs.existsSync(DATA_DIR) ? fs.readdirSync(DATA_DIR) : [])
 		.filter((f) => f.endsWith('.json'))
 		.sort();
 

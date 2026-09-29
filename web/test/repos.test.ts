@@ -28,7 +28,14 @@ import {
 } from '../src/lib/server/repos';
 import { MIN_HISTORY_POINTS } from '../src/lib/constants';
 import { RETAILER_OPTIONS } from '../src/lib/filters';
-import { createSeededDb, DATA_DIR, SCHEMA_PATH, parseDateFromFilename, type SeededDb } from './helpers/seed';
+import {
+	createSeededDb,
+	DATA_DIR,
+	SCHEMA_PATH,
+	SYNTHETIC,
+	parseDateFromFilename,
+	type SeededDb
+} from './helpers/seed';
 
 // Every retailer the display layer declares. Asserting against this rather
 // than a hardcoded pair means adding a retailer to the pipeline does not break
@@ -50,7 +57,9 @@ afterAll(() => {
 });
 
 describe('getLatestListings', () => {
-	it('returns all active listings with a latest snapshot', () => {
+	// Skipped on synthetic data (#13): the CI fixture's listing URLs are
+	// relative (`/p/...`), unlike the real scrape's absolute `https://` URLs.
+	it.skipIf(SYNTHETIC)('returns all active listings with a latest snapshot', () => {
 		const rows = getLatestListings(db);
 		expect(rows.length).toBeGreaterThan(0);
 		for (const row of rows) {
@@ -593,7 +602,9 @@ describe('getPriceBand', () => {
 		expect(point!.high).toBeCloseTo(agg.mx as number, 2);
 	});
 
-	it('is null on days where nothing is in stock', () => {
+	// Skipped on synthetic data (#13): the CI fixture has no product day where
+	// every listing is out of stock, unlike the real scrape history.
+	it.skipIf(SYNTHETIC)('is null on days where nothing is in stock', () => {
 		const candidate = db
 			.prepare(
 				`SELECT p.id AS pid, s.snapshot_date AS date
