@@ -51,15 +51,40 @@ export function formatRelative(iso: string | null, now: Date = new Date()): stri
 	return `${months}mo ago`;
 }
 
+// Fixed English month abbreviations. Intl's en-AU data says "Sept" in Node but
+// browsers can say "Sep"; the server and the browser rendering different text
+// is a hydration mismatch (29-Sep follow-up). A table cannot drift.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+// 'YYYY-MM-DD' (optionally followed by a time) -> [year, month 1-12, day].
+function dateParts(iso: string): [number, number, number] | null {
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+	if (!m) return null;
+	const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+	if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+	return [y, mo, d];
+}
+
 export function formatDate(dateStr: string): string {
-	const date = new Date(`${dateStr}T00:00:00`);
-	if (Number.isNaN(date.getTime())) return dateStr;
-	return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+	const p = dateParts(dateStr);
+	return p ? `${p[2]} ${MONTHS[p[1] - 1]} ${p[0]}` : dateStr;
 }
 
 export function formatShortDate(isoDate: string): string {
-	const [y, m, d] = isoDate.split('-').map(Number);
-	return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+	const p = dateParts(isoDate);
+	return p ? `${p[2]} ${MONTHS[p[1] - 1]}` : isoDate;
+}
+
+export function formatMonthYear(isoDate: string): string {
+	const p = dateParts(isoDate);
+	return p ? `${MONTHS[p[1] - 1]} ${p[0]}` : isoDate;
+}
+
+// uPlot x values are UTC-midnight milliseconds (PriceChart builds them with
+// `${date}T00:00:00Z`), so read them back in UTC too.
+export function formatChartTick(ts: number): string {
+	const d = new Date(ts);
+	return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
 // Snapshots are dated, not timed: comparing a 'YYYY-MM-DD' against now() made

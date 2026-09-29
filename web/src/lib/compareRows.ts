@@ -11,6 +11,10 @@ export function clock(mhz: number | null): string | null {
 	return mhz === null ? null : `${(mhz / 1000).toFixed(1)} GHz`;
 }
 
+// Fixed locale: a bare toLocaleString() follows the viewer's machine, so the
+// server ("4,608") and a German browser ("4.608") would disagree on hydration.
+const CORE_FORMAT = new Intl.NumberFormat('en-AU');
+
 const sharedSpecRows: CompareRow[] = [
 	{
 		label: 'US launch MSRP',
@@ -83,7 +87,7 @@ const gpuSpecRows: CompareRow[] = [
 const cpuSpecRows: CompareRow[] = [
 	{
 		label: 'Cores / shaders',
-		value: (e) => (e.spec?.core_count ? e.spec.core_count.toLocaleString() : null)
+		value: (e) => (e.spec?.core_count ? CORE_FORMAT.format(e.spec.core_count) : null)
 	},
 	{
 		label: 'Threads',

@@ -2,7 +2,7 @@
 	import { onDestroy } from 'svelte';
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
-	import { formatAud } from '$lib/formats';
+	import { formatAud, formatChartTick } from '$lib/formats';
 
 	export interface ChartSeries {
 		listingId: number;
@@ -41,10 +41,6 @@
 		return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 	}
 
-	function formatTick(ts: number): string {
-		return new Date(ts).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-	}
-
 	function hideTooltip() {
 		if (tooltipEl) tooltipEl.style.display = 'none';
 	}
@@ -59,7 +55,7 @@
 			hideTooltip();
 			return;
 		}
-		const date = formatTick(x);
+		const date = formatChartTick(x);
 		const rows = uInstance.series
 			.slice(1)
 			.map((s, i) => {
@@ -91,7 +87,7 @@
 				grid: { stroke: border },
 				ticks: { stroke: border },
 				size: 40,
-				values: (_uInstance: uPlot, splits: number[]) => splits.map(formatTick)
+				values: (_uInstance: uPlot, splits: number[]) => splits.map(formatChartTick)
 			},
 			{
 				stroke: text,
