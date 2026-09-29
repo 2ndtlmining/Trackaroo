@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -1376,6 +1376,31 @@ describe('getRetailerFreshness carries the last scrape run (R3)', () => {
 				"DROP TABLE scrape_runs; INSERT INTO active_retailers (retailer, position) VALUES ('umart', 0);"
 			);
 			expect(getRetailerFreshness(d)[0]).toMatchObject({ retailer: 'umart', lastRunAt: null });
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('reads the latest scrape_runs row with one GROUP BY, not a per-row correlated subquery (final review M4)', () => {
+		// /healthz calls getRetailerFreshness on every strip-query request, and
+		// a correlated `WHERE r.id = (SELECT MAX(id) FROM scrape_runs WHERE
+		// retailer = r.retailer)` re-scans scrape_runs once per retailer row.
+		// `WHERE id IN (SELECT MAX(id) FROM scrape_runs GROUP BY retailer)`
+		// does the same single-latest-row-per-retailer selection with one pass.
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-runsql-'));
+		const d = openDatabase(path.join(dir, 'r.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec("INSERT INTO active_retailers (retailer, position) VALUES ('scorptec', 0);");
+			const spy = vi.spyOn(d, 'prepare');
+			getRetailerFreshness(d);
+			const scrapeRunsSql = spy.mock.calls
+				.map((call) => call[0] as string)
+				.find((sql) => sql.includes('scrape_runs'));
+			expect(scrapeRunsSql).toBeDefined();
+			expect(scrapeRunsSql).not.toMatch(/WHERE\s+r\.id\s*=/i);
+			expect(scrapeRunsSql).toMatch(/id\s+IN\s*\(\s*SELECT\s+MAX\(id\)\s+FROM\s+scrape_runs\s+GROUP\s+BY\s+retailer\s*\)/i);
 		} finally {
 			d.close();
 			fs.rmSync(dir, { recursive: true, force: true });

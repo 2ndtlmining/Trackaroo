@@ -456,12 +456,14 @@ export function getRetailerFreshness(db: DB): RetailerFreshness[] {
 		: [];
 	const inactive = [...latestBy.keys()].filter((r) => !active.includes(r)).sort();
 
+	// One GROUP BY pass, not a correlated MAX(id) subquery re-run per row
+	// (final review M4) -- /healthz calls this on every health-strip request.
 	const runs = tableExists(db, 'scrape_runs')
 		? (db
 				.prepare(
 					`SELECT r.retailer AS retailer, r.finished_at AS at, r.status AS status, r.matched AS matched
 					 FROM scrape_runs r
-					 WHERE r.id = (SELECT MAX(id) FROM scrape_runs WHERE retailer = r.retailer)`
+					 WHERE r.id IN (SELECT MAX(id) FROM scrape_runs GROUP BY retailer)`
 				)
 				.all() as Array<{ retailer: string; at: string; status: string; matched: number | null }>)
 		: [];
