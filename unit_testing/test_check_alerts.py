@@ -328,6 +328,39 @@ class TestSenders:
         send_email("127.0.0.1", 1, "", "", "a@b.c", "d@e.f", "t", "b")  # must not raise
 
 
+class TestSenderRedaction:
+    """final review M2: a webhook URL's token lives in the path. An
+    exception raised while POSTing to it can embed the full URL in its
+    message (urllib.error.URLError's reason, or any wrapped exception), so
+    logging the exception directly leaks the token. Apply the same
+    redaction as notify_discord.py / heartbeat.py: exception class name +
+    HTTP status only (+ scheme://hostname), never the raw exception text."""
+
+    TOKEN_URL = "http://example.invalid/webhooks/123/SENTINEL-WEBHOOK-TOKEN"
+
+    def test_send_discord_never_logs_the_webhook_token(self, monkeypatch, caplog):
+        def boom(req, timeout=None):
+            raise OSError(f"Failed to reach {req.full_url}")
+
+        monkeypatch.setattr("check_alerts.urllib.request.urlopen", boom)
+        with caplog.at_level("ERROR"):
+            send_discord(self.TOKEN_URL, "t", "b")
+        assert "SENTINEL-WEBHOOK-TOKEN" not in caplog.text
+        for record in caplog.records:
+            assert "SENTINEL-WEBHOOK-TOKEN" not in record.getMessage()
+
+    def test_send_webhook_never_logs_the_webhook_token(self, monkeypatch, caplog):
+        def boom(req, timeout=None):
+            raise OSError(f"Failed to reach {req.full_url}")
+
+        monkeypatch.setattr("check_alerts.urllib.request.urlopen", boom)
+        with caplog.at_level("ERROR"):
+            send_webhook(self.TOKEN_URL, "t", "b")
+        assert "SENTINEL-WEBHOOK-TOKEN" not in caplog.text
+        for record in caplog.records:
+            assert "SENTINEL-WEBHOOK-TOKEN" not in record.getMessage()
+
+
 # ── deliver ──────────────────────────────────────────────────────────
 
 class TestDeliver:

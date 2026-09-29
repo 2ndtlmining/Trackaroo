@@ -36,12 +36,29 @@ import os
 import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlsplit
 
 import requests
 
 from config import DB_PATH, NOTIFY_TIMEOUT_SECONDS
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _safe_host(url: str) -> str:
+    """scheme://hostname[:port] only -- a Discord webhook URL's token lives
+    in the path, so nothing more specific than this may ever reach a log
+    line. Mirrors heartbeat._safe_host (final review M2)."""
+    try:
+        parts = urlsplit(url)
+        if parts.scheme and parts.hostname:
+            host = parts.hostname
+            if parts.port:
+                host = f"{host}:{parts.port}"
+            return f"{parts.scheme}://{host}"
+    except ValueError:
+        pass
+    return "<unparseable>"
 
 # ── Brand-agnostic presentational constants ────────────────────────────
 # Match the app's dark-theme tokens in web/src/app.css.
@@ -208,7 +225,16 @@ def send_embed(webhook_url: str, embed: dict) -> bool:
         resp.raise_for_status()
         return True
     except requests.RequestException as e:  # noqa: BLE001 - notify failures must not break the pipeline
-        LOGGER.error("Discord webhook failed: %s", e)
+        # Never log `e` directly: requests/urllib3 embed the full URL in
+        # exception messages (HTTPError's "... for url: ...",
+        # ConnectionError/Timeout's MaxRetryError "... with url: ..."), and
+        # the webhook URL's path IS the Discord token (final review M2).
+        # Only the scheme+host, the exception's class name, and (for an
+        # HTTPError with a response) its status code are safe -- same
+        # redaction as heartbeat._safe_host (fix-round-1 I1).
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        detail = f" (HTTP {status})" if status is not None else ""
+        LOGGER.error("Discord webhook failed: %s%s (%s)", type(e).__name__, detail, _safe_host(webhook_url))
         return False
 
 

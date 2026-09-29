@@ -9,6 +9,7 @@ no-op without webhooks, dry-run).
 import argparse
 import sqlite3
 import sys
+import unittest.mock
 from pathlib import Path
 
 import pytest
@@ -316,6 +317,44 @@ class TestSendEmbed:
         monkeypatch.setattr("notify_discord.requests.post", lambda *a, **k: _ErrorResponse())
         assert send_embed("https://hook/gpu", {"title": "t"}) is False
         assert "Discord webhook failed" in caplog.text
+
+
+class TestSendEmbedRedaction:
+    """final review M2: requests' HTTPError/ConnectionError messages embed the
+    full request URL, and a Discord webhook URL's token lives in the path --
+    logging the exception directly (``LOGGER.error(..., e)``) leaked it.
+    Apply the same redaction as heartbeat.py's fix-round-1 I1: exception
+    class name + HTTP status only (+ scheme://hostname), never the raw
+    exception text or the URL itself."""
+
+    TOKEN_URL = "https://discord.com/api/webhooks/123456/SENTINEL-DISCORD-TOKEN"
+
+    def test_a_raising_post_never_logs_the_webhook_token(self, monkeypatch, caplog):
+        def fake_post(url, json=None, timeout=None):
+            # requests/urllib3 embed the full URL in exception text -- this is
+            # the real shape a ConnectionError's MaxRetryError message takes.
+            raise requests.ConnectionError(f"Max retries exceeded with url: {url}")
+
+        monkeypatch.setattr("notify_discord.requests.post", fake_post)
+        with caplog.at_level("ERROR"):
+            assert send_embed(self.TOKEN_URL, {"title": "t"}) is False
+        assert "SENTINEL-DISCORD-TOKEN" not in caplog.text
+        for record in caplog.records:
+            assert "SENTINEL-DISCORD-TOKEN" not in record.getMessage()
+
+    def test_a_404_response_never_logs_the_webhook_token(self, monkeypatch, caplog):
+        resp = unittest.mock.Mock(status_code=404)
+        resp.raise_for_status.side_effect = requests.HTTPError(
+            f"404 Client Error: Not Found for url: {self.TOKEN_URL}", response=resp
+        )
+        monkeypatch.setattr("notify_discord.requests.post", lambda *a, **k: resp)
+        with caplog.at_level("ERROR"):
+            assert send_embed(self.TOKEN_URL, {"title": "t"}) is False
+        assert "SENTINEL-DISCORD-TOKEN" not in caplog.text
+        for record in caplog.records:
+            assert "SENTINEL-DISCORD-TOKEN" not in record.getMessage()
+        # The status code is still useful and not secret -- keep reporting it.
+        assert "404" in caplog.text
 
 
 # ── send_alert ──────────────────────────────────────────────────────

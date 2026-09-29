@@ -23,13 +23,19 @@ HEARTBEAT_ENV = "TRACKAROO_HEARTBEAT_URL"
 
 
 def _safe_host(url: str) -> str:
-    """scheme://host only -- a healthchecks.io-style ping URL's secret lives
-    in the path (its check UUID/token), so nothing more specific than this
-    may ever reach a log line (fix-round-1 I1)."""
+    """scheme://hostname[:port] only -- a healthchecks.io-style ping URL's
+    secret lives in the path (its check UUID/token), so nothing more specific
+    than this may ever reach a log line (fix-round-1 I1). ``urlsplit().netloc``
+    is NOT safe here: it includes a userinfo component (``user:pass@``) when
+    the URL carries one, so this uses ``.hostname``/``.port`` instead
+    (final review M1)."""
     try:
         parts = urlsplit(url)
-        if parts.scheme and parts.netloc:
-            return f"{parts.scheme}://{parts.netloc}"
+        if parts.scheme and parts.hostname:
+            host = parts.hostname
+            if parts.port:
+                host = f"{host}:{parts.port}"
+            return f"{parts.scheme}://{host}"
     except ValueError:
         pass
     return "<unparseable>"

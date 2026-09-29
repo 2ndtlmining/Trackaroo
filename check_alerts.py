@@ -49,11 +49,29 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Dict, List, Optional
+from urllib.parse import urlsplit
 
 from config import DB_PATH, NOTIFY_TIMEOUT_SECONDS, RESTOCK_COOLDOWN_HOURS
 from notify_discord import load_dotenv
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _safe_host(url: str) -> str:
+    """scheme://hostname[:port] only -- a webhook URL's token lives in the
+    path, so nothing more specific than this may ever reach a log line.
+    Mirrors heartbeat._safe_host / notify_discord._safe_host (final review
+    M2)."""
+    try:
+        parts = urlsplit(url)
+        if parts.scheme and parts.hostname:
+            host = parts.hostname
+            if parts.port:
+                host = f"{host}:{parts.port}"
+            return f"{parts.scheme}://{host}"
+    except ValueError:
+        pass
+    return "<unparseable>"
 
 # Mirrors the dashboard's "cheapest in-stock variant" definition: the latest
 # snapshot per active, non-bundle listing, across tracked products.
@@ -233,7 +251,13 @@ def send_discord(webhook_url: str, title: str, body: str) -> None:
         with urllib.request.urlopen(req, timeout=NOTIFY_TIMEOUT_SECONDS) as resp:
             resp.read()
     except Exception as e:  # noqa: BLE001 - alert delivery must not break the pipeline
-        LOGGER.error("Discord alert delivery failed: %s", e)
+        # Never log `e` directly: an HTTPError/URLError's message can embed
+        # the full request URL, and this webhook URL's path IS the Discord
+        # token (final review M2) -- same redaction as notify_discord.py /
+        # heartbeat.py (fix-round-1 I1).
+        status = getattr(e, "code", None)
+        detail = f" (HTTP {status})" if status is not None else ""
+        LOGGER.error("Discord alert delivery failed: %s%s (%s)", type(e).__name__, detail, _safe_host(webhook_url))
 
 
 def send_webhook(url: str, title: str, body: str) -> None:
@@ -246,7 +270,11 @@ def send_webhook(url: str, title: str, body: str) -> None:
         with urllib.request.urlopen(req, timeout=NOTIFY_TIMEOUT_SECONDS) as resp:
             resp.read()
     except Exception as e:  # noqa: BLE001 - alert delivery must not break the pipeline
-        LOGGER.error("Webhook alert delivery failed: %s", e)
+        # Same redaction as send_discord above (final review M2): the
+        # webhook URL's path can itself be the secret.
+        status = getattr(e, "code", None)
+        detail = f" (HTTP {status})" if status is not None else ""
+        LOGGER.error("Webhook alert delivery failed: %s%s (%s)", type(e).__name__, detail, _safe_host(url))
 
 
 def send_email(

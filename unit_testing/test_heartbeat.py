@@ -50,6 +50,25 @@ class TestPing:
         for record in caplog.records:
             assert "SENTINEL-TOKEN-ABC123" not in record.getMessage()
 
+    def test_userinfo_in_the_url_never_reaches_the_log(self, monkeypatch, caplog):
+        """final review M1: _safe_host used scheme://netloc, and netloc
+        includes user:pass@ -- a heartbeat URL with basic-auth credentials
+        embedded (or any URL carrying a userinfo component) leaked the
+        password into the "safe" host-only log line."""
+        token_url = "https://u:secret@host/uuid-token"
+
+        def boom(*a, **k):
+            raise requests.ConnectionError("down")
+
+        monkeypatch.setattr(heartbeat.requests, "get", boom)
+        with caplog.at_level(logging.WARNING):
+            assert heartbeat.ping(token_url) is False
+        assert "secret" not in caplog.text
+        assert "uuid-token" not in caplog.text
+        for record in caplog.records:
+            assert "secret" not in record.getMessage()
+            assert "uuid-token" not in record.getMessage()
+
     def test_a_4xx_response_never_logs_the_secret_token(self, monkeypatch, caplog):
         """fix-round-1 I1: same guard for an HTTPError carrying a response."""
         token_url = "https://hc-ping.example/SENTINEL-TOKEN-XYZ789"
