@@ -59,6 +59,45 @@ def _record_vram(r: Dict[str, Any]) -> Any:
     return r.get("memorySize")
 
 
+# A trailing memory size on a normalised name: "geforce rtx 5060 ti 8gb" or
+# "... 8 gb". Only digits followed by "gb" at the very end count, so "gre",
+# "xt" and "super" are never mistaken for one.
+_MEMORY_SUFFIX = re.compile(r"^(?P<base>.+?) (?P<gb>\d+) ?gb$")
+
+
+def _pick(
+    cands: List[Dict[str, Any]], vram_gb: Optional[float], strict: bool
+) -> Optional[Dict[str, Any]]:
+    """One confident record from `cands`, or None.
+
+    strict: the VRAM must agree even when there is a single candidate. Used
+    for any watchlist name that itself carries a memory size. (Prefix
+    candidates are filtered by VRAM whenever one is known, as before.)
+    """
+    if not strict and len(cands) == 1:
+        return cands[0]
+    if vram_gb is not None:
+        cands = [r for r in cands if _same_value(_record_vram(r), vram_gb)]
+    return cands[0] if len(cands) == 1 else None
+
+
+def _match_normalized(
+    n: str,
+    vram_gb: Optional[float],
+    by_norm: Dict[str, List[Dict[str, Any]]],
+    strict: bool,
+) -> Optional[Dict[str, Any]]:
+    if n in by_norm:
+        return _pick(by_norm[n], vram_gb, strict)
+    cands: List[Dict[str, Any]] = []
+    for key, recs in by_norm.items():
+        if key.startswith(n) and re.fullmatch(r"\d+ gb", key[len(n):].strip()):
+            cands.extend(recs)
+    if not cands:
+        return None
+    return _pick(cands, vram_gb, strict=True)
+
+
 def match_gpu(
     model: str,
     vram_gb: Optional[float],
@@ -72,31 +111,26 @@ def match_gpu(
        '<digits> gb' (VRAM-variant naming). If the watchlist carries a
        vram_gb, candidates whose memorySize does not equal it are
        dropped. A single remaining candidate wins; otherwise no match.
+    3. A watchlist name that ends in a memory size ("GeForce RTX 5060 Ti
+       8GB", Phase 1 #2) is tried as written, then as its base name, with the
+       VRAM required to agree even for a single candidate. vram_gb wins over
+       the suffix when both are present.
 
     Returns the matched record, or None when no confident match exists.
     """
-    n = normalize_name(model)
     by_norm: Dict[str, List[Dict[str, Any]]] = {}
     for r in records:
         by_norm.setdefault(normalize_name(r["name"]), []).append(r)
 
-    if n in by_norm:
-        cands = by_norm[n]
-        if len(cands) == 1:
-            return cands[0]
-        if vram_gb is not None:
-            cands = [r for r in cands if _same_value(_record_vram(r), vram_gb)]
-        return cands[0] if len(cands) == 1 else None
+    n = normalize_name(model)
+    suffix = _MEMORY_SUFFIX.match(n)
+    if suffix is None:
+        return _match_normalized(n, vram_gb, by_norm, strict=False)
 
-    cands: List[Dict[str, Any]] = []
-    for key, recs in by_norm.items():
-        if key.startswith(n) and re.fullmatch(r"\d+ gb", key[len(n):].strip()):
-            cands.extend(recs)
-    if not cands:
-        return None
-    if vram_gb is not None:
-        cands = [r for r in cands if _same_value(_record_vram(r), vram_gb)]
-    return cands[0] if len(cands) == 1 else None
+    want = vram_gb if vram_gb is not None else float(suffix.group("gb"))
+    return _match_normalized(n, want, by_norm, strict=True) or _match_normalized(
+        suffix.group("base"), want, by_norm, strict=True
+    )
 
 
 def match_cpu(model: str, records: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
