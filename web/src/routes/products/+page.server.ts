@@ -1,5 +1,6 @@
 import {
 	getLatestListings,
+	getLaunchDates,
 	getProductDealStats,
 	getTrackedProducts,
 	groupListingsByProduct
@@ -39,6 +40,7 @@ export function load({
 			const withListings = groupListingsByProduct(listings);
 			const dealStats = getProductDealStats(db, withListings.map((g) => g.productId));
 			const byProduct = new Map(withListings.map((g) => [g.productId, g]));
+			const launchDates = getLaunchDates(db, category);
 
 			// Start from the watchlist, not from what has been scraped. Around 39%
 			// of tracked products have never matched a listing; dropping them would
@@ -46,9 +48,12 @@ export function load({
 			// is a different claim from "nobody stocks it".
 			const groups = getTrackedProducts(db, category).map((product) => {
 				const group = byProduct.get(product.productId);
+				const launchDate = launchDates.get(product.productId) ?? null;
 				if (!group) {
 					return {
 						...product,
+						launchDate,
+						listingCount: 0,
 						cheapestInStockPrice: null,
 						cheapestInStockRetailer: null,
 						inStockCount: 0,
@@ -58,9 +63,14 @@ export function load({
 					};
 				}
 				const stats = dealStats.get(group.productId);
-				const { listings: _listings, ...rest } = group;
+				const { listings, ...rest } = group;
 				return {
 					...rest,
+					vramGb: product.vramGb,
+					cores: product.cores,
+					launchDate,
+					// Active listings (in stock or not): the "of N" in "3 of 5".
+					listingCount: listings.length,
 					avg30: stats?.avg30 ?? null,
 					avg30Points: stats?.avg30Points ?? 0,
 					neverListed: false

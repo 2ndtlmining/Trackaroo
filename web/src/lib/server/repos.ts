@@ -301,6 +301,8 @@ export interface TrackedProduct {
 	model: string;
 	productVariant: string | null;
 	generationTier: GenerationTier | null;
+	vramGb: number | null;
+	cores: number | null;
 }
 
 // Every tracked product in a category, whether or not a retailer has ever
@@ -310,7 +312,7 @@ export interface TrackedProduct {
 export function getTrackedProducts(db: DB, category: Category): TrackedProduct[] {
 	const rows = db
 		.prepare(
-			`SELECT id, category, brand, model, variant, generation_tier
+			`SELECT id, category, brand, model, variant, generation_tier, vram_gb, cores
 			 FROM products
 			 WHERE tracked = 1 AND category = ?
 			 ORDER BY model COLLATE NOCASE ASC`
@@ -322,6 +324,8 @@ export function getTrackedProducts(db: DB, category: Category): TrackedProduct[]
 		model: string;
 		variant: string | null;
 		generation_tier: GenerationTier | null;
+		vram_gb: number | null;
+		cores: number | null;
 	}>;
 	return rows.map((r) => ({
 		productId: r.id,
@@ -329,8 +333,25 @@ export function getTrackedProducts(db: DB, category: Category): TrackedProduct[]
 		brand: r.brand,
 		model: r.model,
 		productVariant: r.variant,
-		generationTier: r.generation_tier
+		generationTier: r.generation_tier,
+		vramGb: r.vram_gb,
+		cores: r.cores
 	}));
+}
+
+// Release month per product for the catalog's Released column (#23). A
+// separate, memoised, per-category read of specs -- specs are still never
+// JOINed into a list query (decision log 2026-09-30).
+export function getLaunchDates(db: DB, category: Category): Map<number, string> {
+	const rows = db
+		.prepare(
+			`SELECT product_id AS productId, MIN(launch_date) AS launchDate
+			 FROM specs
+			 WHERE category = ? AND launch_date IS NOT NULL
+			 GROUP BY product_id`
+		)
+		.all(category) as Array<{ productId: number; launchDate: string }>;
+	return new Map(rows.map((r) => [r.productId, r.launchDate]));
 }
 
 export function getBrands(db: DB): string[] {

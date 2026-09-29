@@ -1,9 +1,9 @@
 <script lang="ts">
 	import BrandIcon from './BrandIcon.svelte';
 	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
-	import { formatAud, formatPct } from '$lib/formats';
+	import { formatAud, formatMonthYear, formatPct } from '$lib/formats';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30 } from '$lib/offers';
-	import type { ProductGroup } from '$lib/server/repos';
+	import type { CatalogRow } from '$lib/productIndex';
 
 	let {
 		group,
@@ -15,8 +15,9 @@
 		// it — a different statement from "listed, currently out of stock".
 		// The /products loader drops `listings` from each group (#28) — nothing
 		// here reads it — so the prop type omits it too, matching what actually
-		// arrives.
-		group: Omit<ProductGroup, 'listings'> & { neverListed?: boolean };
+		// arrives. The catalog columns (#23) are optional: search results and
+		// older callers may not carry them.
+		group: CatalogRow;
 		compareSelected?: boolean;
 		compareDisabled?: boolean;
 		onToggleCompare?: (productId: number) => void;
@@ -27,16 +28,35 @@
 	);
 
 	const deltaPct = $derived(deltaVsAvg30(group.cheapestInStockPrice, group.avg30 ?? null));
+
+	const specHeader = $derived(group.category === 'gpu' ? 'VRAM' : 'Cores');
+	const specValue = $derived(
+		group.category === 'gpu'
+			? group.vramGb
+				? `${group.vramGb}GB`
+				: '—'
+			: group.cores
+				? String(group.cores)
+				: '—'
+	);
+	// The sr-only labels below are expressions, not literal text: Svelte trims
+	// a literal trailing space, and "Released:—" reads badly aloud.
+	const released = $derived(group.launchDate ? formatMonthYear(group.launchDate) : '—');
 </script>
 
-<div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-surface-hover">
+<div
+	class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-surface-hover"
+	data-testid="catalog-row"
+>
 	{#if onToggleCompare}
 		<!-- The padded label is the touch target: a bare 13px checkbox is well
 		     under the 24px WCAG 2.2 AA minimum and awkward to hit on a phone.
-		     Negative margin keeps the row's visual density unchanged. -->
+		     Negative margin keeps the row's visual density unchanged. Its title
+		     and aria-label say what ticking does (U5). -->
 		<label
-			class="-m-2 flex shrink-0 items-center p-2"
+			class="-m-2 flex w-14 shrink-0 items-center p-2"
 			class:cursor-pointer={!compareDisabled}
+			title="Add to comparison"
 		>
 			<input
 				type="checkbox"
@@ -61,13 +81,29 @@
 
 	<a
 		href={`/product/${group.productId}`}
-		class="min-w-0 flex-1 basis-40 truncate text-sm text-text no-underline hover:underline"
+		class="min-w-0 flex-1 basis-40 truncate text-sm no-underline hover:underline {group.neverListed
+			? 'text-text-muted'
+			: 'text-text'}"
 		title={group.model}
 	>
 		{group.model}
 	</a>
 
-	<span class="hidden shrink-0 items-center gap-1.5 text-xs text-text-muted sm:flex">
+	<span class="hidden w-16 shrink-0 text-right text-xs text-text-muted md:inline"
+		><span class="sr-only">{`${specHeader}: `}</span><span class="num">{specValue}</span></span
+	>
+	<span class="hidden w-20 shrink-0 text-xs text-text-muted md:inline"
+		><span class="sr-only">{'Released: '}</span>{released}</span
+	>
+	<span
+		class="hidden w-20 shrink-0 text-right text-xs text-text-muted md:inline"
+		title="In stock of listed"
+		><span class="sr-only">{'Listings: '}</span><span class="num"
+			>{group.inStockCount} of {group.listingCount ?? 0}</span
+		></span
+	>
+
+	<span class="hidden shrink-0 items-center gap-1.5 text-xs text-text-muted lg:flex">
 		<BrandIcon brand={group.brand} size={12} />
 		{group.brand}
 	</span>

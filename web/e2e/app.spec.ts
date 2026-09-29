@@ -352,6 +352,46 @@ test.describe('homepage dashboard', () => {
 // Filters.svelte moved off the homepage with the listing table (spec §5) and is
 // now used only by /products, so its coverage moves here rather than being lost.
 test.describe('product index', () => {
+	test('hides never-listed products until asked, and search still finds them (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toHaveCount(0);
+
+		// The label flips Show -> Hide, so locate by the part that stays put.
+		const toggle = page.getByRole('button', { name: /^(Show|Hide) \d+ not currently sold$/ });
+		await expect(toggle).toHaveText(/^Show /);
+		await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+		await toggle.click();
+		await expect(toggle).toHaveText(/^Hide /);
+		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toBeVisible();
+		await expect(page).toHaveURL(/unlisted=1/);
+
+		// Back from a product page keeps it (the Task 7 replaceState lesson:
+		// read from location, not the stale page.url).
+		await page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' }).click();
+		await expect(page).toHaveURL(/\/product\/\d+/);
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('button', { name: /^Hide \d+ not currently sold$/ })).toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toBeVisible();
+
+		await goto(page, '/products?category=gpu&q=E2E%20Deal%20Demo');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toBeVisible();
+	});
+
+	test('the catalog shows column labels, VRAM and group counts (#23, U5)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const header = page.getByTestId('catalog-header');
+		for (const col of ['Compare', 'Price', 'Model', 'VRAM', 'Released', 'Listings']) {
+			await expect(header).toContainText(col);
+		}
+		await expect(page.getByText('16GB', { exact: true }).first()).toBeVisible();
+		await expect(page.getByRole('heading', { level: 2 }).first()).toContainText(/\d+ models? · \d+ in stock/);
+	});
+
 	test('groups the catalogue by brand and generation when the box is empty', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
 		await expect(page.getByRole('heading', { name: 'GPUs', level: 1 })).toBeVisible();

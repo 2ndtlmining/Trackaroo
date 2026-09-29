@@ -4,10 +4,9 @@
 	import { page } from '$app/state';
 	import ProductRow from '$lib/components/ProductRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
-	import { groupForIndex } from '$lib/productIndex';
+	import { groupForIndex, type CatalogRow } from '$lib/productIndex';
 	import { searchProducts } from '$lib/productSearch';
 	import { MAX_COMPARE, parseCompareIds, withParams } from '$lib/urlState';
-	import type { ProductGroup } from '$lib/server/repos';
 	import type { Category } from '$lib/types';
 
 	let {
@@ -18,7 +17,7 @@
 			inStockOnly: boolean;
 			trackedCount: number;
 			listedCount: number;
-			groups: (Omit<ProductGroup, 'listings'> & { neverListed?: boolean })[];
+			groups: CatalogRow[];
 		};
 	} = $props();
 
@@ -43,11 +42,20 @@
 	// in the browser, so narrowing is instant and there is no debounce.
 	const matches = $derived(searchProducts(data.groups, query));
 	const searching = $derived(query.trim().length > 0);
-	const groups = $derived(searching ? [] : groupForIndex(data.groups));
 
 	let compareIds = $state<Set<number>>(
 		new Set(parseCompareIds(urlParams().get('compare')))
 	);
+
+	// Never-listed products are hidden from browsing by default (#23); search
+	// still covers the whole watchlist (25-Aug decision, U-D16). Read through
+	// urlParams() like q/compare, so Back restores it.
+	let showUnlisted = $state(urlParams().get('unlisted') === '1');
+	const unlistedCount = $derived(data.groups.filter((g) => g.neverListed).length);
+	const browseItems = $derived(
+		showUnlisted ? data.groups : data.groups.filter((g) => !g.neverListed)
+	);
+	const groups = $derived(searching ? [] : groupForIndex(browseItems));
 
 	function toggleCompare(productId: number) {
 		const next = new Set(compareIds);
@@ -70,6 +78,7 @@
 			const params = urlParams();
 			query = params.get('q') ?? '';
 			compareIds = new Set(parseCompareIds(params.get('compare')));
+			showUnlisted = params.get('unlisted') === '1';
 		}
 		lastCategory = current;
 	});
@@ -83,7 +92,8 @@
 	$effect(() => {
 		const next = withParams(location.search, {
 			q: query.trim() || null,
-			compare: compareIds.size ? [...compareIds].join(',') : null
+			compare: compareIds.size ? [...compareIds].join(',') : null,
+			unlisted: showUnlisted ? '1' : null
 		});
 		if (!urlSynced) {
 			urlSynced = true;
@@ -170,6 +180,16 @@
 			/>
 			In stock
 		</label>
+		{#if unlistedCount > 0 && !data.inStockOnly}
+			<button
+				type="button"
+				aria-pressed={showUnlisted}
+				onclick={() => (showUnlisted = !showUnlisted)}
+				class="h-9 shrink-0 rounded-md border border-border bg-surface px-2.5 text-sm text-text-muted hover:text-text"
+			>
+				{showUnlisted ? 'Hide' : 'Show'} {unlistedCount} not currently sold
+			</button>
+		{/if}
 	</div>
 
 	<p class="mt-2 text-xs text-text-muted" aria-live="polite" data-testid="index-count">
@@ -204,13 +224,36 @@
 			</p>
 		{/if}
 	{:else}
-		<div class="mt-3 space-y-4">
+		<p class="mt-3 text-xs text-text-muted md:hidden">Tick a box to compare up to four.</p>
+		<!-- Column labels for sighted users (U5). aria-hidden because every cell
+		     carries its own sr-only label; this row is layout, not a table header.
+		     No Brand column: brand only shows from lg, and every group heading
+		     already names it. -->
+		<div
+			class="sticky top-0 z-10 mt-3 hidden items-center gap-x-3 border-b border-border bg-bg px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-muted md:flex"
+			aria-hidden="true"
+			data-testid="catalog-header"
+		>
+			<span class="-ml-2 w-14 shrink-0">Compare</span>
+			<span class="w-24 shrink-0">Price</span>
+			<span class="min-w-0 flex-1 basis-40">Model</span>
+			<span class="w-16 shrink-0 text-right">{data.category === 'gpu' ? 'VRAM' : 'Cores'}</span>
+			<span class="w-20 shrink-0">Released</span>
+			<span class="w-20 shrink-0 text-right">Listings</span>
+			<span class="w-36 shrink-0">vs average</span>
+			<span class="w-20 shrink-0 text-right">Retailer</span>
+		</div>
+		<div class="space-y-4">
 			{#each groups as group (group.key)}
+				{@const inStock = group.items.filter((i) => i.cheapestInStockPrice !== null).length}
 				<section>
 					<h2
-						class="border-b border-border pb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted"
+						class="border-b border-border pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-text-muted"
 					>
 						{group.brand} · {group.label}
+						<span class="normal-case tracking-normal">
+							· {group.items.length} {group.items.length === 1 ? 'model' : 'models'} · {inStock} in stock
+						</span>
 					</h2>
 					<div class="divide-y divide-border">
 						{#each group.items as item (item.productId)}

@@ -161,3 +161,16 @@ describe('/compare loader (#26)', () => {
 		expect(data.entries.map((e) => e.product.id)).toEqual(ids);
 	});
 });
+
+describe('/products catalog fields (#23)', () => {
+	it('every row carries the columns the table renders', async () => {
+		const { load } = await import('../src/routes/products/+page.server');
+		const data = load({ url: new URL('http://x/products?category=gpu'), setHeaders: noopSetHeaders } as any);
+		for (const g of data.groups) {
+			expect(g).toHaveProperty('vramGb');
+			expect(g).toHaveProperty('launchDate');
+			expect(typeof g.listingCount).toBe('number');
+			if (g.neverListed) expect(g.listingCount).toBe(0);
+		}
+	});
+});

@@ -11,6 +11,7 @@ import {
 	getCategoryCounts,
 	getComparisonData,
 	getDealCandidates,
+	getLaunchDates,
 	getLatestListings,
 	getMovers,
 	getPriceBand,
@@ -22,6 +23,7 @@ import {
 	getProductStats,
 	getRetailerFreshness,
 	getSparklines,
+	getTrackedProducts,
 	groupListingsByProduct,
 	tableExists,
 	upsertAlert
@@ -1475,6 +1477,45 @@ describe('getAvailableCounts', () => {
 		const available = getAvailableCounts(db);
 		for (const category of ['gpu', 'cpu'] as const) {
 			expect(available.get(category) ?? 0).toBeLessThanOrEqual(tracked.get(category) ?? 0);
+		}
+	});
+});
+
+describe('catalog columns (#23)', () => {
+	function catalogDb() {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-catalog-'));
+		const d = openDatabase(path.join(dir, 'c.db'), { readonly: false, fileMustExist: false });
+		d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+		d.exec(`INSERT INTO products (id, category, brand, model, vram_gb, tracked) VALUES (1, 'gpu', 'NVIDIA', 'GeForce RTX 5070', 12, 1);
+			INSERT INTO products (id, category, brand, model, cores, tracked) VALUES (2, 'cpu', 'AMD', 'Ryzen 7 9800X3D', 8, 1);
+			INSERT INTO specs (product_id, source, source_record_key, category, launch_date, raw_json, last_synced_at)
+			  VALUES (1, 'rightnow-gpu-db', 'GeForce RTX 5070', 'gpu', '2025-03-05', '{}', '2026-08-15T00:00:00Z');`);
+		return {
+			d,
+			close: () => {
+				d.close();
+				fs.rmSync(dir, { recursive: true, force: true });
+			}
+		};
+	}
+
+	it('getTrackedProducts carries VRAM and cores from the products table', () => {
+		const { d, close } = catalogDb();
+		try {
+			expect(getTrackedProducts(d, 'gpu')[0]).toMatchObject({ vramGb: 12, cores: null });
+			expect(getTrackedProducts(d, 'cpu')[0]).toMatchObject({ vramGb: null, cores: 8 });
+		} finally {
+			close();
+		}
+	});
+
+	it('getLaunchDates reads specs in its own per-category query', () => {
+		const { d, close } = catalogDb();
+		try {
+			expect(getLaunchDates(d, 'gpu')).toEqual(new Map([[1, '2025-03-05']]));
+			expect(getLaunchDates(d, 'cpu')).toEqual(new Map());
+		} finally {
+			close();
 		}
 	});
 });

@@ -1384,6 +1384,52 @@ describe('ProductHeadline honesty', () => {
 	});
 });
 
+describe('ProductRow catalog columns (#23, U5)', () => {
+	const row = {
+		productId: 7,
+		category: 'gpu' as const,
+		brand: 'NVIDIA',
+		model: 'GeForce RTX 5070',
+		productVariant: null,
+		generationTier: 'current' as const,
+		cheapestInStockPrice: 899,
+		cheapestInStockRetailer: 'scorptec' as const,
+		inStockCount: 3,
+		avg30: 920,
+		avg30Points: 20,
+		neverListed: false,
+		vramGb: 12,
+		cores: null,
+		launchDate: '2025-03-05',
+		listingCount: 5
+	};
+
+	it('shows VRAM, release month and in-stock-of-listed, each with a screen-reader label', () => {
+		const html = renderComponent(ProductRow, { group: row, onToggleCompare: () => {} });
+		expect(html).toContain('12GB');
+		expect(html).toContain('Mar 2025');
+		expect(html).toContain('3 of 5');
+		expect(html).toContain('VRAM:');
+		expect(html).toContain('Released:');
+		expect(html).toContain('Listings:');
+	});
+
+	it('labels the compare checkbox with what it does (U5)', () => {
+		const html = renderComponent(ProductRow, { group: row, onToggleCompare: () => {} });
+		expect(html).toContain('aria-label="Compare GeForce RTX 5070"');
+		expect(html).toContain('title="Add to comparison"');
+	});
+
+	it('shows cores for a CPU and a dash when a figure is unknown', () => {
+		const html = renderComponent(ProductRow, {
+			group: { ...row, category: 'cpu', vramGb: null, cores: 8, launchDate: null }
+		});
+		expect(html).toContain('Cores:');
+		expect(html).toContain('>8<');
+		expect(html).toContain('Released: </span>—');
+	});
+});
+
 describe('ProductRow', () => {
 	const base = {
 		productId: 7,
