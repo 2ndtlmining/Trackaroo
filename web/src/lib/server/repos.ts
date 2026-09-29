@@ -1207,6 +1207,98 @@ ${LATEST_CTE}
 		});
 }
 
+export interface ProductMove {
+	productId: number;
+	category: Category;
+	brand: string;
+	model: string;
+	oldPrice: number;
+	newPrice: number;
+	change: number;
+	pctChange: number;
+	fromDate: string;
+	toDate: string;
+	// Today's cheapest in-stock listing: where the new price actually is.
+	retailer: Retailer;
+	variantName: string | null;
+}
+
+// Product-level moves for the homepage (D7): the cheapest in-stock price per
+// day, on the first day inside the window vs the latest snapshot day. The
+// per-listing movers let one premium SKU rising headline "Biggest rises" while
+// the price a buyer actually pays -- the product's cheapest -- was falling.
+// The window boundary matches getMovers (`>= latest - N days`).
+export function getProductMoves(db: DB, windowDays: number): ProductMove[] {
+	const rows = db
+		.prepare(
+			`WITH maxd AS (SELECT MAX(snapshot_date) AS d FROM price_snapshots),
+			day_min AS (
+				SELECT l.product_id, s.snapshot_date AS date, MIN(s.price_aud) AS price
+				FROM retailer_listings l
+				JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				WHERE s.stock_status = 'in_stock'
+				  AND ${notBundle('l')}
+				  AND s.snapshot_date >= date((SELECT d FROM maxd), @window)
+				GROUP BY l.product_id, s.snapshot_date
+			),
+			ends AS (
+				SELECT product_id, MIN(date) AS first, MAX(date) AS last
+				FROM day_min
+				GROUP BY product_id
+			),
+			moves AS (
+				SELECT p.id AS product_id, p.category, p.brand, p.model,
+				       e.first AS from_date, e.last AS to_date,
+				       a.price AS old_price, b.price AS new_price,
+				       (SELECT l2.id
+				          FROM retailer_listings l2
+				          JOIN price_snapshots s2 ON s2.retailer_listing_id = l2.id
+				         WHERE l2.product_id = p.id
+				           AND s2.snapshot_date = e.last
+				           AND s2.stock_status = 'in_stock'
+				           AND ${notBundle('l2')}
+				         ORDER BY s2.price_aud, l2.id
+				         LIMIT 1) AS listing_id
+				FROM ends e
+				JOIN products p ON p.id = e.product_id AND p.tracked = 1
+				JOIN day_min a ON a.product_id = e.product_id AND a.date = e.first
+				JOIN day_min b ON b.product_id = e.product_id AND b.date = e.last
+				WHERE e.last = (SELECT d FROM maxd) AND e.first < e.last
+			)
+			SELECT m.*, l.retailer, l.variant_name
+			FROM moves m
+			JOIN retailer_listings l ON l.id = m.listing_id`
+		)
+		.all({ window: `-${windowDays} days` }) as Array<{
+		product_id: number;
+		category: Category;
+		brand: string;
+		model: string;
+		from_date: string;
+		to_date: string;
+		old_price: number;
+		new_price: number;
+		retailer: Retailer;
+		variant_name: string | null;
+	}>;
+
+	return rows.map((r) => ({
+		productId: r.product_id,
+		category: r.category,
+		brand: r.brand,
+		model: r.model,
+		oldPrice: r.old_price,
+		newPrice: r.new_price,
+		change: Math.round((r.new_price - r.old_price) * 100) / 100,
+		pctChange:
+			r.old_price > 0 ? Math.round(((r.new_price - r.old_price) / r.old_price) * 1000) / 10 : 0,
+		fromDate: r.from_date,
+		toDate: r.to_date,
+		retailer: r.retailer,
+		variantName: r.variant_name
+	}));
+}
+
 export interface ComparePrice {
 	retailer: Retailer;
 	// Best in-stock price on the product's latest snapshot day per listing

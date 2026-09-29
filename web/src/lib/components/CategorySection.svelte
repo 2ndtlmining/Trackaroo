@@ -3,7 +3,7 @@
 	import OfferRow from './OfferRow.svelte';
 	import { dealToOffer, type Deal } from '$lib/deals';
 	import { formatAud } from '$lib/formats';
-	import type { Mover } from '$lib/server/repos';
+	import type { MoverRowData } from '$lib/movers';
 
 	let {
 		title,
@@ -21,8 +21,8 @@
 		availableCount: number;
 		cheapestPrice: number | null;
 		deals: Deal[];
-		drops: Mover[];
-		rises: Mover[];
+		drops: MoverRowData[];
+		rises: MoverRowData[];
 	} = $props();
 </script>
 
@@ -69,7 +69,7 @@
 			<h3 class="px-3 pt-2.5 text-xs font-medium text-text-muted">Biggest drops (7d)</h3>
 			{#if drops.length > 0}
 				<div class="divide-y divide-border">
-					{#each drops as m (m.listingId)}
+					{#each drops as m (m.productId)}
 						<MoverRow mover={m} />
 					{/each}
 				</div>
@@ -84,7 +84,7 @@
 			<h3 class="px-3 pt-2.5 text-xs font-medium text-text-muted">Biggest rises (7d)</h3>
 			{#if rises.length > 0}
 				<div class="divide-y divide-border">
-					{#each rises as m (m.listingId)}
+					{#each rises as m (m.productId)}
 						<MoverRow mover={m} />
 					{/each}
 				</div>

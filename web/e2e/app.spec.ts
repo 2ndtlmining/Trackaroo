@@ -321,9 +321,10 @@ test.describe('homepage dashboard', () => {
 		).toBeVisible();
 	});
 
-	// getMovers is per-listing, so a retailer stocking several SKUs of one card
-	// used to fill all three slots with rows that read identically (model +
-	// retailer, no variant). Each slot must now be a different product.
+	// The homepage movers used to be per listing, so a retailer stocking several
+	// SKUs of one card filled all three slots with rows that read identically.
+	// They are product-level now (D7), so each slot is a different product by
+	// construction.
 	test('never lists the same product twice in a mover column', async ({ page }) => {
 		await goto(page, '/');
 		for (const section of ['GPUs', 'CPUs']) {
@@ -335,6 +336,14 @@ test.describe('homepage dashboard', () => {
 				expect(new Set(hrefs).size).toBe(hrefs.length);
 			}
 		}
+	});
+
+	test('mover rows describe the product’s cheapest price, one row per product (D7)', async ({ page }) => {
+		await goto(page, '/');
+		const drops = page.getByLabel('GPUs').getByTestId('biggest-drops');
+		await expect(drops.getByRole('link', { name: 'E2E Deal Demo GPU', exact: true })).toBeVisible();
+		// −90%: 1000 -> 100 on the fixture's only listing, so product == listing here.
+		await expect(drops).toContainText('90.0%');
 	});
 
 	test('no longer renders the filter-and-sort listing table', async ({ page }) => {

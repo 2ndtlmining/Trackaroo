@@ -19,6 +19,7 @@ import {
 	getProductDealStats,
 	getProductHistory,
 	getProductIndex,
+	getProductMoves,
 	getProductSparklines,
 	getProductStats,
 	getRetailerFreshness,
@@ -1516,6 +1517,77 @@ describe('catalog columns (#23)', () => {
 			expect(getLaunchDates(d, 'cpu')).toEqual(new Map());
 		} finally {
 			close();
+		}
+	});
+});
+
+describe('getProductMoves (D7)', () => {
+	function movesDb() {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-moves-'));
+		const d = openDatabase(path.join(dir, 'm.db'), { readonly: false, fileMustExist: false });
+		d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+		// Product 1: the premium SKU rises 2000 -> 2500 while the cheap SKU falls
+		// 1000 -> 900. A buyer pays the cheapest, so the product FELL 10%.
+		d.exec(`INSERT INTO products (id, category, brand, model, tracked) VALUES (1, 'gpu', 'NVIDIA', 'GeForce RTX 5090', 1);
+			INSERT INTO products (id, category, brand, model, tracked) VALUES (2, 'gpu', 'AMD', 'Radeon RX 9070', 1);
+			INSERT INTO products (id, category, brand, model, tracked) VALUES (3, 'gpu', 'AMD', 'Radeon RX 9060 XT', 1);
+			INSERT INTO retailer_listings (id, product_id, retailer, variant_name, listing_url, status) VALUES
+			  (1, 1, 'scorptec', 'ASUS ROG Astral 5090', 'https://x/1', 'active'),
+			  (2, 1, 'pccg', 'Palit 5090', 'https://x/2', 'active'),
+			  (3, 2, 'umart', 'Sapphire 9070', 'https://x/3', 'active'),
+			  (4, 3, 'umart', 'XFX 9060 XT', 'https://x/4', 'active');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES
+			  (1, '2026-09-22', 2000, 'in_stock'), (1, '2026-09-29', 2500, 'in_stock'),
+			  (2, '2026-09-22', 1000, 'in_stock'), (2, '2026-09-29', 900, 'in_stock'),
+			  (3, '2026-09-22', 800, 'in_stock'), (3, '2026-09-29', 880, 'in_stock'),
+			  -- product 3: out of stock today, so it has no "today" price and no move
+			  (4, '2026-09-22', 500, 'in_stock'), (4, '2026-09-29', 450, 'out_of_stock');`);
+		return {
+			d,
+			close: () => {
+				d.close();
+				fs.rmSync(dir, { recursive: true, force: true });
+			}
+		};
+	}
+
+	it('moves on the cheapest in-stock price, and names where today’s price is', () => {
+		const { d, close } = movesDb();
+		try {
+			const byId = new Map(getProductMoves(d, 7).map((m) => [m.productId, m]));
+			expect(byId.get(1)).toMatchObject({
+				oldPrice: 1000,
+				newPrice: 900,
+				change: -100,
+				pctChange: -10,
+				retailer: 'pccg',
+				variantName: 'Palit 5090',
+				fromDate: '2026-09-22',
+				toDate: '2026-09-29'
+			});
+			expect(byId.get(2)).toMatchObject({ oldPrice: 800, newPrice: 880, pctChange: 10 });
+			expect(byId.has(3)).toBe(false);
+		} finally {
+			close();
+		}
+	});
+});
+
+describe('Phase 4 queries run on a DB without the Phase 3 tables (Review Focus 2)', () => {
+	it('getProductMoves, getLaunchDates and getTrackedProducts need none of them', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-old-'));
+		const d = openDatabase(path.join(dir, 'old.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec('DROP TABLE IF EXISTS active_retailers; DROP TABLE IF EXISTS scrape_runs; DROP TABLE IF EXISTS run_markers;');
+			expect(tableExists(d, 'scrape_runs')).toBe(false);
+			expect(() => getProductMoves(d, 7)).not.toThrow();
+			expect(() => getLaunchDates(d, 'gpu')).not.toThrow();
+			expect(() => getTrackedProducts(d, 'gpu')).not.toThrow();
+			expect(() => getRetailerFreshness(d)).not.toThrow();
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
 		}
 	});
 });
