@@ -7,7 +7,9 @@
 	import { searchProducts } from '$lib/productSearch';
 	import { MAX_COMPARE, parseCompareIds, withParams } from '$lib/urlState';
 	import { urlParams } from '$lib/urlParams';
+	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import type { Category } from '$lib/types';
+	import type { ProductIndexEntry } from '$lib/server/repos';
 
 	let {
 		data
@@ -18,10 +20,20 @@
 			trackedCount: number;
 			listedCount: number;
 			groups: CatalogRow[];
+			// From the root layout's load (merged into page data).
+			productIndex: ProductIndexEntry[];
 		};
 	} = $props();
 
 	const heading = $derived(data.category === 'cpu' ? 'CPUs' : 'GPUs');
+
+	// The base card carries its VRAM where a "<model> <N>GB" sibling exists
+	// (display only). Search and rows both use the display name, so
+	// "5060 ti 16gb" finds the base card.
+	const names = $derived(buildDisplayNames(data.productIndex));
+	const named = $derived(
+		data.groups.map((g) => ({ ...g, model: displayName(names, g.productId, g.model) }))
+	);
 
 	// Search and compare selection live in the URL (#26): a shared
 	// /products?category=gpu&q=5070&compare=1,2 renders as it was sent, and Back
@@ -33,7 +45,7 @@
 
 	// Filtering happens here, not on the server: the whole category is already
 	// in the browser, so narrowing is instant and there is no debounce.
-	const matches = $derived(searchProducts(data.groups, query));
+	const matches = $derived(searchProducts(named, query));
 	const searching = $derived(query.trim().length > 0);
 
 	let compareIds = $state<Set<number>>(
@@ -44,9 +56,9 @@
 	// still covers the whole watchlist (25-Aug decision, U-D16). Read through
 	// urlParams() like q/compare, so Back restores it.
 	let showUnlisted = $state(urlParams().get('unlisted') === '1');
-	const unlistedCount = $derived(data.groups.filter((g) => g.neverListed).length);
+	const unlistedCount = $derived(named.filter((g) => g.neverListed).length);
 	const browseItems = $derived(
-		showUnlisted ? data.groups : data.groups.filter((g) => !g.neverListed)
+		showUnlisted ? named : named.filter((g) => !g.neverListed)
 	);
 	const groups = $derived(searching ? [] : groupForIndex(browseItems));
 
@@ -161,7 +173,7 @@
 				onkeydown={onSearchKey}
 				type="search"
 				autocomplete="off"
-				placeholder={`Search ${data.groups.length} ${heading}…  (press / )`}
+				placeholder={`Search ${named.length} ${heading}…  (press / )`}
 				class="h-9 w-full rounded-md border border-border-input bg-surface px-3 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
 			/>
 		</div>

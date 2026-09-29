@@ -399,6 +399,7 @@ describe('CommandPalette', () => {
 						brand: 'AMD',
 						model: 'Ryzen 5 7600',
 						productVariant: null,
+						vramGb: null,
 						snapshotCount: 7
 					}
 				],

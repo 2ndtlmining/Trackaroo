@@ -19,18 +19,21 @@
 	import { buildHeadline } from '$lib/productHeadline';
 	import { toListingDisplays } from '$lib/listingsPanel';
 	import { asOfDate, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
-	import { type ProductHistory, type AlertRow } from '$lib/server/repos';
+	import { buildDisplayNames, displayName } from '$lib/displayName';
+	import { type ProductHistory, type AlertRow, type ProductIndexEntry } from '$lib/server/repos';
 
 	let {
 		data,
 		form
 	}: {
-		data: ProductHistory & { alerts: AlertRow[] };
+		data: ProductHistory & { alerts: AlertRow[]; productIndex: ProductIndexEntry[] };
 		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
 	} = $props();
 
 	const product = $derived(data.product);
 	const series = $derived(data.series);
+	// "GeForce RTX 5060 Ti 16GB" where a "... 8GB" sibling exists (display only).
+	const name = $derived(displayName(buildDisplayNames(data.productIndex), product.id, product.model));
 
 	let selected = $state<Set<number>>(new Set());
 
@@ -95,8 +98,13 @@ label:
 	const where = $derived(whereToBuy(offers));
 	// Memory / cores in the headline: "RTX 5060 Ti" alone does not say which card
 	// this is when an 8GB sibling exists (#31 core; Phase 1 #2 split them).
+	// Skipped when the name already ends in the size ("... 16GB" from the
+	// display-name rule, or a stored "... 8GB" model), so it is never said twice.
+	const nameHasVram = $derived(
+		product.vram_gb != null && name.toLowerCase().endsWith(` ${product.vram_gb}gb`)
+	);
 	const specLabel = $derived(
-		product.category === 'gpu' && product.vram_gb
+		product.category === 'gpu' && product.vram_gb && !nameHasVram
 			? `${product.vram_gb}GB`
 			: product.category === 'cpu' && product.cores
 				? `${product.cores} cores`
@@ -106,22 +114,22 @@ label:
 
 <PageHead
 	titleOverride={productPageTitle(
-		`${product.model}${product.variant ? ` · ${product.variant}` : ''}`,
+		`${name}${product.variant ? ` · ${product.variant}` : ''}`,
 		headline.currentPrice,
 		headline.currentRetailer ? retailerLabel(headline.currentRetailer) : null
 	)}
-	description={`${product.brand} ${product.model}: AU price history, today's cheapest offer and where to buy.`}
+	description={`${product.brand} ${name}: AU price history, today's cheapest offer and where to buy.`}
 />
 
 <div class="space-y-6">
 	<div>
-		<Breadcrumbs crumbs={productBreadcrumbs(product)} />
+		<Breadcrumbs crumbs={productBreadcrumbs({ ...product, model: name })} />
 		<p class="mt-2 flex items-center gap-1.5 text-sm text-text-muted">
 			<BrandIcon brand={product.brand} size={16} />
 			{product.brand}
 		</p>
 		<h1 class="text-xl font-semibold text-text">
-			{product.model}{product.variant ? ` · ${product.variant}` : ''}
+			{name}{product.variant ? ` · ${product.variant}` : ''}
 		</h1>
 
 		<p class="mt-1 text-sm text-text-muted" data-testid="product-meta">

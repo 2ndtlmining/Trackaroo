@@ -893,6 +893,10 @@ describe('getProductIndex', () => {
 		}
 	});
 
+	it('carries VRAM for the display-name rule', () => {
+		for (const e of getProductIndex(db)) expect(e).toHaveProperty('vramGb');
+	});
+
 	it('reports snapshot counts so the palette can flag products without history', () => {
 		const index = getProductIndex(db);
 		const withHistory = index.filter((e) => e.snapshotCount > 0);

@@ -367,6 +367,8 @@ export interface ProductIndexEntry {
 	brand: string;
 	model: string;
 	productVariant: string | null;
+	// For the display-name rule (displayName.ts).
+	vramGb: number | null;
 	// Total price snapshots across the product's listings — lets the palette
 	// show which products actually have price history yet.
 	snapshotCount: number;
@@ -375,7 +377,7 @@ export interface ProductIndexEntry {
 export function getProductIndex(db: DB): ProductIndexEntry[] {
 	return db
 		.prepare(
-			`SELECT p.id, p.category, p.brand, p.model, p.variant AS productVariant,
+			`SELECT p.id, p.category, p.brand, p.model, p.variant AS productVariant, p.vram_gb AS vramGb,
 			        COUNT(s.id) AS snapshotCount
 			 FROM products p
 			 LEFT JOIN retailer_listings l ON l.product_id = p.id

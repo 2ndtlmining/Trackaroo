@@ -408,6 +408,18 @@ test.describe('product index', () => {
 		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toBeVisible();
 	});
 
+	test('names the base card’s memory where a memory sibling exists (follow-up)', async ({ page }) => {
+		await goto(page, '/products?category=gpu&q=E2E%20Deal%20Demo');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 16GB', exact: true })).toBeVisible();
+		await page.getByRole('link', { name: 'E2E Deal Demo GPU 16GB', exact: true }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('E2E Deal Demo GPU 16GB');
+		await expect(page).toHaveTitle(/^E2E Deal Demo GPU 16GB/);
+		await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('E2E Deal Demo GPU 16GB');
+		// The meta line's "· 16GB" (Task 5) is dropped once the name says it.
+		await expect(page.getByTestId('product-meta')).not.toContainText('16GB');
+	});
+
 	test('the catalog shows column labels, VRAM and group counts (#23, U5)', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
 		const header = page.getByTestId('catalog-header');
@@ -580,6 +592,14 @@ test.describe('command palette', () => {
 		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
 		await expect(dialog.getByText(/snapshots/).first()).toBeVisible();
 		await expect(dialog.getByText(/snapshots/)).toHaveCount(2);
+	});
+
+	test('uses the display name, so the base card shows its memory (follow-up)', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('e2e deal demo gpu 16gb');
+		await expect(dialog.getByRole('option').first()).toContainText('E2E Deal Demo GPU 16GB');
 	});
 
 	test('never offers a quick compare across categories (#26)', async ({ page }) => {
@@ -876,7 +896,8 @@ await goto(page, '/product/1');
 test.describe('product detail offer list', () => {
 	async function openGpuProduct(page: Page) {
 		await goto(page, '/products?category=gpu');
-		await page.getByRole('link', { name: 'GeForce RTX 5060 Ti', exact: true }).first().click();
+		// "( 16GB)?": the base card gains its VRAM if a "... 8GB" sibling is tracked (Task 12).
+		await page.getByRole('link', { name: /^GeForce RTX 5060 Ti( 16GB)?$/ }).first().click();
 	}
 
 	test('product page leads with the cheapest price and caps the offer list', async ({ page }) => {
@@ -1065,7 +1086,8 @@ test.describe('product detail specs', () => {
 
 	test('renders the gpu spec fields', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		await page.getByRole('link', { name: 'GeForce RTX 5060 Ti', exact: true }).first().click();
+		// "( 16GB)?": the base card gains its VRAM if a "... 8GB" sibling is tracked (Task 12).
+		await page.getByRole('link', { name: /^GeForce RTX 5060 Ti( 16GB)?$/ }).first().click();
 
 		await expect(page.getByRole('heading', { name: 'Specs' })).toBeVisible();
 		await expect(page.getByText('RTX 50 — Blackwell')).toBeVisible();

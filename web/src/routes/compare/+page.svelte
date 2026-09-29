@@ -3,6 +3,7 @@
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import { buildCompareRows } from '$lib/compareRows';
+	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import type { CompareEntry, ProductIndexEntry } from '$lib/server/repos';
 	import type { Category } from '$lib/types';
 
@@ -27,6 +28,8 @@
 	const options = $derived(
 		data.productIndex.filter((p) => p.category === data.pickerCategory && p.snapshotCount > 0)
 	);
+	// The base card carries its VRAM where a memory sibling exists (display only).
+	const names = $derived(buildDisplayNames(data.productIndex));
 	const categoryLabel = $derived(data.pickerCategory === 'cpu' ? 'CPUs' : 'GPUs');
 </script>
 
@@ -71,7 +74,7 @@
 						>
 							<option value="">Choose a {data.pickerCategory === 'cpu' ? 'CPU' : 'GPU'}…</option>
 							{#each options as p (p.id)}
-								<option value={p.id}>{p.model}</option>
+								<option value={p.id}>{displayName(names, p.id, p.model)}</option>
 							{/each}
 						</select>
 					</label>
@@ -103,7 +106,7 @@
 								href="/product/{entry.product.id}"
 								class="block font-semibold text-text no-underline hover:text-accent"
 							>
-								{entry.product.model}
+								{displayName(names, entry.product.id, entry.product.model)}
 							</a>
 							<span class="mt-1 flex items-center gap-1.5 text-xs text-text-muted">
 								<BrandIcon brand={entry.product.brand} size={14} />
