@@ -86,11 +86,12 @@ class TestBestEffortSteps:
         assert code == run_daily.RUN_EXIT_DEGRADED
         assert isolated_pipeline.backups == 1
 
-    def test_backup_crash_does_not_raise(self, isolated_pipeline, monkeypatch):
+    def test_backup_crash_does_not_raise_but_alerts(self, isolated_pipeline, monkeypatch):
         monkeypatch.setattr("backup_db.backup_database", _boom)
         monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))
 
-        assert run_daily.run(_args()) == run_daily.RUN_EXIT_OK
+        assert run_daily.run(_args()) == run_daily.RUN_EXIT_DEGRADED
+        assert "backup" in "\n".join(isolated_pipeline.alerts[-1]).lower()
 
     def test_a_crashing_health_check_is_reported_as_an_error(self, monkeypatch):
         def crashes():
@@ -247,3 +248,16 @@ class TestAlertsIndependentOfNotify:
 
         assert code == run_daily.RUN_EXIT_DEGRADED
         assert isolated_pipeline.alerts == []
+
+
+def test_a_backup_integrity_failure_alerts_and_degrades(isolated_pipeline, monkeypatch):
+    from backup_db import BackupIntegrityError
+
+    def corrupt(**k):
+        raise BackupIntegrityError("trackaroo_x.db failed PRAGMA quick_check: btree corrupt")
+
+    monkeypatch.setattr("backup_db.backup_database", corrupt)
+    monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))
+
+    assert run_daily.run(_args()) == run_daily.RUN_EXIT_DEGRADED
+    assert any("backup" in line.lower() for line in isolated_pipeline.alerts[-1])

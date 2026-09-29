@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from config import (
+    BACKUP_MAX_AGE_HOURS,
     DATA_DIR,
     DB_DATE_FORMAT,
     DB_PATH,
@@ -1132,6 +1133,35 @@ def check_scraper_cooldown() -> list[CheckResult]:
         f"Missing PCCG data for today is expected until then.",
     )]
 
+
+# ── Backup age ───────────────────────────────────────────────────────
+
+def check_backups(
+    backup_dir: Optional[Path] = None,
+    now: Optional[datetime] = None,
+    max_age_hours: float = BACKUP_MAX_AGE_HOURS,
+) -> list[CheckResult]:
+    """Report the newest DB backup's age (#10).
+
+    Integrity is checked when each backup is taken (backup_db.quick_check, which
+    alerts on failure); this catches backups that silently stopped happening.
+    """
+    from backup_db import BACKUP_NAME_RE
+    from config import BACKUP_DIR
+
+    backup_dir = Path(backup_dir or BACKUP_DIR)
+    now = now or datetime.now()
+    names = sorted(p.name for p in backup_dir.iterdir() if BACKUP_NAME_RE.match(p.name)) \
+        if backup_dir.is_dir() else []
+    if not names:
+        return [CheckResult("backup_age", CheckResult.WARNING, f"No database backups in {backup_dir}")]
+    newest = names[-1]
+    taken = datetime.strptime(newest[len("trackaroo_"):-len(".db")], "%Y-%m-%d_%H%M%S")
+    age_h = (now - taken).total_seconds() / 3600
+    if age_h > max_age_hours:
+        return [CheckResult("backup_age", CheckResult.WARNING,
+                            f"Newest backup {newest} is {age_h:.0f}h old (limit {max_age_hours:.0f}h)")]
+    return [CheckResult("backup_age", CheckResult.OK, f"Newest backup {newest} ({age_h:.0f}h old)")]
 
 
 # ── Aggregate runner ────────────────────────────────────────────────

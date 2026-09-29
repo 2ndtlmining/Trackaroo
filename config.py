@@ -39,7 +39,9 @@ Environment variables (all optional):
     TRACKAROO_CATEGORY_PASS_DELAY       Delay between CPU/GPU passes  (default: 2.0)
     TRACKAROO_BUSY_TIMEOUT_MS           SQLite busy timeout (ms)       (default: 5000)
 
-    TRACKAROO_BACKUP_KEEP               Backups to retain (days)      (default: 14)
+    TRACKAROO_BACKUP_KEEP                Days of backups to retain (newest per day) (default: 14)
+    TRACKAROO_BACKUP_MIRROR_DIR          Off-host copy of each backup  (default: unset = off)
+    TRACKAROO_BACKUP_MAX_AGE_HOURS       Backup-age warning threshold  (default: 36)
     TRACKAROO_SCRAPER_GAP_SECONDS       Delay between the two scrapers (default: 2.0)
 
     RUN_AT_HOUR                         Daily run hour, local 0-23      (default: 4)
@@ -84,7 +86,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 # ── Base directory ────────────────────────────────────────────────────
 # config.py lives at the repo root, so the repo root is simply its directory.
@@ -108,6 +110,11 @@ def _env_float(name: str, default: float) -> float:
         return float(os.environ.get(name, default))
     except ValueError:
         return default
+
+
+def _env_optional_path(name: str) -> Optional[Path]:
+    value = os.environ.get(name, "").strip()
+    return Path(value).expanduser() if value else None
 
 
 # ── File paths ────────────────────────────────────────────────────────
@@ -213,9 +220,15 @@ PCCG_COOLDOWN_FILE = _env_path("TRACKAROO_PCCG_COOLDOWN_FILE", DATA_DIR / "pccg_
 # Short pause between the CPU and GPU category passes (same Algolia index/IP).
 CATEGORY_PASS_DELAY = _env_float("TRACKAROO_CATEGORY_PASS_DELAY", 2.0)
 
-# ── Backup retention ──────────────────────────────────────────────────
-# Number of most-recent DB backups to keep; older ones are pruned.
+# ── Backup retention and integrity (backup_db.py, #10) ────────────────
+# Keep the newest backup of each of the last BACKUP_KEEP *days* (plus the 3
+# newest overall). Age-based since 29-Sep-2026: hourly retries and manual runs
+# made several backups a day, and keep-the-newest-14 then covered ~11 days.
 BACKUP_KEEP = _env_int("TRACKAROO_BACKUP_KEEP", 14)
+# Optional off-host copy of every backup (a NAS mount). None = no mirror.
+BACKUP_MIRROR_DIR = _env_optional_path("TRACKAROO_BACKUP_MIRROR_DIR")
+# check_backups warns when the newest backup is older than this.
+BACKUP_MAX_AGE_HOURS = _env_int("TRACKAROO_BACKUP_MAX_AGE_HOURS", 36)
 
 # Polite gap between the two scrapers in the daily runner.
 SCRAPER_GAP_SECONDS = _env_float("TRACKAROO_SCRAPER_GAP_SECONDS", 2.0)

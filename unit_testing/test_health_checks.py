@@ -24,6 +24,7 @@ sys.path.insert(0, sys_path)
 from config import ACTIVE_RETAILERS
 from health_checks import (
     CheckResult,
+    check_backups,
     check_json_files,
     check_db_freshness,
     check_today_coverage,
@@ -1118,3 +1119,20 @@ class TestMatchCountDrop:
     def test_a_missing_day_is_left_to_today_coverage(self, db_path):
         _drop_db(db_path, self.PRIOR)
         assert check_match_count_drop(db_path, today=date(2026, 9, 29)) == []
+
+
+class TestCheckBackups:
+    def test_a_recent_backup_is_ok(self, tmp_path):
+        (tmp_path / "trackaroo_2026-09-29_040512.db").write_text("x")
+        [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.OK
+
+    def test_an_old_backup_warns(self, tmp_path):
+        (tmp_path / "trackaroo_2026-09-26_040512.db").write_text("x")
+        [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.WARNING
+        assert "trackaroo_2026-09-26_040512.db" in r.message
+
+    def test_no_backups_warns(self, tmp_path):
+        [r] = check_backups(tmp_path / "absent", now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.WARNING

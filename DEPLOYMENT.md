@@ -171,9 +171,45 @@ docker exec trackaroo python repair_listings.py --apply    # backs up the DB fir
 
 ### Backups
 
-`backup_db.py` writes retention-pruned copies into `db/backups/` on every real
-run. Because that is a host directory rather than a Docker volume, any
-host-level backup of the project directory picks them up.
+Every real run ends with `backup_db.backup_database()`, which runs whatever
+happened before it in the run:
+
+- **Consistent copy:** the SQLite online-backup API, safe while the pipeline writes.
+- **Verified:** `PRAGMA quick_check` on the new file. A failure alerts ("Database
+  backup problem") and prunes nothing, so a corrupt DB cannot rotate the good
+  backups out.
+- **Retention by age:** the newest backup of each of the last
+  `TRACKAROO_BACKUP_KEEP` days (default 14), plus the 3 newest overall.
+- **Optional off-host copy:** set `TRACKAROO_BACKUP_MIRROR_DIR` to a mounted NAS
+  path and every backup is also copied there, verified and pruned the same way.
+  It is unset by default, and Phase 6 switches it on. A mirror failure alerts
+  but keeps the local backup.
+- **Health:** `check_backups` warns when the newest backup is older than
+  `TRACKAROO_BACKUP_MAX_AGE_HOURS` (default 36).
+
+`data/*.json` (the rebuild source) is not mirrored by this. Phase 6 covers it
+with the host-level backup of the project directory.
+
+**Restore drill (monthly):**
+
+```bash
+python restore_drill.py        # docker: docker exec trackaroo python restore_drill.py
+```
+
+It restores the newest backup to a temp file, runs `quick_check`, checks the
+tables are non-empty, and checks the live DB has at least as many snapshots on
+every day the backup holds. It exits 0 on pass. It never writes to the live DB.
+
+**Restoring for real:**
+
+1. `docker stop trackaroo`. The web app caches its DB connection, so a file
+   swap under a running container is not seen until restart.
+2. `cp db/trackaroo.db db/trackaroo.db.before-restore`, then
+   `cp db/backups/trackaroo_<stamp>.db db/trackaroo.db`, then
+   `rm -f db/trackaroo.db-wal db/trackaroo.db-shm`.
+3. `docker start trackaroo`. The boot catch-up (`--pending-only`) re-scrapes
+   anything today is missing. Older gaps can be re-ingested from `data/*.json`
+   with `python ingest.py --date YYYY-MM-DD`.
 
 ---
 

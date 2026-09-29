@@ -4,11 +4,14 @@ Tests for the database backup script (backup_db.py).
 Covers:
 - Creating a backup file that restores a consistent, queryable copy
 - Backup works while the source DB is in WAL mode / being written
-- Retention pruning keeps only the N most recent backups
+- Retention pruning keeps the newest backup of each of the last N days
+- Integrity: PRAGMA quick_check on every new backup, failure prunes nothing
+- Optional off-host mirror, verified and pruned the same way
 - CLI --dry-run validates without writing
-- Missing source handled with SystemExit
+- Missing source raises FileNotFoundError
 """
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -17,9 +20,24 @@ sys_path = str(Path(__file__).resolve().parent.parent)
 import sys
 sys.path.insert(0, sys_path)
 
-from backup_db import DEFAULT_KEEP, backup_database, backup_timestamp, _prune_backups
+from backup_db import (
+    DEFAULT_KEEP,
+    BackupIntegrityError,
+    BackupMirrorError,
+    backup_database,
+    backup_timestamp,
+    prune_backups,
+    quick_check,
+)
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
+
+
+@pytest.fixture(autouse=True)
+def _no_real_mirror(monkeypatch):
+    """Never copy to a real off-host mirror during tests, even if the
+    developer's shell has TRACKAROO_BACKUP_MIRROR_DIR set (F17)."""
+    monkeypatch.setattr("backup_db.BACKUP_MIRROR_DIR", None)
 
 
 def _create_source_db(path: Path, rows: int = 3) -> None:
@@ -89,53 +107,105 @@ class TestBackupCreation:
         assert dest.exists()
         assert count == 4  # 3 seeded + 1 added before backup
 
-    def test_missing_source_exits(self, tmp_path):
-        """A missing source DB raises SystemExit (exit code 1)."""
-        src = tmp_path / "does-not-exist.db"
-        with pytest.raises(SystemExit) as exc:
-            backup_database(db_path=src, backup_dir=tmp_path / "backups")
-        assert exc.value.code == 1
+    def test_missing_source_raises(self, tmp_path):
+        """A missing DB raises, so run_daily's backup handler can alert on it
+        (SystemExit escaped its except Exception)."""
+        with pytest.raises(FileNotFoundError):
+            backup_database(db_path=tmp_path / "does-not-exist.db", backup_dir=tmp_path / "backups")
 
 
 class TestRetention:
-    def test_prunes_oldest_beyond_keep(self, tmp_path):
-        """With keep=N only the N newest backups remain."""
+    """Newest backup per day for keep_days days, plus the min_keep newest (#10)."""
+
+    def _make(self, out, *names):
+        out.mkdir(exist_ok=True)
+        for n in names:
+            (out / n).write_text("x")
+
+    def test_keeps_the_newest_backup_of_each_recent_day(self, tmp_path):
         out = tmp_path / "backups"
-        out.mkdir()
-        # Create six fake backups with chronologically sortable names
-        for i in range(6):
-            (out / f"trackaroo_2026-08-{10 + i}_120000.db").write_text("x")
+        self._make(out, *[f"trackaroo_2026-08-{d}_120000.db" for d in range(10, 16)],
+                   "trackaroo_2026-08-15_090000.db")
 
-        pruned = _prune_backups(out, keep=2)
+        pruned = prune_backups(out, keep_days=3, today=date(2026, 8, 15), min_keep=1)
 
-        remaining = sorted(p.name for p in out.iterdir())
+        assert sorted(p.name for p in out.iterdir()) == [
+            "trackaroo_2026-08-13_120000.db", "trackaroo_2026-08-14_120000.db",
+            "trackaroo_2026-08-15_120000.db",
+        ]
         assert len(pruned) == 4
-        assert len(remaining) == 2
-        assert remaining == ["trackaroo_2026-08-14_120000.db", "trackaroo_2026-08-15_120000.db"]
 
-    def test_no_prune_when_under_keep(self, tmp_path):
-        """Fewer-or-equal backups than keep are left untouched."""
+    def test_the_newest_few_survive_a_long_gap(self, tmp_path):
+        out = tmp_path / "backups"
+        self._make(out, "trackaroo_2026-07-01_040000.db", "trackaroo_2026-07-02_040000.db",
+                   "trackaroo_2026-07-03_040000.db")
+
+        assert prune_backups(out, keep_days=14, today=date(2026, 9, 29)) == []
+
+    def test_only_trackaroo_named_files_are_touched(self, tmp_path):
+        out = tmp_path / "backups"
+        self._make(out, *[f"trackaroo_2026-08-{d}_120000.db" for d in range(10, 16)],
+                   "notes.txt", "trackaroo_manual-copy.db")
+
+        prune_backups(out, keep_days=1, today=date(2026, 8, 15), min_keep=1)
+
+        assert (out / "notes.txt").exists()
+        assert (out / "trackaroo_manual-copy.db").exists()
+
+
+class TestIntegrity:
+    def test_a_good_backup_passes_quick_check(self, tmp_path):
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        dest = backup_database(db_path=src, backup_dir=tmp_path / "backups", mirror_dir=None)
+        assert quick_check(dest) == "ok"
+
+    def test_garbage_fails_quick_check(self, tmp_path):
+        bad = tmp_path / "bad.db"
+        bad.write_bytes(b"SQLite format 3\x00" + b"\xff" * 4096)
+        assert quick_check(bad) != "ok"
+
+    def test_a_failing_check_raises_and_prunes_nothing(self, tmp_path, monkeypatch):
+        src = tmp_path / "src.db"
+        _create_source_db(src)
         out = tmp_path / "backups"
         out.mkdir()
-        (out / "trackaroo_2026-08-15_120000.db").write_text("x")
+        old = [out / f"trackaroo_2026-01-0{d}_040000.db" for d in range(1, 6)]
+        for p in old:
+            p.write_text("x")
+        monkeypatch.setattr("backup_db.quick_check", lambda path: "*** in database main *** Page 3: btree corrupt")
 
-        pruned = _prune_backups(out, keep=DEFAULT_KEEP)
+        with pytest.raises(BackupIntegrityError):
+            backup_database(db_path=src, backup_dir=out, keep=1, mirror_dir=None)
+        assert all(p.exists() for p in old)
 
-        assert pruned == []
-        assert len(list(out.iterdir())) == 1
 
-    def test_only_trackaroo_prefixed_files_pruned(self, tmp_path):
-        """Unrelated files in the backup dir are never touched."""
-        out = tmp_path / "backups"
-        out.mkdir()
-        for i in range(4):
-            (out / f"trackaroo_2026-08-{10 + i}_120000.db").write_text("x")
-        keep_me = out / "notes.txt"
-        keep_me.write_text("do not delete")
+class TestMirror:
+    def test_mirror_copies_and_verifies(self, tmp_path):
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        mirror = tmp_path / "nas"
 
-        _prune_backups(out, keep=2)
+        dest = backup_database(db_path=src, backup_dir=tmp_path / "backups", mirror_dir=mirror)
 
-        assert keep_me.exists()
+        assert quick_check(mirror / dest.name) == "ok"
+
+    def test_a_broken_mirror_keeps_the_local_backup(self, tmp_path):
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        not_a_dir = tmp_path / "nas"
+        not_a_dir.write_text("a file where the mount should be")
+
+        with pytest.raises(BackupMirrorError):
+            backup_database(db_path=src, backup_dir=tmp_path / "backups", mirror_dir=not_a_dir)
+        assert len(list((tmp_path / "backups").glob("trackaroo_*.db"))) == 1
+
+    def test_no_mirror_by_default(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("backup_db.BACKUP_MIRROR_DIR", None)
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        backup_database(db_path=src, backup_dir=tmp_path / "backups")
+        assert [p.name for p in tmp_path.iterdir() if p.is_dir()] == ["backups"]
 
 
 class TestTimestamp:

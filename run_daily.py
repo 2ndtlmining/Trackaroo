@@ -44,6 +44,7 @@ from config import (
 )
 from health_checks import (
     CheckResult,
+    check_backups,
     check_db_freshness,
     check_json_db_parity,
     check_json_files,
@@ -345,6 +346,7 @@ def _db_checks() -> List[Tuple[str, Callable[[], List[CheckResult]]]]:
         ("check_json_db_parity", lambda: check_json_db_parity(db_path=DB_PATH)),
         ("check_missing_days", lambda: check_missing_days(DB_PATH)),
         ("check_scraper_cooldown", lambda: check_scraper_cooldown()),
+        ("check_backups", lambda: check_backups()),
     ]
 
 
@@ -639,6 +641,7 @@ def run(args: argparse.Namespace) -> int:
     ingest_results: List[CheckResult] = []
     db_results: List[CheckResult] = []
     failed: List[CheckResult] = []
+    backup_failed = False
     try:
         conn = init_db(DB_PATH)
         try:
@@ -781,14 +784,15 @@ def run(args: argparse.Namespace) -> int:
         # health check -- can skip it (#12). Scrape-only and dry runs wrote
         # nothing and returned earlier / are excluded here.
         if not args.no_backup and not args.dry_run:
-            def _backup() -> None:
+            LOGGER.info("\n%s\nBacking up database:\n%s", "=" * 60, "=" * 60)
+            try:
                 from backup_db import backup_database
                 backup_database(keep=BACKUP_KEEP)
-
-            LOGGER.info("\n%s\nBacking up database:\n%s", "=" * 60, "=" * 60)
-            # Import inside the guarded callable (M2): this runs in a
-            # finally, so an import failure here must not escape it either.
-            best_effort("Database backup", _backup)
+            except Exception as e:  # noqa: BLE001 - never breaks the run, always pages
+                LOGGER.exception("Database backup failed")
+                backup_failed = True
+                if alerts_enabled(args):
+                    send_pipeline_alert([f"- **Database backup problem**: {e}"])
 
     # ── External heartbeat (#9) ─────────────────────────────────────
     # Only when this run was clean AND every active retailer now has a
@@ -799,7 +803,7 @@ def run(args: argparse.Namespace) -> int:
             import heartbeat
             best_effort("Heartbeat", heartbeat.ping)
 
-    return RUN_EXIT_DEGRADED if (scraper_lines or failed) else RUN_EXIT_OK
+    return RUN_EXIT_DEGRADED if (scraper_lines or failed or backup_failed) else RUN_EXIT_OK
 
 
 if __name__ == "__main__":
