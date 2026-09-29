@@ -600,8 +600,8 @@ await goto(page, '/product/1');
 		await goto(page, '/product/1');
 		// Both ends of the bar come from the cheapest-per-day series, so the
 		// labels say so rather than implying the dearest listing on the shelf.
-		await expect(page.getByText('Cheapest', { exact: true })).toBeVisible();
-		await expect(page.getByText('Dearest', { exact: true })).toBeVisible();
+		await expect(page.getByText('Lowest day', { exact: true })).toBeVisible();
+		await expect(page.getByText('Highest day', { exact: true })).toBeVisible();
 		await expect(page.getByText(/Range of the cheapest price across \d+ days/)).toBeVisible();
 		// The headline's vs-30d-average delta, next to the current price (offer
 		// rows also show a per-row vs-30d-avg delta, so scope to the first match).
@@ -716,6 +716,19 @@ test.describe('product detail offer list', () => {
 		await expect(chartToggle).toHaveText('On chart');
 		// The chart must survive the overlay toggle (reactive rebuild).
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
+	});
+
+	test('the chart has a legend, a spoken summary and a data table (#27)', async ({ page }) => {
+		await goto(page, '/product/1');
+		const chart = page.getByRole('img', { name: /^Price history chart\./ });
+		await expect(chart).toBeVisible();
+		await expect(chart).toHaveAttribute('aria-label', /cheapest in-stock price|No in-stock price/);
+		await expect(page.getByRole('list', { name: 'Chart legend' })).toContainText('Cheapest and dearest');
+
+		const summary = page.locator('summary', { hasText: 'Show price data' });
+		await summary.focus();
+		await page.keyboard.press('Enter');
+		await expect(page.getByRole('table').filter({ hasText: 'Dearest in stock' })).toBeVisible();
 	});
 
 	test('re-renders the chart when navigating between products', async ({ page }) => {

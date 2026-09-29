@@ -18,6 +18,7 @@ import HealthStrip from '../src/lib/components/HealthStrip.svelte';
 import MoverRow from '../src/lib/components/MoverRow.svelte';
 import CategorySection from '../src/lib/components/CategorySection.svelte';
 import BuyPanel from '../src/lib/components/BuyPanel.svelte';
+import PriceDataTable from '../src/lib/components/PriceDataTable.svelte';
 import { offer as offerRow } from './helpers/offers';
 import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint, Mover } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
@@ -943,6 +944,43 @@ describe('PriceRangeBar', () => {
 		});
 		expect(html).not.toContain('role="img"');
 		expect(html).toContain('$1,299');
+	});
+});
+
+describe('PriceDataTable (#27)', () => {
+	const band = [
+		{ date: '2026-09-01', low: 700, high: 800, cheapestInStock: null },
+		{ date: '2026-09-02', low: null, high: null, cheapestInStock: null },
+		{ date: '2026-09-03', low: 690, high: 760, cheapestInStock: 690 }
+	];
+
+	it('is a keyboard-reachable disclosure with a real table, newest day first', () => {
+		const html = renderComponent(PriceDataTable, { band });
+		expect(html).toContain('<details');
+		expect(html).toContain('<summary');
+		expect(html).toContain('Show price data (3 days)');
+		expect(html.indexOf('3 Sep 2026')).toBeLessThan(html.indexOf('1 Sep 2026'));
+		expect(html).toContain('$690');
+		expect(html).toContain('—');
+	});
+
+	it('renders nothing without data', () => {
+		expect(renderComponent(PriceDataTable, { band: [] })).not.toContain('<details');
+	});
+});
+
+describe('PriceRangeBar (U4)', () => {
+	it('labels the ends as the lowest and highest day, not cheapest/dearest listings', () => {
+		const html = renderComponent(PriceRangeBar, {
+			low: 699,
+			high: 899,
+			current: 749,
+			position: 0.25,
+			points: 30
+		});
+		expect(html).toContain('Lowest day');
+		expect(html).toContain('Highest day');
+		expect(html).not.toMatch(/>\s*(Cheapest|Dearest)\s*</);
 	});
 });
 

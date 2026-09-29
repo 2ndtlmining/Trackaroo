@@ -19,8 +19,8 @@
 
 	const pct = $derived(position === null ? 0 : Math.round(position * 100));
 	const label = $derived(
-		`Currently ${formatAud(current)}. Cheapest recorded ${formatAud(low)}, ` +
-			`highest the cheapest price has been ${formatAud(high)}, over ${points} days.`
+		`Today's cheapest price ${formatAud(current)}. Over ${points} days the cheapest price per day ` +
+			`ranged from ${formatAud(low)} to ${formatAud(high)}.`
 	);
 </script>
 
@@ -43,9 +43,14 @@
 	{/if}
 {:else}
 	<div class="max-w-md">
+		<!--
+			Both ends are the cheapest in-stock price on some day: the best and the
+			worst day to have bought (U4). Not the cheapest and dearest listing on
+			the shelf.
+		-->
 		<div class="flex justify-between text-[10px] uppercase tracking-wide text-text-muted">
-			<span>Cheapest</span>
-			<span>Dearest</span>
+			<span>Lowest day</span>
+			<span>Highest day</span>
 		</div>
 		<div role="img" aria-label={label} class="relative mt-1 h-1.5 rounded-full bg-surface-hover">
 			<span

@@ -7,6 +7,8 @@
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PriceDataTable from '$lib/components/PriceDataTable.svelte';
+	import { chartSummary } from '$lib/chartSummary';
 	import type { AlertChannel } from '$lib/types';
 	import { formatDate, formatRelative, titleCase } from '$lib/formats';
 	import { retailerLabel } from '$lib/filters';
@@ -155,8 +157,11 @@ label:
 						? { date: cheapestInStock.date, price: cheapestInStock.cheapestInStock! }
 						: null
 				}
+				lowMarker={low?.low ?? null}
+				summary={chartSummary(lows, headline.currentPrice)}
 				height={360}
 			/>
+			<PriceDataTable band={data.band} />
 			<OfferList
 				series={data.series}
 				productBrand={product.brand}
