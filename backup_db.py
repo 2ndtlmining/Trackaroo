@@ -230,36 +230,54 @@ def backup_database(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{BACKUP_PREFIX}{backup_timestamp()}{BACKUP_SUFFIX}"
+    # Written under a name BACKUP_NAME_RE does not match (leading dot,
+    # ".partial" suffix) until it is verified. sqlite3.connect() creates the
+    # file on disk immediately, before a single page is copied -- without
+    # this, a mid-copy failure (disk full, I/O error in src_conn.backup() or
+    # the journal_mode pragma below) left that half-written file sitting
+    # right under dest's valid trackaroo_*.db name (final review M3).
+    partial = out_dir / f".{dest.name}.partial"
 
-    # A dedicated connection with a busy timeout, so a running writer does
-    # not fault the copy; the online-backup API reads without exclusive locks.
-    src_conn = sqlite3.connect(str(src))
-    src_conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     try:
-        dest_conn = sqlite3.connect(str(dest))
+        # A dedicated connection with a busy timeout, so a running writer does
+        # not fault the copy; the online-backup API reads without exclusive locks.
+        src_conn = sqlite3.connect(str(src))
+        src_conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         try:
-            src_conn.backup(dest_conn)
-            # The online-backup API copies the source's WAL flag into the
-            # destination's header, so without this the backup would start in
-            # WAL mode and leave -wal/-shm sidecars next to it that
-            # BACKUP_NAME_RE never sees or prunes (#10 I1). Forcing a
-            # rollback journal here checkpoints and removes them, leaving a
-            # single self-contained .db file -- also safer to copy onto a
-            # mirror filesystem that may not support WAL at all.
-            dest_conn.execute("PRAGMA journal_mode=DELETE")
+            dest_conn = sqlite3.connect(str(partial))
+            try:
+                src_conn.backup(dest_conn)
+                # The online-backup API copies the source's WAL flag into the
+                # destination's header, so without this the backup would start in
+                # WAL mode and leave -wal/-shm sidecars next to it that
+                # BACKUP_NAME_RE never sees or prunes (#10 I1). Forcing a
+                # rollback journal here checkpoints and removes them, leaving a
+                # single self-contained .db file -- also safer to copy onto a
+                # mirror filesystem that may not support WAL at all.
+                dest_conn.execute("PRAGMA journal_mode=DELETE")
+            finally:
+                dest_conn.close()
         finally:
-            dest_conn.close()
-    finally:
-        src_conn.close()
+            src_conn.close()
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise
 
-    verdict = quick_check(dest)
+    verdict = quick_check(partial)
     if verdict != "ok":
-        corrupt = _quarantine_corrupt(dest)
+        corrupt = dest.with_name(dest.name + ".corrupt")
+        try:
+            partial.rename(corrupt)
+        except OSError:
+            LOGGER.warning("Could not rename corrupt backup %s to %s - left in place", partial, corrupt)
+            corrupt = partial
         LOGGER.error("Backup %s FAILED quick_check: %s - renamed to %s, nothing pruned",
                      dest, verdict, corrupt.name)
         raise BackupIntegrityError(
             f"{dest.name} failed PRAGMA quick_check: {verdict} - renamed to {corrupt.name} "
             f"(kept for forensics), older backups kept (nothing pruned)")
+
+    os.replace(partial, dest)
 
     size_mb = dest.stat().st_size / (1024 * 1024)
     LOGGER.info("Backup created: %s (%.2f MB, quick_check ok)", dest, size_mb)

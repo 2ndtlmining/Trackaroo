@@ -213,6 +213,86 @@ class TestIntegrity:
         assert corrupt.name in str(exc.value)
 
 
+class TestPartialBackupNeverKeepsAValidName:
+    """final review M3: a backup that fails mid-copy (src_conn.backup() or
+    the journal_mode pragma raises -- disk full, I/O error) must not leave
+    the half-written file under a valid trackaroo_*.db name."""
+
+    def _fake_connect_for_call(self, n, raising_conn_cls):
+        """sqlite3.connect() is called twice inside backup_database: once for
+        the source (call 1), once for the destination (call 2). sqlite3.
+        Connection is an immutable C type -- individual methods can't be
+        monkeypatched on the class or an instance -- so the target call is
+        given a real on-disk connection through a subclass with the target
+        method overridden (via connect's own `factory` param), which still
+        creates the real file on disk exactly like production does."""
+        real_connect = sqlite3.connect
+        calls = {"n": 0}
+
+        def fake_connect(path, *a, **k):
+            calls["n"] += 1
+            if calls["n"] == n:
+                return real_connect(path, *a, factory=raising_conn_cls, **k)
+            return real_connect(path, *a, **k)
+
+        return fake_connect
+
+    def test_a_raising_backup_call_leaves_no_file_under_a_valid_name(self, tmp_path, monkeypatch):
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        out = tmp_path / "backups"
+
+        # Connection.backup(target) is a method of the SOURCE connection (the
+        # one whose data is being copied) -- it is call 1, not the
+        # destination's call 2.
+        class _RaisingOnBackup(sqlite3.Connection):
+            def backup(self, *a, **k):
+                raise sqlite3.OperationalError("disk I/O error")
+
+        monkeypatch.setattr(
+            "backup_db.sqlite3.connect", self._fake_connect_for_call(1, _RaisingOnBackup)
+        )
+
+        with pytest.raises(sqlite3.OperationalError):
+            backup_database(db_path=src, backup_dir=out, mirror_dir=None)
+
+        assert list(out.glob("trackaroo_*.db")) == []
+        assert [p for p in out.iterdir() if p.is_file()] == []  # the partial was removed too
+
+    def test_a_raising_journal_mode_pragma_leaves_no_file_under_a_valid_name(self, tmp_path, monkeypatch):
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        out = tmp_path / "backups"
+
+        class _RaisingOnJournalMode(sqlite3.Connection):
+            def execute(self, sql, *a, **k):
+                if "journal_mode" in sql:
+                    raise sqlite3.OperationalError("disk I/O error")
+                return super().execute(sql, *a, **k)
+
+        monkeypatch.setattr(
+            "backup_db.sqlite3.connect", self._fake_connect_for_call(2, _RaisingOnJournalMode)
+        )
+
+        with pytest.raises(sqlite3.OperationalError):
+            backup_database(db_path=src, backup_dir=out, mirror_dir=None)
+
+        assert list(out.glob("trackaroo_*.db")) == []
+        assert [p for p in out.iterdir() if p.is_file()] == []
+
+    def test_a_successful_backup_is_still_findable_under_its_final_name(self, tmp_path):
+        """The happy path must be unaffected by routing through a partial file."""
+        src = tmp_path / "src.db"
+        _create_source_db(src)
+        out = tmp_path / "backups"
+
+        dest = backup_database(db_path=src, backup_dir=out, mirror_dir=None)
+
+        assert dest.exists()
+        assert dest.name in {p.name for p in out.iterdir()}
+        assert [p for p in out.iterdir() if p.name.startswith(".")] == []  # no leftover partial
+
+
 class TestMirror:
     def test_mirror_copies_and_verifies(self, tmp_path):
         src = tmp_path / "src.db"
