@@ -3,15 +3,31 @@
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import { buildCompareRows } from '$lib/compareRows';
-	import type { CompareEntry } from '$lib/server/repos';
+	import type { CompareEntry, ProductIndexEntry } from '$lib/server/repos';
+	import type { Category } from '$lib/types';
 
-	let { data }: { data: { entries: CompareEntry[] } } = $props();
+	// productIndex arrives from the root layout's load (merged into page data).
+	let {
+		data
+	}: {
+		data: {
+			entries: CompareEntry[];
+			pickerCategory: Category;
+			pickerError: string | null;
+			productIndex: ProductIndexEntry[];
+		};
+	} = $props();
 
 	const entries = $derived(data.entries);
-
 	const rows = $derived(
 		buildCompareRows(entries).map((d) => ({ label: d.label, values: entries.map(d.value) }))
 	);
+	// Only products with price history are worth comparing; the index already
+	// knows which, so the picker costs no query.
+	const options = $derived(
+		data.productIndex.filter((p) => p.category === data.pickerCategory && p.snapshotCount > 0)
+	);
+	const categoryLabel = $derived(data.pickerCategory === 'cpu' ? 'CPUs' : 'GPUs');
 </script>
 
 <PageHead title="Compare" description="Specs and current best AU prices side by side." />
@@ -25,14 +41,52 @@
 	</div>
 
 	{#if entries.length === 0}
-		<div class="rounded-md border border-border bg-surface px-4 py-10 text-center">
-			<p class="text-sm text-text">Nothing selected to compare yet.</p>
+		<section class="rounded-md border border-border bg-surface p-4" aria-labelledby="pick-heading">
+			<h2 id="pick-heading" class="text-sm font-semibold text-text">Nothing selected to compare yet.</h2>
 			<p class="mt-1 text-sm text-text-muted">
-				Pick 2–4 products in the same category on the
-				<a href="/products" class="text-accent no-underline hover:underline">Products</a>
-				page — tick the compare box on each card, then use the Compare bar.
+				Pick two below, or tick <span class="font-medium text-text">Compare</span> on up to four rows of
+				the <a href="/products?category={data.pickerCategory}" class="text-accent">{categoryLabel} list</a>.
 			</p>
-		</div>
+
+			<div class="mt-3 flex gap-1 text-sm" role="group" aria-label="Category">
+				{#each [{ value: 'gpu', label: 'GPUs' }, { value: 'cpu', label: 'CPUs' }] as c (c.value)}
+					<a
+						href="/compare?category={c.value}"
+						aria-current={data.pickerCategory === c.value ? 'page' : undefined}
+						class="rounded-md px-2.5 py-1 no-underline {data.pickerCategory === c.value
+							? 'bg-surface-hover font-medium text-text'
+							: 'text-text-muted hover:text-text'}">{c.label}</a
+					>
+				{/each}
+			</div>
+
+			<form method="GET" action="/compare" class="mt-3 flex flex-wrap items-end gap-2">
+				{#each [1, 2] as n (n)}
+					<label class="flex min-w-0 flex-1 basis-56 flex-col gap-1 text-xs text-text-muted">
+						Product {n}
+						<select
+							name="id"
+							required
+							class="h-9 rounded-md border border-border-input bg-surface px-2 text-sm text-text"
+						>
+							<option value="">Choose a {data.pickerCategory === 'cpu' ? 'CPU' : 'GPU'}…</option>
+							{#each options as p (p.id)}
+								<option value={p.id}>{p.model}</option>
+							{/each}
+						</select>
+					</label>
+				{/each}
+				<button
+					type="submit"
+					class="h-9 rounded-md border border-border-input bg-surface px-3 text-sm text-text hover:bg-surface-hover"
+				>
+					Compare
+				</button>
+			</form>
+			{#if data.pickerError}
+				<p role="alert" class="mt-2 text-sm text-danger">{data.pickerError}</p>
+			{/if}
+		</section>
 	{:else}
 		<div class="overflow-x-auto rounded-md border border-border">
 		<table class="w-full border-collapse text-sm">

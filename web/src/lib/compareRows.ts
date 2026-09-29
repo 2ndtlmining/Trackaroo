@@ -1,4 +1,5 @@
 import { formatAud, formatBandwidth, formatCacheMb, formatDate, formatProcess, formatUsd } from './formats';
+import { retailerLabel } from './filters';
 import type { CompareEntry } from './server/repos';
 import type { Retailer } from './types';
 
@@ -138,7 +139,7 @@ export function buildCompareRows(entries: CompareEntry[]): CompareRow[] {
 	const priceRows: CompareRow[] = [
 		...retailers.map(
 			(r): CompareRow => ({
-				label: `Best price — ${r}`,
+				label: `Best price — ${retailerLabel(r)}`,
 				value: (e) => {
 					const p = e.prices.find((x) => x.retailer === r);
 					return p?.price !== undefined && p.price !== null ? formatAud(p.price) : null;
@@ -149,7 +150,7 @@ export function buildCompareRows(entries: CompareEntry[]): CompareRow[] {
 			label: 'Cheapest in stock',
 			value: (e) =>
 				e.cheapestInStock
-					? `${formatAud(e.cheapestInStock.price)} · ${e.cheapestInStock.retailer}`
+					? `${formatAud(e.cheapestInStock.price)} · ${retailerLabel(e.cheapestInStock.retailer)}`
 					: null
 		}
 	];

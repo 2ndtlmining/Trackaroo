@@ -133,3 +133,31 @@ describe('homepage (#28)', () => {
 		}
 	});
 });
+
+describe('/compare loader (#26)', () => {
+	it('opens the picker on the requested category with nothing selected', async () => {
+		const { load } = await import('../src/routes/compare/+page.server');
+		expect(load({ url: new URL('http://x/compare?category=cpu') } as any)).toEqual({
+			entries: [],
+			pickerCategory: 'cpu',
+			pickerError: null
+		});
+	});
+
+	it('asks again, rather than failing, when the picker names one product twice (Review Focus 3)', async () => {
+		const { load } = await import('../src/routes/compare/+page.server');
+		const data = load({ url: new URL('http://x/compare?id=5&id=5') } as any);
+		expect(data.entries).toEqual([]);
+		expect(data.pickerError).toMatch(/two different products/);
+	});
+
+	it('accepts the picker’s repeated id parameters', async () => {
+		const { load } = await import('../src/routes/compare/+page.server');
+		const { getDb } = await import('../src/lib/server/db');
+		const ids = (
+			getDb().prepare("SELECT id FROM products WHERE category = 'gpu' ORDER BY id LIMIT 2").all() as Array<{ id: number }>
+		).map((r) => r.id);
+		const data = load({ url: new URL(`http://x/compare?id=${ids[0]}&id=${ids[1]}`) } as any);
+		expect(data.entries.map((e) => e.product.id)).toEqual(ids);
+	});
+});

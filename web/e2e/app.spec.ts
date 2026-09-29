@@ -204,9 +204,28 @@ test.describe('navigation & layout', () => {
 	});
 });
 
-test('compare opens with an empty state explaining how to select', async ({ page }) => {
+test('the empty /compare page picks two products in place (#26)', async ({ page }) => {
 	await goto(page, '/compare');
 	await expect(page.getByText('Nothing selected to compare yet.')).toBeVisible();
+	await expect(page.getByText(/tick the compare box on each card/)).toHaveCount(0);
+	const selects = page.getByRole('combobox');
+	await selects.nth(0).selectOption({ index: 1 });
+	await selects.nth(1).selectOption({ index: 2 });
+	await page.getByRole('button', { name: 'Compare', exact: true }).click();
+	await page.waitForLoadState('networkidle');
+	await expect(page).toHaveURL(/\/compare\?id=\d+&id=\d+$/);
+	await expect(page.locator('thead th a')).toHaveCount(2);
+	await expect(page.getByText(/^Best price — (Scorptec|PCCG|Umart)$/).first()).toBeVisible();
+});
+
+test('the picker asks again when the same product is chosen twice (Review Focus 3)', async ({ page }) => {
+	await goto(page, '/compare');
+	const selects = page.getByRole('combobox');
+	await selects.nth(0).selectOption({ index: 1 });
+	await selects.nth(1).selectOption({ index: 1 });
+	await page.getByRole('button', { name: 'Compare', exact: true }).click();
+	await page.waitForLoadState('networkidle');
+	await expect(page.getByRole('alert')).toHaveText('Pick two different products to compare.');
 });
 
 test.describe('theme toggle', () => {
@@ -390,6 +409,34 @@ test.describe('product index', () => {
 			.click();
 		await expect(page).toHaveURL(/\/compare\?ids=\d+,\d+/);
 	});
+
+	test('search lives in the URL and survives Back (#26)', async ({ page }) => {
+		await goto(page, '/products?category=gpu&q=5060');
+		await expect(page.getByLabel(/^Search GPUs$/)).toHaveValue('5060');
+		await expect(page.getByTestId('index-count')).toContainText('match');
+
+		await page.getByLabel(/^Search GPUs$/).fill('5060 ti');
+		await expect(page).toHaveURL(/q=5060\+ti/);
+		await page.getByRole('link', { name: /^GeForce RTX 5060 Ti( 16GB)?$/ }).first().click();
+		await expect(page).toHaveURL(/\/product\/\d+/);
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByLabel(/^Search GPUs$/)).toHaveValue('5060 ti');
+	});
+
+	test('a shared compare selection is restored, and one pick prompts for another (#26)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const boxes = page.getByRole('checkbox', { name: /^Compare / });
+		await boxes.nth(0).check();
+		const bar = page.getByRole('region', { name: 'Compare bar' });
+		await expect(bar).toContainText('Pick 1 more to compare');
+		await boxes.nth(1).check();
+		await expect(page).toHaveURL(/compare=\d+%2C\d+|compare=\d+,\d+/);
+
+		await page.reload();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('checkbox', { name: /^Compare /, checked: true })).toHaveCount(2);
+	});
 });
 
 test.describe('command palette', () => {
@@ -435,6 +482,16 @@ test.describe('command palette', () => {
 		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
 		await expect(dialog.getByText(/snapshots/).first()).toBeVisible();
 		await expect(dialog.getByText(/snapshots/)).toHaveCount(2);
+	});
+
+	test('never offers a quick compare across categories (#26)', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		// "7600" matches the Ryzen 5 7600 CPU and (in real data) the RX 7600 GPU;
+		// with synthetic data it matches one product. Either way, no compare row.
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('7600');
+		await expect(dialog.getByRole('option', { name: /^Compare / })).toHaveCount(0);
 	});
 });
 
@@ -582,7 +639,8 @@ await goto(page, '/product/1');
 		await expect(page.getByRole('heading', { name: 'Offers' })).toBeVisible();
 		// Product 1 is an Intel current-gen chip — the Generation chip shows the
 		// friendly architecture name, not the raw tier code.
-		await expect(page.getByText('Core Ultra 200 (Arrow Lake)')).toBeVisible();
+		// Scoped to the meta line: the breadcrumb (#26) also names the generation.
+		await expect(page.getByTestId('product-meta')).toContainText('Core Ultra 200 (Arrow Lake)');
 	});
 
 	test('chart skeleton resolves once the chart mounts client-side', async ({ page }) => {
@@ -619,6 +677,23 @@ await goto(page, '/product/1');
 	test('404 for an unknown product id', async ({ page }) => {
 		const res = await page.request.get('/product/999999');
 		expect(res.status()).toBe(404);
+	});
+
+	test('breadcrumbs lead back, the category is highlighted, and Compare with… preselects (#26)', async ({
+		page
+	}) => {
+		await goto(page, '/product/1');
+		const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
+		await expect(crumbs.getByRole('link', { name: 'CPUs' })).toHaveAttribute('href', '/products?category=cpu');
+		await expect(
+			page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'CPUs', exact: true })
+		).toHaveAttribute('aria-current', 'page');
+
+		await page.getByRole('link', { name: 'Compare with…' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/\/products\?category=cpu&compare=1$/);
+		await expect(page.getByRole('region', { name: 'Compare bar' })).toContainText('Pick 1 more');
+		await expect(page.getByRole('checkbox', { name: /^Compare /, checked: true })).toHaveCount(1);
 	});
 });
 

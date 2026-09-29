@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { searchProducts } from '$lib/productSearch';
+	import { quickComparePair, searchProducts } from '$lib/productSearch';
 	import { goto } from '$app/navigation';
 	import Badge from './Badge.svelte';
 	import type { ProductIndexEntry } from '$lib/server/repos';
@@ -82,7 +82,7 @@
 
 	const visible = $derived(filtered.slice(0, 8));
 
-	const quickCompare = $derived(visible.length === 2 ? visible : null);
+	const quickCompare = $derived(quickComparePair(visible));
 
 	const results = $derived.by(() => {
 		const list: Array<

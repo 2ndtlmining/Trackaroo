@@ -8,6 +8,8 @@
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import PriceDataTable from '$lib/components/PriceDataTable.svelte';
+	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+	import { productBreadcrumbs } from '$lib/breadcrumbs';
 	import { chartSummary } from '$lib/chartSummary';
 	import type { AlertChannel } from '$lib/types';
 	import { formatDate, formatRelative, titleCase } from '$lib/formats';
@@ -113,7 +115,8 @@ label:
 
 <div class="space-y-6">
 	<div>
-		<p class="flex items-center gap-1.5 text-sm text-text-muted">
+		<Breadcrumbs crumbs={productBreadcrumbs(product)} />
+		<p class="mt-2 flex items-center gap-1.5 text-sm text-text-muted">
 			<BrandIcon brand={product.brand} size={16} />
 			{product.brand}
 		</p>
@@ -128,6 +131,11 @@ label:
 				· {generationTierLabel(product.brand, product.category, product.generation_tier) ??
 					product.generation_tier}
 			{/if}
+		</p>
+		<p class="mt-1 text-sm">
+			<a href="/products?category={product.category}&compare={product.id}" class="text-accent">
+				Compare with…
+			</a>
 		</p>
 
 		<div class="mt-4">

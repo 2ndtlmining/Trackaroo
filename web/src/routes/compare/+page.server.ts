@@ -1,20 +1,27 @@
 import { error } from '@sveltejs/kit';
 import { getComparisonData } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
-
-const MAX_COMPARE = 4;
+import { MAX_COMPARE } from '$lib/urlState';
+import type { Category } from '$lib/types';
 
 export function load({ url }: { url: URL }) {
-	const raw = url.searchParams.get('ids') ?? '';
+	const pickerCategory: Category = url.searchParams.get('category') === 'cpu' ? 'cpu' : 'gpu';
+	// Links and the compare bar use ?ids=A,B; the empty-state picker is a plain
+	// GET form with two <select name="id"> and submits ?id=A&id=B (#26, U-D15).
+	const picked = url.searchParams.getAll('id');
+	const raw = [url.searchParams.get('ids') ?? '', ...picked].filter((s) => s.trim() !== '').join(',');
 	const ids = [...new Set(raw.split(',').map((s) => Number(s.trim())).filter(Number.isInteger))].filter(
 		(n) => n > 0
 	);
 
-	// Compare is in the nav now, so it must be openable with nothing selected.
-	// A malformed request that names exactly one product is still an error —
-	// that comes from a broken link, not from clicking "Compare" in the nav.
+	// Compare is in the nav, so it must open with nothing selected.
 	if (raw.trim() === '' && ids.length === 0) {
-		return { entries: [] };
+		return { entries: [], pickerCategory, pickerError: null };
+	}
+	// The picker with one product chosen twice: ask again rather than 400
+	// (Review Focus 3). A hand-built ?ids=5 link is still a malformed request.
+	if (picked.length > 0 && ids.length < 2) {
+		return { entries: [], pickerCategory, pickerError: 'Pick two different products to compare.' };
 	}
 
 	if (ids.length < 2) {
@@ -35,5 +42,5 @@ export function load({ url }: { url: URL }) {
 		error(400, 'Only products in the same category can be compared side by side');
 	}
 
-	return { entries };
+	return { entries, pickerCategory: entries[0].product.category, pickerError: null };
 }
