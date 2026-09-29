@@ -49,6 +49,7 @@ from health_checks import (
     check_today_coverage,
 )
 from ingest import init_db
+from pipeline_state import sync_active_retailers
 from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED
 
 LOGGER = logging.getLogger(__name__)
@@ -450,6 +451,9 @@ def run(args: argparse.Namespace) -> int:
     try:
         conn = init_db(DB_PATH)
         try:
+            if not args.dry_run:
+                best_effort("Active-retailer sync", sync_active_retailers, conn, ACTIVE_RETAILERS)
+
             stats = ingest_today(conn, dry_run=args.dry_run)
 
             if stats:

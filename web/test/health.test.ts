@@ -63,9 +63,9 @@ describe('retailerHealth', () => {
 		expect(row.label).toBe('someshop');
 	});
 
-	it('reports a retailer that has never reported', () => {
+	it('reports an active retailer that has never reported as missing', () => {
 		const [row] = retailerHealth([{ retailer: 'pccg', latestSnapshotDate: null }], NOW);
 		expect(row.state).toBe('never');
-		expect(row.text).toBe('no data');
+		expect(row.text).toBe('missing');
 	});
 });

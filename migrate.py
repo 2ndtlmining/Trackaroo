@@ -580,6 +580,31 @@ def migrate_merge_duplicate_listings(conn: sqlite3.Connection, dry_run: bool = F
     LOGGER.info("  [OK] Merged %d duplicate listing group(s)", merged_groups)
 
 
+ACTIVE_RETAILERS_TABLE_SQL = """
+CREATE TABLE active_retailers (
+    retailer    TEXT    PRIMARY KEY,
+    position    INTEGER NOT NULL
+)
+"""
+
+
+def migrate_add_active_retailers_table(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Create active_retailers (additive, create-if-missing).
+
+    The dashboard reads it to list a retailer that has never written a row (R1).
+    """
+    if check_table_exists(conn, "active_retailers"):
+        LOGGER.info("  [SKIP] active_retailers table already exists")
+        return
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would create active_retailers table")
+        return
+    LOGGER.info("  [MIGRATE] Creating active_retailers table...")
+    conn.execute(ACTIVE_RETAILERS_TABLE_SQL)
+    conn.commit()
+    LOGGER.info("  [OK] active_retailers table created")
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -619,6 +644,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: Widen the retailer CHECK so a new retailer needs no rebuild
         migrate_widen_retailer_check(conn, dry_run=args.dry_run)
+
+        # Migration: bookkeeping tables (Phase 3 robustness)
+        migrate_add_active_retailers_table(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify

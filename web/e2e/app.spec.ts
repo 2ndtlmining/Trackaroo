@@ -199,6 +199,9 @@ test.describe('homepage dashboard', () => {
 		await expect(strip).toBeVisible();
 		await expect(strip.getByText('Scorptec')).toBeVisible();
 		await expect(strip.getByText('PCCG')).toBeVisible();
+		// e2e/seed.mjs declares MWave active with no rows: it must be listed, not hidden (R1).
+		await expect(strip.getByText('MWave')).toBeVisible();
+		await expect(strip.getByText('missing').first()).toBeVisible();
 	});
 
 	test('renders a GPU and a CPU section with links through to the category', async ({ page }) => {

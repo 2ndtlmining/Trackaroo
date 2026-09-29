@@ -166,3 +166,15 @@ CREATE TABLE price_alerts (
 
 CREATE INDEX idx_price_alerts_product ON price_alerts (product_id);
 CREATE INDEX idx_price_alerts_active ON price_alerts (active);
+
+-- ─────────────────────────────────────────────────────────────
+-- active_retailers: the retailers the pipeline scrapes
+-- (config.ACTIVE_RETAILERS), mirrored into the DB so the dashboard can list
+-- one that has never written a row (R1). Rewritten by
+-- pipeline_state.sync_active_retailers on every seed and daily run; never
+-- edited by hand. Keep in step with migrate.ACTIVE_RETAILERS_TABLE_SQL.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE active_retailers (
+    retailer    TEXT    PRIMARY KEY,
+    position    INTEGER NOT NULL
+);

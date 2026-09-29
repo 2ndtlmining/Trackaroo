@@ -36,6 +36,22 @@ class TestSeedMain:
         monkeypatch.setattr(seed, "DB_PATH", tmp_path / "seed2.db")
         seed.main(["--dry-run"])
 
+    def test_active_retailer_sync_failure_does_not_crash_boot(self, monkeypatch, tmp_path, caplog):
+        """seed.py runs on every container boot under `set -e` (CLAUDE.md /
+        deploy/*.sh); a sync_active_retailers failure must log a WARNING and
+        let main() return normally, never crash-loop the container (F20)."""
+        import seed
+
+        def boom(conn, retailers):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(seed, "DB_PATH", tmp_path / "seed3.db")
+        monkeypatch.setattr(seed, "sync_active_retailers", boom)
+        with caplog.at_level("WARNING"):
+            seed.main([])  # not dry-run: this is the path that calls the sync
+        assert "Active-retailer sync failed" in caplog.text
+        assert not any(r.levelname == "ERROR" for r in caplog.records)
+
 
 # ── query.main ───────────────────────────────────────────────────────
 

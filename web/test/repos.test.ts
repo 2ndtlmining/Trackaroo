@@ -23,6 +23,7 @@ import {
 	getRetailerFreshness,
 	getSparklines,
 	groupListingsByProduct,
+	tableExists,
 	upsertAlert
 } from '../src/lib/server/repos';
 import { MIN_HISTORY_POINTS } from '../src/lib/constants';
@@ -1250,9 +1251,76 @@ describe('getRetailerFreshness', () => {
 		}
 	});
 
-	it('orders retailers deterministically by slug', () => {
-		const slugs = getRetailerFreshness(db).map((r) => r.retailer);
-		expect([...slugs].sort()).toEqual(slugs);
+	// F19: a config position order that is NOT alphabetical (pccg < scorptec
+	// alphabetically, but scorptec is position 0) proves this is really
+	// ordering by active_retailers.position, not coincidentally by slug.
+	it('orders active retailers by config position, then any others by slug', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-fresh-order-'));
+		const d = openDatabase(path.join(dir, 'order.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec(
+				"INSERT INTO active_retailers (retailer, position) VALUES ('scorptec', 0), ('pccg', 1), ('umart', 2)"
+			);
+			d.exec(`INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 5600', 1);
+				INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'mwave', 'https://x/1', 'active');
+				INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, '2026-09-01', 199, 'in_stock');`);
+			const slugs = getRetailerFreshness(d).map((r) => r.retailer);
+			expect(slugs).toEqual(['scorptec', 'pccg', 'umart', 'mwave']);
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('getRetailerFreshness lists every active retailer (R1)', () => {
+	function freshnessDb(withActive: boolean) {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-fresh-'));
+		const d = openDatabase(path.join(dir, 'f.db'), { readonly: false, fileMustExist: false });
+		d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+		if (!withActive) d.exec('DROP TABLE active_retailers');
+		else
+			d.exec(
+				"INSERT INTO active_retailers (retailer, position) VALUES ('scorptec', 0), ('pccg', 1), ('umart', 2)"
+			);
+		d.exec(`INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 5600', 1);
+			INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'scorptec', 'https://x/1', 'active');
+			INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'mwave', 'https://x/2', 'active');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, '2026-09-28', 199, 'in_stock');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (2, '2026-08-01', 210, 'in_stock');`);
+		return {
+			d,
+			close: () => {
+				d.close();
+				fs.rmSync(dir, { recursive: true, force: true });
+			}
+		};
+	}
+
+	it('lists active retailers in config order, with null for one that never reported', () => {
+		const { d, close } = freshnessDb(true);
+		try {
+			expect(getRetailerFreshness(d).map((r) => [r.retailer, r.latestSnapshotDate])).toEqual([
+				['scorptec', '2026-09-28'],
+				['pccg', null],
+				['umart', null],
+				// no longer active, but its history is real -- still shown, after the active ones
+				['mwave', '2026-08-01']
+			]);
+		} finally {
+			close();
+		}
+	});
+
+	it('falls back to retailers with data when active_retailers is missing', () => {
+		const { d, close } = freshnessDb(false);
+		try {
+			expect(tableExists(d, 'active_retailers')).toBe(false);
+			expect(getRetailerFreshness(d).map((r) => r.retailer)).toEqual(['mwave', 'scorptec']);
+		} finally {
+			close();
+		}
 	});
 });
 

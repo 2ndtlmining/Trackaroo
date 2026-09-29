@@ -17,8 +17,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config import DB_PATH, SCHEMA_PATH, WATCHLIST_PATH
+from config import ACTIVE_RETAILERS, DB_PATH, SCHEMA_PATH, WATCHLIST_PATH
 from db.watchlist import load_watchlist_products, parse_spec
+from pipeline_state import sync_active_retailers
 
 LOGGER = logging.getLogger(__name__)
 
@@ -159,6 +160,17 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # Seed
     stats = seed_products(conn, products, dry_run=args.dry_run)
+
+    # The container runs seed.py on every boot, so this keeps the dashboard's
+    # retailer list (active_retailers) equal to config even before the first
+    # daily run on a new build (R1). Wrapped: this runs under `set -e` at
+    # boot, so a sync failure must log a WARNING and let the boot continue,
+    # never crash-loop the container (F20).
+    if not args.dry_run:
+        try:
+            sync_active_retailers(conn, ACTIVE_RETAILERS)
+        except Exception as e:  # noqa: BLE001 - best-effort, boot must not crash-loop
+            LOGGER.warning("Active-retailer sync failed (best-effort; boot continues): %s", e)
 
     LOGGER.info("\nResults:")
     LOGGER.info("  Inserted: %d", stats["inserted"])

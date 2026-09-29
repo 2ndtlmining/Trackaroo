@@ -30,6 +30,7 @@ from migrate import (
     check_table_exists,
     get_connection,
     main,
+    migrate_add_active_retailers_table,
     migrate_add_price_alerts_table,
     migrate_add_specs_columns,
     migrate_add_specs_table,
@@ -766,3 +767,25 @@ class TestMigrateWidenRetailerCheck:
                 "VALUES (1, 'umart', 'https://umart/1', 'active')"
             )
         conn.close()
+
+
+class TestMigrateActiveRetailersTable:
+    def test_creates_the_table(self, tmp_path):
+        conn = get_connection(_make_legacy_db(tmp_path))
+        try:
+            migrate_add_active_retailers_table(conn)
+            assert check_table_exists(conn, "active_retailers")
+            migrate_add_active_retailers_table(conn)  # idempotent
+        finally:
+            conn.close()
+
+    def test_dry_run_makes_no_change(self, tmp_path):
+        conn = get_connection(_make_legacy_db(tmp_path))
+        try:
+            migrate_add_active_retailers_table(conn, dry_run=True)
+            assert not check_table_exists(conn, "active_retailers")
+        finally:
+            conn.close()
+
+    def test_schema_sql_creates_it_too(self, db):
+        assert check_table_exists(db, "active_retailers")

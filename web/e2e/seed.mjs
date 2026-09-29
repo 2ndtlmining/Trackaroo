@@ -446,6 +446,14 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		);
 	}
 
+	// The pipeline mirrors config.ACTIVE_RETAILERS into this table (R1). MWave is
+	// declared active here with no rows on purpose: the health strip must list
+	// it as "missing" in both the synthetic and the real-data seed.
+	const activeRetailer = db.prepare(
+		'INSERT INTO active_retailers (retailer, position) VALUES (?, ?)'
+	);
+	['scorptec', 'pccg', 'umart', 'mwave'].forEach((r, i) => activeRetailer.run(r, i));
+
 	db.close();
 	return dbPath;
 }

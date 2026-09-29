@@ -40,7 +40,7 @@ export function retailerHealth(
 			label: retailerLabel(row.retailer),
 			state,
 			days,
-			text: state === 'never' ? 'no data' : days === 0 ? 'today' : stalenessLabel(days as number)
+			text: state === 'never' ? 'missing' : days === 0 ? 'today' : stalenessLabel(days as number)
 		};
 	});
 }
