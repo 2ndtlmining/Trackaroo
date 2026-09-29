@@ -464,6 +464,38 @@ test.describe('product index', () => {
 		await expect(page.getByLabel(/^Search GPUs$/)).toHaveValue('5060 ti');
 	});
 
+	// Back/Forward between two /products entries reuses the component. The URL
+	// sync must not track page.url (replaceState reads it internally), or on
+	// Back it writes the entry just left over the one landed on.
+	test('Back and Forward between two /products entries keep each entry\'s search', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const box = page.getByLabel(/^Search GPUs$/);
+		await box.fill('5060');
+		await expect(page).toHaveURL(/q=5060$/);
+
+		// "In stock" is a real navigation: a second /products history entry.
+		await page.getByRole('checkbox', { name: 'In stock' }).check();
+		await expect(page).toHaveURL(/in_stock=1/);
+		await page.waitForLoadState('networkidle');
+		await box.fill('5070');
+		await expect(page).toHaveURL(/q=5070/);
+
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/\/products\?category=gpu&q=5060$/);
+		await expect(box).toHaveValue('5060');
+		await expect(page.getByRole('checkbox', { name: 'In stock' })).not.toBeChecked();
+		// Still this entry's URL once the sync effect has had its chance to run.
+		await expect(page).toHaveURL(/\/products\?category=gpu&q=5060$/);
+
+		await page.goForward();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/in_stock=1/);
+		await expect(page).toHaveURL(/q=5070/);
+		await expect(box).toHaveValue('5070');
+		await expect(page.getByRole('checkbox', { name: 'In stock' })).toBeChecked();
+	});
+
 	test('a shared compare selection is restored, and one pick prompts for another (#26)', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
 		const boxes = page.getByRole('checkbox', { name: /^Compare / });

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { goto, replaceState } from '$app/navigation';
+	import { untrack } from 'svelte';
+	import { afterNavigate, goto, replaceState } from '$app/navigation';
 	import ProductRow from '$lib/components/ProductRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import { groupForIndex, type CatalogRow } from '$lib/productIndex';
@@ -58,25 +59,28 @@
 
 	const compareUrl = $derived(`/compare?ids=${[...compareIds].join(',')}`);
 
-	// GPUs -> CPUs is the same route with a different query, so this component
-	// is reused and would carry the GPU search and selection across (and /compare
-	// rejects a mixed-category comparison). Re-read both from the new URL instead
-	// (a nav link carries neither, so both clear).
-	let lastCategory: Category | undefined;
-	$effect(() => {
-		const current = data.category;
-		// undefined on the first run: the state was just read from this URL.
-		if (lastCategory !== undefined && current !== lastCategory) {
-			const params = urlParams();
-			query = params.get('q') ?? '';
-			compareIds = new Set(parseCompareIds(params.get('compare')));
-			showUnlisted = params.get('unlisted') === '1';
+	// GPUs -> CPUs, the In stock toggle and Back/Forward between two /products
+	// entries all reuse this component, so re-read the state from the URL it
+	// landed on (a nav link carries none of it, so switching category clears
+	// the search and the selection, which /compare would reject as mixed).
+	// Only assign what differs, so the sync effect below never fires on a no-op.
+	afterNavigate(() => {
+		const params = urlParams();
+		const q = params.get('q') ?? '';
+		if (q !== query) query = q;
+		const ids = parseCompareIds(params.get('compare'));
+		if (ids.length !== compareIds.size || ids.some((id) => !compareIds.has(id))) {
+			compareIds = new Set(ids);
 		}
-		lastCategory = current;
+		const unlisted = params.get('unlisted') === '1';
+		if (unlisted !== showUnlisted) showUnlisted = unlisted;
 	});
 
 	// Shallow URL sync: replaceState rewrites the address bar without re-running
-	// load, so filtering stays client-side (25-Aug decision). The first run is
+	// load, so filtering stays client-side (25-Aug decision). It must track only
+	// the state: replaceState reads page.url internally, so called tracked it
+	// would re-run this effect on every navigation and, on Back, write the
+	// entry just left over the one landed on. Hence untrack(). The first run is
 	// skipped: the state was just read from this URL, and in dev SvelteKit throws
 	// if replaceState runs before its router has started. `location`, not
 	// page.url: replaceState updates page.state but not page.url.
@@ -91,7 +95,7 @@
 			urlSynced = true;
 			return;
 		}
-		if (next !== location.search) replaceState(`${location.pathname}${next}`, {});
+		if (next !== location.search) untrack(() => replaceState(`${location.pathname}${next}`, {}));
 	});
 
 	function openTopHit() {
