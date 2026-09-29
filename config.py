@@ -123,10 +123,13 @@ BUSY_TIMEOUT_MS = _env_int("TRACKAROO_BUSY_TIMEOUT_MS", 5000)
 # ── Health-check thresholds ───────────────────────────────────────────
 # Expected match counts per retailer per scrape (multi-variant). Calibrated
 # 11-Aug-2026 to ~194 Scorptec / ~41 PCCG matched variants at ~50% of
-# baseline, to avoid false alarms from normal stock-level variation.
+# baseline, to avoid false alarms from normal stock-level variation. Umart
+# added 29-Sep-2026 from 31-Aug: 27 CPU + 155 GPU = 182 (#7, #15); the per-
+# category floor is set by its small CPU side.
 DEFAULT_MATCH_THRESHOLDS: Dict[str, Dict[str, int]] = {
     "scorptec": {"min_total": 90, "min_per_category": 30},
     "pccg": {"min_total": 20, "min_per_category": 5},
+    "umart": {"min_total": 90, "min_per_category": 10},
 }
 
 

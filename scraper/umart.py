@@ -44,6 +44,7 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.chip_key import Matcher
+from scraper.run_report import EXIT_DEGRADED, EXIT_OK
 from scraper.snapshot_io import build_snapshot, save_snapshot
 
 logger = logging.getLogger(__name__)
@@ -256,7 +257,7 @@ def scrape_umart(
     return results, matched_ids, all_scraped
 
 
-def main() -> None:
+def main() -> int:
     setup_logging()
     logger.info("Loading watchlist...")
     watchlist = load_watchlist()
@@ -272,8 +273,10 @@ def main() -> None:
     today = date.today().strftime(FILE_DATE_FORMAT)
     DATA_DIR.mkdir(exist_ok=True)
 
+    counts: Dict[str, int] = {}
     for category in ("cpu", "gpu"):
         products = [p for p in results if p["watchlist_category"] == category]
+        counts[category] = len(products)
         unmatched = [
             m
             for m in unmatched_models
@@ -290,6 +293,11 @@ def main() -> None:
         )
         save_snapshot(output_file, output_data)
 
+    if not all(counts.values()):
+        logger.error("Umart scrape incomplete: %s", counts)
+        return EXIT_DEGRADED
+    return EXIT_OK
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

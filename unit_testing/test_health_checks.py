@@ -39,6 +39,7 @@ from health_checks import (
     SPEC_COVERAGE_MIN_PCT,
     SPEC_STALE_THRESHOLD_DAYS,
 )
+from health_checks import cooldown_explains, pccg_cooldown_remaining_hours
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -196,6 +197,19 @@ class TestCheckJsonFiles:
 
         results = check_json_files()  # No date argument
         assert len(results) > 0
+
+
+class TestZeroMatchIsAnError:
+    def test_a_category_that_matched_nothing_is_an_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("health_checks.DATA_DIR", tmp_path)
+        today = date.today().strftime("%d_%B_%Y")
+        _make_json_file(tmp_path, "umart", "gpu", 0)
+
+        results = check_json_files(today)
+
+        [r] = [r for r in results if r.check_name == "json_match_count_umart_gpu"]
+        assert r.status == CheckResult.ERROR
+        assert "0 matched" in r.message
 
 
 # ── Database freshness checks ───────────────────────────────────────
@@ -801,8 +815,7 @@ class TestCheckTodayCoverage:
         scorptec = [r for r in results if r.check_name == "today_coverage_scorptec"][0]
         assert scorptec.status == CheckResult.OK
 
-    def test_warns_for_retailer_missing_today(self, db_path):
-        """Retailer absent from today's snapshot is a named warning, not an error."""
+    def _yesterday_only(self, db_path):
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Test CPU', 1)")
@@ -812,10 +825,26 @@ class TestCheckTodayCoverage:
         conn.commit()
         conn.close()
 
-        results = check_today_coverage(db_path)
-        by_name = {r.check_name: r for r in results}
-        assert by_name["today_coverage_pccg"].status == CheckResult.WARNING
+    def test_a_retailer_missing_today_is_an_error(self, db_path, monkeypatch):
+        """#7(c): silence from an active retailer pages someone, unless a cooldown explains it."""
+        monkeypatch.setattr("health_checks.cooldown_explains", lambda retailer: False)
+        self._yesterday_only(db_path)
+
+        by_name = {r.check_name: r for r in check_today_coverage(db_path)}
+
+        assert by_name["today_coverage_pccg"].status == CheckResult.ERROR
         assert "no snapshot for today" in by_name["today_coverage_pccg"].message
+        assert by_name["today_coverage_umart"].status == CheckResult.ERROR
+
+    def test_a_cooldown_turns_the_missing_retailer_into_a_warning(self, db_path, monkeypatch):
+        monkeypatch.setattr("health_checks.cooldown_explains", lambda retailer: retailer == "pccg")
+        self._yesterday_only(db_path)
+
+        by_name = {r.check_name: r for r in check_today_coverage(db_path)}
+
+        assert by_name["today_coverage_pccg"].status == CheckResult.WARNING
+        assert "cooldown" in by_name["today_coverage_pccg"].message
+        assert by_name["today_coverage_umart"].status == CheckResult.ERROR
 
     def test_every_active_retailer_reported(self, db_path):
         """One result per retailer we scrape -- not per retailer with data.
@@ -845,6 +874,22 @@ class TestCheckTodayCoverage:
             f"today_coverage_{r}" for r in ACTIVE_RETAILERS
         }
         assert all(r.status == CheckResult.OK for r in results)
+
+
+class TestCooldownExplains:
+    def test_an_active_pccg_cooldown_explains_pccg_only(self, tmp_path, monkeypatch):
+        cooldown = tmp_path / "pccg_cooldown.json"
+        cooldown.write_text(json.dumps({"tripped_at": datetime.now().astimezone().isoformat(),
+                                        "reason": "empty catalogue"}), encoding="utf-8")
+        monkeypatch.setattr("config.PCCG_COOLDOWN_FILE", cooldown)
+
+        assert pccg_cooldown_remaining_hours() > 0
+        assert cooldown_explains("pccg") is True
+        assert cooldown_explains("umart") is False
+
+    def test_no_cooldown_file_explains_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("config.PCCG_COOLDOWN_FILE", tmp_path / "absent.json")
+        assert cooldown_explains("pccg") is False
 
 
 # ── Spec coverage / staleness ────────────────────────────────────────

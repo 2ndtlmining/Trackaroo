@@ -116,10 +116,18 @@ def check_json_files(target_date: Optional[str] = None) -> list[CheckResult]:
                 ))
                 continue
 
-            # Check match count
+            # Check match count. Zero is a failed scrape, not a low day: every
+            # retailer stocks both categories (#7). Below the threshold stays
+            # a warning -- stock levels do move.
             matched = data.get("matched", 0)
             threshold = MATCH_THRESHOLDS.get(retailer, {}).get("min_per_category", DEFAULT_MIN_PER_CATEGORY)
-            if matched < threshold:
+            if matched == 0:
+                results.append(CheckResult(
+                    f"json_match_count_{retailer}_{category}",
+                    CheckResult.ERROR,
+                    f"0 matched products in {filename} - the scrape returned nothing for this category",
+                ))
+            elif matched < threshold:
                 results.append(CheckResult(
                     f"json_match_count_{retailer}_{category}",
                     CheckResult.WARNING,
@@ -281,14 +289,45 @@ def check_db_freshness(db_path: Optional[Path] = None) -> list[CheckResult]:
 
 # ── Today coverage (per-retailer) ────────────────────────────────────
 
+def pccg_cooldown_remaining_hours(now: Optional[datetime] = None) -> float:
+    """Hours left on the PCCG circuit-breaker cooldown; 0.0 when none is active.
+
+    Reads config.PCCG_COOLDOWN_FILE at call time so tests can point it at a
+    temp file. An unreadable file counts as no cooldown -- the scraper treats
+    it the same way (scraper/pccg.py _cooldown_active).
+    """
+    from config import PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS
+
+    try:
+        payload = json.loads(PCCG_COOLDOWN_FILE.read_text(encoding="utf-8"))
+        tripped_at = datetime.fromisoformat(payload["tripped_at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0.0
+    if tripped_at.tzinfo is None:
+        tripped_at = tripped_at.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    remaining = (tripped_at + timedelta(hours=PCCG_COOLDOWN_HOURS) - now).total_seconds() / 3600
+    return max(remaining, 0.0)
+
+
+def cooldown_explains(retailer: str) -> bool:
+    """True when an active scraper cooldown explains a retailer's silence today.
+
+    Only PCCG has a cooldown. A retailer silent for any other reason is a
+    failure that must page (#7c).
+    """
+    return retailer == "pccg" and pccg_cooldown_remaining_hours() > 0
+
+
 def check_today_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
     """Report, per retailer, whether today's date has a snapshot yet.
 
     Goal: make "Scorptec ingested, PCCG missing for today" a named,
-    expected-shape warning instead of something only visible by reading scrape
-    logs. Backed by the cooldown mechanism (docs/archive/IMPROVEMENT_16_Aug_V1.md §10.3/10.4):
-    a recent PCCG circuit-breaker trip legitimately skips today's PCCG scrape,
-    so this check surfaces the gap as a warning rather than an error.
+    expected-shape result instead of something only visible by reading scrape
+    logs. A retailer missing today is an ERROR unless an active scraper
+    cooldown explains it (docs/archive/IMPROVEMENT_16_Aug_V1.md §10.3/10.4): a
+    recent PCCG circuit-breaker trip legitimately skips today's PCCG scrape,
+    so that case surfaces as a warning instead (#7c).
 
     Args:
         db_path: Path to the SQLite database. Defaults to db/trackaroo.db.
@@ -329,11 +368,20 @@ def check_today_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
                     CheckResult.OK,
                     f"{retailer}: {with_today[retailer]} variants captured for today ({today})",
                 ))
-            else:
+            elif cooldown_explains(retailer):
                 results.append(CheckResult(
                     f"today_coverage_{retailer}",
                     CheckResult.WARNING,
-                    f"{retailer}: no snapshot for today ({today}) yet",
+                    f"{retailer}: no snapshot for today ({today}) yet - scraper cooldown "
+                    f"active, expected",
+                ))
+            else:
+                # An active retailer with no rows today -- including one that has
+                # never written a row at all (R1) -- is an outage, not a note (#7c).
+                results.append(CheckResult(
+                    f"today_coverage_{retailer}",
+                    CheckResult.ERROR,
+                    f"{retailer}: no snapshot for today ({today})",
                 ))
     except sqlite3.Error:
         pass  # Handled by other checks
@@ -928,9 +976,11 @@ def check_scraper_cooldown() -> list[CheckResult]:
     if tripped_at.tzinfo is None:
         tripped_at = tripped_at.replace(tzinfo=timezone.utc)
     expires_at = tripped_at + timedelta(hours=PCCG_COOLDOWN_HOURS)
-    remaining = (expires_at - datetime.now(timezone.utc)).total_seconds()
+    # Remaining time itself comes from pccg_cooldown_remaining_hours (shared
+    # with cooldown_explains) rather than being recomputed here.
+    remaining_hours = pccg_cooldown_remaining_hours()
 
-    if remaining <= 0:
+    if remaining_hours <= 0:
         return [CheckResult(
             "scraper_cooldown_pccg", CheckResult.OK,
             f"PCCG cooldown expired at {expires_at.isoformat(timespec='seconds')}; "
@@ -941,7 +991,7 @@ def check_scraper_cooldown() -> list[CheckResult]:
         "scraper_cooldown_pccg", CheckResult.WARNING,
         f"PCCG scraping paused ({reason}) since "
         f"{tripped_at.isoformat(timespec='seconds')} — resumes in "
-        f"{remaining / 3600:.1f}h at {expires_at.isoformat(timespec='seconds')}. "
+        f"{remaining_hours:.1f}h at {expires_at.isoformat(timespec='seconds')}. "
         f"Missing PCCG data for today is expected until then.",
     )]
 

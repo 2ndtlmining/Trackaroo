@@ -25,6 +25,7 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.chip_key import Matcher
+from scraper.run_report import EXIT_DEGRADED, EXIT_OK
 from scraper.snapshot_io import build_snapshot, save_snapshot
 
 logger = logging.getLogger(__name__)
@@ -445,7 +446,7 @@ def analyze_unmatched(
     return likely_delist, possible_stocked
 
 
-def main() -> None:
+def main() -> int:
     setup_logging()
     logger.info("Loading watchlist...")
     watchlist = load_watchlist()
@@ -491,6 +492,13 @@ def main() -> None:
         )
         save_snapshot(output_file, output_data)
 
+    # A category that came back empty is a failed scrape, not a quiet shop:
+    # Scorptec always stocks both. It used to exit 0 and log "OK" (#7).
+    if not cpu_results or not gpu_results:
+        logger.error("Scorptec scrape incomplete: cpu=%d gpu=%d matched", len(cpu_results), len(gpu_results))
+        return EXIT_DEGRADED
+    return EXIT_OK
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

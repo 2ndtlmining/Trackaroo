@@ -186,3 +186,9 @@ class TestSharedConsumption:
         assert backup_db.DEFAULT_KEEP == config.BACKUP_KEEP
         assert run_daily.BACKUP_KEEP == config.BACKUP_KEEP
         assert run_daily.SCRAPER_GAP_SECONDS == config.SCRAPER_GAP_SECONDS
+
+
+def test_umart_has_explicit_match_thresholds():
+    """#7 / #15: Umart fell back to 10/5 against ~180 listings a day."""
+    import config
+    assert config.DEFAULT_MATCH_THRESHOLDS["umart"] == {"min_total": 90, "min_per_category": 10}

@@ -49,6 +49,7 @@ from health_checks import (
     check_today_coverage,
 )
 from ingest import init_db
+from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED
 
 LOGGER = logging.getLogger(__name__)
 
@@ -102,9 +103,17 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+_STATUS_BY_EXIT = {EXIT_OK: "ok", EXIT_DEGRADED: "degraded",
+                   EXIT_SKIPPED: "skipped", EXIT_AUTH: "auth"}
+
+
 def status_for_exit(code: int) -> str:
-    """Map a scraper's exit code to a ScrapeOutcome status."""
-    return "ok" if code == 0 else "failed"
+    """Map a scraper's exit code to a ScrapeOutcome status (see scraper/run_report.py).
+
+    1 (an uncaught exception) and a negative code (killed by a signal) are
+    both plain failures.
+    """
+    return _STATUS_BY_EXIT.get(code, "failed")
 
 
 def outcome_alert_line(o: ScrapeOutcome) -> str:
@@ -508,8 +517,11 @@ def run(args: argparse.Namespace) -> int:
         # a partial or unchecked scrape shouldn't celebrate moves that may be
         # artifacts.
         if notify_enabled(args):
-            if failed:
-                LOGGER.warning("Skipping Discord digest - %d health check error(s).", len(failed))
+            if failed or scraper_lines:
+                # A clean-looking digest over a failed or empty scrape is the
+                # silent failure #7 describes.
+                LOGGER.warning("Skipping Discord digest - %d health check error(s), %d scraper problem(s).",
+                               len(failed), len(scraper_lines))
             else:
                 def _run_digest() -> None:
                     from notify_discord import run as run_notify

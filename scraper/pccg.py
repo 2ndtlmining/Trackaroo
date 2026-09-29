@@ -45,6 +45,7 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.chip_key import Matcher
+from scraper.run_report import EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED
 from scraper.snapshot_io import build_snapshot, save_snapshot
 
 LOGGER = logging.getLogger(__name__)
@@ -652,7 +653,7 @@ def scrape_category(
     return results, matched_global, breaker_tripped
 
 
-def main() -> None:
+def main() -> int:
     """Run the PCCG scraper to collect price data for all watchlist products."""
     setup_logging()
     LOGGER.info("Loading watchlist...")
@@ -667,7 +668,7 @@ def main() -> None:
             "This is expected handled behaviour, not an error.",
             PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS,
         )
-        return
+        return EXIT_SKIPPED
 
     all_results: list[Dict[str, Any]] = []
     all_matched: set[int] = set()
@@ -723,6 +724,13 @@ def main() -> None:
         )
         save_snapshot(output_file, output_data)
 
+    per_category = {c: sum(1 for p in all_results if p["watchlist_category"] == c)
+                    for c in ("cpu", "gpu")}
+    # The breaker used to only log; the run still exited 0 and read "OK" (#7).
+    if all_tripped or not all(per_category.values()):
+        return EXIT_DEGRADED
+    return EXIT_OK
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
