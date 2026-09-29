@@ -157,6 +157,9 @@ def run_scraper(name: str, module: str, label: str) -> ScrapeOutcome:
     elapsed = time.time() - start
     if outcome.ok:
         LOGGER.info("\n%s completed in %.1fs", name, elapsed)
+    elif status == "skipped":
+        # A cooldown skip is expected, handled behaviour, not a problem (#7/M3).
+        LOGGER.warning("\n%s %s (exit code %s) after %.1fs", name, status, exit_code, elapsed)
     else:
         LOGGER.error("\n%s %s (exit code %s) after %.1fs", name, status, exit_code, elapsed)
     return outcome
@@ -403,7 +406,10 @@ def run(args: argparse.Namespace) -> int:
 
     scraper_lines = [outcome_alert_line(o) for o in results.values() if o.needs_alert]
 
-    if not any(o.ok for o in results.values()):
+    # "Nothing to ingest" means no scraper produced any data at all -- ok or
+    # degraded both wrote JSON (a degraded scrape saved whatever categories
+    # it did match; #7/I2). Only skipped/auth/failed/timeout leave nothing.
+    if not any(o.status in ("ok", "degraded") for o in results.values()):
         if not scraper_lines:
             # Every selected scraper was deliberately skipped (a --pccg retry
             # during its cooldown): expected, and nothing new to ingest.

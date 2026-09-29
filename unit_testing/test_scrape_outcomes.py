@@ -63,6 +63,20 @@ class TestRunDailyReaction:
         assert isolated_pipeline.alerts == []
         assert isolated_pipeline.digests == 1
 
+    def test_all_scrapers_degraded_still_ingests_and_alerts(self, isolated_pipeline, monkeypatch):
+        """I2: a degraded scraper wrote real partial data -- an all-degraded run
+        is not "nothing to ingest" and must not take the all-failed early exit."""
+        monkeypatch.setattr(run_daily, "run_scraper", lambda n, m, label: run_daily.ScrapeOutcome(
+            label, "degraded", 2))
+
+        code = run_daily.run(_args())
+
+        assert code == run_daily.RUN_EXIT_DEGRADED
+        # Reaching the post-ingest `finally` (where the backup runs) proves the
+        # all-failed early return was not taken.
+        assert isolated_pipeline.backups == 1
+        assert isolated_pipeline.alerts != []
+
 
 class TestScraperExitCodes:
     def test_scorptec_with_an_empty_gpu_category_is_degraded(self, tmp_path, monkeypatch):
@@ -103,3 +117,31 @@ class TestScraperExitCodes:
         monkeypatch.setattr(pccg, "scrape_category", lambda category, wl, **k: ([], set(), True))
 
         assert pccg.main() == EXIT_DEGRADED
+
+
+class TestRunScraperLogging:
+    def test_a_cooldown_skip_logs_at_warning_not_error(self, monkeypatch, caplog):
+        """M3: a cooldown skip is expected, handled behaviour, not a problem."""
+        class FakeResult:
+            returncode = EXIT_SKIPPED
+
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: FakeResult())
+
+        with caplog.at_level("WARNING"):
+            outcome = run_daily.run_scraper("PCCG", "scraper.pccg", "pccg")
+
+        assert outcome.status == "skipped"
+        assert not any(r.levelname == "ERROR" for r in caplog.records)
+        assert any(r.levelname == "WARNING" for r in caplog.records)
+
+    def test_a_real_failure_still_logs_at_error(self, monkeypatch, caplog):
+        class FakeResult:
+            returncode = 1
+
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: FakeResult())
+
+        with caplog.at_level("WARNING"):
+            outcome = run_daily.run_scraper("Umart", "scraper.umart", "umart")
+
+        assert outcome.status == "failed"
+        assert any(r.levelname == "ERROR" for r in caplog.records)

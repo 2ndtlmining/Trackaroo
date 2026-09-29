@@ -289,24 +289,46 @@ def check_db_freshness(db_path: Optional[Path] = None) -> list[CheckResult]:
 
 # ── Today coverage (per-retailer) ────────────────────────────────────
 
-def pccg_cooldown_remaining_hours(now: Optional[datetime] = None) -> float:
-    """Hours left on the PCCG circuit-breaker cooldown; 0.0 when none is active.
+def _read_cooldown_payload() -> Optional[dict]:
+    """Parse config.PCCG_COOLDOWN_FILE into ``{"tripped_at": tz-aware datetime,
+    "reason": str}``, or None when the file is missing or unreadable.
 
-    Reads config.PCCG_COOLDOWN_FILE at call time so tests can point it at a
-    temp file. An unreadable file counts as no cooldown -- the scraper treats
-    it the same way (scraper/pccg.py _cooldown_active).
+    The single place that parses the cooldown file and normalises a tz-naive
+    ``tripped_at`` to UTC -- both ``pccg_cooldown_remaining_hours`` and
+    ``check_scraper_cooldown`` build on this instead of each re-parsing the
+    file and re-doing the tz fix-up.
     """
-    from config import PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS
+    from config import PCCG_COOLDOWN_FILE
 
     try:
         payload = json.loads(PCCG_COOLDOWN_FILE.read_text(encoding="utf-8"))
         tripped_at = datetime.fromisoformat(payload["tripped_at"])
     except (OSError, ValueError, KeyError, TypeError):
-        return 0.0
+        return None
     if tripped_at.tzinfo is None:
         tripped_at = tripped_at.replace(tzinfo=timezone.utc)
+    return {"tripped_at": tripped_at, "reason": payload.get("reason", "unknown")}
+
+
+def pccg_cooldown_remaining_hours(now: Optional[datetime] = None, _payload: Optional[dict] = None) -> float:
+    """Hours left on the PCCG circuit-breaker cooldown; 0.0 when none is active.
+
+    Reads config.PCCG_COOLDOWN_FILE at call time (via ``_read_cooldown_payload``)
+    so tests can point it at a temp file. An unreadable file counts as no
+    cooldown -- the scraper treats it the same way (scraper/pccg.py
+    _cooldown_active).
+
+    ``_payload`` is a private hook for callers (``check_scraper_cooldown``)
+    that already parsed the file themselves, so they can get the remaining-
+    hours math from here without paying for a second read.
+    """
+    from config import PCCG_COOLDOWN_HOURS
+
+    payload = _payload if _payload is not None else _read_cooldown_payload()
+    if payload is None:
+        return 0.0
     now = now or datetime.now(timezone.utc)
-    remaining = (tripped_at + timedelta(hours=PCCG_COOLDOWN_HOURS) - now).total_seconds() / 3600
+    remaining = (payload["tripped_at"] + timedelta(hours=PCCG_COOLDOWN_HOURS) - now).total_seconds() / 3600
     return max(remaining, 0.0)
 
 
@@ -957,28 +979,29 @@ def check_scraper_cooldown() -> list[CheckResult]:
         A single CheckResult describing the cooldown, or an empty list when no
         cooldown file exists (the normal case).
     """
-    from config import PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS
+    from config import PCCG_COOLDOWN_FILE
 
     if not PCCG_COOLDOWN_FILE.exists():
         return []
 
-    try:
-        with open(PCCG_COOLDOWN_FILE, encoding="utf-8") as f:
-            payload = json.load(f)
-        tripped_at = datetime.fromisoformat(payload["tripped_at"])
-        reason = payload.get("reason", "unknown")
-    except (OSError, ValueError, KeyError, TypeError):
+    # One parse of the file, shared with pccg_cooldown_remaining_hours -- see
+    # _read_cooldown_payload. Only the file's existence is checked twice
+    # (here, to tell "no cooldown" from "unreadable cooldown" apart), never
+    # its contents.
+    payload = _read_cooldown_payload()
+    if payload is None:
         return [CheckResult(
             "scraper_cooldown_pccg", CheckResult.WARNING,
             f"PCCG cooldown file {PCCG_COOLDOWN_FILE.name} exists but is unreadable",
         )]
 
-    if tripped_at.tzinfo is None:
-        tripped_at = tripped_at.replace(tzinfo=timezone.utc)
-    expires_at = tripped_at + timedelta(hours=PCCG_COOLDOWN_HOURS)
-    # Remaining time itself comes from pccg_cooldown_remaining_hours (shared
-    # with cooldown_explains) rather than being recomputed here.
-    remaining_hours = pccg_cooldown_remaining_hours()
+    # The remaining-time math (tripped_at + PCCG_COOLDOWN_HOURS vs. now) lives
+    # only in pccg_cooldown_remaining_hours; the display expiry is derived
+    # from its answer rather than recomputed here. ``payload`` is passed
+    # through so that call doesn't re-read the file a second time.
+    now = datetime.now(timezone.utc)
+    remaining_hours = pccg_cooldown_remaining_hours(now, payload)
+    expires_at = now + timedelta(hours=remaining_hours)
 
     if remaining_hours <= 0:
         return [CheckResult(
@@ -989,8 +1012,8 @@ def check_scraper_cooldown() -> list[CheckResult]:
 
     return [CheckResult(
         "scraper_cooldown_pccg", CheckResult.WARNING,
-        f"PCCG scraping paused ({reason}) since "
-        f"{tripped_at.isoformat(timespec='seconds')} — resumes in "
+        f"PCCG scraping paused ({payload['reason']}) since "
+        f"{payload['tripped_at'].isoformat(timespec='seconds')} — resumes in "
         f"{remaining_hours:.1f}h at {expires_at.isoformat(timespec='seconds')}. "
         f"Missing PCCG data for today is expected until then.",
     )]
