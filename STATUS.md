@@ -37,6 +37,11 @@ backup integrity.
   shows Umart as "missing" until the first Umart scrape lands.
   Owner to-do on the host: `docker exec trackaroo rm /app/db/rehearsal-copy.db`
   (root-owned copy left in `db/`).
+  Task 5 gate from a clean tree at `07e90ea`: pytest **1073 passed**, vitest
+  **791 passed** (37 files), Playwright **115 passed**, svelte-check **0 errors,
+  0 warnings** (466 files); image built offline with `GIT_SHA`, booted
+  `healthy`, `/healthz` reported `"version":"07e90ea"`. Branches pushed and
+  the three stacked PRs opened the same day.
 
 - **2026-09-30 (end of day) — Phase 6 "redeploy with docker compose": code
   done, NOT deployed.** Branch `feat/2026-09-30-redeploy`
