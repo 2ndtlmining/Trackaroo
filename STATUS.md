@@ -39,7 +39,8 @@ backup integrity.
   Task 6: rehearse migrate/seed/repair on a scratch copy here and prove
   per-day snapshot counts are unchanged (`restore_drill.py --backup`);
   (4) Task 5: push, three stacked PRs, first CI run; (5) Task 7: the host
-  migration per DEPLOYMENT.md "Moving from `docker run` to compose (once)".
+  migration, following the step-by-step guide for that server:
+  `docs/runbooks/dockerhost-compose-migration.md`.
   Gate: pytest **1073 passed**, vitest **791 passed**, Playwright **115
   passed**, svelte-check **0 errors, 0 warnings**.
 

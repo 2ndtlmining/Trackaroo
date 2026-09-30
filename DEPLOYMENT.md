@@ -187,6 +187,10 @@ The data is in the mounts, not the container, so a redeploy is non-destructive.
 
 ### Moving from `docker run` to compose (once)
 
+For the prod server (`giel@dockerhost:~/docker/Trackaroo`) there is a
+copy-paste, step-by-step version of this:
+[docs/runbooks/dockerhost-compose-migration.md](docs/runbooks/dockerhost-compose-migration.md).
+
 Nothing here deletes data. Do it outside 04:00–09:59.
 
 1. Find the old container's mounts and note both source paths:
