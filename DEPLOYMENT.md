@@ -164,20 +164,23 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/
 deploy/redeploy.sh
 ```
 
-1. Preflight: `.env` present, no local changes, not between `RUN_AT_HOUR`
-   and `RETRY_UNTIL_HOUR` (a recreate kills a running scrape; `FORCE=1`
-   overrides), and no leftover non-compose `trackaroo` container.
+1. Preflight: `.env` present, a git checkout with no local changes, not
+   between `RUN_AT_HOUR` and `RETRY_UNTIL_HOUR` in Melbourne time (read from
+   `.env` like the container does; a recreate kills a running scrape;
+   `FORCE=1` overrides), and no leftover non-compose `trackaroo` container.
 2. `git pull --ff-only`.
 3. `python backup_db.py` inside the running container (verified with
    `quick_check`; also mirrored off-host when `TRACKAROO_BACKUP_MIRROR_DIR` is set).
 4. `docker compose build` with `GIT_SHA`, then `docker compose up -d`. The
    entrypoint runs `migrate.py` and `seed.py` on boot.
-5. Waits for the Docker healthcheck (`HEALTH_TIMEOUT`, default 900 s).
+5. Waits for the Docker healthcheck (`HEALTH_TIMEOUT`, default 900 s), then
+   for the boot catch-up run to log "Pipeline finished" (`CATCHUP_TIMEOUT`,
+   default 1800 s): it scrapes and ingests right after boot, and a repair
+   alongside it would race the ingest.
 6. `repair_listings.py` dry run; asks before `--apply`. With no terminal
-   (cron, piped ssh) it never applies.
-7. `/healthz` must report the SHA just built and list `umart` (retried for
-   `VERIFY_TIMEOUT`, default 600 s: the boot catch-up registers the retailers
-   shortly after the container turns healthy).
+   (cron, piped ssh) it never applies. If the catch-up had not finished, the
+   repair is skipped and the command to run later is printed.
+7. `/healthz` must report the SHA just built and list `umart`.
 
 It exits non-zero at the first failed step. Before step 4 nothing has changed.
 The data is in the mounts, not the container, so a redeploy is non-destructive.
@@ -190,29 +193,51 @@ Nothing here deletes data. Do it outside 04:00–09:59.
    `docker inspect trackaroo --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'`
 2. Back up, twice over:
    - `docker exec trackaroo python backup_db.py` (a verified SQLite copy in
-     `db/backups/`; note its file name, it is step 6's reference);
+     `db/backups/`), then copy that newest backup to `db/pre-compose.db`.
+     That copy is step 6's reference: backups in `db/backups/` are pruned
+     (the newest per day plus the 3 newest overall), and migration day
+     writes several;
    - `docker stop trackaroo`, then a byte-for-byte archive of both mounts
      taken while nothing writes:
      `tar czf ~/trackaroo-pre-compose-$(date +%F).tgz -C <project dir> db data`,
      copied off the host.
-3. Keep the old container and image for rollback:
-   `docker rename trackaroo trackaroo-old && docker tag trackaroo:latest trackaroo:pre-compose`.
-   Keep both for a week. Rollback is
-   `docker compose down && docker rename trackaroo-old trackaroo && docker start trackaroo`
-   (the old container still runs its own image, whatever the tag now points at).
-4. In the git checkout that compose will run from, make `./db` and `./data`
-   the directories from step 1 (they already are if the old container was
-   started from this checkout; otherwise move them in, never copy over).
+3. Keep the old container and image for rollback, and note the code it ran:
+   `docker rename trackaroo trackaroo-old && docker tag trackaroo:latest trackaroo:pre-compose`,
+   and `git rev-parse HEAD` in the checkout if it is one. Keep both for a week.
+4. The directory compose runs from must be a git checkout of this repo
+   (`git -C <dir> rev-parse HEAD` succeeds), and its `./db` and `./data` must
+   be the data from step 1. `db/` also holds **tracked** files
+   (`schema.sql`, `watchlist.csv`, `watchlist.py`, `launch_msrp.json`) that
+   the mount lays over the image's copies, so when the data has to move into
+   a fresh clone, move **only** `db/trackaroo.db*`, `db/backups/`,
+   `db/pre-compose.db` and the whole `data/` — never replace the clone's `db/`
+   directory.
+   Check `.env` before the first compose start: compose parses it differently
+   from `docker run --env-file` (it strips quotes and expands `$`). A value
+   containing `$` (a password, a webhook) must have each `$` written as `$$`.
 5. `SKIP_BACKUP=1 deploy/redeploy.sh` (step 2 was the backup). Answer `y` to
    the repair after reading the dry run (see "Repair mis-filed listings").
-6. Nothing was lost: `docker compose exec trackaroo python restore_drill.py --backup /app/db/backups/<step 2 file>`
+6. Nothing was lost: `docker compose exec trackaroo python restore_drill.py --backup /app/db/pre-compose.db`
    must pass (the live DB has at least as many snapshots on every day the
    pre-deploy backup holds). Also check the headline cases on the site: the
    RTX 5060 Ti headline is a 16GB card and "GeForce RTX 5060 Ti 8GB" has its
    own page; the RTX 5090 has no ghost listings; `/deals` shows nothing under
    2% or $10; the footer says `build <sha>`.
 7. A week later, if nothing needed rolling back:
-   `docker rm trackaroo-old && docker rmi trackaroo:pre-compose`. Keep the tarball.
+   `docker rm trackaroo-old && docker rmi trackaroo:pre-compose`. Keep the
+   tarball and `db/pre-compose.db`.
+
+**Rollback** (within that week). The old container mounts the same `db/`,
+whose tracked files are now the new code's, so restore the old code too:
+
+1. `docker compose down`
+2. `git checkout <the SHA noted in step 3>` (skip if it was not a checkout)
+3. Optional, to undo the migration and repairs as well (nothing is running now):
+   `cp db/pre-compose.db db/trackaroo.db && rm -f db/trackaroo.db-wal db/trackaroo.db-shm`.
+   Prices scraped since the move stay in `data/*.json` and can be re-ingested
+   later; without this step the old code runs on the migrated DB, whose
+   changes are additive.
+4. `docker rename trackaroo-old trackaroo && docker start trackaroo`
 
 List pages (`/`, `/deals`, `/movers`, `/products`) send
 `cache-control: public, max-age=60, stale-while-revalidate=300`, so for a few

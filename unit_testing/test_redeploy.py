@@ -22,7 +22,7 @@ GIT_STUB = """#!/usr/bin/env bash
 echo "git $*" >> "$CALLS"
 case "$1" in
   diff) exit "${FAKE_DIRTY:-0}" ;;
-  rev-parse) echo abc1234 ;;
+  rev-parse) [ -z "${FAKE_NOT_GIT:-}" ] || exit 128; echo abc1234 ;;
 esac
 exit 0
 """
@@ -36,9 +36,11 @@ case "$*" in
   "compose ps -q trackaroo") echo cid123 ;;
   "inspect -f {{.State.Health.Status}} cid123") echo "${FAKE_HEALTH:-healthy}" ;;
   "compose exec -T trackaroo python backup_db.py") exit "${FAKE_BACKUP_EXIT:-0}" ;;
+  "compose logs --no-color trackaroo") printf '%s\\n' "${FAKE_LOGS-Pipeline finished.}" ;;
   "compose exec -T trackaroo python repair_listings.py") echo "Re-pointed 3 listing(s) (dry run)" ;;
   "compose exec -T trackaroo node -e"*)
     n=$(( $(cat "$CALLS.healthz" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$CALLS.healthz"
+    [ -z "${FAKE_HEALTHZ_EXIT:-}" ] || exit "$FAKE_HEALTHZ_EXIT"
     if [ -n "${FAKE_HEALTHZ_FIRST:-}" ] && [ "$n" -eq 1 ]; then printf '%s\\n' "$FAKE_HEALTHZ_FIRST"; else printf '%s\\n' "$FAKE_HEALTHZ"; fi ;;
 esac
 exit 0
@@ -146,6 +148,14 @@ def test_refuses_a_dirty_checkout(project):
     assert not any("pull" in c or "compose build" in c for c in calls)
 
 
+def test_says_so_when_not_a_git_checkout(project):
+    # Not "local changes": that would send the operator hunting for edits.
+    result, calls = run(project, FAKE_NOT_GIT="1")
+    assert result.returncode != 0
+    assert "not a git checkout" in result.stderr
+    assert not any("pull" in c or "compose build" in c for c in calls)
+
+
 def test_refuses_inside_the_scrape_window(project):
     result, calls = run(project, REDEPLOY_HOUR="06")
     assert result.returncode != 0
@@ -204,6 +214,44 @@ def test_waits_for_umart_to_appear(project):
     result, calls = run(project, stdin="n\n", FAKE_HEALTHZ_FIRST=no_umart)
     assert result.returncode == 0, result.stderr
     assert sum("compose exec -T trackaroo node -e" in c for c in calls) == 2
+
+
+def test_scrape_window_hours_come_from_env_file(project):
+    # The container schedules from .env, so the guard must too.
+    (project / ".env").write_text("RUN_AT_HOUR=12\nRETRY_UNTIL_HOUR='15'\n", encoding="utf-8")
+    result, calls = run(project, REDEPLOY_HOUR="14")
+    assert result.returncode != 0
+    assert "12:00-15:59" in result.stderr
+    assert not any("compose build" in c for c in calls)
+
+
+def test_scrape_window_uses_melbourne_time():
+    # The container runs on TZ=Australia/Melbourne; the host may be on UTC.
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "TZ=Australia/Melbourne date +%H" in text
+
+
+def test_repair_waits_for_the_boot_catchup(project):
+    # The boot catch-up scrapes and ingests right after the container turns
+    # healthy; a repair alongside it would race the ingest.
+    _, calls = run(project, stdin="n\n")
+    assert _index(calls, "compose logs --no-color trackaroo") < _index(
+        calls, "compose exec -T trackaroo python repair_listings.py"
+    )
+
+
+def test_skips_the_repair_when_the_catchup_never_finishes(project):
+    result, calls = run(project, stdin="y\n", FAKE_LOGS="Starting pipeline --pending-only...", CATCHUP_TIMEOUT="0")
+    assert result.returncode == 0, result.stderr
+    assert not any("repair_listings.py" in c for c in calls)
+    assert "repair_listings.py" in result.stdout  # the command to run later
+    assert any("compose exec -T trackaroo node -e" in c for c in calls)  # still verified
+
+
+def test_an_unreachable_healthz_fails_loudly(project):
+    result, _ = run(project, stdin="n\n", FAKE_HEALTHZ_EXIT="1")
+    assert result.returncode != 0
+    assert "/healthz" in result.stderr
 
 
 def test_every_exec_has_stdin_detached():
