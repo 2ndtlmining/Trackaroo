@@ -14,6 +14,35 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-09-30 (end of day) — Phase 6 "redeploy with docker compose": code
+  done, NOT deployed. Resume here.** Branch `feat/2026-09-30-redeploy`
+  (stacked on `feat/2026-09-30-ux` → `feat/2026-09-29-robustness` → `main`;
+  PR #41, phases 1–2, is already merged). None of the three branches is
+  pushed. Plan: `docs/superpowers/plans/2026-09-30-redeploy.md`; Tasks 1–4
+  are done (footer build stamp, `docker-compose.yml`, `deploy/redeploy.sh`,
+  docs + migration runbook in DEPLOYMENT.md), plus a fresh-reviewer pass whose
+  six findings are fixed (`749586b`). The owner chose compose over the old
+  "no compose" rule (30-Sep).
+  **Where prod is:** NOT this PC. The live app runs on the owner's separate
+  Ubuntu server, `giel@dockerhost:~/docker/Trackaroo`, as a plain
+  `docker run` container named `trackaroo` (image `trackaroo`, created ~2 Sep,
+  still a pre-31-Aug build: `data/` has pccg + scorptec JSON from 9 Aug to
+  30 Sep and no umart). `watchtower`, `portainer` and `ergo-monitor` run on
+  the same host. The DB in this working copy is not prod data. Every host step
+  is run by the owner on that server (or over ssh if they grant it).
+  **Owner priority:** keep all existing prod data; no restart from scratch.
+  **Next, in order:** (1) owner runs on dockerhost: `git status -sb`,
+  `git log --oneline -1`, `ls` in `~/docker/Trackaroo`, the
+  `docker inspect trackaroo` mounts, and checks `.env` for `$`; (2) owner makes
+  a consistent DB copy (`docker exec trackaroo python -c "import sqlite3; ...
+  s.backup(d)"` into `db/rehearsal-copy.db`) and scps it to this PC; (3) plan
+  Task 6: rehearse migrate/seed/repair on a scratch copy here and prove
+  per-day snapshot counts are unchanged (`restore_drill.py --backup`);
+  (4) Task 5: push, three stacked PRs, first CI run; (5) Task 7: the host
+  migration per DEPLOYMENT.md "Moving from `docker run` to compose (once)".
+  Gate: pytest **1073 passed**, vitest **791 passed**, Playwright **115
+  passed**, svelte-check **0 errors, 0 warnings**.
+
 - **2026-09-30** — **Phase 4 "UI/UX and better information" (#25, #24, #31 core,
   #27, #26, #23, #5 items 4–5; U1–U6, D7, three Phase 1–2 follow-ups) on
   `feat/2026-09-30-ux`** (stacked on `feat/2026-09-29-robustness`; not pushed,
