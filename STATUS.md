@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-01
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -14,8 +14,32 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-01 — Phase 6 Task 6: rehearsal on a copy of prod's DB passed.
+  Resume here: next is Task 5 (push + three stacked PRs), then Task 7.**
+  Host facts (owner-run, 1-Oct): `~/docker/Trackaroo` is a clean git checkout
+  of `main` at `e9bd419` (30-Aug, an ancestor of our `main`) → the migration
+  runbook's **Path A**. Container mounts are exactly `db → /app/db` and
+  `data → /app/data` (no logs mount); restart `unless-stopped`. `.env` has no
+  `$` in values and no quoted values; its `ALGOLIA_*` lines equal the code's
+  built-in key — comment them out during the move. Compose v5.5.1, 153 GB free.
+  Rehearsal on a `sqlite3 .backup` copy (3.1 MB; 100 products, 485 listings,
+  21,058 snapshots, 53 daily snapshot dates 9-Aug..30-Sep, no gaps):
+  `migrate.py` (retired RX 9070 XTX, added the three new tables) → `seed.py`
+  (+6 products) → `repair_listings.py` dry run: 65 moves, all correct (46
+  memory-variant splits, 8 wrong-model fixes, 11 non-matches such as 5900XT,
+  5600GT, 7700X3D, board bundles and the 5090 AI box detached to hidden
+  "Unmatched" placeholders) → `--apply` → second dry run 0 moves.
+  `restore_drill.py --backup <untouched> --db <migrated>` exit 0; per-day
+  snapshot counts identical; every snapshot row and listing id/sku identical;
+  0 orphans; integrity + FK checks clean; products 100 → 108 (6 seeded + 2
+  untracked placeholders). Served on `node web/server.js`: every main page 200,
+  placeholders appear on no list page. Expected after deploy: the home page
+  shows Umart as "missing" until the first Umart scrape lands.
+  Owner to-do on the host: `docker exec trackaroo rm /app/db/rehearsal-copy.db`
+  (root-owned copy left in `db/`).
+
 - **2026-09-30 (end of day) — Phase 6 "redeploy with docker compose": code
-  done, NOT deployed. Resume here.** Branch `feat/2026-09-30-redeploy`
+  done, NOT deployed.** Branch `feat/2026-09-30-redeploy`
   (stacked on `feat/2026-09-30-ux` → `feat/2026-09-29-robustness` → `main`;
   PR #41, phases 1–2, is already merged). None of the three branches is
   pushed. Plan: `docs/superpowers/plans/2026-09-30-redeploy.md`; Tasks 1–4
