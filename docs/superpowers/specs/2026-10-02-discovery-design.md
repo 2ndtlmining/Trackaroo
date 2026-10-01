@@ -56,11 +56,15 @@ part is *dropped* rather than *mis-filed*, which is correct but silent.
 
 **New module `scraper/catalogue_io.py`:**
 
-- `save_catalogue(retailer, category, items, run_date, data_dir)` writes
-  `data/catalogue_{retailer}_{category}_{DD}_{Month}_{YYYY}.json` (the same date
-  format as snapshots), atomically: temp file + `os.replace`.
+- `save_catalogue(data_dir, retailer, category, file_date, items)` writes
+  `data/catalogue/{retailer}_{category}_{DD}_{Month}_{YYYY}.json` (the same date
+  format as snapshots), atomically: temp file + `os.replace`. **A subfolder, not
+  `data/` itself** (amended during planning): `run_daily.ingest_today` globs
+  `data/*_{today}.json` and both web test seeders read every `data/*.json`, so a
+  catalogue file at the top level would be ingested as a malformed snapshot (an
+  ERROR that blocks the digest). None of them recurse into subfolders.
 - File body: `{"retailer", "category", "date", "saved_at", "items": [{"title",
-  "url", "price_aud", "in_stock", "sku"}]}`. `sku` is null when the retailer
+  "url", "price_aud", "stock_status", "sku"}]}`. `sku` is null when the retailer
   has none.
 - **Not** via `save_snapshot`: this is a report, not a backup, so the
   never-shrink rule does not apply. A later same-day run replaces the file.
@@ -77,8 +81,9 @@ The call is wrapped: a failure logs a WARNING and the scrape continues.
 | Umart | the third return value of `scrape_umart` (currently `_`) |
 | PCCG | the `algolia_fetch_catalogue` result, no extra query |
 
-`ingest._SNAPSHOT_FILENAME_RE` does not match `catalogue_*`, so ingest, the
-JSON mirror and `check_json_db_parity` ignore these files. A test pins this.
+Living in `data/catalogue/`, these files are invisible to ingest, the JSON
+mirror, `check_json_db_parity` and the web seeders. Tests pin this, and
+`.dockerignore` keeps the folder out of the image's `seed-data/`.
 Backups cover the DB only, so catalogues add nothing to them. Size is about
 1,000 items/day, around 250 KB/day, under 10 MB with 30-day retention.
 
@@ -122,9 +127,13 @@ the row shows `?c` and Claude fills it in from the spec source in the PR.
 `gen_tier` comes from the scope table.
 
 **Conflicts.** For every `retailer_listings` row with status `active` that is
-filed under a tracked product, run `resolve` on its title. It is a conflict if
-the result is a **different** tracked product, or **none**. Listings under the
-hidden "Unmatched" placeholders are not conflicts.
+filed under a tracked product, compare its title with the product (refined
+during planning: the DB holds only the title, not the description the scraper
+also used for VRAM, so a bare `resolve` would flag correct 8GB/16GB filings).
+It is a conflict when the title is an excluded item (bundle, laptop…), names no
+chip, names a **different** chip key than the product's model, or names a VRAM
+different from the product's `vram_gb`. Listings under the hidden "Unmatched"
+placeholders are not conflicts.
 
 ## 6. Component 3: storage, Discord, health
 
@@ -137,8 +146,9 @@ container start by the entrypoint's `migrate.py`):
 `min_price`, `min_price_url`, `sample_titles` (JSON, ≤5), `suggested_row`,
 `notified_at`, `decided_at`.
 
-`discovery_conflicts`: `listing_id`, `filed_product_id`, `resolved_product_id`
-(nullable), `title`, `detected_on`. Replaced wholesale each run.
+`discovery_conflicts`: `listing_id`, `retailer`, `filed_product_id`,
+`title_key` (the chip key the title names, nullable), `reason`, `title`,
+`detected_on`. Replaced wholesale each run.
 
 `discovery_runs`: `run_date`, `finished_at`, `catalogue_files` (count),
 `missing` (JSON list of retailer/category with no file today),
@@ -163,7 +173,8 @@ the price digest). Nothing new means no message. No webhook configured means
 it is skipped silently.
 
 **Health.** `check_discovery` returns a **WARNING** when there are new parts
-today or the conflict count is above 0, otherwise OK. It never returns ERROR
+today, the conflict count is above 0, or discovery did not run today;
+otherwise OK. It never returns ERROR
 and is run through `guarded_check`.
 
 **Pipeline wiring.** In `run_daily.py`, after ingest and the JSON mirror:
