@@ -27,3 +27,52 @@ export interface ListingFilters {
 export type ListingSort = 'price-asc' | 'price-desc';
 
 export type AlertChannel = 'discord' | 'email' | 'webhook';
+
+export type DiscoveredStatus = 'untracked' | 'ignored' | 'requested' | 'tracked';
+export type DiscoverAction = 'ignore' | 'unignore' | 'track' | 'untrack';
+
+export interface DiscoveredPart {
+	id: number;
+	category: Category;
+	partKey: string;
+	displayName: string;
+	status: DiscoveredStatus;
+	firstSeen: string;
+	lastSeen: string;
+	listingCount: number;
+	retailers: string[];
+	minPrice: number | null;
+	minPriceUrl: string | null;
+	sampleTitles: string[];
+	suggestedRow: string;
+}
+
+export interface DiscoveryConflict {
+	listingId: number;
+	retailer: string;
+	filedProductId: number;
+	filedModel: string;
+	titleKey: string | null;
+	reason: string;
+	title: string;
+}
+
+export interface DiscoveryRun {
+	runDate: string;
+	finishedAt: string;
+	catalogueFiles: number;
+	missing: string[];
+	unrecognisedCount: number;
+	unrecognisedSamples: string[];
+}
+
+export interface DiscoverPageData {
+	lastRun: DiscoveryRun | null;
+	isStale: boolean;
+	today: string;
+	newThisWeek: number;
+	untracked: DiscoveredPart[];
+	requested: DiscoveredPart[];
+	ignored: DiscoveredPart[];
+	conflicts: DiscoveryConflict[];
+}
