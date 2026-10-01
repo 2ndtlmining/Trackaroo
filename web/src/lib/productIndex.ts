@@ -2,6 +2,17 @@
 // tests rather than by how the page happens to render.
 import { GENERIC_TIER_LABELS, generationTierLabel } from './tiers';
 import type { Category, GenerationTier } from './types';
+import type { ProductGroup } from './server/repos';
+
+// One /products row: a product group without its listings (#28), plus the
+// catalog columns (#23).
+export type CatalogRow = Omit<ProductGroup, 'listings'> & {
+	neverListed?: boolean;
+	vramGb?: number | null;
+	cores?: number | null;
+	launchDate?: string | null;
+	listingCount?: number;
+};
 
 export interface IndexGroup<T> {
 	key: string;
@@ -15,6 +26,7 @@ interface Groupable {
 	model: string;
 	category: Category;
 	generationTier: GenerationTier | null;
+	neverListed?: boolean;
 }
 
 // Newest first. Anything untagged sorts last rather than vanishing — a product
@@ -40,8 +52,14 @@ export function groupForIndex<T extends Groupable>(items: T[]): IndexGroup<T>[] 
 		group.items.push(item);
 	}
 
+	// Never-listed rows sink to the bottom of their group (#23): the buyable
+	// cards are what a browser is scanning for.
 	for (const group of byKey.values()) {
-		group.items.sort((a, b) => a.model.localeCompare(b.model));
+		group.items.sort(
+			(a, b) =>
+				Number(a.neverListed ?? false) - Number(b.neverListed ?? false) ||
+				a.model.localeCompare(b.model)
+		);
 	}
 
 	// Brand-major: buying is brand-anchored, so a brand's generations stay

@@ -1,3 +1,5 @@
+import type { Category } from './types';
+
 // Nav links and active-state matching. Pure and separate from Header.svelte
 // because matching has to consider the query string, not just the pathname:
 // GPUs and CPUs are both /products, distinguished only by ?category=.
@@ -17,7 +19,17 @@ export const NAV_LINKS: NavLink[] = [
 	{ href: '/compare', label: 'Compare' }
 ];
 
-export function isActiveLink(href: string, pathname: string, search: URLSearchParams): boolean {
+export function isActiveLink(
+	href: string,
+	pathname: string,
+	search: URLSearchParams,
+	productCategory: Category | null = null
+): boolean {
+	// A product page belongs to its category's index (#26): /product/12 lights
+	// up "GPUs" when product 12 is a GPU.
+	if (productCategory && pathname.startsWith('/product/')) {
+		return href === `/products?category=${productCategory}`;
+	}
 	const [linkPath, linkQuery] = href.split('?');
 	if (linkPath !== pathname) return false;
 	if (!linkQuery) return true;

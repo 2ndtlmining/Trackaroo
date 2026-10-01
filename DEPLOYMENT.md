@@ -30,14 +30,41 @@ directories.
 
 ---
 
-## Option A — Docker (recommended)
+## Option A — Docker Compose (recommended)
+
+```bash
+cp .env.example .env            # once; fill in webhooks etc.
+deploy/redeploy.sh              # pull, back up, build, start, verify
+```
+
+`docker-compose.yml` holds the one `trackaroo` service: the image built with
+the git SHA as `GIT_SHA`, `./db`, `./data` and `./logs` bind-mounted,
+`restart: unless-stopped`, `.env` as the env file, Docker log rotation
+(10 MB x 5), and a label that keeps watchtower from replacing it (the image
+is built locally, never pulled). By hand:
+
+```bash
+GIT_SHA=$(git rev-parse --short HEAD) docker compose build
+docker compose up -d
+```
+
+Compose resolves the relative mounts itself, so the Git Bash path mangling
+described below does not apply to it. Host-only extras (the NAS backup
+mirror) go in `docker-compose.override.yml` (gitignored), which compose merges
+automatically; start from `docker-compose.override.example.yml`.
+
+**Never `docker compose up` in a development checkout**: it mounts that
+checkout's `db/` and starts a live retailer scrape.
+
+### Plain `docker run`
+
+Still works (same image, same mounts); kept for one-off runs and the
+entrypoint overrides. Build, then run it with the DB and snapshots mapped onto
+the host, so the data outlives the container:
 
 ```bash
 docker build -t trackaroo .
 ```
-
-Then run it with the DB and snapshots mapped onto the host, so the data
-outlives the container:
 
 ```bash
 docker run -d --name trackaroo \
@@ -79,15 +106,15 @@ Map **both**. `data/*.json` is the backup the DB is rebuilt from
 (`python ingest.py`), so a container with only `/app/db` mapped still loses the
 backup on `docker rm`.
 
-| Setting | Default | Override |
+| Setting | Default | Override (in `.env`; `-e X=Y` with `docker run`) |
 |---|---|---|
-| Daily run hour (local) | `04` | `-e RUN_AT_HOUR=6` |
-| Last hourly retry of a failed retailer | `09` | `-e RETRY_UNTIL_HOUR=8` (keep it before `STALENESS_CHECK_HOUR`) |
-| Staleness monitor hour | `10` | `-e STALENESS_CHECK_HOUR=11` |
-| Timezone | `Australia/Melbourne` | `-e TZ=Europe/Berlin` |
-| Backups retained (days, newest per day) | 14 | `-e TRACKAROO_BACKUP_KEEP=30` |
-| Dashboard host port | 3000 | `-p 8080:3000` |
-| Spec-sync day / hour | Sun / 03 | `-e SPEC_SYNC_DOW=1 -e SPEC_SYNC_HOUR=12` |
+| Daily run hour (local) | `04` | `RUN_AT_HOUR=6` |
+| Last hourly retry of a failed retailer | `09` | `RETRY_UNTIL_HOUR=8` (keep it before `STALENESS_CHECK_HOUR`) |
+| Staleness monitor hour | `10` | `STALENESS_CHECK_HOUR=11` |
+| Timezone | `Australia/Melbourne` | `TZ` under `environment:` in `docker-compose.yml` |
+| Backups retained (days, newest per day) | 14 | `TRACKAROO_BACKUP_KEEP=30` |
+| Dashboard host port | 3000 | `TRACKAROO_PORT=8080` (compose reads it from the shell or `.env`); `-p 8080:3000` |
+| Spec-sync day / hour | Sun / 03 | `SPEC_SYNC_DOW=1`, `SPEC_SYNC_HOUR=12` |
 
 On boot the container seeds the DB if missing, hydrates a fresh one from the
 snapshot history baked into the image (a no-op once snapshots exist), starts
@@ -131,15 +158,90 @@ docker exec trackaroo python -c "import sqlite3;print(sqlite3.connect('/app/db/t
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/
 ```
 
-### Upgrading
+### Redeploying
 
 ```bash
-docker stop trackaroo && docker rm trackaroo
-docker build -t trackaroo .
-# re-run the docker run command above
+deploy/redeploy.sh
 ```
 
-The data is in the mounts, not the container, so this is non-destructive.
+1. Preflight: `.env` present, a git checkout with no local changes, not
+   between `RUN_AT_HOUR` and `RETRY_UNTIL_HOUR` in Melbourne time (read from
+   `.env` like the container does; a recreate kills a running scrape;
+   `FORCE=1` overrides), and no leftover non-compose `trackaroo` container.
+2. `git pull --ff-only`.
+3. `python backup_db.py` inside the running container (verified with
+   `quick_check`; also mirrored off-host when `TRACKAROO_BACKUP_MIRROR_DIR` is set).
+4. `docker compose build` with `GIT_SHA`, then `docker compose up -d`. The
+   entrypoint runs `migrate.py` and `seed.py` on boot.
+5. Waits for the Docker healthcheck (`HEALTH_TIMEOUT`, default 900 s), then
+   for the boot catch-up run to log "Pipeline finished" (`CATCHUP_TIMEOUT`,
+   default 1800 s): it scrapes and ingests right after boot, and a repair
+   alongside it would race the ingest.
+6. `repair_listings.py` dry run; asks before `--apply`. With no terminal
+   (cron, piped ssh) it never applies. If the catch-up had not finished, the
+   repair is skipped and the command to run later is printed.
+7. `/healthz` must report the SHA just built and list `umart`.
+
+It exits non-zero at the first failed step. Before step 4 nothing has changed.
+The data is in the mounts, not the container, so a redeploy is non-destructive.
+
+### Moving from `docker run` to compose (once)
+
+For the prod server (`giel@dockerhost:~/docker/Trackaroo`) there is a
+copy-paste, step-by-step version of this:
+[docs/runbooks/dockerhost-compose-migration.md](docs/runbooks/dockerhost-compose-migration.md).
+
+Nothing here deletes data. Do it outside 04:00–09:59.
+
+1. Find the old container's mounts and note both source paths:
+   `docker inspect trackaroo --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'`
+2. Back up, twice over:
+   - `docker exec trackaroo python backup_db.py` (a verified SQLite copy in
+     `db/backups/`), then copy that newest backup to `db/pre-compose.db`.
+     That copy is step 6's reference: backups in `db/backups/` are pruned
+     (the newest per day plus the 3 newest overall), and migration day
+     writes several;
+   - `docker stop trackaroo`, then a byte-for-byte archive of both mounts
+     taken while nothing writes:
+     `tar czf ~/trackaroo-pre-compose-$(date +%F).tgz -C <project dir> db data`,
+     copied off the host.
+3. Keep the old container and image for rollback, and note the code it ran:
+   `docker rename trackaroo trackaroo-old && docker tag trackaroo:latest trackaroo:pre-compose`,
+   and `git rev-parse HEAD` in the checkout if it is one. Keep both for a week.
+4. The directory compose runs from must be a git checkout of this repo
+   (`git -C <dir> rev-parse HEAD` succeeds), and its `./db` and `./data` must
+   be the data from step 1. `db/` also holds **tracked** files
+   (`schema.sql`, `watchlist.csv`, `watchlist.py`, `launch_msrp.json`) that
+   the mount lays over the image's copies, so when the data has to move into
+   a fresh clone, move **only** `db/trackaroo.db*`, `db/backups/`,
+   `db/pre-compose.db` and the whole `data/` — never replace the clone's `db/`
+   directory.
+   Check `.env` before the first compose start: compose parses it differently
+   from `docker run --env-file` (it strips quotes and expands `$`). A value
+   containing `$` (a password, a webhook) must have each `$` written as `$$`.
+5. `SKIP_BACKUP=1 deploy/redeploy.sh` (step 2 was the backup). Answer `y` to
+   the repair after reading the dry run (see "Repair mis-filed listings").
+6. Nothing was lost: `docker compose exec trackaroo python restore_drill.py --backup /app/db/pre-compose.db`
+   must pass (the live DB has at least as many snapshots on every day the
+   pre-deploy backup holds). Also check the headline cases on the site: the
+   RTX 5060 Ti headline is a 16GB card and "GeForce RTX 5060 Ti 8GB" has its
+   own page; the RTX 5090 has no ghost listings; `/deals` shows nothing under
+   2% or $10; the footer says `build <sha>`.
+7. A week later, if nothing needed rolling back:
+   `docker rm trackaroo-old && docker rmi trackaroo:pre-compose`. Keep the
+   tarball and `db/pre-compose.db`.
+
+**Rollback** (within that week). The old container mounts the same `db/`,
+whose tracked files are now the new code's, so restore the old code too:
+
+1. `docker compose down`
+2. `git checkout <the SHA noted in step 3>` (skip if it was not a checkout)
+3. Optional, to undo the migration and repairs as well (nothing is running now):
+   `cp db/pre-compose.db db/trackaroo.db && rm -f db/trackaroo.db-wal db/trackaroo.db-shm`.
+   Prices scraped since the move stay in `data/*.json` and can be re-ingested
+   later; without this step the old code runs on the migrated DB, whose
+   changes are additive.
+4. `docker rename trackaroo-old trackaroo && docker start trackaroo`
 
 List pages (`/`, `/deals`, `/movers`, `/products`) send
 `cache-control: public, max-age=60, stale-while-revalidate=300`, so for a few
@@ -166,12 +268,13 @@ by chip key *and* VRAM, so a title lacking a size can only ever be unmatched
 here, but if the retailer's own description (not the title) names the VRAM,
 the next scrape can still re-point it away from the holding product later.
 
-After pulling a change that touches the matcher or the watchlist:
+After pulling a change that touches the matcher or the watchlist,
+`deploy/redeploy.sh` runs the dry run and asks before applying. By hand:
 
 ```bash
-docker exec trackaroo python seed.py
-docker exec trackaroo python repair_listings.py            # dry run — review the output
-docker exec trackaroo python repair_listings.py --apply    # backs up the DB first
+docker compose exec trackaroo python seed.py
+docker compose exec trackaroo python repair_listings.py            # dry run — review the output
+docker compose exec trackaroo python repair_listings.py --apply    # backs up the DB first
 ```
 
 ### Backups
@@ -187,7 +290,10 @@ happened before it in the run:
   `TRACKAROO_BACKUP_KEEP` days (default 14), plus the 3 newest overall.
 - **Optional off-host copy:** set `TRACKAROO_BACKUP_MIRROR_DIR` to a mounted NAS
   path and every backup is also copied there, verified and pruned the same way.
-  It is unset by default, and Phase 6 switches it on. A mirror failure alerts
+  It is unset by default. To switch it on: mount the share on the host, copy
+  `docker-compose.override.example.yml` to `docker-compose.override.yml` with
+  the host path on the left, set `TRACKAROO_BACKUP_MIRROR_DIR=/mnt/trackaroo-mirror`
+  in `.env`, and redeploy. A mirror failure alerts
   but keeps the local backup.
   **The operator must create/mount that directory before pointing
   `TRACKAROO_BACKUP_MIRROR_DIR` at it — Trackaroo never creates it.** An
@@ -200,8 +306,8 @@ happened before it in the run:
 - **Health:** `check_backups` warns when the newest backup is older than
   `TRACKAROO_BACKUP_MAX_AGE_HOURS` (default 36).
 
-`data/*.json` (the rebuild source) is not mirrored by this. Phase 6 covers it
-with the host-level backup of the project directory.
+`data/*.json` (the rebuild source) is not mirrored by this. Back up the project
+directory (`db/`, `data/`) at the host level too.
 
 **Restore drill (monthly):**
 
@@ -406,6 +512,11 @@ is internet-facing.
 ---
 
 ## Health / operational checks
+
+- Heartbeat (#9): set `TRACKAROO_HEARTBEAT_URL` in `.env` (e.g. a
+  healthchecks.io check with a 1-day period and a grace that ends after
+  `RETRY_UNTIL_HOUR`) and redeploy. It is pinged only after a day where every
+  active retailer completed, so a missed ping means a missing or partial day.
 
 - Dashboard health endpoint: `GET /healthz` returns
   `{"ok": true, "version": "<git sha>", "retailers": [...]}` (503 when the DB

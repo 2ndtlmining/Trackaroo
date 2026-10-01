@@ -18,7 +18,7 @@ import { expect, test, type Page } from '@playwright/test';
 const PHONE = { width: 390, height: 844 };
 const NARROW = { width: 320, height: 844 };
 
-const ROUTES = ['/', '/products', '/deals', '/movers'];
+const ROUTES = ['/', '/products?category=gpu', '/products?category=cpu', '/deals', '/movers', '/compare', '/product/1'];
 
 async function goto(page: Page, path: string) {
 	await page.goto(path);
@@ -34,6 +34,10 @@ async function horizontalOverflow(page: Page) {
 	}));
 }
 
+function slug(route: string): string {
+	return route.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'home';
+}
+
 test.describe('mobile viewport', () => {
 	test.use({ viewport: PHONE });
 
@@ -45,6 +49,46 @@ test.describe('mobile viewport', () => {
 			expect(scrollWidth, `${route} overflows its viewport`).toBeLessThanOrEqual(viewport + 1);
 		});
 	}
+
+	for (const theme of ['dark', 'light'] as const) {
+		for (const route of ROUTES) {
+			test(`${route} renders at 390px in the ${theme} theme (screenshot, U6)`, async ({ page }) => {
+				await page.addInitScript((t) => localStorage.setItem('trackaroo-theme', t), theme);
+				await goto(page, route);
+				await expect(page.locator('h1').first()).toBeVisible();
+				await page.screenshot({ path: `test-results/mobile/${slug(route)}-${theme}.png`, fullPage: true });
+				const { viewport, scrollWidth } = await horizontalOverflow(page);
+				expect(scrollWidth, `${route} overflows in ${theme}`).toBeLessThanOrEqual(viewport + 1);
+			});
+		}
+	}
+
+	test('movers keeps the change column on screen and its controls tappable', async ({ page }) => {
+		await goto(page, '/movers?window=30d');
+		const change = page.locator('tbody tr').first().locator('td').filter({ has: page.locator('span') }).last();
+		const box = await change.boundingBox();
+		expect(box, 'first mover row has a change cell').not.toBeNull();
+		expect(box!.x + box!.width).toBeLessThanOrEqual(PHONE.width);
+		for (const name of ['$ change', '% change', 'Up', 'By product']) {
+			const b = await page.getByRole('button', { name, exact: true }).boundingBox();
+			expect(b!.height, `${name} below the 24px target`).toBeGreaterThanOrEqual(24);
+		}
+	});
+
+	test('the product page’s buy panel and where-to-buy table fit a phone', async ({ page }) => {
+		await goto(page, '/product/1');
+		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
+		await expect(panel).toBeVisible();
+		const box = await panel.boundingBox();
+		expect(box!.x + box!.width).toBeLessThanOrEqual(PHONE.width);
+		await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible();
+	});
+
+	test('the catalog explains its checkboxes on a phone (U5)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await expect(page.getByText('Tick a box to compare up to four.')).toBeVisible();
+		await expect(page.getByTestId('catalog-header')).toBeHidden();
+	});
 
 	test('product detail does not scroll horizontally at 390px', async ({ page }) => {
 		await goto(page, '/products');

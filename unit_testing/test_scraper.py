@@ -10,6 +10,7 @@ Tests:
 - Full pagination loop (scrape_all_pages)
 """
 import unittest.mock
+import pytest
 from pathlib import Path
 
 import requests
@@ -171,13 +172,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestScorptecDataQuality:
-    """Verify that actual scraped data files have no empty URLs."""
+    """Verify that actual scraped data files have no empty URLs.
+
+    data/ is gitignored, so a fresh clone (CI) has no scraped files: skip
+    there rather than fail. On a machine with real scrapes these still run.
+    """
 
     def test_cpu_file_no_empty_urls(self):
         import json
         import glob
         cpu_files = glob.glob(str(PROJECT_ROOT / "data" / "cpu_scorptec_*.json"))
-        assert len(cpu_files) > 0, "No CPU data files found"
+        if not cpu_files:
+            pytest.skip("no scraped CPU files in data/ (fresh clone / CI)")
         for fpath in cpu_files:
             with open(fpath) as f:
                 data = json.load(f)
@@ -188,7 +194,8 @@ class TestScorptecDataQuality:
         import json
         import glob
         gpu_files = glob.glob(str(PROJECT_ROOT / "data" / "gpu_scorptec_*.json"))
-        assert len(gpu_files) > 0, "No GPU data files found"
+        if not gpu_files:
+            pytest.skip("no scraped GPU files in data/ (fresh clone / CI)")
         for fpath in gpu_files:
             with open(fpath) as f:
                 data = json.load(f)

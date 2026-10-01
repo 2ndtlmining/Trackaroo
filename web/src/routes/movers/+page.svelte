@@ -1,15 +1,30 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
-	import { formatAud, formatPct, formatSignedAud, titleCase } from '$lib/formats';
-	import { retailerLabel } from '$lib/filters';
+	import { untrack } from 'svelte';
+	import { afterNavigate, goto, replaceState } from '$app/navigation';
+	import PageHead from '$lib/components/PageHead.svelte';
 	import PriceChange from '$lib/components/PriceChange.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Sparkline from '$lib/components/Sparkline.svelte';
-	import { moverColumnValue, sortMovers, type ColSortKey, type MoverSortKey } from '$lib/movers';
+	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
+	import { formatAud, formatPct, formatSignedAud, titleCase } from '$lib/formats';
+	import { retailerLabel } from '$lib/filters';
+	import {
+		groupMoversByProduct,
+		moverColumnValue,
+		moversHref,
+		parseMoverView,
+		sortMovers,
+		type ColSortKey,
+		type MoverDirFilter,
+		type MoverGroup,
+		type MoverSortKey,
+		type MoverView
+	} from '$lib/movers';
 	import type { Mover } from '$lib/server/repos';
 	import type { ChangeDirection } from '$lib/types';
 	import { nextSortDir, sortRows, type SortDir } from '$lib/tableSort';
+	import { urlParams } from '$lib/urlParams';
+	import { withParams } from '$lib/urlState';
 
 	let {
 		data
@@ -23,11 +38,33 @@
 		};
 	} = $props();
 
-	type SortKey = MoverSortKey;
-	type DirFilter = 'all' | ChangeDirection;
+	// Sort, direction and grouping come from the URL (#26), read through
+	// urlParams() so Back restores what replaceState wrote (see $lib/urlParams).
+	let view = $state<MoverView>(parseMoverView(urlParams()));
 
-	let sort = $state<SortKey>('abs');
-	let dir = $state<DirFilter>('all');
+	// A window change or Back/Forward between two /movers entries reuses this
+	// component, so re-read the view from the URL it landed on. Only assign when
+	// it differs, so the sync effect below never fires on a no-op.
+	afterNavigate(() => {
+		const next = parseMoverView(urlParams());
+		if (next.sort !== view.sort || next.dir !== view.dir || next.group !== view.group) view = next;
+	});
+
+	const SORT_OPTIONS: readonly { value: MoverSortKey; label: string }[] = [
+		{ value: 'abs', label: '$ change' },
+		{ value: 'pct', label: '% change' },
+		{ value: 'price', label: 'Price' }
+	];
+	const DIR_OPTIONS: readonly { value: MoverDirFilter; label: string }[] = [
+		{ value: 'all', label: 'All' },
+		{ value: 'up', label: 'Up' },
+		{ value: 'down', label: 'Down' }
+	];
+	const GROUP_OPTIONS: readonly { value: 'product' | 'listing'; label: string }[] = [
+		{ value: 'product', label: 'By product' },
+		{ value: 'listing', label: 'Per listing' }
+	];
+	const windowOptions = $derived(data.windows.map((w) => ({ value: w, label: w })));
 
 	function direction(m: Mover): ChangeDirection {
 		if (m.notEnoughHistory) return 'insufficient';
@@ -40,29 +77,51 @@
 		return m.pctChange === null ? '—' : formatPct(m.pctChange);
 	}
 
-	async function setWindow(value: string) {
-		const params = new URLSearchParams(page.url.searchParams);
-		params.set('window', value);
-		await goto(`?${params.toString()}`);
+	function variantLabel(m: Mover): string {
+		return titleCase(m.variantName).split(',')[0].trim() || '—';
 	}
 
-	const visible = $derived(
-		data.movers.filter((m) => dir === 'all' || direction(m) === dir)
-	);
+	function moreLabel(more: number, open: boolean): string {
+		const noun = more === 1 ? 'listing' : 'listings';
+		return open ? `Hide ${noun}` : `+${more} more ${noun}`;
+	}
 
-	const sorted = $derived.by(() => {
-		return sortMovers(visible, sort);
+	function setWindow(w: string) {
+		goto(moversHref(w, view, data.showAll));
+	}
+
+	// Shallow URL sync: replaceState rewrites the address bar without re-running
+	// load (the view is client-side). It must track only `view`: replaceState
+	// reads page.url internally, so called tracked it would re-run this effect
+	// on every navigation and, on Back, write the old view over the URL just
+	// landed on (before afterNavigate could re-read it). Hence untrack().
+	// The first run is skipped: the view was just read from this URL, and in dev
+	// SvelteKit throws if replaceState runs before its router has started.
+	let urlSynced = false;
+	$effect(() => {
+		const next = withParams(location.search, {
+			sort: view.sort === 'abs' ? null : view.sort,
+			dir: view.dir === 'all' ? null : view.dir,
+			group: view.group ? null : '0'
+		});
+		if (!urlSynced) {
+			urlSynced = true;
+			return;
+		}
+		if (next !== location.search) untrack(() => replaceState(`${location.pathname}${next}`, {}));
 	});
 
-	// Column-header sorting is an orthogonal layer on top of the Abs/Pct/Price
-	// ordering: it re-orders whatever set the controls produced.
+	const visible = $derived(data.movers.filter((m) => view.dir === 'all' || direction(m) === view.dir));
+	const sorted = $derived(sortMovers(visible, view.sort));
+
+	// Column-header sorting re-orders whatever the controls produced. It is a
+	// transient, client-only view (U-D14).
 	let colKey = $state<ColSortKey | null>(null);
 	let colDir = $state<SortDir>(null);
 
 	function onColHeader(key: ColSortKey) {
-		if (colKey === key) {
-			colDir = nextSortDir(colDir);
-		} else {
+		if (colKey === key) colDir = nextSortDir(colDir);
+		else {
 			colKey = key;
 			colDir = 'asc';
 		}
@@ -73,18 +132,79 @@
 		return colDir === 'asc' ? ' ▲' : ' ▼';
 	}
 
+	function ariaSort(key: ColSortKey): 'ascending' | 'descending' | 'none' {
+		if (colKey !== key || colDir === null) return 'none';
+		return colDir === 'asc' ? 'ascending' : 'descending';
+	}
+
 	const ordered = $derived(
 		colKey !== null && colDir !== null
 			? sortRows(sorted, colDir, (m) => moverColumnValue(m, colKey!))
 			: sorted
 	);
+	const groups: MoverGroup[] = $derived(
+		view.group
+			? groupMoversByProduct(ordered)
+			: ordered.map((m) => ({ productId: m.productId, lead: m, rest: [] }))
+	);
+
+	let expanded = $state<Set<number>>(new Set());
+	function toggleExpanded(productId: number) {
+		const next = new Set(expanded);
+		if (next.has(productId)) next.delete(productId);
+		else next.add(productId);
+		expanded = next;
+	}
 
 	const hasTrend = $derived(sorted.some((m) => (m.sparkline?.length ?? 0) >= 2));
+	const caption = $derived(
+		`Price changes over ${data.window}, ${view.group ? 'one row per product' : 'one row per listing'}`
+	);
 </script>
 
-<svelte:head>
-	<title>Trackaroo — Movers</title>
-</svelte:head>
+<PageHead title="Movers" description="The biggest AU CPU and GPU price changes over the last day, week or month." />
+
+{#snippet moverRow(m: Mover, more: number, nested: boolean)}
+	<tr class="hover:bg-surface-hover" data-testid="mover-row">
+		<!-- w-full + max-w-0 lets the model truncate instead of widening the table
+		     past a phone screen; retailer and variant fold under it below md. -->
+		<td class="w-full max-w-0 px-3 py-2 {nested ? 'pl-7' : ''}">
+			<a href="/product/{m.productId}" class="block truncate no-underline hover:no-underline">{m.model}</a>
+			<span class="block truncate text-xs text-text-muted md:hidden" title={titleCase(m.variantName) || undefined}
+				>{`${retailerLabel(m.retailer)} · ${variantLabel(m)}`}</span
+			>
+			{#if more > 0}
+				<button
+					type="button"
+					class="mt-0.5 text-xs text-accent"
+					aria-expanded={expanded.has(m.productId)}
+					onclick={() => toggleExpanded(m.productId)}>{moreLabel(more, expanded.has(m.productId))}</button
+				>
+			{/if}
+		</td>
+		<td class="hidden whitespace-nowrap px-3 py-2 text-text md:table-cell">{retailerLabel(m.retailer)}</td>
+		<td class="hidden max-w-56 truncate px-3 py-2 text-text-muted lg:table-cell" title={titleCase(m.variantName) || undefined}>
+			{variantLabel(m)}
+		</td>
+		<td class="num hidden px-3 py-2 text-right text-text-muted md:table-cell">
+			{m.oldPrice === null ? '—' : formatAud(m.oldPrice)}
+		</td>
+		<td class="num whitespace-nowrap px-3 py-2 text-right text-text">{formatAud(m.newPrice)}</td>
+		{#if hasTrend}
+			<td class="hidden w-16 px-3 py-2 md:table-cell"><Sparkline points={m.sparkline} /></td>
+		{/if}
+		<td class="whitespace-nowrap px-3 py-2 text-right">
+			{#if m.notEnoughHistory}
+				<Badge tone="neutral" label="Not enough history" />
+			{:else if m.change === null}
+				<span class="text-text-muted">—</span>
+			{:else}
+				<PriceChange direction={direction(m)} label="{formatSignedAud(m.change)} ({pctLabel(m)})" />
+			{/if}
+		</td>
+		<td class="num hidden px-3 py-2 text-text-muted md:table-cell">{m.historyPoints}</td>
+	</tr>
+{/snippet}
 
 <div class="space-y-6">
 	<div class="flex flex-wrap items-center justify-between gap-4">
@@ -92,231 +212,88 @@
 			<h1 class="text-xl font-semibold text-text">Movers</h1>
 			<p class="mt-1 text-sm text-text-muted">Biggest price changes over the selected window.</p>
 		</div>
-		<div class="flex items-center gap-1 rounded-md border border-border bg-surface p-1">
-			{#each data.windows as w}
-				<button
-					type="button"
-					onclick={() => setWindow(w)}
-					class="rounded px-3 py-1 text-sm {data.window === w
-						? 'bg-surface-hover font-medium text-text'
-						: 'text-text-muted hover:text-text'}"
-				>
-					{w}
-				</button>
-			{/each}
-		</div>
+		<SegmentedControl label="Window" options={windowOptions} value={data.window} onChange={setWindow} />
 	</div>
 
 	{#if data.showAll}
-		<a class="text-xs text-accent" href="?window={data.window}">Hide unchanged and new listings</a>
+		<a class="text-xs text-accent" href={moversHref(data.window, view, false)}>Hide unchanged and new listings</a>
 	{:else if data.hiddenCount > 0}
-		<a class="text-xs text-accent" href="?window={data.window}&all=1">
-			Show {data.hiddenCount} unchanged or new listings
-		</a>
+		<a class="text-xs text-accent" href={moversHref(data.window, view, true)}
+			>{`Show ${data.hiddenCount} unchanged or new listings`}</a
+		>
 	{/if}
 
 	<div class="flex flex-wrap items-center gap-4 text-sm">
 		<div class="flex items-center gap-2">
-			<span class="text-text-muted">Sort</span>
-			<div class="flex items-center gap-1 rounded-md border border-border bg-surface p-1">
-				<button
-					type="button"
-					onclick={() => (sort = 'abs')}
-					class="rounded px-2.5 py-1 {sort === 'abs'
-						? 'bg-surface-hover font-medium text-text'
-						: 'text-text-muted hover:text-text'}"
-				>
-					Abs
-				</button>
-				<button
-					type="button"
-					onclick={() => (sort = 'pct')}
-					class="rounded px-2.5 py-1 {sort === 'pct'
-						? 'bg-surface-hover font-medium text-text'
-						: 'text-text-muted hover:text-text'}"
-				>
-					Pct
-				</button>
-				<button
-					type="button"
-					onclick={() => (sort = 'price')}
-					class="rounded px-2.5 py-1 {sort === 'price'
-						? 'bg-surface-hover font-medium text-text'
-						: 'text-text-muted hover:text-text'}"
-				>
-					Price
-				</button>
-			</div>
+			<span class="text-text-muted" aria-hidden="true">Sort</span>
+			<SegmentedControl label="Sort" options={SORT_OPTIONS} value={view.sort} onChange={(v) => (view = { ...view, sort: v })} />
 		</div>
-
 		<div class="flex items-center gap-2">
-			<span class="text-text-muted">Direction</span>
-			<div class="flex items-center gap-1 rounded-md border border-border bg-surface p-1">
-				<button
-					type="button"
-					onclick={() => (dir = 'all')}
-					class="rounded px-2.5 py-1 {dir === 'all'
-						? 'bg-surface-hover font-medium text-text'
-						: 'text-text-muted hover:text-text'}"
-				>
-					All
-				</button>
-				<button
-					type="button"
-					onclick={() => (dir = 'up')}
-					class="rounded px-2.5 py-1 {dir === 'up'
-						? 'bg-surface-hover font-medium text-text'
-						: 'text-text-muted hover:text-text'}"
-				>
-					Up
-				</button>
-				<button
-					type="button"
-					onclick={() => (dir = 'down')}
-					class="rounded px-2.5 py-1 {dir === 'down'
-						? 'bg-surface-hover font-medium text-text'
-						: 'text-text-muted hover:text-text'}"
-				>
-					Down
-				</button>
-			</div>
+			<span class="text-text-muted" aria-hidden="true">Direction</span>
+			<SegmentedControl label="Direction" options={DIR_OPTIONS} value={view.dir} onChange={(v) => (view = { ...view, dir: v })} />
+		</div>
+		<div class="flex items-center gap-2">
+			<span class="text-text-muted" aria-hidden="true">Rows</span>
+			<SegmentedControl
+				label="Rows"
+				options={GROUP_OPTIONS}
+				value={view.group ? 'product' : 'listing'}
+				onChange={(v) => (view = { ...view, group: v === 'product' })}
+			/>
 		</div>
 	</div>
 
 	{#if sorted.length === 0}
-		<div
-			class="rounded-md border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted"
-		>
+		<div class="rounded-md border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted">
 			No movers match the current filters.
 		</div>
 	{:else}
-		<!-- Desktop: full table. Below md it would scroll horizontally, hiding the
-		     change column that is the whole point of this page. -->
-		<div class="hidden overflow-x-auto rounded-md border border-border md:block">
+		<!-- One table at every width (#5 item 6): lower-priority columns hide below
+		     md instead of a second, mobile-only copy of every row. -->
+		<div class="overflow-x-auto rounded-md border border-border">
 			<table class="w-full border-collapse text-sm">
+				<caption class="sr-only">{caption}</caption>
 				<thead>
 					<tr class="border-b border-border text-left text-xs text-text-muted">
-						<th class="px-3 py-2 font-medium">Model</th>
-						<th class="px-3 py-2 font-medium">Retailer</th>
-						<th class="px-3 py-2 font-medium">Variant</th>
-						<th class="px-3 py-2 text-right font-medium">
-							<button
-								type="button"
-								onclick={() => onColHeader('old')}
-								class="font-medium text-text-muted hover:text-text"
-							>Old{colArrow('old')}</button>
+						<th scope="col" class="px-3 py-2 font-medium">Model</th>
+						<th scope="col" class="hidden px-3 py-2 font-medium md:table-cell">Retailer</th>
+						<th scope="col" class="hidden px-3 py-2 font-medium lg:table-cell">Variant</th>
+						<th scope="col" aria-sort={ariaSort('old')} class="hidden px-3 py-2 text-right font-medium md:table-cell">
+							<button type="button" onclick={() => onColHeader('old')} class="font-medium text-text-muted hover:text-text"
+								>Old{colArrow('old')}</button
+							>
 						</th>
-						<th class="px-3 py-2 text-right font-medium">
-							<button
-								type="button"
-								onclick={() => onColHeader('new')}
-								class="font-medium text-text-muted hover:text-text"
-							>New{colArrow('new')}</button>
+						<th scope="col" aria-sort={ariaSort('new')} class="px-3 py-2 text-right font-medium">
+							<button type="button" onclick={() => onColHeader('new')} class="font-medium text-text-muted hover:text-text"
+								>New{colArrow('new')}</button
+							>
 						</th>
 						{#if hasTrend}
-							<th class="w-16 px-3 py-2 font-medium">Trend</th>
+							<th scope="col" class="hidden w-16 px-3 py-2 font-medium md:table-cell">Trend</th>
 						{/if}
-						<th class="px-3 py-2 text-right font-medium">
-							<button
-								type="button"
-								onclick={() => onColHeader('change')}
-								class="font-medium text-text-muted hover:text-text"
-							>Change{colArrow('change')}</button>
+						<th scope="col" aria-sort={ariaSort('change')} class="px-3 py-2 text-right font-medium">
+							<button type="button" onclick={() => onColHeader('change')} class="font-medium text-text-muted hover:text-text"
+								>Change{colArrow('change')}</button
+							>
 						</th>
-						<th class="px-3 py-2 font-medium">
-							<button
-								type="button"
-								onclick={() => onColHeader('points')}
-								class="font-medium text-text-muted hover:text-text"
-							>Points{colArrow('points')}</button>
+						<th scope="col" aria-sort={ariaSort('points')} class="hidden px-3 py-2 font-medium md:table-cell">
+							<button type="button" onclick={() => onColHeader('points')} class="font-medium text-text-muted hover:text-text"
+								>Points{colArrow('points')}</button
+							>
 						</th>
 					</tr>
 				</thead>
-				<tbody>
-					{#each ordered as m (m.listingId)}
-						<tr class="border-b border-border last:border-b-0 hover:bg-surface-hover">
-							<td class="px-3 py-2">
-								<a
-									href="/product/{m.productId}"
-									class="no-underline hover:no-underline"
-								>{m.model}</a
-								>
-							</td>
-							<td class="px-3 py-2 text-text">{retailerLabel(m.retailer)}</td>
-							<td class="px-3 py-2 text-text-muted" title={titleCase(m.variantName) || undefined}>
-								{titleCase(m.variantName).split(',')[0].trim() || '—'}
-							</td>
-							<td class="num px-3 py-2 text-right text-text-muted">
-								{m.oldPrice === null ? '—' : formatAud(m.oldPrice)}
-							</td>
-							<td class="num px-3 py-2 text-right text-text">
-								{formatAud(m.newPrice)}
-							</td>
-							{#if hasTrend}
-								<td class="w-16 px-3 py-2">
-									<Sparkline points={m.sparkline} />
-								</td>
-							{/if}
-							<td class="px-3 py-2 text-right">
-								{#if m.notEnoughHistory}
-									<Badge tone="neutral" label="Not enough history" />
-								{:else if m.change === null}
-									<span class="text-text-muted">—</span>
-								{:else}
-									<PriceChange
-										direction={direction(m)}
-										label="{formatSignedAud(m.change)} ({pctLabel(m)})"
-									/>
-								{/if}
-							</td>
-							<td class="num px-3 py-2 text-text-muted">{m.historyPoints}</td>
-						</tr>
-					{/each}
-				</tbody>
+				{#each groups as g (g.lead.listingId)}
+					<tbody class="border-b border-border last:border-b-0">
+						{@render moverRow(g.lead, g.rest.length, false)}
+						{#if expanded.has(g.productId)}
+							{#each g.rest as m (m.listingId)}
+								{@render moverRow(m, 0, true)}
+							{/each}
+						{/if}
+					</tbody>
+				{/each}
 			</table>
 		</div>
-
-		<!-- Mobile: one card per mover. -->
-		<ul class="space-y-2 md:hidden">
-			{#each ordered as m (m.listingId)}
-				<li class="rounded-md border border-border bg-surface p-3">
-					<div class="flex items-start justify-between gap-3">
-						<div class="min-w-0">
-							<a
-								href="/product/{m.productId}"
-								class="block truncate text-sm font-medium no-underline hover:no-underline"
-							>{m.model}</a>
-							<p
-								class="mt-0.5 truncate text-xs text-text-muted"
-								title={titleCase(m.variantName) || undefined}
-							>
-								{retailerLabel(m.retailer)} · {titleCase(m.variantName).split(',')[0].trim() || '—'}
-							</p>
-						</div>
-						<p class="num shrink-0 text-right text-sm text-text">{formatAud(m.newPrice)}</p>
-					</div>
-
-					<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
-						{#if m.notEnoughHistory}
-							<Badge tone="neutral" label="Not enough history" />
-						{:else if m.change === null}
-							<span class="text-text-muted">—</span>
-						{:else}
-							<PriceChange
-								direction={direction(m)}
-								label="{formatSignedAud(m.change)} ({pctLabel(m)})"
-							/>
-						{/if}
-						<span class="num text-text-muted">
-							from {m.oldPrice === null ? '—' : formatAud(m.oldPrice)}
-						</span>
-						<span class="num text-text-muted">{m.historyPoints} pts</span>
-						{#if hasTrend}
-							<span class="ml-auto"><Sparkline points={m.sparkline} /></span>
-						{/if}
-					</div>
-				</li>
-			{/each}
-		</ul>
 	{/if}
 </div>

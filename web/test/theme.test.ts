@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { THEME_STORAGE_KEY, getInitialTheme, setTheme, toggleTheme } from '../src/lib/theme';
+import {
+	THEME_COLORS,
+	THEME_STORAGE_KEY,
+	getInitialTheme,
+	setTheme,
+	toggleTheme
+} from '../src/lib/theme';
 
 function setDatasetTheme(theme: string | undefined) {
 	if (theme === undefined) delete document.documentElement.dataset.theme;
@@ -62,5 +68,21 @@ describe('toggleTheme', () => {
 		setDatasetTheme('light');
 		expect(toggleTheme()).toBe('dark');
 		expect(document.documentElement.dataset.theme).toBe('dark');
+	});
+});
+
+describe('theme-color meta (#25)', () => {
+	it('setTheme keeps the browser chrome colour in step with the theme', () => {
+		const meta = document.createElement('meta');
+		meta.name = 'theme-color';
+		document.head.appendChild(meta);
+		try {
+			setTheme('light');
+			expect(meta.content).toBe(THEME_COLORS.light);
+			setTheme('dark');
+			expect(meta.content).toBe(THEME_COLORS.dark);
+		} finally {
+			meta.remove();
+		}
 	});
 });

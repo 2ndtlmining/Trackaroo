@@ -2,27 +2,38 @@
 	import PriceChart, { type ChartSeries } from '$lib/components/PriceChart.svelte';
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import ProductHeadline from '$lib/components/ProductHeadline.svelte';
+	import BuyPanel from '$lib/components/BuyPanel.svelte';
 	import OfferList from '$lib/components/OfferList.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
+	import PageHead from '$lib/components/PageHead.svelte';
+	import PriceDataTable from '$lib/components/PriceDataTable.svelte';
+	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+	import { productBreadcrumbs } from '$lib/breadcrumbs';
+	import { chartSummary } from '$lib/chartSummary';
 	import type { AlertChannel } from '$lib/types';
 	import { formatDate, formatRelative, titleCase } from '$lib/formats';
 	import { retailerLabel } from '$lib/filters';
+	import { productPageTitle } from '$lib/head';
 	import { generationTierLabel } from '$lib/tiers';
 	import { buildHeadline } from '$lib/productHeadline';
 	import { toListingDisplays } from '$lib/listingsPanel';
-	import { type ProductHistory, type AlertRow } from '$lib/server/repos';
+	import { asOfDate, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
+	import { buildDisplayNames, displayName } from '$lib/displayName';
+	import { type ProductHistory, type AlertRow, type ProductIndexEntry } from '$lib/server/repos';
 
 	let {
 		data,
 		form
 	}: {
-		data: ProductHistory & { alerts: AlertRow[] };
+		data: ProductHistory & { alerts: AlertRow[]; productIndex: ProductIndexEntry[] };
 		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
 	} = $props();
 
 	const product = $derived(data.product);
 	const series = $derived(data.series);
+	// "GeForce RTX 5060 Ti 16GB" where a "... 8GB" sibling exists (display only).
+	const name = $derived(displayName(buildDisplayNames(data.productIndex), product.id, product.model));
 
 	let selected = $state<Set<number>>(new Set());
 
@@ -79,28 +90,60 @@ label:
 		toListingDisplays(series, product.brand, selected, data.retailerLatest)
 	);
 	const headline = $derived(buildHeadline(offers, data.band, data.stats));
+
+	const lows = $derived(dailyLows(data.band));
+	const asOf = $derived(asOfDate(data.retailerLatest, lows));
+	const low = $derived(lowSummary(lows, headline.currentPrice));
+	const buyWindows = $derived(asOf ? [windowStats(lows, asOf, 30), windowStats(lows, asOf, 90)] : []);
+	const where = $derived(whereToBuy(offers));
+	// Memory / cores in the headline: "RTX 5060 Ti" alone does not say which card
+	// this is when an 8GB sibling exists (#31 core; Phase 1 #2 split them).
+	// Skipped when the name already ends in the size ("... 16GB" from the
+	// display-name rule, or a stored "... 8GB" model), so it is never said twice.
+	const nameHasVram = $derived(
+		product.vram_gb != null && name.toLowerCase().endsWith(` ${product.vram_gb}gb`)
+	);
+	const specLabel = $derived(
+		product.category === 'gpu' && product.vram_gb && !nameHasVram
+			? `${product.vram_gb}GB`
+			: product.category === 'cpu' && product.cores
+				? `${product.cores} cores`
+				: null
+	);
 </script>
 
-<svelte:head>
-	<title>Trackaroo — {product.brand} {product.model}</title>
-</svelte:head>
+<PageHead
+	titleOverride={productPageTitle(
+		`${name}${product.variant ? ` · ${product.variant}` : ''}`,
+		headline.currentPrice,
+		headline.currentRetailer ? retailerLabel(headline.currentRetailer) : null
+	)}
+	description={`${product.brand} ${name}: AU price history, today's cheapest offer and where to buy.`}
+/>
 
 <div class="space-y-6">
 	<div>
-		<p class="flex items-center gap-1.5 text-sm text-text-muted">
+		<Breadcrumbs crumbs={productBreadcrumbs({ ...product, model: name })} />
+		<p class="mt-2 flex items-center gap-1.5 text-sm text-text-muted">
 			<BrandIcon brand={product.brand} size={16} />
 			{product.brand}
 		</p>
 		<h1 class="text-xl font-semibold text-text">
-			{product.model}{product.variant ? ` · ${product.variant}` : ''}
+			{name}{product.variant ? ` · ${product.variant}` : ''}
 		</h1>
 
-		<p class="mt-1 text-sm text-text-muted">
+		<p class="mt-1 text-sm text-text-muted" data-testid="product-meta">
 			{product.category?.toUpperCase()}
+			{#if specLabel}· {specLabel}{/if}
 			{#if product.generation_tier}
 				· {generationTierLabel(product.brand, product.category, product.generation_tier) ??
 					product.generation_tier}
 			{/if}
+		</p>
+		<p class="mt-1 text-sm">
+			<a href="/products?category={product.category}&compare={product.id}" class="text-accent">
+				Compare with…
+			</a>
 		</p>
 
 		<div class="mt-4">
@@ -118,6 +161,8 @@ label:
 		{/if}
 	</div>
 
+	<BuyPanel {low} windows={buyWindows} {where} />
+
 	{#if hasChartData}
 		<div class="space-y-4">
 			<PriceChart
@@ -128,8 +173,11 @@ label:
 						? { date: cheapestInStock.date, price: cheapestInStock.cheapestInStock! }
 						: null
 				}
+				lowMarker={low?.low ?? null}
+				summary={chartSummary(lows, headline.currentPrice)}
 				height={360}
 			/>
+			<PriceDataTable band={data.band} />
 			<OfferList
 				series={data.series}
 				productBrand={product.brand}

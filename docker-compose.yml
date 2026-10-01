@@ -1,0 +1,41 @@
+# Trackaroo — one container: daily pipeline + dashboard on :3000.
+#
+#   GIT_SHA=$(git rev-parse --short HEAD) docker compose build
+#   docker compose up -d
+#
+# Or just run deploy/redeploy.sh, which does that plus a backup, a health wait
+# and a repair dry run (DEPLOYMENT.md -> "Redeploying").
+#
+# db/ and data/ are the project's own directories, bind-mounted, so the DB and
+# the JSON snapshots it is rebuilt from outlive the container. Host-only extras
+# (the NAS backup mirror) go in docker-compose.override.yml, which compose
+# merges automatically; start from docker-compose.override.example.yml.
+services:
+  trackaroo:
+    build:
+      context: .
+      args:
+        # Shown by /healthz and the footer (#3, #9).
+        GIT_SHA: ${GIT_SHA:-dev}
+    image: trackaroo:latest
+    container_name: trackaroo
+    restart: unless-stopped
+    labels:
+      # watchtower runs on the prod host; this image is built locally, never pulled.
+      com.centurylinklabs.watchtower.enable: "false"
+    env_file: .env
+    environment:
+      # Correctness, not cosmetics: snapshots are stamped with date.today().
+      TZ: Australia/Melbourne
+    ports:
+      # The right-hand side must stay 3000 (the app's PORT inside the container).
+      - "${TRACKAROO_PORT:-3000}:3000"
+    volumes:
+      - ./db:/app/db
+      - ./data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 
 :root {
+	color-scheme: dark;
 	--bg: #0f1117;
 	--surface: #161923;
 	--surface-hover: #1d2130;
@@ -10,10 +11,19 @@
 	--text-muted: #8b8fa3;
 	--accent: #4f8cff;
 	--accent-soft: rgba(79, 140, 255, 0.12);
+	/* --up / --down: PRICE DIRECTION ONLY (rose / fell). Status uses --success/--warning/--danger (#24). */
 	--up: #f87171;
 	--down: #34d399;
 	--flat: #8b8fa3;
 	--stale: #8b8fa3;
+	--success: #34d399;
+	--success-soft: #12261f;
+	--warning: #fbbf24;
+	--warning-soft: #2a2310;
+	--danger: #f87171;
+	--danger-soft: #2c1719;
+	/* Control boundaries (inputs, selects): >= 3:1 on bg and surface (WCAG 1.4.11). */
+	--border-input: #6b7286;
 	--font-sans:
 		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 	--font-mono:
@@ -21,6 +31,7 @@
 }
 
 [data-theme='light'] {
+	color-scheme: light;
 	--bg: #f6f7f9;
 	--surface: #ffffff;
 	--surface-hover: #eef0f4;
@@ -30,10 +41,17 @@
 	--text-muted: #666c7b;
 	--accent: #2563eb;
 	--accent-soft: rgba(37, 99, 235, 0.08);
-	--up: #dc2626;
-	--down: #059669;
+	--up: #c81e1e;
+	--down: #047857;
 	--flat: #666c7b;
 	--stale: #9aa0ad;
+	--success: #047857;
+	--success-soft: #ecfdf5;
+	--warning: #a14a06;
+	--warning-soft: #fffbeb;
+	--danger: #b91c1c;
+	--danger-soft: #fef2f2;
+	--border-input: #7c8292;
 }
 
 @theme inline {
@@ -50,6 +68,13 @@
 	--color-down: var(--down);
 	--color-flat: var(--flat);
 	--color-stale: var(--stale);
+	--color-success: var(--success);
+	--color-success-soft: var(--success-soft);
+	--color-warning: var(--warning);
+	--color-warning-soft: var(--warning-soft);
+	--color-danger: var(--danger);
+	--color-danger-soft: var(--danger-soft);
+	--color-border-input: var(--border-input);
 	--font-sans: var(--font-sans);
 	--font-mono: var(--font-mono);
 }

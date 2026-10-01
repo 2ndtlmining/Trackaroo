@@ -123,11 +123,11 @@ test.describe('navigation & layout', () => {
 		const nav = page.getByRole('navigation', { name: 'Main' });
 
 		await nav.getByRole('link', { name: 'GPUs', exact: true }).click();
-		await expect(page).toHaveTitle('Trackaroo — GPUs');
+		await expect(page).toHaveTitle('GPUs · Trackaroo');
 		await expect(page).toHaveURL(/category=gpu/);
 
 		await nav.getByRole('link', { name: 'Movers', exact: true }).click();
-		await expect(page).toHaveTitle('Trackaroo — Movers');
+		await expect(page).toHaveTitle('Movers · Trackaroo');
 
 		await nav.getByRole('link', { name: 'Deals', exact: true }).click();
 		await expect(page).toHaveTitle('Deals · Trackaroo');
@@ -148,6 +148,18 @@ test.describe('navigation & layout', () => {
 		);
 	});
 
+	test('/gpus and /cpus redirect to the category index (U2)', async ({ page }) => {
+		const gpus = await page.request.get('/gpus?q=5060', { maxRedirects: 0 });
+		expect(gpus.status()).toBe(301);
+		expect(gpus.headers()['location']).toBe('/products?category=gpu&q=5060');
+		const cpus = await page.request.get('/cpus', { maxRedirects: 0 });
+		expect(cpus.status()).toBe(301);
+		expect(cpus.headers()['location']).toBe('/products?category=cpu');
+
+		await goto(page, '/gpus');
+		await expect(page.getByRole('heading', { name: 'GPUs', level: 1 })).toBeVisible();
+	});
+
 	test('footer shows the product tagline on every page', async ({ page }) => {
 		await goto(page, '/products');
 		await expect(page.getByText('Trackaroo — AU CPU & GPU price tracker')).toBeVisible();
@@ -161,11 +173,59 @@ test.describe('navigation & layout', () => {
 		await expect(page.getByTitle('SQLite database size')).toHaveCount(0);
 		await expect(page.getByLabel('Data health')).toBeVisible();
 	});
+
+	test('serves exactly one title and one description on every route (#25)', async ({ page }) => {
+		for (const path of [
+			'/',
+			'/deals',
+			'/movers',
+			'/products?category=gpu',
+			'/products?category=cpu',
+			'/compare',
+			'/product/1',
+			'/product/999999'
+		]) {
+			const html = await (await page.request.get(path)).text();
+			// Only <head>: Sparkline SVGs on /movers carry their own <title> for
+			// accessibility, so counting the whole document would over-count.
+			const head = html.split('</head>')[0];
+			expect(head.match(/<title>/g)?.length, path).toBe(1);
+			expect(head.match(/<meta name="description"/g)?.length, path).toBe(1);
+			expect(html, path).toContain('property="og:title"');
+			expect(html, path).toContain('rel="manifest"');
+		}
+	});
+
+	test('names the product, price and retailer in a product page title (#25)', async ({ page }) => {
+		await goto(page, '/product/1');
+		// Anchored to the real productPageTitle() format so a regression (e.g.
+		// dropping the price/retailer clause) actually fails this test.
+		await expect(page).toHaveTitle(/^.+ — \$[\d,.]+ at .+ · Trackaroo$/);
+	});
 });
 
-test('compare opens with an empty state explaining how to select', async ({ page }) => {
+test('the empty /compare page picks two products in place (#26)', async ({ page }) => {
 	await goto(page, '/compare');
 	await expect(page.getByText('Nothing selected to compare yet.')).toBeVisible();
+	await expect(page.getByText(/tick the compare box on each card/)).toHaveCount(0);
+	const selects = page.getByRole('combobox');
+	await selects.nth(0).selectOption({ index: 1 });
+	await selects.nth(1).selectOption({ index: 2 });
+	await page.getByRole('button', { name: 'Compare', exact: true }).click();
+	await page.waitForLoadState('networkidle');
+	await expect(page).toHaveURL(/\/compare\?id=\d+&id=\d+$/);
+	await expect(page.locator('thead th a')).toHaveCount(2);
+	await expect(page.getByText(/^Best price — (Scorptec|PCCG|Umart)$/).first()).toBeVisible();
+});
+
+test('the picker asks again when the same product is chosen twice (Review Focus 3)', async ({ page }) => {
+	await goto(page, '/compare');
+	const selects = page.getByRole('combobox');
+	await selects.nth(0).selectOption({ index: 1 });
+	await selects.nth(1).selectOption({ index: 1 });
+	await page.getByRole('button', { name: 'Compare', exact: true }).click();
+	await page.waitForLoadState('networkidle');
+	await expect(page.getByRole('alert')).toHaveText('Pick two different products to compare.');
 });
 
 test.describe('theme toggle', () => {
@@ -200,6 +260,16 @@ test('respects a stored light theme on load', async ({ page }) => {
 		await page.reload();
 		await page.waitForLoadState('networkidle');
 		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+	});
+
+	test('native controls and browser chrome follow the theme (#25)', async ({ page }) => {
+		await page.addInitScript(() => localStorage.setItem('trackaroo-theme', 'light'));
+		await goto(page, '/');
+		await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
+		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f6f7f9');
+		await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+		await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
+		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#0f1117');
 	});
 });
 
@@ -251,9 +321,10 @@ test.describe('homepage dashboard', () => {
 		).toBeVisible();
 	});
 
-	// getMovers is per-listing, so a retailer stocking several SKUs of one card
-	// used to fill all three slots with rows that read identically (model +
-	// retailer, no variant). Each slot must now be a different product.
+	// The homepage movers used to be per listing, so a retailer stocking several
+	// SKUs of one card filled all three slots with rows that read identically.
+	// They are product-level now (D7), so each slot is a different product by
+	// construction.
 	test('never lists the same product twice in a mover column', async ({ page }) => {
 		await goto(page, '/');
 		for (const section of ['GPUs', 'CPUs']) {
@@ -265,6 +336,31 @@ test.describe('homepage dashboard', () => {
 				expect(new Set(hrefs).size).toBe(hrefs.length);
 			}
 		}
+	});
+
+	test('mover rows describe the product’s cheapest price, one row per product (D7)', async ({ page }) => {
+		await goto(page, '/');
+		const drops = page.getByLabel('GPUs').getByTestId('biggest-drops');
+		await expect(drops.getByRole('link', { name: 'E2E Deal Demo GPU', exact: true })).toBeVisible();
+		// −90%: 1000 -> 100 on the fixture's only listing, so product == listing here.
+		await expect(drops).toContainText('90.0%');
+	});
+
+	// Thin history is never summarised (Review Focus 1): the fixture falls
+	// 1000 -> 600 over its only 2 days, which is under MIN_HISTORY_POINTS, so it
+	// must not headline "Biggest drops" as a -40% move.
+	test('a product with under MIN_HISTORY_POINTS days is not a homepage mover', async ({ page }) => {
+		await goto(page, '/');
+		const gpus = page.getByLabel('GPUs');
+		for (const column of ['biggest-drops', 'biggest-rises']) {
+			await expect(
+				gpus.getByTestId(column).getByRole('link', { name: 'E2E Thin History GPU', exact: true })
+			).toHaveCount(0);
+		}
+		// The page did render its movers: the long-history fixture is there.
+		await expect(
+			gpus.getByTestId('biggest-drops').getByRole('link', { name: 'E2E Deal Demo GPU', exact: true })
+		).toBeVisible();
 	});
 
 	test('no longer renders the filter-and-sort listing table', async ({ page }) => {
@@ -282,6 +378,58 @@ test.describe('homepage dashboard', () => {
 // Filters.svelte moved off the homepage with the listing table (spec §5) and is
 // now used only by /products, so its coverage moves here rather than being lost.
 test.describe('product index', () => {
+	test('hides never-listed products until asked, and search still finds them (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toHaveCount(0);
+
+		// The label flips Show -> Hide, so locate by the part that stays put.
+		const toggle = page.getByRole('button', { name: /^(Show|Hide) \d+ not currently sold$/ });
+		await expect(toggle).toHaveText(/^Show /);
+		await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+		await toggle.click();
+		await expect(toggle).toHaveText(/^Hide /);
+		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toBeVisible();
+		await expect(page).toHaveURL(/unlisted=1/);
+
+		// Back from a product page keeps it (the Task 7 replaceState lesson:
+		// read from location, not the stale page.url).
+		await page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' }).click();
+		await expect(page).toHaveURL(/\/product\/\d+/);
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('button', { name: /^Hide \d+ not currently sold$/ })).toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toBeVisible();
+
+		await goto(page, '/products?category=gpu&q=E2E%20Deal%20Demo');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 8GB' })).toBeVisible();
+	});
+
+	test('names the base card’s memory where a memory sibling exists (follow-up)', async ({ page }) => {
+		await goto(page, '/products?category=gpu&q=E2E%20Deal%20Demo');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU 16GB', exact: true })).toBeVisible();
+		await page.getByRole('link', { name: 'E2E Deal Demo GPU 16GB', exact: true }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('E2E Deal Demo GPU 16GB');
+		await expect(page).toHaveTitle(/^E2E Deal Demo GPU 16GB/);
+		await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('E2E Deal Demo GPU 16GB');
+		// The meta line's "· 16GB" (Task 5) is dropped once the name says it.
+		await expect(page.getByTestId('product-meta')).not.toContainText('16GB');
+	});
+
+	test('the catalog shows column labels, VRAM and group counts (#23, U5)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const header = page.getByTestId('catalog-header');
+		for (const col of ['Compare', 'Price', 'Model', 'VRAM', 'Released', 'Listings']) {
+			await expect(header).toContainText(col);
+		}
+		await expect(page.getByText('16GB', { exact: true }).first()).toBeVisible();
+		await expect(page.getByRole('heading', { level: 2 }).first()).toContainText(/\d+ models? · \d+ in stock/);
+	});
+
 	test('groups the catalogue by brand and generation when the box is empty', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
 		await expect(page.getByRole('heading', { name: 'GPUs', level: 1 })).toBeVisible();
@@ -339,6 +487,72 @@ test.describe('product index', () => {
 			.click();
 		await expect(page).toHaveURL(/\/compare\?ids=\d+,\d+/);
 	});
+
+	test('search lives in the URL and survives Back (#26)', async ({ page }) => {
+		await goto(page, '/products?category=gpu&q=5060');
+		await expect(page.getByLabel(/^Search GPUs$/)).toHaveValue('5060');
+		await expect(page.getByTestId('index-count')).toContainText('match');
+
+		await page.getByLabel(/^Search GPUs$/).fill('5060 ti');
+		await expect(page).toHaveURL(/q=5060\+ti/);
+		await page.getByRole('link', { name: /^GeForce RTX 5060 Ti( 16GB)?$/ }).first().click();
+		await expect(page).toHaveURL(/\/product\/\d+/);
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByLabel(/^Search GPUs$/)).toHaveValue('5060 ti');
+	});
+
+	// Back/Forward between two /products entries reuses the component. The URL
+	// sync must not track page.url (replaceState reads it internally), or on
+	// Back it writes the entry just left over the one landed on.
+	test('Back and Forward between two /products entries keep each entry\'s search', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const box = page.getByLabel(/^Search GPUs$/);
+		await box.fill('5060');
+		await expect(page).toHaveURL(/q=5060$/);
+
+		// "In stock" is a real navigation: a second /products history entry.
+		await page.getByRole('checkbox', { name: 'In stock' }).check();
+		await expect(page).toHaveURL(/in_stock=1/);
+		await page.waitForLoadState('networkidle');
+		await box.fill('5070');
+		await expect(page).toHaveURL(/q=5070/);
+
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/\/products\?category=gpu&q=5060$/);
+		await expect(box).toHaveValue('5060');
+		await expect(page.getByRole('checkbox', { name: 'In stock' })).not.toBeChecked();
+		// Still this entry's URL once the sync effect has had its chance to run.
+		await expect(page).toHaveURL(/\/products\?category=gpu&q=5060$/);
+
+		await page.goForward();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/in_stock=1/);
+		await expect(page).toHaveURL(/q=5070/);
+		await expect(box).toHaveValue('5070');
+		await expect(page.getByRole('checkbox', { name: 'In stock' })).toBeChecked();
+	});
+
+	test('a shared compare selection is restored, and one pick prompts for another (#26)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const boxes = page.getByRole('checkbox', { name: /^Compare / });
+		await boxes.nth(0).check();
+		const bar = page.getByRole('region', { name: 'Compare bar' });
+		await expect(bar).toContainText('Pick 1 more to compare');
+		await boxes.nth(1).check();
+		await expect(page).toHaveURL(/compare=\d+%2C\d+|compare=\d+,\d+/);
+
+		await page.reload();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('checkbox', { name: /^Compare /, checked: true })).toHaveCount(2);
+	});
+});
+
+test('the footer names the running build (#3)', async ({ page }) => {
+	await goto(page, '/');
+	// vite dev has no TRACKAROO_VERSION, so the stamp reads "dev".
+	await expect(page.getByTestId('build-version')).toHaveText('build dev');
 });
 
 test.describe('command palette', () => {
@@ -384,6 +598,24 @@ test.describe('command palette', () => {
 		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
 		await expect(dialog.getByText(/snapshots/).first()).toBeVisible();
 		await expect(dialog.getByText(/snapshots/)).toHaveCount(2);
+	});
+
+	test('uses the display name, so the base card shows its memory (follow-up)', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('e2e deal demo gpu 16gb');
+		await expect(dialog.getByRole('option').first()).toContainText('E2E Deal Demo GPU 16GB');
+	});
+
+	test('never offers a quick compare across categories (#26)', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		// "7600" matches the Ryzen 5 7600 CPU and (in real data) the RX 7600 GPU;
+		// with synthetic data it matches one product. Either way, no compare row.
+		await dialog.getByRole('textbox', { name: 'Search products' }).fill('7600');
+		await expect(dialog.getByRole('option', { name: /^Compare / })).toHaveCount(0);
 	});
 });
 
@@ -471,7 +703,7 @@ await expect(page.locator('table')).toBeVisible();
 		await goto(page, '/movers?window=bogus');
 		await expect(page.getByRole('heading', { name: 'Movers' })).toBeVisible();
 		// Server defaults to 7d-tab highlighted
-		await expect(page.getByRole('button', { name: '7d' })).toHaveClass(/bg-surface-hover/);
+		await expect(page.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true');
 	});
 
 test('movers link through to product pages', async ({ page }) => {
@@ -513,6 +745,84 @@ test('movers link through to product pages', async ({ page }) => {
 		await goto(page, '/movers?all=1');
 		await expect(page.getByText('Not enough history').first()).toBeVisible();
 	});
+
+	test('groups listings under their product by default, and can list every SKU (#5 item 4)', async ({ page }) => {
+		await goto(page, '/movers?window=30d&all=1');
+		const leadHrefs = await page
+			.locator('tbody > tr:first-child a[href^="/product/"]')
+			.evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+		expect(new Set(leadHrefs).size).toBe(leadHrefs.length);
+
+		// The RTX 5060 Ti has many listings in both seeds; its "+N more" expands in
+		// place and relabels itself "Hide listings" (so re-query by the new name).
+		const rowsBefore = await page.locator('tbody tr').count();
+		await page.getByRole('button', { name: /^\+\d+ more listings?$/ }).first().click();
+		await expect(page.getByRole('button', { name: /^Hide listings?$/ }).first()).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		expect(await page.locator('tbody tr').count()).toBeGreaterThan(rowsBefore);
+
+		await page.getByRole('button', { name: 'Per listing' }).click();
+		await expect(page).toHaveURL(/group=0/);
+		await expect(page.getByRole('button', { name: /(more|Hide) listings?$/ })).toHaveCount(0);
+	});
+
+	test('sort, direction and grouping live in the URL (#26)', async ({ page }) => {
+		await goto(page, '/movers?window=30d&sort=pct&dir=down');
+		await expect(page.getByRole('button', { name: '% change' })).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('button', { name: 'Down', exact: true })).toHaveAttribute('aria-pressed', 'true');
+		await page.getByRole('button', { name: 'Price', exact: true }).click();
+		await expect(page).toHaveURL(/sort=price/);
+		await expect(page).toHaveURL(/dir=down/);
+
+		await page.getByRole('button', { name: '7d' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/window=7d.*sort=price|sort=price.*window=7d/);
+	});
+
+	// replaceState leaves page.url stale, so Back must restore the view from the
+	// address bar (see $lib/urlParams), both from a product page (remount) and
+	// between two /movers windows (same component, re-read on navigation).
+	test('Back restores the sort, direction and grouping written to the URL (#26)', async ({ page }) => {
+		await goto(page, '/movers?window=30d');
+		await page.getByRole('button', { name: 'Price', exact: true }).click();
+		await page.getByRole('button', { name: 'Per listing' }).click();
+		await expect(page).toHaveURL(/sort=price.*group=0/);
+
+		await page.locator('tbody tr a[href^="/product/"]').first().click();
+		await expect(page).toHaveURL(/\/product\/\d+$/);
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/window=30d.*sort=price.*group=0/);
+		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('button', { name: 'Per listing' })).toHaveAttribute('aria-pressed', 'true');
+
+		await page.getByRole('button', { name: '7d' }).click();
+		await expect(page).toHaveURL(/window=7d/);
+		await page.getByRole('button', { name: '% change' }).click();
+		await expect(page).toHaveURL(/window=7d.*sort=pct/);
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/window=30d.*sort=price/);
+		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('button', { name: '30d' })).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	test('sortable headers expose aria-sort, and every mover renders once (#5 items 5-6)', async ({ page }) => {
+		await goto(page, '/movers');
+		const newHeader = page.locator('th', { has: page.getByRole('button', { name: /^New/ }) });
+		await expect(newHeader).toHaveAttribute('aria-sort', 'none');
+		await page.getByRole('button', { name: /^New/ }).click();
+		await expect(newHeader).toHaveAttribute('aria-sort', 'ascending');
+
+		// No second, mobile-only copy of the list.
+		await expect(page.locator('main ul li a[href^="/product/"]')).toHaveCount(0);
+		const html = await (await page.request.get('/movers?group=0')).text();
+		const rows = (html.match(/data-testid="mover-row"/g) ?? []).length;
+		const links = (html.match(/<td[^>]*>\s*<a href="\/product\/\d+"/g) ?? []).length;
+		expect(links).toBe(rows);
+	});
 });
 
 test.describe('product detail', () => {
@@ -531,7 +841,8 @@ await goto(page, '/product/1');
 		await expect(page.getByRole('heading', { name: 'Offers' })).toBeVisible();
 		// Product 1 is an Intel current-gen chip — the Generation chip shows the
 		// friendly architecture name, not the raw tier code.
-		await expect(page.getByText('Core Ultra 200 (Arrow Lake)')).toBeVisible();
+		// Scoped to the meta line: the breadcrumb (#26) also names the generation.
+		await expect(page.getByTestId('product-meta')).toContainText('Core Ultra 200 (Arrow Lake)');
 	});
 
 	test('chart skeleton resolves once the chart mounts client-side', async ({ page }) => {
@@ -549,8 +860,8 @@ await goto(page, '/product/1');
 		await goto(page, '/product/1');
 		// Both ends of the bar come from the cheapest-per-day series, so the
 		// labels say so rather than implying the dearest listing on the shelf.
-		await expect(page.getByText('Cheapest', { exact: true })).toBeVisible();
-		await expect(page.getByText('Dearest', { exact: true })).toBeVisible();
+		await expect(page.getByText('Lowest day', { exact: true })).toBeVisible();
+		await expect(page.getByText('Highest day', { exact: true })).toBeVisible();
 		await expect(page.getByText(/Range of the cheapest price across \d+ days/)).toBeVisible();
 		// The headline's vs-30d-average delta, next to the current price (offer
 		// rows also show a per-row vs-30d-avg delta, so scope to the first match).
@@ -569,12 +880,30 @@ await goto(page, '/product/1');
 		const res = await page.request.get('/product/999999');
 		expect(res.status()).toBe(404);
 	});
+
+	test('breadcrumbs lead back, the category is highlighted, and Compare with… preselects (#26)', async ({
+		page
+	}) => {
+		await goto(page, '/product/1');
+		const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
+		await expect(crumbs.getByRole('link', { name: 'CPUs' })).toHaveAttribute('href', '/products?category=cpu');
+		await expect(
+			page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'CPUs', exact: true })
+		).toHaveAttribute('aria-current', 'page');
+
+		await page.getByRole('link', { name: 'Compare with…' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/\/products\?category=cpu&compare=1$/);
+		await expect(page.getByRole('region', { name: 'Compare bar' })).toContainText('Pick 1 more');
+		await expect(page.getByRole('checkbox', { name: /^Compare /, checked: true })).toHaveCount(1);
+	});
 });
 
 test.describe('product detail offer list', () => {
 	async function openGpuProduct(page: Page) {
 		await goto(page, '/products?category=gpu');
-		await page.getByRole('link', { name: 'GeForce RTX 5060 Ti', exact: true }).first().click();
+		// "( 16GB)?": the base card gains its VRAM if a "... 8GB" sibling is tracked (Task 12).
+		await page.getByRole('link', { name: /^GeForce RTX 5060 Ti( 16GB)?$/ }).first().click();
 	}
 
 	test('product page leads with the cheapest price and caps the offer list', async ({ page }) => {
@@ -667,6 +996,19 @@ test.describe('product detail offer list', () => {
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
 	});
 
+	test('the chart has a legend, a spoken summary and a data table (#27)', async ({ page }) => {
+		await goto(page, '/product/1');
+		const chart = page.getByRole('img', { name: /^Price history chart\./ });
+		await expect(chart).toBeVisible();
+		await expect(chart).toHaveAttribute('aria-label', /cheapest in-stock price|No in-stock price/);
+		await expect(page.getByRole('list', { name: 'Chart legend' })).toContainText('Cheapest and dearest');
+
+		const summary = page.locator('summary', { hasText: 'Show price data' });
+		await summary.focus();
+		await page.keyboard.press('Enter');
+		await expect(page.getByRole('table').filter({ hasText: 'Dearest in stock' })).toBeVisible();
+	});
+
 	test('re-renders the chart when navigating between products', async ({ page }) => {
 		await openGpuProduct(page);
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
@@ -750,7 +1092,8 @@ test.describe('product detail specs', () => {
 
 	test('renders the gpu spec fields', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		await page.getByRole('link', { name: 'GeForce RTX 5060 Ti', exact: true }).first().click();
+		// "( 16GB)?": the base card gains its VRAM if a "... 8GB" sibling is tracked (Task 12).
+		await page.getByRole('link', { name: /^GeForce RTX 5060 Ti( 16GB)?$/ }).first().click();
 
 		await expect(page.getByRole('heading', { name: 'Specs' })).toBeVisible();
 		await expect(page.getByText('RTX 50 — Blackwell')).toBeVisible();
@@ -879,5 +1222,40 @@ test.describe('deals', () => {
 	test('filtering by category to CPUs hides the GPU fixture', async ({ page }) => {
 		await goto(page, '/deals?category=cpu');
 		await expect(page.getByText('E2E Deal Demo GPU')).toHaveCount(0);
+	});
+});
+
+test.describe('is now a good time to buy? (#31)', () => {
+	test('states the low, the recent spread and where to buy', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('link', { name: /^GeForce RTX 5060 Ti( 16GB)?$/ }).first().click();
+		await page.waitForLoadState('networkidle');
+
+		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
+		await expect(panel).toBeVisible();
+		await expect(panel.getByTestId('low-summary')).toContainText(/Lowest since|Today is the lowest price since/);
+		await expect(panel).not.toContainText('all-time');
+		await expect(panel.getByRole('rowheader', { name: '30 days' })).toBeVisible();
+		await expect(panel.getByRole('rowheader', { name: '90 days' })).toBeVisible();
+		// The RTX 5060 Ti is seeded at both retailers.
+		await expect(panel.getByRole('rowheader', { name: 'Scorptec' })).toBeVisible();
+		await expect(panel.getByRole('rowheader', { name: 'PCCG' })).toBeVisible();
+		await expect(panel.getByRole('link', { name: /^Buy at \w+ for \$/ }).first()).toHaveAttribute(
+			'rel',
+			'noopener noreferrer'
+		);
+	});
+
+	test('a product with two days of history says so instead of summarising (Review Focus 1)', async ({
+		page
+	}) => {
+		await goto(page, '/products?category=gpu');
+		const box = page.getByLabel(/^Search GPUs$/);
+		await box.fill('E2E Thin History');
+		await box.press('Enter');
+		await page.waitForLoadState('networkidle');
+		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
+		await expect(panel.getByText('Gathering history (2 days)').first()).toBeVisible();
+		await expect(panel).not.toContainText('NaN');
 	});
 });

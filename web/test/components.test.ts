@@ -17,6 +17,9 @@ import ProductRow from '../src/lib/components/ProductRow.svelte';
 import HealthStrip from '../src/lib/components/HealthStrip.svelte';
 import MoverRow from '../src/lib/components/MoverRow.svelte';
 import CategorySection from '../src/lib/components/CategorySection.svelte';
+import BuyPanel from '../src/lib/components/BuyPanel.svelte';
+import PriceDataTable from '../src/lib/components/PriceDataTable.svelte';
+import SegmentedControl from '../src/lib/components/SegmentedControl.svelte';
 import { offer as offerRow } from './helpers/offers';
 import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint, Mover } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
@@ -66,6 +69,19 @@ describe('Badge', () => {
 		const body = renderComponent(Badge, { label: '+5%', tone: 'up' });
 		expect(body).toContain('bg-up');
 		expect(body).toContain('text-up');
+	});
+
+	it('renders stale text in the muted text colour, keeping the stale token for the dot (#24)', () => {
+		const body = renderComponent(Badge, { label: 'Delisted', tone: 'stale' });
+		expect(body).toContain('bg-stale');
+		expect(body).toContain('text-text-muted');
+		expect(body).not.toContain('text-stale');
+	});
+
+	it.each(['success', 'warning', 'danger'])('has a %s status tone', (tone) => {
+		const body = renderComponent(Badge, { label: 'x', tone });
+		expect(body).toContain(`bg-${tone}`);
+		expect(body).toContain(`text-${tone}`);
 	});
 });
 
@@ -310,8 +326,8 @@ describe('SpecPanel', () => {
 
 	it('shows the launch MSRP when present', () => {
 		const body = renderComponent(SpecPanel, { spec: specRow({ launch_msrp_usd: 1999 }) });
-		expect(body).toContain('Launch MSRP');
-		expect(body).toContain('$1,999');
+		expect(body).toContain('US launch MSRP');
+		expect(body).toContain('US$1,999');
 	});
 
 	it('shows GPU detail rows (die, bandwidth, process)', () => {
@@ -383,6 +399,7 @@ describe('CommandPalette', () => {
 						brand: 'AMD',
 						model: 'Ryzen 5 7600',
 						productVariant: null,
+						vramGb: null,
 						snapshotCount: 7
 					}
 				],
@@ -932,6 +949,43 @@ describe('PriceRangeBar', () => {
 	});
 });
 
+describe('PriceDataTable (#27)', () => {
+	const band = [
+		{ date: '2026-09-01', low: 700, high: 800, cheapestInStock: null },
+		{ date: '2026-09-02', low: null, high: null, cheapestInStock: null },
+		{ date: '2026-09-03', low: 690, high: 760, cheapestInStock: 690 }
+	];
+
+	it('is a keyboard-reachable disclosure with a real table, newest day first', () => {
+		const html = renderComponent(PriceDataTable, { band });
+		expect(html).toContain('<details');
+		expect(html).toContain('<summary');
+		expect(html).toContain('Show price data (3 days)');
+		expect(html.indexOf('3 Sep 2026')).toBeLessThan(html.indexOf('1 Sep 2026'));
+		expect(html).toContain('$690');
+		expect(html).toContain('—');
+	});
+
+	it('renders nothing without data', () => {
+		expect(renderComponent(PriceDataTable, { band: [] })).not.toContain('<details');
+	});
+});
+
+describe('PriceRangeBar (U4)', () => {
+	it('labels the ends as the lowest and highest day, not cheapest/dearest listings', () => {
+		const html = renderComponent(PriceRangeBar, {
+			low: 699,
+			high: 899,
+			current: 749,
+			position: 0.25,
+			points: 30
+		});
+		expect(html).toContain('Lowest day');
+		expect(html).toContain('Highest day');
+		expect(html).not.toMatch(/>\s*(Cheapest|Dearest)\s*</);
+	});
+});
+
 import ProductHeadline from '../src/lib/components/ProductHeadline.svelte';
 import type { Headline } from '../src/lib/productHeadline';
 
@@ -960,14 +1014,13 @@ describe('ProductHeadline', () => {
 		expect(html).toContain('Scorptec');
 	});
 
-	it('shows both deltas with arrows, not colour alone', () => {
+	it('shows the average delta with an arrow, not colour alone', () => {
 		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
 		expect(html).toContain('▼');
 		expect(html).toContain('vs 17-day avg');
-		expect(html).toContain('above all-time low');
-		// Verify actual percentages match the fixture values (not hardcoded)
 		expect(html).toContain('−7.2%');
-		expect(html).toContain('+4.0%');
+		// "vs the low" moved to BuyPanel, worded "Lowest since", not "all-time" (D5).
+		expect(html).not.toContain('all-time low');
 	});
 
 	it('demotes provenance to one muted line', () => {
@@ -985,7 +1038,7 @@ describe('ProductHeadline', () => {
 		expect(html).toContain('No in-stock listings');
 	});
 
-	it('still shows the all-time low and high when nothing is in stock', () => {
+	it('still shows the recorded low and high when nothing is in stock', () => {
 		const html = renderComponent(ProductHeadline, {
 			headline: headline({ currentPrice: null, currentRetailer: null, rangePosition: null }),
 			...base
@@ -1022,6 +1075,76 @@ describe('ProductHeadline', () => {
 		expect(html).toContain('vs 17-day avg');
 	});
 });
+
+describe('BuyPanel (#31)', () => {
+	const low = {
+		low: 699,
+		lowDate: '2026-09-10',
+		since: '2026-08-09',
+		today: 729,
+		pctAbove: 4.29,
+		atLow: false
+	};
+	const windows = [
+		{ days: 30, points: 20, low: 699, median: 719, high: 749, enough: true },
+		{ days: 90, points: 2, low: 699, median: 714, high: 729, enough: false }
+	];
+	const where = [
+		{ retailer: 'scorptec', cheapest: 719, cheapestUrl: 'https://s/1', inStock: 1, listings: 2 },
+		{ retailer: 'umart', cheapest: null, cheapestUrl: null, inStock: 0, listings: 1 }
+	];
+
+	it('states the lowest price, its date, the first tracked day and today’s gap', () => {
+		const html = renderComponent(BuyPanel, { low, windows, where });
+		expect(html).toContain('Lowest since 9 Aug 2026');
+		expect(html).toContain('$699');
+		expect(html).toContain('10 Sep 2026');
+		expect(html).toContain('4.3%');
+		expect(html).not.toContain('all-time');
+	});
+
+	it('says so when today is the low', () => {
+		const html = renderComponent(BuyPanel, {
+			low: { ...low, today: 699, pctAbove: 0, atLow: true },
+			windows,
+			where
+		});
+		expect(html).toContain('Today is the lowest price since 9 Aug 2026');
+	});
+
+	it('shows the strip, and names thin windows instead of guessing (Review Focus 1)', () => {
+		const html = renderComponent(BuyPanel, { low, windows, where });
+		expect(html).toContain('30 days');
+		expect(html).toContain('$719');
+		expect(html).toContain('Gathering history (2 days)');
+	});
+
+	it('lists each retailer with its cheapest price, stock count and a labelled link', () => {
+		const html = renderComponent(BuyPanel, { low, windows, where });
+		expect(html).toContain('Scorptec');
+		expect(html).toContain('1 of 2');
+		expect(html).toContain('Buy at Scorptec for $719 (opens in a new tab)');
+		expect(html).toContain('Umart');
+		expect(html).toContain('0 of 1');
+	});
+
+	it('copes with a product that has never had a price (Review Focus 1)', () => {
+		const html = renderComponent(BuyPanel, { low: null, windows: [], where: [] });
+		expect(html).toContain('No in-stock price recorded yet');
+		expect(html).toContain('No retailer lists it right now');
+		expect(html).not.toContain('NaN');
+	});
+
+	it('says nothing is in stock today rather than printing a gap', () => {
+		const html = renderComponent(BuyPanel, {
+			low: { ...low, today: null, pctAbove: null },
+			windows,
+			where
+		});
+		expect(html).toContain('Nothing is in stock today');
+	});
+});
+
 describe('HealthStrip', () => {
 	const health = [
 		{ retailer: 'scorptec', label: 'Scorptec', state: 'fresh' as const, days: 0, text: 'today' },
@@ -1089,6 +1212,18 @@ describe('HealthStrip', () => {
 		expect(html).toContain('today 04:12');
 		expect(html).toContain('182 matched');
 		expect(html).toContain('timeout at 05:01');
+	});
+
+	it('uses status tones, not price-direction colours (#24)', () => {
+		const html = renderComponent(HealthStrip, {
+			retailers: health,
+			latestSnapshotDate: '2026-08-25',
+			snapshotDays: 17,
+			snapshotCount: 4988
+		});
+		expect(html).toContain('text-success');
+		expect(html).toContain('text-warning');
+		expect(html).not.toMatch(/text-(up|down)\b/);
 	});
 });
 
@@ -1251,6 +1386,52 @@ describe('ProductHeadline honesty', () => {
 	});
 });
 
+describe('ProductRow catalog columns (#23, U5)', () => {
+	const row = {
+		productId: 7,
+		category: 'gpu' as const,
+		brand: 'NVIDIA',
+		model: 'GeForce RTX 5070',
+		productVariant: null,
+		generationTier: 'current' as const,
+		cheapestInStockPrice: 899,
+		cheapestInStockRetailer: 'scorptec' as const,
+		inStockCount: 3,
+		avg30: 920,
+		avg30Points: 20,
+		neverListed: false,
+		vramGb: 12,
+		cores: null,
+		launchDate: '2025-03-05',
+		listingCount: 5
+	};
+
+	it('shows VRAM, release month and in-stock-of-listed, each with a screen-reader label', () => {
+		const html = renderComponent(ProductRow, { group: row, onToggleCompare: () => {} });
+		expect(html).toContain('12GB');
+		expect(html).toContain('Mar 2025');
+		expect(html).toContain('3 of 5');
+		expect(html).toContain('VRAM:');
+		expect(html).toContain('Released:');
+		expect(html).toContain('Listings:');
+	});
+
+	it('labels the compare checkbox with what it does (U5)', () => {
+		const html = renderComponent(ProductRow, { group: row, onToggleCompare: () => {} });
+		expect(html).toContain('aria-label="Compare GeForce RTX 5070"');
+		expect(html).toContain('title="Add to comparison"');
+	});
+
+	it('shows cores for a CPU and a dash when a figure is unknown', () => {
+		const html = renderComponent(ProductRow, {
+			group: { ...row, category: 'cpu', vramGb: null, cores: 8, launchDate: null }
+		});
+		expect(html).toContain('Cores:');
+		expect(html).toContain('>8<');
+		expect(html).toContain('Released: </span>—');
+	});
+});
+
 describe('ProductRow', () => {
 	const base = {
 		productId: 7,
@@ -1363,5 +1544,23 @@ describe('ProductRow', () => {
 		expect(
 			checkboxState({ group: base, compareDisabled: true, onToggleCompare: () => {} }).disabled
 		).toBe(true);
+	});
+});
+
+describe('SegmentedControl (#5 item 5)', () => {
+	it('is a labelled group of buttons whose pressed state is exposed', () => {
+		const html = renderComponent(SegmentedControl, {
+			label: 'Sort',
+			options: [
+				{ value: 'abs', label: '$ change' },
+				{ value: 'pct', label: '% change' }
+			],
+			value: 'pct',
+			onChange: () => {}
+		});
+		expect(html).toContain('role="group"');
+		expect(html).toContain('aria-label="Sort"');
+		expect(html).toMatch(/aria-pressed="false"[^>]*>\s*\$ change/);
+		expect(html).toMatch(/aria-pressed="true"[^>]*>\s*% change/);
 	});
 });

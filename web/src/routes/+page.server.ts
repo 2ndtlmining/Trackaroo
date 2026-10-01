@@ -2,14 +2,14 @@ import {
 	getAvailableCounts,
 	getCategoryCounts,
 	getDealCandidates,
-	getMovers,
+	getProductMoves,
 	getRetailerFreshness,
 	type HeaderStats
 } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 import { memo } from '$lib/server/cache';
 import { belowAverage, toDeals, type Deal } from '$lib/deals';
-import { topMoversByProduct } from '$lib/movers';
+import { topProductMoves } from '$lib/movers';
 import { retailerHealth } from '$lib/health';
 import type { Category } from '$lib/types';
 
@@ -42,14 +42,12 @@ export async function load({
 	// Same source as /deals, so the two surfaces can never disagree about
 	// what counts as a deal or how deep it is.
 	const allDeals = belowAverage(toDeals(allCandidates));
-	const movers = memo(db, 'movers:7', () => getMovers(db, HOME_MOVER_DAYS));
+	const moves = memo(db, 'productMoves:7', () => getProductMoves(db, HOME_MOVER_DAYS));
 
 	const sections = SECTIONS.map(({ category, title }) => {
-		// One row per product: getMovers is per-listing, and a retailer carrying
-		// several SKUs of one card (PCCG has three MSI RTX 5070s) would otherwise
-		// fill all three slots with what looks like the same row repeated.
-		const drops = topMoversByProduct(movers, category, 'down', PER_COLUMN);
-		const rises = topMoversByProduct(movers, category, 'up', PER_COLUMN);
+		// Product-level: the cheapest in-stock price, not one SKU's (D7).
+		const drops = topProductMoves(moves, category, 'down', PER_COLUMN);
+		const rises = topProductMoves(moves, category, 'up', PER_COLUMN);
 
 		return {
 			category,

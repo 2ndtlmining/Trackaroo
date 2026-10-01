@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import FacetChips from '$lib/components/FacetChips.svelte';
 	import OfferRow from '$lib/components/OfferRow.svelte';
+	import PageHead from '$lib/components/PageHead.svelte';
 	import { dealToOffer, NEAR_ALL_TIME_LOW_PCT } from '$lib/deals';
 	import { DEAL_MIN_AUD, DEAL_MIN_PCT, EARNED_LOW_RISE_PCT } from '$lib/constants';
 	import { formatShortDate } from '$lib/formats';
@@ -24,7 +25,10 @@
 	const lows = $derived(data.atAllTimeLow.length);
 </script>
 
-<svelte:head><title>Deals · Trackaroo</title></svelte:head>
+<PageHead
+	title="Deals"
+	description="AU CPUs and GPUs priced below their recent average, or at their lowest since tracking began."
+/>
 
 <div>
 	<h1 class="text-xl font-semibold tracking-tight text-text">Deals</h1>

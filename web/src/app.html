@@ -3,9 +3,11 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="description" content="Trackaroo — self-hosted AU CPU & GPU price tracker" />
+		<meta name="theme-color" content="#0f1117" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<title>Trackaroo — AU CPU/GPU Price Tracker</title>
+		<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="manifest" href="/manifest.webmanifest" />
 		%sveltekit.head%
 		<script>
 			try {
@@ -14,6 +16,11 @@
 			} catch {
 				document.documentElement.dataset.theme = 'dark';
 			}
+			// Browser chrome follows the theme before first paint (#25).
+			// Keep these two colours in step with THEME_COLORS in src/lib/theme.ts.
+			document
+				.querySelector('meta[name="theme-color"]')
+				?.setAttribute('content', document.documentElement.dataset.theme === 'light' ? '#f6f7f9' : '#0f1117');
 		</script>
 	</head>
 	<body data-sveltekit-preload-data="hover">

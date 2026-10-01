@@ -2,14 +2,13 @@
 	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
 	import { formatAud, formatPct, titleCase } from '$lib/formats';
 	import { deltaPresentation } from '$lib/offers';
-	import type { Mover } from '$lib/server/repos';
+	import type { MoverRowData } from '$lib/movers';
 
-	let { mover }: { mover: Mover } = $props();
+	let { mover }: { mover: MoverRowData } = $props();
 
 	const retailerLabel = $derived(lookupRetailerLabel(mover.retailer));
-	// Which SKU moved. Several listings of one card share a model name, so
-	// without this the row can't be told apart from its siblings on /movers.
-	// Same first-clause treatment the /movers Variant column uses.
+	// Which SKU: on the homepage, the listing where today's cheapest price is
+	// (D7). Same first-clause treatment the /movers Variant column uses.
 	const variantLabel = $derived(titleCase(mover.variantName).split(',')[0].trim());
 	const subtitle = $derived(variantLabel ? `${retailerLabel} · ${variantLabel}` : retailerLabel);
 	// Same three-way treatment as the offer row: a rise is red, a drop green,

@@ -301,6 +301,8 @@ export interface TrackedProduct {
 	model: string;
 	productVariant: string | null;
 	generationTier: GenerationTier | null;
+	vramGb: number | null;
+	cores: number | null;
 }
 
 // Every tracked product in a category, whether or not a retailer has ever
@@ -310,7 +312,7 @@ export interface TrackedProduct {
 export function getTrackedProducts(db: DB, category: Category): TrackedProduct[] {
 	const rows = db
 		.prepare(
-			`SELECT id, category, brand, model, variant, generation_tier
+			`SELECT id, category, brand, model, variant, generation_tier, vram_gb, cores
 			 FROM products
 			 WHERE tracked = 1 AND category = ?
 			 ORDER BY model COLLATE NOCASE ASC`
@@ -322,6 +324,8 @@ export function getTrackedProducts(db: DB, category: Category): TrackedProduct[]
 		model: string;
 		variant: string | null;
 		generation_tier: GenerationTier | null;
+		vram_gb: number | null;
+		cores: number | null;
 	}>;
 	return rows.map((r) => ({
 		productId: r.id,
@@ -329,8 +333,25 @@ export function getTrackedProducts(db: DB, category: Category): TrackedProduct[]
 		brand: r.brand,
 		model: r.model,
 		productVariant: r.variant,
-		generationTier: r.generation_tier
+		generationTier: r.generation_tier,
+		vramGb: r.vram_gb,
+		cores: r.cores
 	}));
+}
+
+// Release month per product for the catalog's Released column (#23). A
+// separate, memoised, per-category read of specs -- specs are still never
+// JOINed into a list query (decision log 2026-09-30).
+export function getLaunchDates(db: DB, category: Category): Map<number, string> {
+	const rows = db
+		.prepare(
+			`SELECT product_id AS productId, MIN(launch_date) AS launchDate
+			 FROM specs
+			 WHERE category = ? AND launch_date IS NOT NULL
+			 GROUP BY product_id`
+		)
+		.all(category) as Array<{ productId: number; launchDate: string }>;
+	return new Map(rows.map((r) => [r.productId, r.launchDate]));
 }
 
 export function getBrands(db: DB): string[] {
@@ -346,6 +367,8 @@ export interface ProductIndexEntry {
 	brand: string;
 	model: string;
 	productVariant: string | null;
+	// For the display-name rule (displayName.ts).
+	vramGb: number | null;
 	// Total price snapshots across the product's listings — lets the palette
 	// show which products actually have price history yet.
 	snapshotCount: number;
@@ -354,7 +377,7 @@ export interface ProductIndexEntry {
 export function getProductIndex(db: DB): ProductIndexEntry[] {
 	return db
 		.prepare(
-			`SELECT p.id, p.category, p.brand, p.model, p.variant AS productVariant,
+			`SELECT p.id, p.category, p.brand, p.model, p.variant AS productVariant, p.vram_gb AS vramGb,
 			        COUNT(s.id) AS snapshotCount
 			 FROM products p
 			 LEFT JOIN retailer_listings l ON l.product_id = p.id
@@ -1184,6 +1207,103 @@ ${LATEST_CTE}
 			const bv = b.pctChange !== null ? Math.abs(b.pctChange) : -1;
 			return bv - av;
 		});
+}
+
+export interface ProductMove {
+	productId: number;
+	category: Category;
+	brand: string;
+	model: string;
+	oldPrice: number;
+	newPrice: number;
+	change: number;
+	pctChange: number;
+	fromDate: string;
+	toDate: string;
+	// Today's cheapest in-stock listing: where the new price actually is.
+	retailer: Retailer;
+	variantName: string | null;
+}
+
+// Product-level moves for the homepage (D7): the cheapest in-stock price per
+// day, on the first day inside the window vs the latest snapshot day. The
+// per-listing movers let one premium SKU rising headline "Biggest rises" while
+// the price a buyer actually pays -- the product's cheapest -- was falling.
+// The window boundary matches getMovers (`>= latest - N days`). A product
+// needs MIN_HISTORY_POINTS days in that series, as the per-listing rows did
+// (their notEnoughHistory), so a 2-day product is never a "biggest drop".
+export function getProductMoves(db: DB, windowDays: number): ProductMove[] {
+	const rows = db
+		.prepare(
+			`WITH maxd AS (SELECT MAX(snapshot_date) AS d FROM price_snapshots),
+			day_min AS (
+				SELECT l.product_id, s.snapshot_date AS date, MIN(s.price_aud) AS price
+				FROM retailer_listings l
+				JOIN price_snapshots s ON s.retailer_listing_id = l.id
+				WHERE s.stock_status = 'in_stock'
+				  AND ${notBundle('l')}
+				  AND s.snapshot_date >= date((SELECT d FROM maxd), @window)
+				GROUP BY l.product_id, s.snapshot_date
+			),
+			ends AS (
+				SELECT product_id, MIN(date) AS first, MAX(date) AS last
+				FROM day_min
+				GROUP BY product_id
+				-- Thin history is never summarised (Review Focus 1): the series
+				-- must span MIN_HISTORY_POINTS distinct in-stock days in the window.
+				HAVING COUNT(*) >= @minPoints
+			),
+			moves AS (
+				SELECT p.id AS product_id, p.category, p.brand, p.model,
+				       e.first AS from_date, e.last AS to_date,
+				       a.price AS old_price, b.price AS new_price,
+				       (SELECT l2.id
+				          FROM retailer_listings l2
+				          JOIN price_snapshots s2 ON s2.retailer_listing_id = l2.id
+				         WHERE l2.product_id = p.id
+				           AND s2.snapshot_date = e.last
+				           AND s2.stock_status = 'in_stock'
+				           AND ${notBundle('l2')}
+				         ORDER BY s2.price_aud, l2.id
+				         LIMIT 1) AS listing_id
+				FROM ends e
+				JOIN products p ON p.id = e.product_id AND p.tracked = 1
+				JOIN day_min a ON a.product_id = e.product_id AND a.date = e.first
+				JOIN day_min b ON b.product_id = e.product_id AND b.date = e.last
+				WHERE e.last = (SELECT d FROM maxd) AND e.first < e.last
+			)
+			SELECT m.*, l.retailer, l.variant_name
+			FROM moves m
+			JOIN retailer_listings l ON l.id = m.listing_id`
+		)
+		.all({ window: `-${windowDays} days`, minPoints: MIN_HISTORY_POINTS }) as Array<{
+		product_id: number;
+		category: Category;
+		brand: string;
+		model: string;
+		from_date: string;
+		to_date: string;
+		old_price: number;
+		new_price: number;
+		retailer: Retailer;
+		variant_name: string | null;
+	}>;
+
+	return rows.map((r) => ({
+		productId: r.product_id,
+		category: r.category,
+		brand: r.brand,
+		model: r.model,
+		oldPrice: r.old_price,
+		newPrice: r.new_price,
+		change: Math.round((r.new_price - r.old_price) * 100) / 100,
+		pctChange:
+			r.old_price > 0 ? Math.round(((r.new_price - r.old_price) / r.old_price) * 1000) / 10 : 0,
+		fromDate: r.from_date,
+		toDate: r.to_date,
+		retailer: r.retailer,
+		variantName: r.variant_name
+	}));
 }
 
 export interface ComparePrice {

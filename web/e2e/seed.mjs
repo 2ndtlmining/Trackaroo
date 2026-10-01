@@ -446,6 +446,20 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		);
 	}
 
+	// Catalog columns and the never-listed toggle (#23), and a memory-size
+	// sibling for the VRAM display label (Task 12). The watchlist fills vram_gb
+	// and cores in real DBs; this seed builds products from snapshot JSON,
+	// which does not carry them.
+	db.prepare(
+		"UPDATE products SET vram_gb = 16 WHERE category = 'gpu' AND model IN ('GeForce RTX 5060 Ti', 'E2E Deal Demo GPU')"
+	).run();
+	db.prepare("UPDATE products SET vram_gb = 8 WHERE category = 'gpu' AND model = 'GeForce RTX 5060'").run();
+	db.prepare("UPDATE products SET cores = 10 WHERE category = 'cpu' AND model = 'Core Ultra 5 245'").run();
+	db.prepare(
+		`INSERT INTO products (category, brand, model, generation_tier, tracked, vram_gb)
+		 VALUES ('gpu', 'NVIDIA', 'E2E Deal Demo GPU 8GB', 'current', 1, 8)`
+	).run();
+
 	// The pipeline mirrors config.ACTIVE_RETAILERS into this table (R1). MWave is
 	// declared active here with no rows on purpose: the health strip must list
 	// it as "missing" in both the synthetic and the real-data seed.

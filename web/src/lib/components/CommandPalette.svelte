@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { searchProducts } from '$lib/productSearch';
+	import { quickComparePair, searchProducts } from '$lib/productSearch';
 	import { goto } from '$app/navigation';
 	import Badge from './Badge.svelte';
+	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import type { ProductIndexEntry } from '$lib/server/repos';
 
 	let {
@@ -78,11 +79,14 @@
 	// Shared with the /products index so the two search surfaces cannot rank
 	// the same catalogue differently. Also gains ranking, which the inline
 	// filter this replaced did not have.
-	const filtered = $derived(searchProducts(items, query));
+	// The base card carries its VRAM where a memory sibling exists (display only).
+	const names = $derived(buildDisplayNames(items));
+	const namedItems = $derived(items.map((i) => ({ ...i, model: displayName(names, i.id, i.model) })));
+	const filtered = $derived(searchProducts(namedItems, query));
 
 	const visible = $derived(filtered.slice(0, 8));
 
-	const quickCompare = $derived(visible.length === 2 ? visible : null);
+	const quickCompare = $derived(quickComparePair(visible));
 
 	const results = $derived.by(() => {
 		const list: Array<
@@ -206,7 +210,7 @@
 								{:else}
 									<span
 										class="flex-1 truncate {row.item.snapshotCount === 0
-											? 'text-text-muted/60'
+											? 'text-text-muted'
 											: 'text-text'}"
 									>
 										{row.item.model}

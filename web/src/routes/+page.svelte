@@ -1,14 +1,14 @@
 <script lang="ts">
 	import CategorySection from '$lib/components/CategorySection.svelte';
 	import HealthStrip from '$lib/components/HealthStrip.svelte';
+	import PageHead from '$lib/components/PageHead.svelte';
 
 	let { data } = $props();
 </script>
 
-<svelte:head>
-	<title>Trackaroo — Dashboard</title>
-	<meta name="description" content="Latest tracked prices for AU CPUs and GPUs." />
-</svelte:head>
+<PageHead
+	description="Today's cheapest AU prices, deals and biggest price moves for tracked CPUs and GPUs."
+/>
 
 <div>
 	<h1 class="mb-4 text-xl font-semibold text-text">Dashboard</h1>

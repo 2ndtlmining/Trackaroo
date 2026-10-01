@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { searchProducts } from '../src/lib/productSearch';
+import { quickComparePair, searchProducts } from '../src/lib/productSearch';
 
 const items = [
 	{ model: 'GeForce RTX 5070', brand: 'NVIDIA', productVariant: null },
@@ -64,5 +64,17 @@ describe('searchProducts', () => {
 		const b = searchProducts([...items].reverse(), 'geforce').map((i) => i.model);
 		expect(a).toEqual(b);
 		expect(a).toEqual(['GeForce RTX 4070', 'GeForce RTX 5070', 'GeForce RTX 5070 Ti']);
+	});
+});
+
+describe('quickComparePair (#26)', () => {
+	it('offers a pair only when both results share a category', () => {
+		const gpu = { id: 1, category: 'gpu' };
+		const gpu2 = { id: 2, category: 'gpu' };
+		const cpu = { id: 3, category: 'cpu' };
+		expect(quickComparePair([gpu, gpu2])).toEqual([gpu, gpu2]);
+		expect(quickComparePair([gpu, cpu])).toBeNull();
+		expect(quickComparePair([gpu])).toBeNull();
+		expect(quickComparePair([gpu, gpu2, cpu])).toBeNull();
 	});
 });

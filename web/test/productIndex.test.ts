@@ -50,3 +50,18 @@ describe('groupForIndex', () => {
 		expect(groupForIndex([])).toEqual([]);
 	});
 });
+
+describe('groupForIndex never-listed ordering (#23)', () => {
+	it('sinks never-listed products to the bottom of their group', () => {
+		const rows = [
+			{ ...(p('NVIDIA', 'GeForce RTX 5060', 'current') as object), neverListed: true },
+			{ ...(p('NVIDIA', 'GeForce RTX 5090', 'current') as object), neverListed: false },
+			{ ...(p('NVIDIA', 'GeForce RTX 5070', 'current') as object), neverListed: false }
+		] as never[];
+		expect(groupForIndex(rows)[0].items.map((i: { model: string }) => i.model)).toEqual([
+			'GeForce RTX 5070',
+			'GeForce RTX 5090',
+			'GeForce RTX 5060'
+		]);
+	});
+});

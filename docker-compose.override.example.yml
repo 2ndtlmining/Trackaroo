@@ -1,0 +1,11 @@
+# Copy to docker-compose.override.yml (gitignored) on the prod host and edit
+# the left-hand path. Compose merges it into docker-compose.yml automatically.
+#
+# The off-host backup mirror (#10): mount the NAS share into the container and
+# set TRACKAROO_BACKUP_MIRROR_DIR=/mnt/trackaroo-mirror in .env.
+# The host path must already be mounted -- Trackaroo never creates the mirror
+# directory, so an unmounted share cannot silently become a local copy.
+services:
+  trackaroo:
+    volumes:
+      - /mnt/nas/trackaroo:/mnt/trackaroo-mirror

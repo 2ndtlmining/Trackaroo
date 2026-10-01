@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-09-29
+**Last updated:** 2026-10-01
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,115 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-10-01 — Phase 6 Task 6: rehearsal on a copy of prod's DB passed.
+  Resume here: next is Task 5 (push + three stacked PRs), then Task 7.**
+  Host facts (owner-run, 1-Oct): `~/docker/Trackaroo` is a clean git checkout
+  of `main` at `e9bd419` (30-Aug, an ancestor of our `main`) → the migration
+  runbook's **Path A**. Container mounts are exactly `db → /app/db` and
+  `data → /app/data` (no logs mount); restart `unless-stopped`. `.env` has no
+  `$` in values and no quoted values; its `ALGOLIA_*` lines equal the code's
+  built-in key — comment them out during the move. Compose v5.5.1, 153 GB free.
+  Rehearsal on a `sqlite3 .backup` copy (3.1 MB; 100 products, 485 listings,
+  21,058 snapshots, 53 daily snapshot dates 9-Aug..30-Sep, no gaps):
+  `migrate.py` (retired RX 9070 XTX, added the three new tables) → `seed.py`
+  (+6 products) → `repair_listings.py` dry run: 65 moves, all correct (46
+  memory-variant splits, 8 wrong-model fixes, 11 non-matches such as 5900XT,
+  5600GT, 7700X3D, board bundles and the 5090 AI box detached to hidden
+  "Unmatched" placeholders) → `--apply` → second dry run 0 moves.
+  `restore_drill.py --backup <untouched> --db <migrated>` exit 0; per-day
+  snapshot counts identical; every snapshot row and listing id/sku identical;
+  0 orphans; integrity + FK checks clean; products 100 → 108 (6 seeded + 2
+  untracked placeholders). Served on `node web/server.js`: every main page 200,
+  placeholders appear on no list page. Expected after deploy: the home page
+  shows Umart as "missing" until the first Umart scrape lands.
+  Owner to-do on the host: `docker exec trackaroo rm /app/db/rehearsal-copy.db`
+  (root-owned copy left in `db/`).
+  Task 5 gate from a clean tree at `07e90ea`: pytest **1073 passed**, vitest
+  **791 passed** (37 files), Playwright **115 passed**, svelte-check **0 errors,
+  0 warnings** (466 files); image built offline with `GIT_SHA`, booted
+  `healthy`, `/healthz` reported `"version":"07e90ea"`. All three branches
+  are PUSHED (1-Oct); the PRs are NOT opened yet (the agent's `gh pr create`
+  was blocked by a permission rule). **Resume 2-Oct:** owner runs, in order,
+  `gh pr create --base main --head feat/2026-09-29-robustness --title "Robustness (28-Sep roadmap phase 3)" --body-file docs/pr-bodies/2026-10-01-phase3-robustness.md`,
+  then `--base feat/2026-09-29-robustness --head feat/2026-09-30-ux --title "UI/UX and better information (phase 4)" --body-file docs/pr-bodies/2026-10-01-phase4-ux.md`,
+  then `--base feat/2026-09-30-ux --head feat/2026-09-30-redeploy --title "Redeploy with docker compose (phase 6)" --body-file docs/pr-bodies/2026-10-01-phase6-redeploy.md`;
+  check the first CI run (`gh run list`); merge in order; then Task 7
+  (`docs/runbooks/dockerhost-compose-migration.md`, Path A).
+
+- **2026-09-30 (end of day) — Phase 6 "redeploy with docker compose": code
+  done, NOT deployed.** Branch `feat/2026-09-30-redeploy`
+  (stacked on `feat/2026-09-30-ux` → `feat/2026-09-29-robustness` → `main`;
+  PR #41, phases 1–2, is already merged). None of the three branches is
+  pushed. Plan: `docs/superpowers/plans/2026-09-30-redeploy.md`; Tasks 1–4
+  are done (footer build stamp, `docker-compose.yml`, `deploy/redeploy.sh`,
+  docs + migration runbook in DEPLOYMENT.md), plus a fresh-reviewer pass whose
+  six findings are fixed (`749586b`). The owner chose compose over the old
+  "no compose" rule (30-Sep).
+  **Where prod is:** NOT this PC. The live app runs on the owner's separate
+  Ubuntu server, `giel@dockerhost:~/docker/Trackaroo`, as a plain
+  `docker run` container named `trackaroo` (image `trackaroo`, created ~2 Sep,
+  still a pre-31-Aug build: `data/` has pccg + scorptec JSON from 9 Aug to
+  30 Sep and no umart). `watchtower`, `portainer` and `ergo-monitor` run on
+  the same host. The DB in this working copy is not prod data. Every host step
+  is run by the owner on that server (or over ssh if they grant it).
+  **Owner priority:** keep all existing prod data; no restart from scratch.
+  **Next, in order:** (1) owner runs on dockerhost: `git status -sb`,
+  `git log --oneline -1`, `ls` in `~/docker/Trackaroo`, the
+  `docker inspect trackaroo` mounts, and checks `.env` for `$`; (2) owner makes
+  a consistent DB copy (`docker exec trackaroo python -c "import sqlite3; ...
+  s.backup(d)"` into `db/rehearsal-copy.db`) and scps it to this PC; (3) plan
+  Task 6: rehearse migrate/seed/repair on a scratch copy here and prove
+  per-day snapshot counts are unchanged (`restore_drill.py --backup`);
+  (4) Task 5: push, three stacked PRs, first CI run; (5) Task 7: the host
+  migration, following the step-by-step guide for that server:
+  `docs/runbooks/dockerhost-compose-migration.md`.
+  Gate: pytest **1073 passed**, vitest **791 passed**, Playwright **115
+  passed**, svelte-check **0 errors, 0 warnings**.
+
+- **2026-09-30** — **Phase 4 "UI/UX and better information" (#25, #24, #31 core,
+  #27, #26, #23, #5 items 4–5; U1–U6, D7, three Phase 1–2 follow-ups) on
+  `feat/2026-09-30-ux`** (stacked on `feat/2026-09-29-robustness`; not pushed,
+  not deployed). The product page answers "is now a good time to buy?":
+  lowest price since tracking began and when, today's gap to it, a 30/90-day
+  low/median/high strip and cheapest-per-retailer "where to buy", all from data
+  the page already loaded. The chart gained a legend, low and today markers, a
+  spoken summary, a data table and a text-only tooltip. One `<title>` per page,
+  OG tags, PNG icons + manifest, theme-aware `color-scheme`/`theme-color`.
+  Status colours are separate from price up/down, and contrast is measured from
+  `app.css` in CI. Search, compare, the never-listed toggle and movers
+  sort/direction/grouping live in the URL; product pages have breadcrumbs and
+  "Compare with…"; /compare has a picker. The catalog hides never-listed products
+  by default and shows VRAM/cores, release month and listing counts. /movers is
+  one responsive table grouped by product (warm TTFB **5 ms, was 28 ms**). The
+  homepage movers follow the product's cheapest price (D7). `/gpus` and `/cpus`
+  redirect; MSRPs read "US$". Dates use a fixed month table. "… 8GB"/"… 6GB"
+  products match their specs; the base card shows its VRAM beside a memory
+  sibling (display only). `mobile.spec.ts` now screenshots every main page at
+  390 px in both themes (`web/test-results/mobile/`, gitignored) and was
+  reviewed by eye: no fixes needed.
+  **Before/after** — `web/scripts/measure.sh` against `npm run build` +
+  `node server.js`, both on the same scratch copy of `db/trackaroo.db`;
+  "before" is the phase start (`d9cd95e`) built in a separate worktree
+  (wire / raw bytes / warm TTFB):
+
+  | Route | Before (`d9cd95e`) | After |
+  |---|---|---|
+  | `/` | 7,634 / 42,909 / 3 ms | 7,815 / 45,104 / 3 ms |
+  | `/deals` | 7,890 / 59,846 / 4 ms | 8,163 / 61,805 / 3 ms |
+  | `/movers?window=7d` | 20,267 / 424,391 / 28 ms | 11,911 / 125,690 / 5 ms |
+  | `/products?category=gpu` | 7,294 / 109,557 / 3 ms | 8,228 / 90,577 / 3 ms |
+  | `/product/1` | 6,519 / 40,199 / 3 ms | 8,128 / 53,510 / 4 ms |
+
+  `/product/1` grows as expected (buy panel + collapsed data table); cold runs
+  match warm within a millisecond. Gate from a clean tree: pytest **1042
+  passed**, vitest **787 passed** (36 files), Playwright **114 passed**
+  (Chromium), svelte-check **0 errors, 0 warnings** (464 files). **Left for
+  Phase 5**: #31 percentile/sale-event/successor signals, #23 sortable columns
+  and facet filters, #26 per-row "best value" highlighting on /compare, #27's
+  30-day-average marker and gap connector, #32 AUD MSRP. **Owner to check**:
+  `python sync_specs.py --dry-run --category gpu` for the GRE products (Task 11
+  Step 6).
 
 - **2026-09-29** — **Phase 3 "robustness" (#12, #7, #8, #11a, #14, #13, #9,
   #10, R1–R4; #15 in part) on `feat/2026-09-29-robustness`.** One exception

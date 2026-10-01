@@ -109,7 +109,7 @@ Three core tables, designed to separate canonical product identity from retailer
 - CPU-specific (nullable on GPU rows): `thread_count`, `base_clock_mhz`, `boost_clock_mhz`, `socket`, `cache_l3_mb`
 - `core_count` is deliberately shared — shading units for GPU rows, physical cores for CPU rows (one column, documented, rather than two over-loaded ones)
 - `raw_json` — the full original source record verbatim, so new fields can be read later without a schema migration
-- Populated by the weekly `sync_specs.py` (a separate, best-effort job — never part of the daily price pipeline). Fetched only on the product detail page; **never joined into list/index queries**. Rows are never deleted; a conflicting re-match is flagged in the sync report, never silently overwritten.
+- Populated by the weekly `sync_specs.py` (a separate, best-effort job — never part of the daily price pipeline). Fetched only on the product detail page; **never joined into list/index queries** (the /products Released column reads `launch_date` through its own memoised per-category query — decision log 2026-09-30). Rows are never deleted; a conflicting re-match is flagged in the sync report, never silently overwritten.
 
 This structure is what makes "biggest movers" and "cheapest across retailers" clean SQL queries (window functions over `price_snapshots` joined through `retailer_listings` to `products`) rather than something hand-rolled in application code.
 
@@ -550,5 +550,10 @@ Two things were true going into the decision: Mwave sits behind AWS WAF with a *
 Mwave's equivalent coverage value was never measured — until now. Checked all 39 tracked-but-unlisted products (22 GPU, 17 CPU, per `check_stale_listings`-adjacent DB query) against Mwave's complete GPU catalogue (all 3 pages, 276 of 278 products) and a CPU search (100 products), using the repo's own `scraper.scorptec.match_product`. **Zero of the 22 unlisted GPUs appear anywhere in Mwave's GPU catalogue** — it is dominated by current-gen stock (RTX 50-series, RX 9000-series) exactly like the three retailers already tracked, and the RX 6000/7000-series and RTX 30/40-series cards that make up the gap are equally end-of-life there. On CPUs, only 2 of 17 gaps are genuine current listings (`i5-14600KF`, `i9-14900F`); a third apparent hit (`Ryzen 9 7950X`) is refurbished stock only, and three more were matcher false positives (Mwave stocks the KF/X3D/X variant, not the base part tracked).
 
 **Decision: park Mwave.** 2 real new CPU listings and 0 new GPU listings out of 39 gaps does not justify building a scraper with no retry margin against a count-based WAF. No scraper code was written. Revisit only if a specific future watchlist addition is confirmed to live at Mwave and nowhere else.
+
+#### /products becomes a catalog table; specs read once per category (2026-09-30)
+The GPU/CPU pages were search-first rows showing only price, name, delta and retailer, and on the live site most rows were end-of-life "Not listed" parts (#23). Browsing now hides products with no active listing by default. A "Show N not currently sold" toggle, kept in `?unlisted=1`, brings them back at the bottom of each group. **Search still covers the whole watchlist**, so the 25-Aug rule that a search for a tracked model never answers "no match" stands.
+
+The new columns are VRAM (GPU) or cores (CPU), Released, and listings ("in stock of listed"). VRAM and cores come from `products`, which the watchlist fills. Released comes from `specs.launch_date`. That is an explicit, narrow exception to "specs are never joined into list queries": `getLaunchDates` is a **separate** per-category query over `specs` alone, memoised on `data_version` with the rest of the page, never a JOIN in the listing SQL. Column sorting and facet filters (#23 items 4–5) are deferred.
 
 ---
