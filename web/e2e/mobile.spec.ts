@@ -137,3 +137,14 @@ test.describe('very narrow viewport', () => {
 		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
 	});
 });
+
+test.describe('discover mobile', () => {
+	test.use({ viewport: PHONE });
+
+	test('/discover fits a 390px screen without horizontal scroll', async ({ page }) => {
+		await goto(page, '/discover');
+		const { viewport, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth, '/discover overflows its viewport').toBeLessThanOrEqual(viewport + 1);
+		await expect(page.getByTestId('discover-untracked').getByRole('button', { name: 'Track' }).first()).toBeVisible();
+	});
+});

@@ -1,5 +1,6 @@
 import { getHeaderStats, getProductIndex } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
+import { getDiscoverPendingCount } from '$lib/server/discover';
 import { memo } from '$lib/server/cache';
 import { buildVersion } from '$lib/server/version';
 
@@ -12,6 +13,8 @@ export function load() {
 		stats: memo(db, 'headerStats', () => getHeaderStats(db)),
 		productIndex: memo(db, 'productIndex', () => getProductIndex(db)),
 		// A constant for the process: not memoised (#3).
-		version: buildVersion()
+		version: buildVersion(),
+		// Not memoised: it changes the moment a Track/Ignore is clicked.
+		discoverPending: getDiscoverPendingCount(db)
 	};
 }

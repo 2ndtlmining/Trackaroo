@@ -116,6 +116,8 @@ test.describe('navigation & layout', () => {
 		for (const label of ['Deals', 'GPUs', 'CPUs', 'Movers', 'Compare']) {
 			await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
 		}
+		// Discover carries a pending-count badge in its accessible name.
+		await expect(nav.getByRole('link', { name: /^Discover/ })).toBeVisible();
 	});
 
 	test('header links navigate between pages', async ({ page }) => {
@@ -1257,5 +1259,44 @@ test.describe('is now a good time to buy? (#31)', () => {
 		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
 		await expect(panel.getByText('Gathering history (2 days)').first()).toBeVisible();
 		await expect(panel).not.toContainText('NaN');
+	});
+});
+
+test.describe.serial('/discover (#16)', () => {
+	test('lists untracked, requested and conflicts; nav shows a badge', async ({ page }) => {
+		await goto(page, '/discover');
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Discover');
+		const untracked = page.getByTestId('discover-untracked');
+		await expect(untracked.getByText('GeForce RTX 5050 8GB')).toBeVisible();
+		await expect(untracked.getByText('Ryzen 5 5600GT', { exact: true })).toBeVisible();
+		await expect(untracked.getByText('NEW', { exact: true })).toHaveCount(1);
+		await expect(page.getByTestId('discover-requested').getByText('Core Ultra 7 270K Plus', { exact: true })).toBeVisible();
+		await expect(page.getByTestId('discover-conflicts').getByText('Sapphire Pulse RX 9070 GRE 12GB')).toBeVisible();
+		await expect(page.getByTestId('nav-discover-badge')).toHaveText('2');
+	});
+
+	test('Ignore hides a part; Un-ignore brings it back', async ({ page }) => {
+		await goto(page, '/discover');
+		const row = page.getByTestId('discover-untracked').locator('li', { hasText: 'Ryzen 5 5600GT' });
+		await row.getByRole('button', { name: 'Ignore' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByTestId('discover-untracked').getByText('Ryzen 5 5600GT', { exact: true })).toHaveCount(0);
+		await page.getByText(/Ignored \(\d+\)/).click();
+		const ignored = page.getByTestId('discover-ignored').locator('li', { hasText: 'Ryzen 5 5600GT' });
+		await ignored.getByRole('button', { name: 'Un-ignore' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByTestId('discover-untracked').getByText('Ryzen 5 5600GT', { exact: true })).toBeVisible();
+	});
+
+	test('Track moves a part to Requested with its watchlist row; Untrack reverts', async ({ page }) => {
+		await goto(page, '/discover');
+		const row = page.getByTestId('discover-untracked').locator('li', { hasText: 'GeForce RTX 5050 8GB' });
+		await row.getByRole('button', { name: 'Track' }).click();
+		await page.waitForLoadState('networkidle');
+		const requested = page.getByTestId('discover-requested');
+		await expect(requested.getByText('gpu,NVIDIA,GeForce RTX 5050,8GB,current')).toBeVisible();
+		await requested.locator('li', { hasText: 'GeForce RTX 5050 8GB' }).getByRole('button', { name: 'Undo' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByTestId('discover-untracked').getByText('GeForce RTX 5050 8GB')).toBeVisible();
 	});
 });
