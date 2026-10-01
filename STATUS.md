@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-02
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,33 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-10-02 — Phase 6 DONE: prod runs docker compose, build `905d28c`,
+  verified. Resume here.** PRs #42 (robustness), #43 (UX), #44 (redeploy)
+  merged; #43/#44 were stacked and merged into their base branches, so #45
+  (`feat/2026-09-30-ux` → `main`) landed them. The first GitHub CI run failed on
+  two `TestScorptecDataQuality` tests that need the gitignored `data/`; they
+  now skip when it is empty (`5204243`). CI is green on `main`.
+  Host migration (runbook Path A) on `giel@dockerhost`: `.env.pre-compose`
+  saved, `ALGOLIA_*` commented out, `db/pre-compose.db` + a tarball
+  (`~/trackaroo-pre-compose-2026-10-02.tgz`, also copied to the owner's PC),
+  old container kept as `trackaroo-old` (Exited) and image
+  `trackaroo:pre-compose` until ~9-Oct. Ran `FORCE=1 SKIP_BACKUP=1
+  deploy/redeploy.sh` at 05:15 AEST, inside the window but after confirming
+  that morning's run had finished (04:37). Boot catch-up scraped **Umart for
+  the first time** (ok, 161 matched). Repair: **65 listings re-pointed**
+  (identical to the 1-Oct rehearsal); second dry run 0. `restore_drill.py
+  --backup /app/db/pre-compose.db` passed (21,944 snapshots intact).
+  Live checks from the PC: footer and `/healthz` show `905d28c`; Umart in the
+  health strip; separate RTX 5060 Ti 8GB (#104) / 16GB (#73); RTX 5090 page
+  has only 5090 cards; /deals below-average items all ≥2.6% and ≥$28.
+  Issues closed after live verification: #1 #3 #4 #5 #6 #7 #8 #12 #13 #14 #24
+  #25 #28. Status comments (done / remaining) on #2 #9 #10 #11 #15 #21 #23
+  #26 #27 #31. **Next:** switch on `TRACKAROO_HEARTBEAT_URL` (healthchecks.io)
+  and `TRACKAROO_BACKUP_MIRROR_DIR` (if a NAS is mounted) with one
+  `deploy/redeploy.sh` after 10:00, then close #9/#10; on 3-Oct check
+  `/healthz` shows `lastRunStatus: ok` for all three retailers; then Phase 5,
+  starting with #16 (discovery report, together with #21).
 
 - **2026-10-01 — Phase 6 Task 6: rehearsal on a copy of prod's DB passed.
   Resume here: next is Task 5 (push + three stacked PRs), then Task 7.**
