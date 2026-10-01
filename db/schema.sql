@@ -210,3 +210,49 @@ CREATE TABLE run_markers (
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     PRIMARY KEY (name, run_date)
 );
+
+-- ─────────────────────────────────────────────────────────────
+-- Discovery (#16): parts retailers sell that the watchlist does not track.
+-- Written by discover.py (best-effort, after ingest); decisions written by
+-- the /discover page. A run never overwrites status/notified_at/decided_at.
+-- Keep in step with migrate.DISCOVERY_TABLES_SQL.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE discovered_parts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    category        TEXT    NOT NULL CHECK (category IN ('cpu', 'gpu')),
+    part_key        TEXT    NOT NULL,        -- chip key, + '|<vram>' for GPUs ('rtx 5050|8')
+    display_name    TEXT    NOT NULL,        -- 'GeForce RTX 5050 8GB'
+    status          TEXT    NOT NULL DEFAULT 'untracked'
+                    CHECK (status IN ('untracked', 'ignored', 'requested', 'tracked')),
+    first_seen      TEXT    NOT NULL,        -- YYYY-MM-DD
+    last_seen       TEXT    NOT NULL,        -- YYYY-MM-DD
+    listing_count   INTEGER NOT NULL DEFAULT 0,
+    retailers       TEXT    NOT NULL DEFAULT '',   -- comma list, e.g. 'pccg,scorptec'
+    min_price       REAL,
+    min_price_url   TEXT,
+    sample_titles   TEXT    NOT NULL DEFAULT '[]', -- JSON array, at most 5
+    suggested_row   TEXT    NOT NULL,        -- a db/watchlist.csv line
+    notified_at     TEXT,                    -- set once Discord accepted it
+    decided_at      TEXT,                    -- last Track/Ignore click
+    UNIQUE (category, part_key)
+);
+
+CREATE TABLE discovery_conflicts (
+    listing_id        INTEGER PRIMARY KEY REFERENCES retailer_listings(id),
+    retailer          TEXT    NOT NULL,
+    filed_product_id  INTEGER NOT NULL REFERENCES products(id),
+    title_key         TEXT,                  -- chip key the title names, NULL if none
+    reason            TEXT    NOT NULL,
+    title             TEXT    NOT NULL,
+    detected_on       TEXT    NOT NULL       -- YYYY-MM-DD
+);
+
+CREATE TABLE discovery_runs (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_date              TEXT    NOT NULL,  -- YYYY-MM-DD
+    finished_at           TEXT    NOT NULL,  -- local 'YYYY-MM-DDTHH:MM:SS'
+    catalogue_files       INTEGER NOT NULL,
+    missing               TEXT    NOT NULL DEFAULT '[]',  -- JSON ['umart/gpu', ...]
+    unrecognised_count    INTEGER NOT NULL DEFAULT 0,
+    unrecognised_samples  TEXT    NOT NULL DEFAULT '[]'   -- JSON, at most 20 titles
+);

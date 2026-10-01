@@ -804,3 +804,39 @@ class TestMigrateRetryTables:
             assert check_table_exists(conn, "run_markers")
         finally:
             conn.close()
+
+
+class TestDiscoveryTables:
+    TABLES = ("discovered_parts", "discovery_conflicts", "discovery_runs")
+
+    def _tables(self, conn):
+        return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+    def test_creates_all_three_and_is_idempotent(self):
+        import sqlite3
+        import migrate
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_discovery_tables(conn)
+        migrate.migrate_add_discovery_tables(conn)
+        assert set(self.TABLES) <= self._tables(conn)
+
+    def test_dry_run_creates_nothing(self):
+        import sqlite3
+        import migrate
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_discovery_tables(conn, dry_run=True)
+        assert not (set(self.TABLES) & self._tables(conn))
+
+    def test_schema_sql_creates_them_too(self, db):
+        assert set(self.TABLES) <= self._tables(db)
+
+    def test_status_check_rejects_unknown_status(self):
+        import sqlite3
+        import migrate
+        import pytest
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_discovery_tables(conn)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO discovered_parts (category, part_key, display_name, status, first_seen, last_seen, suggested_row)"
+                " VALUES ('gpu', 'rtx 5050|8', 'x', 'maybe', '2026-10-02', '2026-10-02', 'r')")
