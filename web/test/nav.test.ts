@@ -37,3 +37,15 @@ describe('isActiveLink', () => {
 		expect(isActiveLink('/movers', '/movers', params('window=30d'))).toBe(true);
 	});
 });
+
+describe('isActiveLink on a product page (#26)', () => {
+	it('highlights the product’s category and nothing else', () => {
+		expect(isActiveLink('/products?category=gpu', '/product/12', params(''), 'gpu')).toBe(true);
+		expect(isActiveLink('/products?category=cpu', '/product/12', params(''), 'gpu')).toBe(false);
+		expect(isActiveLink('/deals', '/product/12', params(''), 'gpu')).toBe(false);
+	});
+
+	it('changes nothing elsewhere', () => {
+		expect(isActiveLink('/products?category=gpu', '/products', params('category=gpu'), null)).toBe(true);
+	});
+});

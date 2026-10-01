@@ -1,4 +1,5 @@
 import { formatAud, formatBandwidth, formatCacheMb, formatDate, formatProcess, formatUsd } from './formats';
+import { retailerLabel } from './filters';
 import type { CompareEntry } from './server/repos';
 import type { Retailer } from './types';
 
@@ -11,9 +12,13 @@ export function clock(mhz: number | null): string | null {
 	return mhz === null ? null : `${(mhz / 1000).toFixed(1)} GHz`;
 }
 
+// Fixed locale: a bare toLocaleString() follows the viewer's machine, so the
+// server ("4,608") and a German browser ("4.608") would disagree on hydration.
+const CORE_FORMAT = new Intl.NumberFormat('en-AU');
+
 const sharedSpecRows: CompareRow[] = [
 	{
-		label: 'Launch MSRP (USD)',
+		label: 'US launch MSRP',
 		value: (e) => (e.spec?.launch_msrp_usd ? formatUsd(e.spec.launch_msrp_usd) : null)
 	},
 	{
@@ -83,7 +88,7 @@ const gpuSpecRows: CompareRow[] = [
 const cpuSpecRows: CompareRow[] = [
 	{
 		label: 'Cores / shaders',
-		value: (e) => (e.spec?.core_count ? e.spec.core_count.toLocaleString() : null)
+		value: (e) => (e.spec?.core_count ? CORE_FORMAT.format(e.spec.core_count) : null)
 	},
 	{
 		label: 'Threads',
@@ -134,7 +139,7 @@ export function buildCompareRows(entries: CompareEntry[]): CompareRow[] {
 	const priceRows: CompareRow[] = [
 		...retailers.map(
 			(r): CompareRow => ({
-				label: `Best price — ${r}`,
+				label: `Best price — ${retailerLabel(r)}`,
 				value: (e) => {
 					const p = e.prices.find((x) => x.retailer === r);
 					return p?.price !== undefined && p.price !== null ? formatAud(p.price) : null;
@@ -145,7 +150,7 @@ export function buildCompareRows(entries: CompareEntry[]): CompareRow[] {
 			label: 'Cheapest in stock',
 			value: (e) =>
 				e.cheapestInStock
-					? `${formatAud(e.cheapestInStock.price)} · ${e.cheapestInStock.retailer}`
+					? `${formatAud(e.cheapestInStock.price)} · ${retailerLabel(e.cheapestInStock.retailer)}`
 					: null
 		}
 	];

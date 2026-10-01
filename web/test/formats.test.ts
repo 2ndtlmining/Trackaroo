@@ -7,12 +7,15 @@ import {
 	formatCacheMb,
 	formatDate,
 	formatMhz,
+	formatChartTick,
+	formatMonthYear,
 	formatSeenDate,
 	formatShortDate,
 	formatPct,
 	formatProcess,
 	formatRelative,
 	formatSignedAud,
+	formatUsd,
 	freshnessLabel,
 	stockLabel,
 	titleCase
@@ -48,6 +51,13 @@ describe('formatSignedAud', () => {
 
 	it('returns zero without a sign', () => {
 		expect(formatSignedAud(0)).toBe('$0');
+	});
+});
+
+describe('formatUsd (U3)', () => {
+	it('never renders a bare dollar sign next to AUD prices', () => {
+		expect(formatUsd(1999)).toBe('US$1,999');
+		expect(formatUsd(549.99)).toBe('US$549.99');
 	});
 });
 
@@ -112,10 +122,40 @@ describe('formatDate', () => {
 });
 
 describe('formatShortDate', () => {
-	it('formats a YYYY-MM-DD date without a year', () => {
-		// en-AU's Intl data abbreviates September as "Sept" (four letters), unlike
-		// most other months -- this pins the real runtime output, not a guess.
-		expect(formatShortDate('2026-09-12')).toBe('12 Sept');
+	it('uses a fixed month table, so Node and the browser agree (no "Sept")', () => {
+		expect(formatShortDate('2026-09-12')).toBe('12 Sep');
+	});
+
+	it.each([
+		['2026-01-05', '5 Jan'],
+		['2026-02-05', '5 Feb'],
+		['2026-03-05', '5 Mar'],
+		['2026-04-05', '5 Apr'],
+		['2026-05-05', '5 May'],
+		['2026-06-05', '5 Jun'],
+		['2026-07-05', '5 Jul'],
+		['2026-08-05', '5 Aug'],
+		['2026-09-05', '5 Sep'],
+		['2026-10-05', '5 Oct'],
+		['2026-11-05', '5 Nov'],
+		['2026-12-05', '5 Dec']
+	])('%s -> %s', (iso, out) => expect(formatShortDate(iso)).toBe(out));
+
+	it('returns anything it cannot parse unchanged', () => {
+		expect(formatShortDate('soon')).toBe('soon');
+		expect(formatShortDate('2026-13-01')).toBe('2026-13-01');
+	});
+});
+
+describe('formatMonthYear', () => {
+	it('renders a release month', () => {
+		expect(formatMonthYear('2025-04-16')).toBe('Apr 2025');
+	});
+});
+
+describe('formatChartTick', () => {
+	it('reads the UTC calendar day uPlot was given, whatever the local timezone', () => {
+		expect(formatChartTick(Date.UTC(2026, 8, 5))).toBe('5 Sep');
 	});
 });
 
@@ -124,10 +164,7 @@ describe('formatSeenDate', () => {
 		['2026-09-28', 'today'],
 		['2026-09-27', 'yesterday'],
 		['2026-09-24', '4 days ago'],
-		// Built from formatShortDate rather than hard-coded: en-AU renders
-		// September as "Sept" on this runtime (see the formatShortDate test
-		// above), so this pins the real fallback text, not a guess (#6).
-		['2026-09-12', formatShortDate('2026-09-12')]
+		['2026-09-12', '12 Sep']
 	])('%s -> %s', (d, out) => expect(formatSeenDate(d, '2026-09-28')).toBe(out));
 });
 

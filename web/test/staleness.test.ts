@@ -77,8 +77,9 @@ describe('StaleDataBanner', () => {
 	it('escalates styling once the gap reaches two days', () => {
 		const html = render({ latestSnapshotDate: daysAgo(4) });
 		expect(html).toContain('4 days behind');
-		// Two days or more is an error tone, not the muted one-day warning.
-		expect(html).toContain('text-down');
+		// Two days or more is the warning tone -- never the "price fell" green (#24).
+		expect(html).toContain('text-warning');
+		expect(html).not.toContain('text-down');
 	});
 
 	it('explains an empty database instead of showing a staleness gap', () => {

@@ -2,8 +2,14 @@
 	import { page } from '$app/state';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { NAV_LINKS, isActiveLink } from '$lib/nav';
+	import type { Category } from '$lib/types';
 
 	let { onOpenSearch }: { onOpenSearch?: () => void } = $props();
+
+	// Only the product page's data has a `product`; everywhere else this is null.
+	const productCategory = $derived(
+		(page.data as { product?: { category?: Category } }).product?.category ?? null
+	);
 </script>
 
 <header class="border-b border-border bg-surface">
@@ -17,7 +23,7 @@
 			aria-label="Main"
 		>
 			{#each NAV_LINKS as link (link.href)}
-				{@const active = isActiveLink(link.href, page.url.pathname, page.url.searchParams)}
+				{@const active = isActiveLink(link.href, page.url.pathname, page.url.searchParams, productCategory)}
 				<a
 					href={link.href}
 					aria-current={active ? 'page' : undefined}

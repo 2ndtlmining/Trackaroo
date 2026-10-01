@@ -1,5 +1,14 @@
 <script lang="ts">
-	export type BadgeTone = 'up' | 'down' | 'flat' | 'stale' | 'accent' | 'neutral';
+	export type BadgeTone =
+		| 'up'
+		| 'down'
+		| 'flat'
+		| 'stale'
+		| 'accent'
+		| 'neutral'
+		| 'success'
+		| 'warning'
+		| 'danger';
 
 	let { tone = 'neutral', label }: { tone?: BadgeTone; label: string } = $props();
 
@@ -9,16 +18,24 @@
 		flat: 'bg-flat',
 		stale: 'bg-stale',
 		accent: 'bg-accent',
-		neutral: 'bg-text-muted'
+		neutral: 'bg-text-muted',
+		success: 'bg-success',
+		warning: 'bg-warning',
+		danger: 'bg-danger'
 	};
 
+	// --stale is too faint for text (2.62:1 in light, #24); it stays on the dot
+	// only, and the words carry the meaning.
 	const textClass: Record<BadgeTone, string> = {
 		up: 'text-up',
 		down: 'text-down',
 		flat: 'text-text-muted',
-		stale: 'text-stale',
+		stale: 'text-text-muted',
 		accent: 'text-accent',
-		neutral: 'text-text-muted'
+		neutral: 'text-text-muted',
+		success: 'text-success',
+		warning: 'text-warning',
+		danger: 'text-danger'
 	};
 </script>
 

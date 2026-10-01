@@ -166,3 +166,50 @@ class TestMatchCpu:
     def test_no_match_at_all(self):
         records = [{"name": "Core i5-13400"}]
         assert match_cpu("Ryzen 9 9950X3D", records) is None
+
+
+class TestMatchGpuMemorySuffix:
+    """Phase 1 (#2) split memory variants into their own products named
+    "GeForce RTX 5060 Ti 8GB" / "Radeon RX 9060 XT 8GB" / "GeForce RTX 3050
+    6GB". Normalised, "... ti 8gb" never equals the dataset's "... ti 8 gb" and
+    is not a prefix of it, so all of them came back unmatched with an empty
+    spec panel."""
+
+    RECORDS = [
+        {"name": "GeForce RTX 5060 Ti 16 GB", "vram_gb": 16.0},
+        {"name": "GeForce RTX 5060 Ti 8 GB", "vram_gb": 8.0},
+        {"name": "GeForce RTX 3050 8 GB", "vram_gb": 8.0},
+        {"name": "GeForce RTX 3050 6 GB", "vram_gb": 6.0},
+    ]
+
+    def test_suffixed_name_matches_its_own_variant(self):
+        rec = match_gpu("GeForce RTX 5060 Ti 8GB", 8, self.RECORDS)
+        assert rec is not None and rec["name"] == "GeForce RTX 5060 Ti 8 GB"
+
+    def test_suffix_alone_supplies_the_vram_when_the_column_is_empty(self):
+        rec = match_gpu("GeForce RTX 3050 6GB", None, self.RECORDS)
+        assert rec is not None and rec["name"] == "GeForce RTX 3050 6 GB"
+
+    def test_the_vram_column_wins_over_the_suffix(self):
+        # A watchlist typo in the name must not beat the explicit vram_gb.
+        rec = match_gpu("GeForce RTX 3050 6GB", 8, self.RECORDS)
+        assert rec is not None and rec["name"] == "GeForce RTX 3050 8 GB"
+
+    def test_a_lone_base_record_of_the_wrong_size_is_not_a_match(self):
+        # The dataset only knows the 16GB card: attaching its specs to the 8GB
+        # product would be wrong, so no match (conservative, per module doc).
+        records = [{"name": "Radeon RX 9060 XT", "vram_gb": 16.0}]
+        assert match_gpu("Radeon RX 9060 XT 8GB", 8, records) is None
+
+    def test_a_lone_base_record_of_the_right_size_matches(self):
+        records = [{"name": "Radeon RX 9060 XT", "vram_gb": 8.0}]
+        assert match_gpu("Radeon RX 9060 XT 8GB", 8, records) is not None
+
+    def test_dataset_spelling_with_the_suffix_matches_directly(self):
+        records = [{"name": "GeForce RTX 5060 Ti 8GB", "vram_gb": 8.0}]
+        assert match_gpu("GeForce RTX 5060 Ti 8GB", 8, records) is not None
+
+    def test_unsuffixed_names_behave_exactly_as_before(self):
+        rec = match_gpu("GeForce RTX 5060 Ti", 16, self.RECORDS)
+        assert rec is not None and rec["name"] == "GeForce RTX 5060 Ti 16 GB"
+        assert match_gpu("GeForce RTX 4070", 12, [{"name": "GeForce RTX 4070 SUPER", "memorySize": 12.0}]) is None

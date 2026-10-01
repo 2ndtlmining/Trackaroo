@@ -112,9 +112,9 @@ describe('buildCompareRows', () => {
 		const rows = buildCompareRows([entry()]);
 		const labels = rows.map((r) => r.label);
 		for (const expected of [
-			'Best price — scorptec',
+			'Best price — Scorptec',
 			'Cheapest in stock',
-			'Launch MSRP (USD)',
+			'US launch MSRP',
 			'Architecture',
 			'GPU die',
 			'VRAM',
@@ -167,9 +167,10 @@ describe('buildCompareRows', () => {
 		const rows = buildCompareRows([entry()]);
 		const byLabel = new Map(rows.map((r) => [r.label, r.value]));
 		const e = entry();
-		expect(byLabel.get('Best price — scorptec')!(e)).toContain('849');
+		expect(byLabel.get('Best price — Scorptec')!(e)).toContain('849');
 		expect(byLabel.get('Cheapest in stock')!(e)).toContain('849');
-		expect(byLabel.get('Launch MSRP (USD)')!(e)).toContain('299');
+		expect(byLabel.get('Cheapest in stock')!(e)).toBe('$849 · Scorptec');
+		expect(byLabel.get('US launch MSRP')!(e)).toBe('US$299');
 		expect(byLabel.get('VRAM')!(e)).toBe('16GB');
 		expect(byLabel.get('Memory bus')!(e)).toBe('128-bit');
 		expect(byLabel.get('Base clock')!(e)).toBe('2.3 GHz');
@@ -198,7 +199,7 @@ describe('buildCompareRows', () => {
 	it('only emits a Best price row per retailer present in the data', () => {
 		const rows = buildCompareRows([entry({ prices: [{ retailer: 'scorptec', price: 849 }] })]);
 		const labels = rows.map((r) => r.label);
-		expect(labels).toContain('Best price — scorptec');
-		expect(labels).not.toContain('Best price — pccg');
+		expect(labels).toContain('Best price — Scorptec');
+		expect(labels).not.toContain('Best price — PCCG');
 	});
 });

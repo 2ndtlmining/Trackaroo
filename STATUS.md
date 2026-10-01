@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-09-29
+**Last updated:** 2026-09-30
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,50 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-09-30** — **Phase 4 "UI/UX and better information" (#25, #24, #31 core,
+  #27, #26, #23, #5 items 4–5; U1–U6, D7, three Phase 1–2 follow-ups) on
+  `feat/2026-09-30-ux`** (stacked on `feat/2026-09-29-robustness`; not pushed,
+  not deployed). The product page answers "is now a good time to buy?":
+  lowest price since tracking began and when, today's gap to it, a 30/90-day
+  low/median/high strip and cheapest-per-retailer "where to buy", all from data
+  the page already loaded. The chart gained a legend, low and today markers, a
+  spoken summary, a data table and a text-only tooltip. One `<title>` per page,
+  OG tags, PNG icons + manifest, theme-aware `color-scheme`/`theme-color`.
+  Status colours are separate from price up/down, and contrast is measured from
+  `app.css` in CI. Search, compare, the never-listed toggle and movers
+  sort/direction/grouping live in the URL; product pages have breadcrumbs and
+  "Compare with…"; /compare has a picker. The catalog hides never-listed products
+  by default and shows VRAM/cores, release month and listing counts. /movers is
+  one responsive table grouped by product (warm TTFB **5 ms, was 28 ms**). The
+  homepage movers follow the product's cheapest price (D7). `/gpus` and `/cpus`
+  redirect; MSRPs read "US$". Dates use a fixed month table. "… 8GB"/"… 6GB"
+  products match their specs; the base card shows its VRAM beside a memory
+  sibling (display only). `mobile.spec.ts` now screenshots every main page at
+  390 px in both themes (`web/test-results/mobile/`, gitignored) and was
+  reviewed by eye: no fixes needed.
+  **Before/after** — `web/scripts/measure.sh` against `npm run build` +
+  `node server.js`, both on the same scratch copy of `db/trackaroo.db`;
+  "before" is the phase start (`d9cd95e`) built in a separate worktree
+  (wire / raw bytes / warm TTFB):
+
+  | Route | Before (`d9cd95e`) | After |
+  |---|---|---|
+  | `/` | 7,634 / 42,909 / 3 ms | 7,815 / 45,104 / 3 ms |
+  | `/deals` | 7,890 / 59,846 / 4 ms | 8,163 / 61,805 / 3 ms |
+  | `/movers?window=7d` | 20,267 / 424,391 / 28 ms | 11,911 / 125,690 / 5 ms |
+  | `/products?category=gpu` | 7,294 / 109,557 / 3 ms | 8,228 / 90,577 / 3 ms |
+  | `/product/1` | 6,519 / 40,199 / 3 ms | 8,128 / 53,510 / 4 ms |
+
+  `/product/1` grows as expected (buy panel + collapsed data table); cold runs
+  match warm within a millisecond. Gate from a clean tree: pytest **1042
+  passed**, vitest **787 passed** (36 files), Playwright **114 passed**
+  (Chromium), svelte-check **0 errors, 0 warnings** (464 files). **Left for
+  Phase 5**: #31 percentile/sale-event/successor signals, #23 sortable columns
+  and facet filters, #26 per-row "best value" highlighting on /compare, #27's
+  30-day-average marker and gap connector, #32 AUD MSRP. **Owner to check**:
+  `python sync_specs.py --dry-run --category gpu` for the GRE products (Task 11
+  Step 6).
 
 - **2026-09-29** — **Phase 3 "robustness" (#12, #7, #8, #11a, #14, #13, #9,
   #10, R1–R4; #15 in part) on `feat/2026-09-29-robustness`.** One exception

@@ -54,3 +54,11 @@ export function searchProducts<T extends Searchable>(items: T[], query: string):
 		.sort((a, b) => a.score - b.score || a.item.model.localeCompare(b.item.model))
 		.map((r) => r.item);
 }
+
+// The palette's "Compare A vs B" row. /compare rejects a mixed-category pair
+// with a 400, so a GPU and a CPU that both match never get the row (#26).
+export function quickComparePair<T extends { category: string }>(visible: T[]): [T, T] | null {
+	return visible.length === 2 && visible[0].category === visible[1].category
+		? [visible[0], visible[1]]
+		: null;
+}

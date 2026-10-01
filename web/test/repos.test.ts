@@ -11,6 +11,7 @@ import {
 	getCategoryCounts,
 	getComparisonData,
 	getDealCandidates,
+	getLaunchDates,
 	getLatestListings,
 	getMovers,
 	getPriceBand,
@@ -18,10 +19,12 @@ import {
 	getProductDealStats,
 	getProductHistory,
 	getProductIndex,
+	getProductMoves,
 	getProductSparklines,
 	getProductStats,
 	getRetailerFreshness,
 	getSparklines,
+	getTrackedProducts,
 	groupListingsByProduct,
 	tableExists,
 	upsertAlert
@@ -890,6 +893,10 @@ describe('getProductIndex', () => {
 		}
 	});
 
+	it('carries VRAM for the display-name rule', () => {
+		for (const e of getProductIndex(db)) expect(e).toHaveProperty('vramGb');
+	});
+
 	it('reports snapshot counts so the palette can flag products without history', () => {
 		const index = getProductIndex(db);
 		const withHistory = index.filter((e) => e.snapshotCount > 0);
@@ -1475,6 +1482,151 @@ describe('getAvailableCounts', () => {
 		const available = getAvailableCounts(db);
 		for (const category of ['gpu', 'cpu'] as const) {
 			expect(available.get(category) ?? 0).toBeLessThanOrEqual(tracked.get(category) ?? 0);
+		}
+	});
+});
+
+describe('catalog columns (#23)', () => {
+	function catalogDb() {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-catalog-'));
+		const d = openDatabase(path.join(dir, 'c.db'), { readonly: false, fileMustExist: false });
+		d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+		d.exec(`INSERT INTO products (id, category, brand, model, vram_gb, tracked) VALUES (1, 'gpu', 'NVIDIA', 'GeForce RTX 5070', 12, 1);
+			INSERT INTO products (id, category, brand, model, cores, tracked) VALUES (2, 'cpu', 'AMD', 'Ryzen 7 9800X3D', 8, 1);
+			INSERT INTO specs (product_id, source, source_record_key, category, launch_date, raw_json, last_synced_at)
+			  VALUES (1, 'rightnow-gpu-db', 'GeForce RTX 5070', 'gpu', '2025-03-05', '{}', '2026-08-15T00:00:00Z');`);
+		return {
+			d,
+			close: () => {
+				d.close();
+				fs.rmSync(dir, { recursive: true, force: true });
+			}
+		};
+	}
+
+	it('getTrackedProducts carries VRAM and cores from the products table', () => {
+		const { d, close } = catalogDb();
+		try {
+			expect(getTrackedProducts(d, 'gpu')[0]).toMatchObject({ vramGb: 12, cores: null });
+			expect(getTrackedProducts(d, 'cpu')[0]).toMatchObject({ vramGb: null, cores: 8 });
+		} finally {
+			close();
+		}
+	});
+
+	it('getLaunchDates reads specs in its own per-category query', () => {
+		const { d, close } = catalogDb();
+		try {
+			expect(getLaunchDates(d, 'gpu')).toEqual(new Map([[1, '2025-03-05']]));
+			expect(getLaunchDates(d, 'cpu')).toEqual(new Map());
+		} finally {
+			close();
+		}
+	});
+});
+
+describe('getProductMoves (D7)', () => {
+	function movesDb() {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-moves-'));
+		const d = openDatabase(path.join(dir, 'm.db'), { readonly: false, fileMustExist: false });
+		d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+		// Product 1: the premium SKU rises 2000 -> 2500 while the cheap SKU falls
+		// 1000 -> 900. A buyer pays the cheapest, so the product FELL 10%.
+		d.exec(`INSERT INTO products (id, category, brand, model, tracked) VALUES (1, 'gpu', 'NVIDIA', 'GeForce RTX 5090', 1);
+			INSERT INTO products (id, category, brand, model, tracked) VALUES (2, 'gpu', 'AMD', 'Radeon RX 9070', 1);
+			INSERT INTO products (id, category, brand, model, tracked) VALUES (3, 'gpu', 'AMD', 'Radeon RX 9060 XT', 1);
+			INSERT INTO products (id, category, brand, model, tracked) VALUES (4, 'gpu', 'NVIDIA', 'GeForce RTX 5060', 1);
+			INSERT INTO products (id, category, brand, model, tracked) VALUES (5, 'gpu', 'NVIDIA', 'GeForce RTX 5050', 1);
+			INSERT INTO retailer_listings (id, product_id, retailer, variant_name, listing_url, status) VALUES
+			  (1, 1, 'scorptec', 'ASUS ROG Astral 5090', 'https://x/1', 'active'),
+			  (2, 1, 'pccg', 'Palit 5090', 'https://x/2', 'active'),
+			  (3, 2, 'umart', 'Sapphire 9070', 'https://x/3', 'active'),
+			  (4, 3, 'umart', 'XFX 9060 XT', 'https://x/4', 'active'),
+			  (5, 4, 'umart', 'Gigabyte 5060', 'https://x/5', 'active'),
+			  (6, 5, 'scorptec', 'Zotac 5050 A', 'https://x/6', 'active'),
+			  (7, 5, 'pccg', 'Zotac 5050 B', 'https://x/7', 'active');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES
+			  (1, '2026-09-22', 2000, 'in_stock'), (1, '2026-09-25', 2200, 'in_stock'), (1, '2026-09-29', 2500, 'in_stock'),
+			  (2, '2026-09-22', 1000, 'in_stock'), (2, '2026-09-25', 950, 'in_stock'), (2, '2026-09-29', 900, 'in_stock'),
+			  (3, '2026-09-22', 800, 'in_stock'), (3, '2026-09-25', 840, 'in_stock'), (3, '2026-09-29', 880, 'in_stock'),
+			  -- product 3: out of stock today, so it has no "today" price and no move
+			  (4, '2026-09-22', 500, 'in_stock'), (4, '2026-09-25', 480, 'in_stock'), (4, '2026-09-29', 450, 'out_of_stock'),
+			  -- product 4: only 2 days of history (MIN_HISTORY_POINTS = 3), so a
+			  -- 1000 -> 600 "drop" is thin history, never a biggest drop
+			  (5, '2026-09-28', 1000, 'in_stock'), (5, '2026-09-29', 600, 'in_stock'),
+			  -- product 5: 3 distinct days, but only by combining two listings
+			  -- (the series is the product's cheapest per day, not one SKU's);
+			  -- the older out-of-window row does not count
+			  (6, '2026-08-01', 700, 'in_stock'),
+			  (6, '2026-09-27', 500, 'in_stock'), (7, '2026-09-28', 480, 'in_stock'),
+			  (6, '2026-09-29', 450, 'in_stock'), (7, '2026-09-29', 470, 'in_stock');`);
+		return {
+			d,
+			close: () => {
+				d.close();
+				fs.rmSync(dir, { recursive: true, force: true });
+			}
+		};
+	}
+
+	it('moves on the cheapest in-stock price, and names where today’s price is', () => {
+		const { d, close } = movesDb();
+		try {
+			const byId = new Map(getProductMoves(d, 7).map((m) => [m.productId, m]));
+			expect(byId.get(1)).toMatchObject({
+				oldPrice: 1000,
+				newPrice: 900,
+				change: -100,
+				pctChange: -10,
+				retailer: 'pccg',
+				variantName: 'Palit 5090',
+				fromDate: '2026-09-22',
+				toDate: '2026-09-29'
+			});
+			expect(byId.get(2)).toMatchObject({ oldPrice: 800, newPrice: 880, pctChange: 10 });
+			expect(byId.has(3)).toBe(false);
+		} finally {
+			close();
+		}
+	});
+
+	// Thin history is never summarised (Review Focus 1): the per-listing rows
+	// this replaced dropped anything under MIN_HISTORY_POINTS days, and the
+	// product-level query must keep that rule for its own series.
+	it('needs MIN_HISTORY_POINTS distinct in-stock days inside the window', () => {
+		const { d, close } = movesDb();
+		try {
+			const byId = new Map(getProductMoves(d, 7).map((m) => [m.productId, m]));
+			expect(byId.has(4)).toBe(false);
+			expect(byId.get(5)).toMatchObject({
+				oldPrice: 500,
+				newPrice: 450,
+				fromDate: '2026-09-27',
+				toDate: '2026-09-29'
+			});
+			// A 1-day window holds only 2 days (>= latest - 1), so nothing qualifies.
+			expect(getProductMoves(d, 1)).toEqual([]);
+		} finally {
+			close();
+		}
+	});
+});
+
+describe('Phase 4 queries run on a DB without the Phase 3 tables (Review Focus 2)', () => {
+	it('getProductMoves, getLaunchDates and getTrackedProducts need none of them', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-old-'));
+		const d = openDatabase(path.join(dir, 'old.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec('DROP TABLE IF EXISTS active_retailers; DROP TABLE IF EXISTS scrape_runs; DROP TABLE IF EXISTS run_markers;');
+			expect(tableExists(d, 'scrape_runs')).toBe(false);
+			expect(() => getProductMoves(d, 7)).not.toThrow();
+			expect(() => getLaunchDates(d, 'gpu')).not.toThrow();
+			expect(() => getTrackedProducts(d, 'gpu')).not.toThrow();
+			expect(() => getRetailerFreshness(d)).not.toThrow();
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
 		}
 	});
 });
