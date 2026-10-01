@@ -10,6 +10,7 @@
 	const productCategory = $derived(
 		(page.data as { product?: { category?: Category } }).product?.category ?? null
 	);
+	const discoverPending = $derived((page.data as { discoverPending?: number }).discoverPending ?? 0);
 </script>
 
 <header class="border-b border-border bg-surface">
@@ -32,6 +33,13 @@
 						: 'text-text-muted hover:bg-surface-hover hover:text-text'}"
 				>
 					{link.label}
+					{#if link.href === '/discover' && discoverPending}
+						<span
+							data-testid="nav-discover-badge"
+							class="ml-1 rounded-full bg-accent-soft px-1.5 text-xs font-semibold text-accent"
+							aria-label="{discoverPending} parts waiting">{discoverPending}</span
+						>
+					{/if}
 				</a>
 			{/each}
 		</nav>

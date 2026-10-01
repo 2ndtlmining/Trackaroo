@@ -46,6 +46,7 @@ from health_checks import (
     CheckResult,
     check_backups,
     check_db_freshness,
+    check_discovery,
     check_json_db_parity,
     check_json_files,
     check_match_count_anomalies,
@@ -362,6 +363,7 @@ def _db_checks() -> List[Tuple[str, Callable[[], List[CheckResult]]]]:
         ("check_json_db_parity", lambda: check_json_db_parity(db_path=DB_PATH)),
         ("check_missing_days", lambda: check_missing_days(DB_PATH)),
         ("check_scraper_cooldown", lambda: check_scraper_cooldown()),
+        ("check_discovery", lambda: check_discovery(DB_PATH)),
         ("check_backups", lambda: check_backups()),
     ]
 
@@ -717,6 +719,17 @@ def run(args: argparse.Namespace) -> int:
                     )
             except Exception as e:  # noqa: BLE001 - best-effort, never breaks the run
                 LOGGER.error("JSON mirror failed: %s", e)
+
+        # ── Discovery report (#16) ──────────────────────────────────────
+        # Untracked parts at retailers. Best-effort; its Discord notice is not
+        # gated on the health result (a scrape problem does not make a new
+        # part less real), only on notifications being enabled for this run.
+        if not args.dry_run:
+            def _run_discovery() -> Any:
+                import discover
+                return discover.run(notify=notify_enabled(args))
+
+            best_effort("Discovery", _run_discovery)
 
         # ── Health check: validate DB state after ingestion ───
         if not args.no_health:

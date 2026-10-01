@@ -14,6 +14,23 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-02 — #16 new-part discovery BUILT on branch
+  `feat/2026-10-02-discovery`; NOT merged, NOT deployed.** Scrapers write full
+  catalogues to `data/catalogue/` (`scraper/catalogue_io.py`, 30 days);
+  `discover.py` (after ingest, best-effort) fills `discovered_parts`,
+  `discovery_conflicts` and `discovery_runs`, and posts new parts once to
+  Discord ("New parts at retailers"); `/discover` lets the owner Track, Ignore,
+  Undo and Un-ignore; `check_discovery` is WARNING-only. Guide: README
+  "Discovering and adding new parts". Counts after Task 8: pytest 1168, vitest
+  806, Playwright 119, svelte-check 0/0. **To deploy:** merge, then
+  `deploy/redeploy.sh` on the host outside 04:00-09:59 Melbourne. **Expect on
+  the first prod run:** the parked "Unmatched" parts (5900XT, 5600GT, 7700X3D
+  ...) appear as untracked parts, and possibly a short burst of conflicts
+  until `repair_listings.py` has been applied. **After deploy check:**
+  `/discover` loads, its "last checked" time is today, `docker compose logs
+  trackaroo | grep -i discovery` shows a summary line, `data/catalogue/` has
+  that day's files, and one Discord "New parts at retailers" message arrived.
+  Track/Ignore buttons have no login (like alerts).
 - **2026-10-02 — Phase 6 DONE: prod runs docker compose, build `905d28c`,
   verified. Resume here.** PRs #42 (robustness), #43 (UX), #44 (redeploy)
   merged; #43/#44 were stacked and merged into their base branches, so #45

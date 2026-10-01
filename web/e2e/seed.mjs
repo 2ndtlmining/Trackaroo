@@ -468,6 +468,42 @@ export function seedE2eDb(dbPath = DB_PATH) {
 	);
 	['scorptec', 'pccg', 'umart', 'mwave'].forEach((r, i) => activeRetailer.run(r, i));
 
+	// ── Discovery fixtures (#16) ─────────────────────────────────────────
+	// Deterministic rows so /discover renders in e2e regardless of data/.
+	const today = (() => {
+		const d = new Date();
+		const p = (n) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+	})();
+	const part = db.prepare(
+		`INSERT INTO discovered_parts (category, part_key, display_name, status, first_seen, last_seen, listing_count,
+		   retailers, min_price, min_price_url, sample_titles, suggested_row)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	);
+	part.run('gpu', 'rtx 5050|8', 'GeForce RTX 5050 8GB', 'untracked', today, today, 6, 'pccg,scorptec,umart', 389,
+		'https://example.com/5050', JSON.stringify(['MSI GeForce RTX 5050 Ventus 2X OC 8G']),
+		'gpu,NVIDIA,GeForce RTX 5050,8GB,current,"geforce rtx 5050|rtx 5050"');
+	part.run('cpu', 'ryzen 5600gt', 'Ryzen 5 5600GT', 'untracked', '2026-08-09', today, 4, 'pccg,scorptec', 189,
+		'https://example.com/5600gt', JSON.stringify(['AMD Ryzen 5 5600GT Processor']),
+		'cpu,AMD,Ryzen 5 5600GT,?c,current-2,"ryzen 5 5600gt|ryzen 5600gt"');
+	part.run('cpu', 'ultra 270k plus', 'Core Ultra 7 270K Plus', 'requested', today, today, 2, 'umart', 649,
+		'https://example.com/270k', JSON.stringify(['Intel Core Ultra 7 270K Plus']),
+		'cpu,Intel,Core Ultra 7 270K Plus,?c,current,"core ultra 7 270k plus|ultra 270k plus"');
+	part.run('gpu', 'rx 7600 xt|16', 'Radeon RX 7600 XT 16GB', 'ignored', '2026-09-20', today, 3, 'pccg', 499,
+		'https://example.com/7600xt', JSON.stringify(['ASUS Dual RX 7600 XT 16GB']),
+		'gpu,AMD,Radeon RX 7600 XT,16GB,current-1,"radeon rx 7600 xt|rx 7600 xt"');
+	db.prepare(
+		`INSERT INTO discovery_runs (run_date, finished_at, catalogue_files, missing, unrecognised_count, unrecognised_samples)
+		 VALUES (?, ?, 6, '[]', 1, ?)`
+	).run(today, `${today}T04:41:00`, JSON.stringify(['Arctic MX-6 thermal paste']));
+	const anyListing = db.prepare('SELECT id, product_id FROM retailer_listings LIMIT 1').get();
+	if (anyListing) {
+		db.prepare(`INSERT INTO discovery_conflicts VALUES (?, 'scorptec', ?, 'rx 9070 gre', ?, ?, ?)`).run(
+			anyListing.id, anyListing.product_id, 'title names rx 9070 gre, product is rx 9070',
+			'Sapphire Pulse RX 9070 GRE 12GB', today
+		);
+	}
+
 	db.close();
 	return dbPath;
 }

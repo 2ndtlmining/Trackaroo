@@ -18,13 +18,13 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 1073 tests.
+**Backend** (repo root): `python -m pytest -q` — 1168 tests.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 791 tests, ~15s)
+- **Unit tests**: `npm test` (Vitest, 806 tests, ~15s)
 - **Watch mode**: `npm run test:watch`
-- **E2E tests**: `npm run test:e2e` (Playwright, 115 tests, Chromium only, must be kept fast)
+- **E2E tests**: `npm run test:e2e` (Playwright, 119 tests, Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
   - `e2e.db`, `test-results/`, and `playwright-report/` are gitignored and regenerated on each run.
 - **Type + Svelte check**: `npm run check` (svelte-check, must report 0 errors)
@@ -92,6 +92,12 @@ Listings are identified by their **stable SKU key**
 (`ingest.extract_listing_key`), never the raw URL — retailers rewrite slugs, and
 matching on the URL forks duplicate listing rows.
 
+- **`data/catalogue/` is a report, not a backup** (#16). Scrapers write every
+  item they see there via `scraper/catalogue_io.save_catalogue` (atomic, never
+  through `save_snapshot`, kept 30 days). Never move these files to the top of
+  `data/`: `ingest_today` globs `data/*_{date}.json` and the web seeders read
+  every `data/*.json`.
+
 Never delete price or product data. Products that roll out of scope get
 `tracked=0`; listings get `status='delisted'`/`'stale'`.
 
@@ -101,6 +107,9 @@ Never delete price or product data. Products that roll out of scope get
   **best-effort**: route them through `run_daily.best_effort()` (or a
   `try/except` that logs). Health checks go through `guarded_check()`, so a
   crashing check becomes an ERROR result. The backup runs in a `finally`.
+- `discover.py` runs after ingest through `best_effort`; `check_discovery` is
+  WARNING-only. The scope table in `discover_rules.py` must agree with
+  ARCHITECTURE Part 2 and `db/watchlist.csv` (`test_discover_rules.py`).
 - The Discord digest is gated on zero ERROR-level health results. Checks that
   are informational must return WARNING, not ERROR, or they will suppress it.
 - Entry points call `config.setup_logging()`, not `logging.basicConfig` — it

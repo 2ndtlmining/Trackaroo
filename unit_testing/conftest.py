@@ -61,6 +61,17 @@ def _no_real_backup_mirror(monkeypatch):
     monkeypatch.setattr("backup_db.BACKUP_MIRROR_DIR", None)
 
 
+# discover.run() defaults to the real DB and the real data/catalogue (it creates
+# tables, writes a discovery_runs row and prunes old catalogues). Any test that
+# reaches it without passing paths (e.g. run_daily.main() without the
+# isolated_pipeline fixture) must hit throwaway paths instead.
+@pytest.fixture(autouse=True)
+def _no_real_discovery_paths(monkeypatch, tmp_path):
+    import discover
+    monkeypatch.setattr(discover, "DB_PATH", tmp_path / "discover-guard.db")
+    monkeypatch.setattr(discover, "DATA_DIR", tmp_path / "discover-guard-data")
+
+
 def _make_connection(use_memory: bool = True) -> sqlite3.Connection:
     """Create a fresh connection with the schema applied."""
     if use_memory:
@@ -153,7 +164,7 @@ def isolated_pipeline(monkeypatch, tmp_path):
     import run_daily
 
     calls = types.SimpleNamespace(
-        alerts=[], digests=0, price_alert_runs=0, backups=0, delisted_runs=0, heartbeats=0,
+        alerts=[], discovery_runs=[], digests=0, price_alert_runs=0, backups=0, delisted_runs=0, heartbeats=0,
         db_path=tmp_path / "pipeline.db", data_dir=tmp_path / "data",
     )
     calls.data_dir.mkdir()
@@ -195,6 +206,7 @@ def isolated_pipeline(monkeypatch, tmp_path):
         lambda lines, dry_run=False: calls.alerts.append(list(lines)) or 1,
     )
     monkeypatch.setattr("check_alerts.run", fake_price_alerts)
+    monkeypatch.setattr("discover.run", lambda **k: calls.discovery_runs.append(k) or {})
     monkeypatch.setattr("backup_db.backup_database", fake_backup)
 
     def fake_ping(*a, **k):

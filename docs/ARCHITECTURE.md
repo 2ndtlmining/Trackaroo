@@ -253,6 +253,8 @@ Intel's discrete GPU line is younger and has had far fewer generations than AMD/
 
 ### 7. Adding or removing a product — the actual steps
 
+Most additions start on **/discover** (README, 'Discovering and adding new parts'), which gives you the row.
+
 Part 2 above says *what* belongs in the watchlist. This section is *how*, because
 three things about the process are not obvious from the CSV.
 
@@ -267,6 +269,11 @@ gpu,NVIDIA,GeForce RTX 5070,12GB,current,"rtx 5070|5070 nvidia|nvidia rtx 5070"
 are tolerated — `16c`, `16C` and ` 16 c ` all work — but the unit is required,
 because a bare `12` is ambiguous between cores and gigabytes and is rejected
 rather than guessed.
+
+> **Note:** this item predates the chip-key matcher (#1). Scrapers now resolve
+> through an exact chip-key `Matcher`, so alias ordering no longer decides
+> matching; see the note in `unit_testing/test_watchlist_validation.py`. The
+> text below is kept for history.
 
 **2. Mind the alias ordering — this is the one that bites.** `scrape_scorptec`
 and `scrape_umart` test watchlist entries by **primary search term length,

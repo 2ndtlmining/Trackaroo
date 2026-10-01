@@ -17,6 +17,7 @@ import random
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
 
@@ -44,6 +45,7 @@ from config import (
     setup_logging,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
+from scraper.catalogue_io import catalogue_item, save_catalogue
 from scraper.chip_key import Matcher
 from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED, RunReport, exit_code_for
 from scraper.snapshot_io import save_category_snapshot
@@ -592,10 +594,24 @@ def algolia_fetch_catalogue(
     return all_products
 
 
+def _save_pccg_catalogue(catalogue: list, category: str, catalogue_dir: Path, file_date: str) -> None:
+    """Best-effort: building or saving the catalogue must never break a scrape (#16)."""
+    try:
+        save_catalogue(catalogue_dir, "pccg", category, file_date, [
+            catalogue_item(p.get("name", ""), p.get("url", ""), _parse_price(p.get("price")) or None,
+                           p.get("stock_status", "unknown"), p.get("sku"))
+            for p in catalogue
+        ])
+    except Exception as exc:
+        LOGGER.warning("Could not save pccg %s catalogue: %s", category, exc)
+
+
 def scrape_category(
     category: str,
     watchlist: list[WatchlistProduct],
     report: Optional[RunReport] = None,
+    catalogue_dir: Optional[Path] = None,
+    file_date: Optional[str] = None,
 ) -> Tuple[list[Dict[str, Any]], set[int], bool]:
     """Scrape a single category (cpu or gpu) from PCCG via Algolia API.
 
@@ -630,6 +646,11 @@ def scrape_category(
         )
         _write_cooldown("empty catalogue")
         return [], set(), True
+
+    # The discovery report (#16) wants everything on sale, matched or not.
+    # The catalogue is already in hand, so this costs no Algolia query.
+    if catalogue_dir is not None and file_date is not None:
+        _save_pccg_catalogue(catalogue, category, catalogue_dir, file_date)
 
     # Map each model back to its global index in the full watchlist
     model_to_global: Dict[str, int] = {
@@ -713,7 +734,8 @@ def main() -> int:
 
     try:
         for i, category in enumerate(["cpu", "gpu"]):
-            results, matched, tripped = scrape_category(category, watchlist, report=report)
+            results, matched, tripped = scrape_category(
+                category, watchlist, report=report, catalogue_dir=DATA_DIR, file_date=today)
             # Saved per category so a timeout during GPUs keeps the CPUs (R2).
             save_category_snapshot(DATA_DIR, "pccg", category, today, watchlist, results, matched)
             report.set(category, matched=len(results))

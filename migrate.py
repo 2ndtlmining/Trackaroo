@@ -659,6 +659,65 @@ def migrate_add_run_markers_table(conn: sqlite3.Connection, dry_run: bool = Fals
     LOGGER.info("  [OK] run_markers table created")
 
 
+DISCOVERY_TABLES_SQL = """
+CREATE TABLE discovered_parts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    category        TEXT    NOT NULL CHECK (category IN ('cpu', 'gpu')),
+    part_key        TEXT    NOT NULL,
+    display_name    TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'untracked'
+                    CHECK (status IN ('untracked', 'ignored', 'requested', 'tracked')),
+    first_seen      TEXT    NOT NULL,
+    last_seen       TEXT    NOT NULL,
+    listing_count   INTEGER NOT NULL DEFAULT 0,
+    retailers       TEXT    NOT NULL DEFAULT '',
+    min_price       REAL,
+    min_price_url   TEXT,
+    sample_titles   TEXT    NOT NULL DEFAULT '[]',
+    suggested_row   TEXT    NOT NULL,
+    notified_at     TEXT,
+    decided_at      TEXT,
+    UNIQUE (category, part_key)
+);
+CREATE TABLE discovery_conflicts (
+    listing_id        INTEGER PRIMARY KEY REFERENCES retailer_listings(id),
+    retailer          TEXT    NOT NULL,
+    filed_product_id  INTEGER NOT NULL REFERENCES products(id),
+    title_key         TEXT,
+    reason            TEXT    NOT NULL,
+    title             TEXT    NOT NULL,
+    detected_on       TEXT    NOT NULL
+);
+CREATE TABLE discovery_runs (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_date              TEXT    NOT NULL,
+    finished_at           TEXT    NOT NULL,
+    catalogue_files       INTEGER NOT NULL,
+    missing               TEXT    NOT NULL DEFAULT '[]',
+    unrecognised_count    INTEGER NOT NULL DEFAULT 0,
+    unrecognised_samples  TEXT    NOT NULL DEFAULT '[]'
+)
+"""
+
+
+def migrate_add_discovery_tables(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Create the discovery tables (#16): additive, create-if-missing per table."""
+    statements = [s.strip() for s in DISCOVERY_TABLES_SQL.split(";") if s.strip()]
+    for stmt in statements:
+        name = stmt.split("CREATE TABLE", 1)[1].split("(", 1)[0].strip()
+        if check_table_exists(conn, name):
+            LOGGER.info("  [SKIP] %s table already exists", name)
+            continue
+        if dry_run:
+            LOGGER.info("  [DRY-RUN] Would create %s table", name)
+            continue
+        LOGGER.info("  [MIGRATE] Creating %s table...", name)
+        conn.execute(stmt)
+        LOGGER.info("  [OK] %s table created", name)
+    if not dry_run:
+        conn.commit()
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -703,6 +762,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         migrate_add_active_retailers_table(conn, dry_run=args.dry_run)
         migrate_add_scrape_runs_table(conn, dry_run=args.dry_run)
         migrate_add_run_markers_table(conn, dry_run=args.dry_run)
+
+        # Migration: discovery tables (#16)
+        migrate_add_discovery_tables(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify

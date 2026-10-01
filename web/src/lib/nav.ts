@@ -16,7 +16,8 @@ export const NAV_LINKS: NavLink[] = [
 	{ href: '/products?category=gpu', label: 'GPUs' },
 	{ href: '/products?category=cpu', label: 'CPUs' },
 	{ href: '/movers', label: 'Movers' },
-	{ href: '/compare', label: 'Compare' }
+	{ href: '/compare', label: 'Compare' },
+	{ href: '/discover', label: 'Discover' }
 ];
 
 export function isActiveLink(

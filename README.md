@@ -138,6 +138,104 @@ python sync_specs.py --report-only
 python -m pytest unit_testing/ -v
 ```
 
+## Discovering and adding new parts
+
+Retailers launch parts faster than the watchlist grows, so Trackaroo tells you
+what it is not tracking. Every scraper keeps a 30-day catalogue of everything it
+sees in `data/catalogue/` (a report only: never ingested, safe to delete). After
+each daily run `discover.py` lists the in-scope CPUs and GPUs that
+`db/watchlist.csv` does not track. A part seen for the first time is posted once
+to the Discord digest channel as **New parts at retailers**; every untracked part
+is always listed on **/discover**, where you **Track** or **Ignore** it. Tracking
+does not change the watchlist by itself: it produces the CSV row you add in a PR.
+
+### Example: adding the RTX 5050
+
+1. Discord shows a line like
+   `**GeForce RTX 5050 8GB**: 6 listings at pccg, scorptec, umart, from $389`
+   (the message title is "New parts at retailers").
+2. Open `http://<server>:3000/discover`. The row shows when it was first seen,
+   the listing count, the retailers and the lowest price (a link to that
+   listing). Click the name to see real listing titles, to check it is the card
+   you think it is.
+3. Click **Track**. The part moves to **Requested**, which shows the row to add:
+   `gpu,NVIDIA,GeForce RTX 5050,8GB,current,"geforce rtx 5050|rtx 5050"`.
+   **Copy row** copies it; **Undo** puts the part back under Untracked.
+4. Add that row to `db/watchlist.csv` on a branch and open a PR (or ask Claude to).
+   Two rows need a human to finish them, and the pipeline will not guess:
+   - A **CPU** row has `?c` as its spec, e.g.
+     `cpu,AMD,Ryzen 5 5600GT,?c,current-2,"ryzen 5 5600gt|ryzen 5600gt"`. Shop
+     titles rarely give core counts, so replace `?c` with the real count
+     (`6c`) from the manufacturer's spec page.
+   - A **GPU** whose titles never state VRAM has `?GB` (e.g.
+     `...,GeForce RTX 5070 Ti Super,?GB,...`). Replace it with the real size
+     (`16GB`).
+   Until you do, `db/watchlist.py` rejects the row (`cannot read cores from '?c'`):
+   the pipeline skips that one row with a logged error and carries on, so nothing
+   crashes but the part is not tracked. Model names use "Super" title case
+   (`GeForce RTX 5070 Ti Super`), as in the existing rows.
+5. CI checks the row (`unit_testing/test_watchlist_validation.py`,
+   `unit_testing/test_discover_rules.py`). Merge the PR.
+6. On the server, outside 04:00-09:59 Melbourne (the daily scrape window):
+   `cd ~/docker/Trackaroo && deploy/redeploy.sh`. The boot runs `seed.py`, which
+   adds the product.
+7. At the next daily run the part leaves **Requested** (status `tracked`) and
+   appears under GPUs with prices from that day. Specs arrive on the Sunday spec
+   sync, or run
+   `docker compose exec trackaroo python sync_specs.py --category gpu`
+   (`--category cpu` for a CPU).
+
+### Example: ignoring the Ryzen 5 5600GT
+
+Not everything deserves a page. On **/discover** click **Ignore** next to the
+part: it is hidden and never notifies again. To undo it, open **Ignored** at the
+bottom of /discover and click **Un-ignore**; the part returns to Untracked (it
+is not announced a second time).
+
+### Conflicts
+
+The **Conflicts** list is the opposite problem: a listing is filed under the
+wrong tracked product. The title is shown first, then the retailer, the product
+it is filed under, and why it looks wrong, for example:
+
+> Sapphire Pulse RX 9070 GRE 12GB
+> Scorptec · filed under Radeon RX 9070 · title names rx 9070 gre, product is rx 9070
+
+- If the right product already exists in the watchlist, run `repair_listings.py`
+  (dry run first, then `--apply`):
+  `docker compose exec trackaroo python repair_listings.py`.
+- If it does not exist (here, an RX 9070 GRE row), **Track** that part first,
+  add its row as above, deploy, then repair.
+- If the titles look right and are still flagged, it is a matcher bug: open an
+  issue and paste the line.
+
+### When a new generation launches (e.g. RTX 60)
+
+A series newer than the scope table is treated as in scope at `current`, so it
+shows up on /discover instead of disappearing. Then update the scope table in
+`discover_rules.py` (`_GPU_TIERS`, `_RYZEN_TIERS`, `_CORE_TIERS`) and
+`docs/ARCHITECTURE.md` Part 2 together, in one PR; `test_discover_rules.py`
+pins the table to `db/watchlist.csv`.
+
+### Troubleshooting
+
+- **No Discord message**: check `DISCORD_WEBHOOK_URL`. A part is announced once
+  only, so look for it on /discover instead. A failed send is retried on the next
+  run.
+- **"Discovery has not run today yet" banner**: look in
+  `docker compose logs trackaroo | grep -i discovery`. The health check
+  `discovery` only ever warns; it never blocks the digest.
+- **A real CPU/GPU under "Unrecognised titles"** (bottom of /discover): the
+  chip-key patterns in `scraper/chip_key.py` do not know it yet. Open an issue
+  with the title.
+- **`data/catalogue/`**: kept 30 days, safe to delete, never ingested. Do not
+  move its files up into `data/`: the ingest and the web seeders read every
+  `data/*.json`.
+
+> **Security:** the Track, Ignore, Undo and Un-ignore buttons have no login,
+> like price alerts. Anyone who can open the dashboard can click them. Put the
+> site behind a login before exposing it to the internet.
+
 ## Docker (single all-in-one container)
 
 One image runs the whole system — the dashboard **and** the daily
