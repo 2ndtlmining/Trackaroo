@@ -35,6 +35,15 @@ UNRECOGNISED_SAMPLES = 20
 HOLDING_BRAND = "Unmatched"  # repair_listings.HOLDING_BRAND
 
 
+_TABLES = ("discovered_parts", "discovery_conflicts", "discovery_runs")
+
+
+def _missing_tables(conn: sqlite3.Connection) -> bool:
+    # migrate_add_discovery_tables logs a [SKIP] line per existing table; only call it when needed.
+    have = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    return not set(_TABLES) <= have
+
+
 def _group_key(category: str, title: str) -> Optional[Tuple[str, Optional[int]]]:
     key = chip_key(title, category)
     if key is None:
@@ -57,6 +66,9 @@ def _classify(envelopes, matcher, watchlist=()) -> Tuple[Dict[Tuple[str, str], D
             title = (item.get("title") or "").strip()
             if not title or rules.is_excluded_title(title):
                 continue
+            url = (item.get("url") or "").lower()
+            if "-bdl-" in url or "/bundle/" in url:
+                continue  # retailer bundle page, skipped by the scrapers too
             kv = _group_key(category, title)
             if kv is None:
                 unrecognised.append(title)
@@ -69,6 +81,7 @@ def _classify(envelopes, matcher, watchlist=()) -> Tuple[Dict[Tuple[str, str], D
                 tracked.add((category, pkey))
                 continue
             if vram is None and (category, key) in tracked_chips:
+                tracked.add((category, pkey))  # flips a bare-key part created before the VRAM rows existed
                 continue  # chip is tracked; the title just omits the VRAM, so Matcher cannot pick a row
             g = groups.setdefault((category, pkey), {
                 "key": key, "vram": vram, "titles": [], "retailers": set(), "count": 0,
@@ -250,7 +263,8 @@ def run(
 
     conn = sqlite3.connect(str(db_path))
     try:
-        migrate_add_discovery_tables(conn)
+        if _missing_tables(conn):
+            migrate_add_discovery_tables(conn)
         unrecognised: List[str] = []
         if envelopes:
             wl = watchlist if watchlist is not None else load_watchlist()

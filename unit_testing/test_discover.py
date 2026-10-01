@@ -121,6 +121,38 @@ def test_no_catalogues_keeps_previous_results(env, tmp_path):
     assert len(_parts(env[1])) == 3
 
 
+def test_bare_key_part_flips_to_tracked_when_vram_rows_arrive(env):
+    data_dir, db_path = env
+    # Before the 5060 Ti rows exist, the VRAM-less Eagle OC title is a bare-key untracked part.
+    early = [w for w in WATCHLIST if "5060 Ti" not in w["model"]]
+    discover.run(db_path=db_path, data_dir=data_dir, today=TODAY, watchlist=early)
+    assert _parts(db_path)["rtx 5060 ti"]["status"] == "untracked"
+    discover.run(db_path=db_path, data_dir=data_dir, today=TODAY, watchlist=WATCHLIST)
+    assert _parts(db_path)["rtx 5060 ti"]["status"] == "tracked"
+
+
+@pytest.mark.parametrize("url", ["https://shop/x-bdl-y", "https://shop/Bundle/foo".replace("Bundle", "bundle")])
+def test_bundle_urls_are_skipped(env, url):
+    data_dir, db_path = env
+    save_catalogue(data_dir, "umart", "gpu", FD, [_item("Made Up RTX 6090 32GB", url=url)])
+    _run(env)
+    assert "rtx 6090|32" not in _parts(db_path)
+
+
+def test_migration_only_runs_when_a_table_is_missing(env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(discover, "migrate_add_discovery_tables", lambda conn: calls.append(1))
+    _run(env)
+    assert calls == []
+    conn = sqlite3.connect(env[1])
+    conn.execute("DROP TABLE discovery_conflicts")
+    conn.commit(); conn.close()
+    monkeypatch.setattr(discover, "migrate_add_discovery_tables", lambda conn: calls.append(1) or conn.execute(
+        "CREATE TABLE discovery_conflicts (a,b,c,d,e,f,g)"))
+    _run(env)
+    assert calls == [1]
+
+
 def _add_listing(db_path, model, title, vram=None, brand="AMD", category="gpu"):
     conn = sqlite3.connect(db_path)
     pid = conn.execute("INSERT INTO products (category, brand, model, vram_gb, generation_tier) VALUES (?,?,?,?,?)",

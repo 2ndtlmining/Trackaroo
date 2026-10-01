@@ -34,6 +34,19 @@ def test_series_tier(category, key, tier):
     assert r.series_tier(category, key) == tier
 
 
+@pytest.mark.parametrize("title", [
+    "Leadtek NVIDIA RTX 6000 Ada Generation 48GB", "PNY RTX 4000 SFF Ada Generation 20GB",
+    "RTX 5000 Ada 32GB", "RTX 4500 Ada", "RTX 5880 Ada", "RTX 2000 Ada",
+])
+def test_nvidia_workstation_cards_are_out_of_scope(title):
+    assert r.series_tier("gpu", chip_key(title, "gpu")) is None
+
+
+@pytest.mark.parametrize("key", ["rtx 5050", "rtx 6070", "rtx 3090 ti", "rtx 4090"])
+def test_consumer_geforce_numbers_stay_in_scope(key):
+    assert r.series_tier("gpu", key) is not None
+
+
 def test_every_watchlist_row_is_in_scope_at_its_own_tier():
     # The scope table must agree with db/watchlist.csv (and so ARCHITECTURE Part 2).
     for wp in load_watchlist():

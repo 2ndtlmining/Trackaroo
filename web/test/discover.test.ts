@@ -62,6 +62,17 @@ describe('getDiscoverPage', () => {
 		expect(page.lastRun?.missing).toEqual(['umart/gpu']);
 	});
 
+	it('is stale when the run today saw no catalogues', () => {
+		seeded.db
+			.prepare(
+				`INSERT INTO discovery_runs (run_date, finished_at, catalogue_files, missing) VALUES ('2026-10-02', '2026-10-02T04:41:00', 0, '[]')`
+			)
+			.run();
+		const page = getDiscoverPage(seeded.db, '2026-10-02');
+		expect(page.isStale).toBe(true);
+		expect(page.lastRun?.catalogueFiles).toBe(0);
+	});
+
 	it('returns conflicts with the filed product model', () => {
 		const listing = seeded.db
 			.prepare('SELECT l.id, l.product_id, p.model FROM retailer_listings l JOIN products p ON p.id = l.product_id LIMIT 1')

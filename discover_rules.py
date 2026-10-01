@@ -44,6 +44,10 @@ def series_tier(category: str, key: str) -> Optional[str]:
     if not digits and family != "arc":
         return None
     if family in _GPU_TIERS:
+        # Every GeForce RTX number is d0[5-9]0 (3050..3090, 4060..4090, 5050..5090); anything
+        # else ("RTX 6000 Ada", "RTX 4500 Ada", "RTX 5880 Ada") is an Nvidia workstation card.
+        if family == "rtx" and not re.fullmatch(r"\d0[5-9]0", digits[:4]):
+            return None
         gen = int(digits[:4]) // 1000
         table = _GPU_TIERS[family]
         if gen in table:

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PageHead from '$lib/components/PageHead.svelte';
+	import { copyText } from '$lib/clipboard';
 	import { formatAud, formatShortDate } from '$lib/formats';
 	import type { DiscoveredPart } from '$lib/types';
 
@@ -16,13 +17,11 @@
 	};
 	const ranAt = $derived(data.lastRun ? data.lastRun.finishedAt.slice(11, 16) : null);
 	let copied = $state<number | null>(null);
+	let copyFailed = $state<number | null>(null);
 	async function copy(p: DiscoveredPart) {
-		try {
-			await navigator.clipboard.writeText(p.suggestedRow);
-			copied = p.id;
-		} catch {
-			copied = null;
-		}
+		const ok = await copyText(p.suggestedRow);
+		copied = ok ? p.id : null;
+		copyFailed = ok ? null : p.id;
 	}
 </script>
 
@@ -37,7 +36,7 @@
 		</p>
 		{#if data.isStale}
 			<p class="rounded-md bg-warning-soft px-3 py-2 text-sm text-text" role="status">
-				{data.lastRun ? `Showing results from ${day(data.lastRun.runDate)}: discovery has not run today yet.` : 'Discovery has not run yet.'}
+				{#if !data.lastRun}Discovery has not run yet.{:else if data.lastRun.runDate === data.today}No catalogues were saved today; showing the last results.{:else}Showing results from {day(data.lastRun.runDate)}: discovery has not run today yet.{/if}
 			</p>
 		{/if}
 		{#if data.lastRun?.missing.length}

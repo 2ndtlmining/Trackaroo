@@ -150,7 +150,7 @@ export function getDiscoverPage(db: DB, today: string): DiscoverPageData {
 	const weekStart = daysBefore(today, 6);
 	return {
 		lastRun,
-		isStale: !lastRun || lastRun.runDate !== today,
+		isStale: !lastRun || lastRun.runDate !== today || lastRun.catalogueFiles === 0,
 		today,
 		newThisWeek: untracked.filter((p) => p.firstSeen >= weekStart).length,
 		untracked,
