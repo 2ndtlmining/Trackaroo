@@ -40,8 +40,14 @@ backup integrity.
   Task 5 gate from a clean tree at `07e90ea`: pytest **1073 passed**, vitest
   **791 passed** (37 files), Playwright **115 passed**, svelte-check **0 errors,
   0 warnings** (466 files); image built offline with `GIT_SHA`, booted
-  `healthy`, `/healthz` reported `"version":"07e90ea"`. Branches pushed and
-  the three stacked PRs opened the same day.
+  `healthy`, `/healthz` reported `"version":"07e90ea"`. All three branches
+  are PUSHED (1-Oct); the PRs are NOT opened yet (the agent's `gh pr create`
+  was blocked by a permission rule). **Resume 2-Oct:** owner runs, in order,
+  `gh pr create --base main --head feat/2026-09-29-robustness --title "Robustness (28-Sep roadmap phase 3)" --body-file docs/pr-bodies/2026-10-01-phase3-robustness.md`,
+  then `--base feat/2026-09-29-robustness --head feat/2026-09-30-ux --title "UI/UX and better information (phase 4)" --body-file docs/pr-bodies/2026-10-01-phase4-ux.md`,
+  then `--base feat/2026-09-30-ux --head feat/2026-09-30-redeploy --title "Redeploy with docker compose (phase 6)" --body-file docs/pr-bodies/2026-10-01-phase6-redeploy.md`;
+  check the first CI run (`gh run list`); merge in order; then Task 7
+  (`docs/runbooks/dockerhost-compose-migration.md`, Path A).
 
 - **2026-09-30 (end of day) — Phase 6 "redeploy with docker compose": code
   done, NOT deployed.** Branch `feat/2026-09-30-redeploy`
