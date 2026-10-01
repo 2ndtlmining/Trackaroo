@@ -180,9 +180,53 @@ def find_conflicts(conn: sqlite3.Connection, today_iso: str) -> List[Tuple]:
     return out
 
 
+EMBED_MAX_LINES = 25
+
+
+def build_embed(rows, base_url: str) -> dict:
+    lines = []
+    for r in rows[:EMBED_MAX_LINES]:
+        retailers = ", ".join(r["retailers"].split(",")) if r["retailers"] else "?"
+        price = f"${r['min_price']:,.0f}" if r["min_price"] else "price unknown"
+        plural = "listing" if r["listing_count"] == 1 else "listings"
+        lines.append(f"**{r['display_name']}**: {r['listing_count']} {plural} at {retailers}, from {price}")
+    if len(rows) > EMBED_MAX_LINES:
+        lines.append(f"...and {len(rows) - EMBED_MAX_LINES} more on the Discover page")
+    embed = {
+        "title": "New parts at retailers",
+        "description": "\n".join(lines) + "\n\nTrack or Ignore each one on the Discover page.",
+        "color": 0x3B82F6,
+    }
+    if base_url:
+        embed["url"] = f"{base_url.rstrip('/')}/discover"
+    return embed
+
+
 def notify_new(conn: sqlite3.Connection, today_iso: str) -> int:
-    """Implemented in Task 6."""
-    return 0
+    """Send untracked parts never notified before; stamp them only on success."""
+    import os
+    import notify_discord
+
+    notify_discord.load_dotenv()
+    webhook = os.environ.get("DISCORD_WEBHOOK_URL")
+    if not webhook:
+        return 0
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT id, display_name, listing_count, retailers, min_price FROM discovered_parts"
+        " WHERE status = 'untracked' AND notified_at IS NULL ORDER BY first_seen DESC, display_name"
+    ).fetchall()
+    conn.row_factory = None
+    if not rows:
+        return 0
+    base_url = os.environ.get("TRACKAROO_PUBLIC_BASE_URL", "")
+    if not notify_discord.send_embed(webhook, build_embed(rows, base_url)):
+        LOGGER.warning("Discovery notice not delivered; it will be retried on the next run")
+        return 0
+    stamp = datetime.now().isoformat(timespec="seconds")
+    conn.executemany("UPDATE discovered_parts SET notified_at = ? WHERE id = ?", [(stamp, r["id"]) for r in rows])
+    conn.commit()
+    return len(rows)
 
 
 def run(

@@ -1152,3 +1152,48 @@ class TestCheckBackups:
         [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
         assert r.status == CheckResult.WARNING
         assert "future" in r.message.lower()
+
+
+class TestCheckDiscovery:
+    def _db(self, tmp_path):
+        from ingest import init_db
+        p = tmp_path / "h.db"
+        init_db(p).close()
+        return p
+
+    def test_never_error_even_without_tables(self, tmp_path):
+        import sqlite3
+        from health_checks import CheckResult, check_discovery
+        p = tmp_path / "bare.db"
+        sqlite3.connect(p).close()
+        assert all(r.status != CheckResult.ERROR for r in check_discovery(p))
+
+    def test_warns_when_not_run_today(self, tmp_path):
+        from datetime import date
+        from health_checks import CheckResult, check_discovery
+        [r] = check_discovery(self._db(tmp_path), today=date(2026, 10, 2))
+        assert r.status == CheckResult.WARNING and "did not run" in r.message
+
+    def test_warns_on_new_parts_and_conflicts(self, tmp_path):
+        import sqlite3
+        from datetime import date
+        from health_checks import CheckResult, check_discovery
+        p = self._db(tmp_path)
+        conn = sqlite3.connect(p)
+        conn.execute("INSERT INTO discovery_runs (run_date, finished_at, catalogue_files) VALUES ('2026-10-02','x',6)")
+        conn.execute("INSERT INTO discovered_parts (category, part_key, display_name, first_seen, last_seen, suggested_row)"
+                     " VALUES ('gpu','rtx 5050|8','GeForce RTX 5050 8GB','2026-10-02','2026-10-02','r')")
+        conn.commit()
+        [r] = check_discovery(p, today=date(2026, 10, 2))
+        assert r.status == CheckResult.WARNING and "1 new part" in r.message and "GeForce RTX 5050 8GB" in r.message
+
+    def test_ok_when_quiet(self, tmp_path):
+        import sqlite3
+        from datetime import date
+        from health_checks import CheckResult, check_discovery
+        p = self._db(tmp_path)
+        conn = sqlite3.connect(p)
+        conn.execute("INSERT INTO discovery_runs (run_date, finished_at, catalogue_files) VALUES ('2026-10-02','x',6)")
+        conn.commit()
+        [r] = check_discovery(p, today=date(2026, 10, 2))
+        assert r.status == CheckResult.OK

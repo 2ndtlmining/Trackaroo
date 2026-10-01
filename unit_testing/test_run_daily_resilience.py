@@ -261,3 +261,26 @@ def test_a_backup_integrity_failure_alerts_and_degrades(isolated_pipeline, monke
 
     assert run_daily.run(_args()) == run_daily.RUN_EXIT_DEGRADED
     assert any("backup" in line.lower() for line in isolated_pipeline.alerts[-1])
+
+
+class TestDiscoveryStep:
+    def test_discovery_crash_does_not_break_the_run(self, isolated_pipeline, monkeypatch):
+        monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))
+        baseline = run_daily.run(_args())
+        assert len(isolated_pipeline.discovery_runs) == 1
+        backups_before = isolated_pipeline.backups
+
+        import discover
+        monkeypatch.setattr(discover, "run", lambda **k: (_ for _ in ()).throw(RuntimeError("boom")))
+        code = run_daily.run(_args())
+
+        assert code == baseline
+        assert isolated_pipeline.backups == backups_before + 1
+
+    def test_dry_run_skips_discovery(self, isolated_pipeline, monkeypatch):
+        monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))
+        run_daily.run(_args("--dry-run"))
+        assert isolated_pipeline.discovery_runs == []
+
+    def test_check_discovery_is_registered(self):
+        assert "check_discovery" in [name for name, _ in run_daily._db_checks()]

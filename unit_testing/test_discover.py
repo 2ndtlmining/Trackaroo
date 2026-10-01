@@ -178,3 +178,65 @@ def test_prunes_old_catalogues(env):
     save_catalogue(data_dir, "umart", "gpu", "01_August_2026", [])
     _run(env)
     assert not (data_dir / "catalogue" / "umart_gpu_01_August_2026.json").exists()
+
+
+# Discovery Discord notice, new parts only, once (#16)
+
+@pytest.fixture
+def sent(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.test/hook")
+    monkeypatch.setattr("notify_discord.send_embed", lambda url, embed: calls.append(embed) or True)
+    return calls
+
+
+def test_new_parts_sent_once_with_details(env, sent):
+    summary = _run(env, notify=True)
+    assert summary["notified"] == 3
+    embed = sent[0]
+    assert embed["title"] == "New parts at retailers"
+    assert "Radeon RX 9070 GRE 12GB" in embed["description"]
+    assert "3 listings at pccg, scorptec, from $829" in embed["description"]
+
+
+def test_second_run_same_day_sends_nothing(env, sent):
+    _run(env, notify=True)
+    _run(env, notify=True)
+    assert len(sent) == 1
+
+
+def test_ignored_parts_never_notify(env, sent):
+    _run(env)  # notify off: rows created, notified_at NULL
+    conn = sqlite3.connect(env[1])
+    conn.execute("UPDATE discovered_parts SET status = 'ignored'")
+    conn.commit()
+    _run(env, notify=True)
+    assert sent == []
+
+
+def test_failed_send_retries_next_run(env, monkeypatch):
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.test/hook")
+    results = iter([False, True])
+    calls = []
+    monkeypatch.setattr("notify_discord.send_embed", lambda u, e: calls.append(e) or next(results))
+    assert _run(env, notify=True)["notified"] == 0
+    assert _run(env, notify=True)["notified"] == 3
+    assert len(calls) == 2
+
+
+def test_no_webhook_is_silent(env, monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+    monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
+    called = []
+    monkeypatch.setattr("notify_discord.send_embed", lambda *a: called.append(a) or True)
+    assert _run(env, notify=True)["notified"] == 0
+    assert called == []
+
+
+def test_embed_caps_long_lists():
+    rows = [{"display_name": f"Part {i}", "listing_count": 1, "retailers": "pccg", "min_price": 10.0}
+            for i in range(40)]
+    embed = discover.build_embed(rows, "http://dockerhost:3000")
+    assert embed["url"] == "http://dockerhost:3000/discover"
+    assert "and 15 more" in embed["description"]
+    assert len(embed["description"]) < 4000

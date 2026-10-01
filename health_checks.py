@@ -1136,6 +1136,33 @@ def check_scraper_cooldown() -> list[CheckResult]:
 
 # ── Backup age ───────────────────────────────────────────────────────
 
+def check_discovery(db_path: Path, today: Optional[date] = None) -> list[CheckResult]:
+    """Discovery report (#16): WARNING on new parts, conflicts or a missed run. Never ERROR."""
+    today_iso = (today or date.today()).isoformat()
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            ran = conn.execute("SELECT 1 FROM discovery_runs WHERE run_date = ? LIMIT 1", (today_iso,)).fetchone()
+            new = [r[0] for r in conn.execute(
+                "SELECT display_name FROM discovered_parts WHERE status = 'untracked' AND first_seen = ?"
+                " ORDER BY display_name", (today_iso,))]
+            conflicts = conn.execute("SELECT COUNT(*) FROM discovery_conflicts").fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        return [CheckResult("discovery", CheckResult.WARNING, f"Discovery state unreadable: {e}")]
+    problems = []
+    if not ran:
+        problems.append("Discovery did not run today")
+    if new:
+        problems.append(f"{len(new)} new part(s) at retailers: {', '.join(new[:5])}")
+    if conflicts:
+        problems.append(f"{conflicts} listing(s) filed under the wrong product (see /discover)")
+    if problems:
+        return [CheckResult("discovery", CheckResult.WARNING, "; ".join(problems))]
+    return [CheckResult("discovery", CheckResult.OK, "No new parts or conflicts")]
+
+
 def check_backups(
     backup_dir: Optional[Path] = None,
     now: Optional[datetime] = None,
