@@ -20,7 +20,7 @@ const ACTIONS: Record<DiscoverAction, { from: DiscoveredStatus[]; to: Discovered
 };
 
 export function isDiscoverAction(value: unknown): value is DiscoverAction {
-	return typeof value === 'string' && value in ACTIONS;
+	return typeof value === 'string' && Object.hasOwn(ACTIONS, value);
 }
 
 export function localIsoDate(d: Date = new Date()): string {
@@ -181,6 +181,9 @@ export function applyDiscoverAction(
 	if (!row) return 'not-found';
 	const rule = ACTIONS[action];
 	if (!rule.from.includes(row.status)) return 'invalid';
-	db.prepare('UPDATE discovered_parts SET status = ?, decided_at = ? WHERE id = ?').run(rule.to, nowIso, id);
-	return 'ok';
+	const marks = rule.from.map(() => '?').join(', ');
+	const res = db
+		.prepare(`UPDATE discovered_parts SET status = ?, decided_at = ? WHERE id = ? AND status IN (${marks})`)
+		.run(rule.to, nowIso, id, ...rule.from);
+	return res.changes === 0 ? 'invalid' : 'ok';
 }

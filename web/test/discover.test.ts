@@ -114,6 +114,8 @@ describe('helpers', () => {
 	it('validates actions', () => {
 		expect(isDiscoverAction('ignore')).toBe(true);
 		expect(isDiscoverAction('delete')).toBe(false);
+		expect(isDiscoverAction('constructor')).toBe(false);
+		expect(isDiscoverAction('__proto__')).toBe(false);
 	});
 	it('formats a local date', () => {
 		expect(localIsoDate(new Date(2026, 9, 2, 23, 30))).toBe('2026-10-02');
