@@ -230,12 +230,15 @@ def notify_new(conn: sqlite3.Connection, today_iso: str) -> int:
 
 
 def run(
-    db_path: Path = DB_PATH,
-    data_dir: Path = DATA_DIR,
+    db_path: Optional[Path] = None,
+    data_dir: Optional[Path] = None,
     today: Optional[date] = None,
     notify: bool = False,
     watchlist: Optional[list] = None,
 ) -> Dict[str, Any]:
+    # Resolved at call time so a test can redirect the module globals.
+    db_path = Path(db_path) if db_path is not None else DB_PATH
+    data_dir = Path(data_dir) if data_dir is not None else DATA_DIR
     today = today or date.today()
     today_iso = today.isoformat()
     file_date = today.strftime(FILE_DATE_FORMAT)

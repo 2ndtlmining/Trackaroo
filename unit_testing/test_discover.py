@@ -240,3 +240,17 @@ def test_embed_caps_long_lists():
     assert embed["url"] == "http://dockerhost:3000/discover"
     assert "and 15 more" in embed["description"]
     assert len(embed["description"]) < 4000
+
+
+def test_default_paths_are_guarded_in_tests(tmp_path):
+    """discover.run() with no arguments must never reach the real DB or data dir."""
+    from config import DB_PATH as REAL_DB
+    real_mtime = REAL_DB.stat().st_mtime_ns if REAL_DB.exists() else None
+    from ingest import init_db
+    guard = tmp_path / "discover-guard.db"
+    init_db(guard).close()
+    discover.run()
+    conn = sqlite3.connect(guard)
+    assert conn.execute("SELECT COUNT(*) FROM discovery_runs").fetchone()[0] == 1
+    conn.close()
+    assert (REAL_DB.stat().st_mtime_ns if REAL_DB.exists() else None) == real_mtime

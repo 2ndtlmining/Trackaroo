@@ -61,6 +61,17 @@ def _no_real_backup_mirror(monkeypatch):
     monkeypatch.setattr("backup_db.BACKUP_MIRROR_DIR", None)
 
 
+# discover.run() defaults to the real DB and the real data/catalogue (it creates
+# tables, writes a discovery_runs row and prunes old catalogues). Any test that
+# reaches it without passing paths (e.g. run_daily.main() without the
+# isolated_pipeline fixture) must hit throwaway paths instead.
+@pytest.fixture(autouse=True)
+def _no_real_discovery_paths(monkeypatch, tmp_path):
+    import discover
+    monkeypatch.setattr(discover, "DB_PATH", tmp_path / "discover-guard.db")
+    monkeypatch.setattr(discover, "DATA_DIR", tmp_path / "discover-guard-data")
+
+
 def _make_connection(use_memory: bool = True) -> sqlite3.Connection:
     """Create a fresh connection with the schema applied."""
     if use_memory:
