@@ -8,12 +8,12 @@
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import { getRetailerFreshness } from '$lib/server/repos';
+import { buildVersion } from '$lib/server/version';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
 export function GET(): Response {
-	// Baked in at build time: docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD)
-	const version = process.env.TRACKAROO_VERSION || 'dev';
+	const version = buildVersion();
 	try {
 		const retailers = getRetailerFreshness(getDb()).map((r) => ({
 			retailer: r.retailer,

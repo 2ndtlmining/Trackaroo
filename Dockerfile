@@ -1,8 +1,9 @@
 # Trackaroo — all-in-one image (Python pipeline + SvelteKit dashboard).
 #
 # One container runs everything: it serves the dashboard on :3000 and runs the
-# daily scrape → ingest → mirror → health-check → backup pipeline. There is no
-# docker-compose — plain `docker run` is the supported way to run this.
+# daily scrape → ingest → mirror → health-check → backup pipeline. Normally
+# built and run through docker-compose.yml / deploy/redeploy.sh; the docker
+# run forms below are for one-off runs.
 #
 # Build from the repo root (not web/):
 #   docker build -t trackaroo .

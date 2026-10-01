@@ -74,7 +74,7 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
 | **Frontend tests** | ✅ Complete | 234 vitest + 52 Playwright e2e (with a `goto()` hydration helper) |
-| **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with plain `docker run`
+| **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
 
@@ -141,8 +141,9 @@ python -m pytest unit_testing/ -v
 ## Docker (single all-in-one container)
 
 One image runs the whole system — the dashboard **and** the daily
-scrape → ingest → mirror → health-check → backup pipeline. There is no
-docker-compose; plain `docker run` is the supported way to run this.
+scrape → ingest → mirror → health-check → backup pipeline. Deploy it with
+`docker compose` via `deploy/redeploy.sh` (see [DEPLOYMENT.md](DEPLOYMENT.md));
+the plain `docker run` forms below still work for one-off runs.
 
 ### Build
 
@@ -272,10 +273,11 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/
 ### Upgrading
 
 ```bash
-docker stop trackaroo && docker rm trackaroo
-docker build -t trackaroo .
-# then re-run the command above
+deploy/redeploy.sh    # pull, back up, build with the git SHA, start, verify
 ```
+
+(With plain `docker run`: `docker stop trackaroo && docker rm trackaroo`,
+`docker build -t trackaroo .`, then re-run the command above.)
 
 Your data is untouched by this because it lives in the mounts, not the
 container. That is the whole point of mapping them.
@@ -371,7 +373,7 @@ Trackaroo/
 │
 ├── Dockerfile          # all-in-one image: Python pipeline + dashboard (see DEPLOYMENT.md)
 ├── deploy/
-│   ├── entrypoint.sh          # pipeline-only scheduler loop (used by compose `cron`)
+│   ├── entrypoint.sh          # pipeline-only scheduler loop (pipeline-only entrypoint override)
 │   ├── entrypoint-single.sh   # all-in-one: seed → dashboard → pipeline scheduler
 │   └── bootstrap-data.sh      # hydrates a fresh DB from the baked-in data/*.json history
 │

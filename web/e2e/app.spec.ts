@@ -549,6 +549,12 @@ test.describe('product index', () => {
 	});
 });
 
+test('the footer names the running build (#3)', async ({ page }) => {
+	await goto(page, '/');
+	// vite dev has no TRACKAROO_VERSION, so the stamp reads "dev".
+	await expect(page.getByTestId('build-version')).toHaveText('build dev');
+});
+
 test.describe('command palette', () => {
 	test('opens with Ctrl+K, searches and navigates to a product on Enter', async ({ page }) => {
 		await goto(page, '/');

@@ -59,3 +59,6 @@ web/build/
 web/e2e/e2e.db
 web/test-results/
 web/playwright-report/
+
+# Host-only compose extras (NAS mirror mount); see docker-compose.override.example.yml
+docker-compose.override.yml

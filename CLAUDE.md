@@ -18,13 +18,13 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 1042 tests.
+**Backend** (repo root): `python -m pytest -q` — 1073 tests.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 787 tests, ~15s)
+- **Unit tests**: `npm test` (Vitest, 791 tests, ~15s)
 - **Watch mode**: `npm run test:watch`
-- **E2E tests**: `npm run test:e2e` (Playwright, 114 tests, Chromium only, must be kept fast)
+- **E2E tests**: `npm run test:e2e` (Playwright, 115 tests, Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
   - `e2e.db`, `test-results/`, and `playwright-report/` are gitignored and regenerated on each run.
 - **Type + Svelte check**: `npm run check` (svelte-check, must report 0 errors)
@@ -35,16 +35,21 @@ the repo root, then from `web/`: `npm run check`, `npm test`, `npm run test:e2e`
 
 ## Docker (from the repo root, NOT `web/`)
 
-**There is no docker-compose.** One image, started with plain `docker run`.
-Don't reintroduce compose — it was removed deliberately.
+**Deploy with docker compose** (`docker-compose.yml`, one `trackaroo`
+service; owner decision 30-Sep-2026 reversed the earlier "no compose" rule).
+Prod is `~/docker/Trackaroo` on the owner's `dockerhost`.
 
 ```bash
-docker build -t trackaroo .
-docker run -d --name trackaroo -p 3000:3000 --restart unless-stopped   --env-file .env   -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" trackaroo
-docker logs -f trackaroo
+deploy/redeploy.sh    # pull, backup, build with GIT_SHA, up, wait healthy, repair dry run, verify
+docker compose logs -f trackaroo
 ```
 
-- **Always map both `/app/db` and `/app/data`.** Without them the SQLite DB and
+**Never `docker compose up` (or `docker run` with the mounts) in a dev
+working copy**: it mounts this checkout's `db/` and starts a live retailer
+scrape. Local image checks boot it like CI: `--network none -e SKIP_PIPELINE=1`
+and no mounts (see the end of this file).
+
+- **Always map both `/app/db` and `/app/data`** (compose does). Without them the SQLite DB and
   the JSON snapshots live in the container's writable layer and die with
   `docker rm` — a live container was found in exactly that state, discarding
   everything it scraped. Mapping them onto the repo's own directories means the
@@ -194,11 +199,13 @@ false positives. Count bytes instead:
 **Passing `pytest` / `npm test` does not mean the app runs.** The suites never
 build the image, so a fully green run says nothing about whether the container
 starts. After touching the `Dockerfile`, `deploy/`, or anything the container
-executes, build and boot it before calling the work done:
+executes, build and boot it before calling the work done — offline, with no
+mounts, so it can neither scrape nor touch a real DB:
 
 ```bash
-docker build -t trackaroo . && docker run -d --name trackaroo-verify -p 3001:3000   --env-file .env -v "$(pwd)/db:/app/db" -v "$(pwd)/data:/app/data" trackaroo
-docker logs trackaroo-verify && curl -s -o /dev/null -w '%{http_code}
-' http://localhost:3001/
+GIT_SHA=$(git rev-parse --short HEAD) docker compose build
+docker run -d --name trackaroo-verify --network none -e SKIP_PIPELINE=1 trackaroo:latest
+for i in $(seq 1 40); do s=$(docker inspect -f '{{.State.Health.Status}}' trackaroo-verify); [ "$s" = healthy ] && break; sleep 10; done; echo "$s"
+docker exec trackaroo-verify node -e "fetch('http://127.0.0.1:3000/healthz').then(r=>r.text()).then(console.log)"
 docker rm -f trackaroo-verify
 ```

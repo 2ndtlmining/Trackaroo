@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-01
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,71 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-10-01 — Phase 6 Task 6: rehearsal on a copy of prod's DB passed.
+  Resume here: next is Task 5 (push + three stacked PRs), then Task 7.**
+  Host facts (owner-run, 1-Oct): `~/docker/Trackaroo` is a clean git checkout
+  of `main` at `e9bd419` (30-Aug, an ancestor of our `main`) → the migration
+  runbook's **Path A**. Container mounts are exactly `db → /app/db` and
+  `data → /app/data` (no logs mount); restart `unless-stopped`. `.env` has no
+  `$` in values and no quoted values; its `ALGOLIA_*` lines equal the code's
+  built-in key — comment them out during the move. Compose v5.5.1, 153 GB free.
+  Rehearsal on a `sqlite3 .backup` copy (3.1 MB; 100 products, 485 listings,
+  21,058 snapshots, 53 daily snapshot dates 9-Aug..30-Sep, no gaps):
+  `migrate.py` (retired RX 9070 XTX, added the three new tables) → `seed.py`
+  (+6 products) → `repair_listings.py` dry run: 65 moves, all correct (46
+  memory-variant splits, 8 wrong-model fixes, 11 non-matches such as 5900XT,
+  5600GT, 7700X3D, board bundles and the 5090 AI box detached to hidden
+  "Unmatched" placeholders) → `--apply` → second dry run 0 moves.
+  `restore_drill.py --backup <untouched> --db <migrated>` exit 0; per-day
+  snapshot counts identical; every snapshot row and listing id/sku identical;
+  0 orphans; integrity + FK checks clean; products 100 → 108 (6 seeded + 2
+  untracked placeholders). Served on `node web/server.js`: every main page 200,
+  placeholders appear on no list page. Expected after deploy: the home page
+  shows Umart as "missing" until the first Umart scrape lands.
+  Owner to-do on the host: `docker exec trackaroo rm /app/db/rehearsal-copy.db`
+  (root-owned copy left in `db/`).
+  Task 5 gate from a clean tree at `07e90ea`: pytest **1073 passed**, vitest
+  **791 passed** (37 files), Playwright **115 passed**, svelte-check **0 errors,
+  0 warnings** (466 files); image built offline with `GIT_SHA`, booted
+  `healthy`, `/healthz` reported `"version":"07e90ea"`. All three branches
+  are PUSHED (1-Oct); the PRs are NOT opened yet (the agent's `gh pr create`
+  was blocked by a permission rule). **Resume 2-Oct:** owner runs, in order,
+  `gh pr create --base main --head feat/2026-09-29-robustness --title "Robustness (28-Sep roadmap phase 3)" --body-file docs/pr-bodies/2026-10-01-phase3-robustness.md`,
+  then `--base feat/2026-09-29-robustness --head feat/2026-09-30-ux --title "UI/UX and better information (phase 4)" --body-file docs/pr-bodies/2026-10-01-phase4-ux.md`,
+  then `--base feat/2026-09-30-ux --head feat/2026-09-30-redeploy --title "Redeploy with docker compose (phase 6)" --body-file docs/pr-bodies/2026-10-01-phase6-redeploy.md`;
+  check the first CI run (`gh run list`); merge in order; then Task 7
+  (`docs/runbooks/dockerhost-compose-migration.md`, Path A).
+
+- **2026-09-30 (end of day) — Phase 6 "redeploy with docker compose": code
+  done, NOT deployed.** Branch `feat/2026-09-30-redeploy`
+  (stacked on `feat/2026-09-30-ux` → `feat/2026-09-29-robustness` → `main`;
+  PR #41, phases 1–2, is already merged). None of the three branches is
+  pushed. Plan: `docs/superpowers/plans/2026-09-30-redeploy.md`; Tasks 1–4
+  are done (footer build stamp, `docker-compose.yml`, `deploy/redeploy.sh`,
+  docs + migration runbook in DEPLOYMENT.md), plus a fresh-reviewer pass whose
+  six findings are fixed (`749586b`). The owner chose compose over the old
+  "no compose" rule (30-Sep).
+  **Where prod is:** NOT this PC. The live app runs on the owner's separate
+  Ubuntu server, `giel@dockerhost:~/docker/Trackaroo`, as a plain
+  `docker run` container named `trackaroo` (image `trackaroo`, created ~2 Sep,
+  still a pre-31-Aug build: `data/` has pccg + scorptec JSON from 9 Aug to
+  30 Sep and no umart). `watchtower`, `portainer` and `ergo-monitor` run on
+  the same host. The DB in this working copy is not prod data. Every host step
+  is run by the owner on that server (or over ssh if they grant it).
+  **Owner priority:** keep all existing prod data; no restart from scratch.
+  **Next, in order:** (1) owner runs on dockerhost: `git status -sb`,
+  `git log --oneline -1`, `ls` in `~/docker/Trackaroo`, the
+  `docker inspect trackaroo` mounts, and checks `.env` for `$`; (2) owner makes
+  a consistent DB copy (`docker exec trackaroo python -c "import sqlite3; ...
+  s.backup(d)"` into `db/rehearsal-copy.db`) and scps it to this PC; (3) plan
+  Task 6: rehearse migrate/seed/repair on a scratch copy here and prove
+  per-day snapshot counts are unchanged (`restore_drill.py --backup`);
+  (4) Task 5: push, three stacked PRs, first CI run; (5) Task 7: the host
+  migration, following the step-by-step guide for that server:
+  `docs/runbooks/dockerhost-compose-migration.md`.
+  Gate: pytest **1073 passed**, vitest **791 passed**, Playwright **115
+  passed**, svelte-check **0 errors, 0 warnings**.
 
 - **2026-09-30** — **Phase 4 "UI/UX and better information" (#25, #24, #31 core,
   #27, #26, #23, #5 items 4–5; U1–U6, D7, three Phase 1–2 follow-ups) on
