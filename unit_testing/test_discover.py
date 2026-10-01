@@ -3,7 +3,6 @@
 import json
 import sqlite3
 from datetime import date
-from pathlib import Path
 
 import pytest
 
@@ -13,7 +12,6 @@ from scraper.catalogue_io import catalogue_item, save_catalogue
 
 TODAY = date(2026, 10, 2)
 FD = "02_October_2026"
-SCHEMA = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
 
 WATCHLIST = [
     {"category": "gpu", "brand": "AMD", "model": "Radeon RX 9070", "gen_tier": "current", "vram_gb": 16, "cores": None},
@@ -38,6 +36,7 @@ def env(tmp_path):
         _item("Sapphire Pulse RX 9070 GRE 12GB OC", 869.0),
         _item("ASUS Prime RX 9070 16GB", 899.0),          # tracked
         _item("MSI RTX 5060 Ti 8G Ventus", 599.0),         # tracked (8GB row)
+        _item("Gigabyte RTX 5060 Ti Eagle OC", 650.0),     # tracked chip, no VRAM in title
         _item("Gigabyte RTX 2060 6GB", 299.0),             # out of scope
         _item("Gigabyte Aorus RTX 5090 AI Box", 9999.0),   # excluded
         _item("Arctic MX-6 thermal paste", 12.0),          # unrecognised

@@ -43,8 +43,9 @@ def _group_key(category: str, title: str) -> Optional[Tuple[str, Optional[int]]]
     return key, vram
 
 
-def _classify(envelopes, matcher) -> Tuple[Dict[Tuple[str, str], Dict[str, Any]], Set[Tuple[str, str]], List[str]]:
+def _classify(envelopes, matcher, watchlist=()) -> Tuple[Dict[Tuple[str, str], Dict[str, Any]], Set[Tuple[str, str]], List[str]]:
     """(untracked groups by (category, part_key), part keys now tracked, unrecognised titles)."""
+    tracked_chips = {(wp["category"], chip_key(wp["model"], wp["category"])) for wp in watchlist}
     groups: Dict[Tuple[str, str], Dict[str, Any]] = {}
     tracked: Set[Tuple[str, str]] = set()
     unrecognised: List[str] = []
@@ -67,6 +68,8 @@ def _classify(envelopes, matcher) -> Tuple[Dict[Tuple[str, str], Dict[str, Any]]
             if matcher.resolve(title, category) is not None:
                 tracked.add((category, pkey))
                 continue
+            if vram is None and (category, key) in tracked_chips:
+                continue  # chip is tracked; the title just omits the VRAM, so Matcher cannot pick a row
             g = groups.setdefault((category, pkey), {
                 "key": key, "vram": vram, "titles": [], "retailers": set(), "count": 0,
                 "min_price": None, "min_url": None,
@@ -103,6 +106,7 @@ def _placeholder_first_seen(conn: sqlite3.Connection) -> Dict[Tuple[str, str], s
 
 
 def _upsert(conn, groups, watchlist, today_iso: str) -> None:
+    # listing_count/retailers/min_price reflect today's catalogues only.
     keys_with_vram_rows = {
         chip_key(wp["model"], wp["category"]) for wp in watchlist if wp["category"] == "gpu" and wp.get("vram_gb")
     }
@@ -203,7 +207,7 @@ def run(
         unrecognised: List[str] = []
         if envelopes:
             wl = watchlist if watchlist is not None else load_watchlist()
-            groups, tracked, unrecognised = _classify(envelopes, Matcher(wl))
+            groups, tracked, unrecognised = _classify(envelopes, Matcher(wl), wl)
             _upsert(conn, groups, wl, today_iso)
             _flip_tracked(conn, tracked)
         conflicts = find_conflicts(conn, today_iso)
