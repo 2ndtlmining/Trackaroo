@@ -43,6 +43,7 @@ from config import (
     setup_logging,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
+from scraper.catalogue_io import catalogue_item, save_catalogue
 from scraper.chip_key import Matcher
 from scraper.run_report import EXIT_OK, RunReport, exit_code_for
 from scraper.snapshot_io import save_category_snapshot
@@ -290,6 +291,15 @@ def scrape_umart(
     return results, matched_ids, all_scraped
 
 
+def catalogue_items(scraped: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Every scraped card, matched or not, in the catalogue shape (#16)."""
+    return [
+        catalogue_item(p["name"], p.get("url", ""), p.get("price_aud"), p.get("stock_status", "unknown"),
+                       p.get("retailer_sku"))
+        for p in scraped
+    ]
+
+
 def main() -> int:
     setup_logging()
     logger.info("Loading watchlist...")
@@ -302,9 +312,11 @@ def main() -> int:
 
     for category in ("cpu", "gpu"):
         logger.info("\nScraping Umart %s...", category.upper())
-        products, matched_ids, _ = scrape_umart(watchlist, only_category=category, report=report)
+        products, matched_ids, cat_scraped = scrape_umart(watchlist, only_category=category, report=report)
         # Saved per category so a timeout during GPUs keeps the CPUs (R2).
         save_category_snapshot(DATA_DIR, "umart", category, today, watchlist, products, matched_ids)
+        save_catalogue(DATA_DIR, "umart", category, today,
+                       catalogue_items([p for ps in cat_scraped.values() for p in ps]))
         report.set(category, matched=len(products))
         report.flush()
 

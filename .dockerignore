@@ -15,6 +15,8 @@ htmlcov/
 # history (data/*.json) is baked into the image to hydrate a fresh DB on boot.
 data/*.backup*
 data/.backup*/
+# Discovery catalogues are a 30-day report, not history to bake into the image.
+data/catalogue/
 db/backups/
 db/*.db
 db/*.db-wal

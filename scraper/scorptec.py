@@ -24,6 +24,7 @@ from config import (
     setup_logging,
 )
 from db.watchlist import load_watchlist, WatchlistProduct
+from scraper.catalogue_io import catalogue_item, save_catalogue
 from scraper.chip_key import Matcher
 from scraper.run_report import EXIT_OK, RunReport, exit_code_for
 from scraper.snapshot_io import save_category_snapshot
@@ -484,6 +485,15 @@ def analyze_unmatched(
     return likely_delist, possible_stocked
 
 
+def catalogue_items(scraped: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Every scraped card, matched or not, in the catalogue shape (#16)."""
+    return [
+        catalogue_item(p["name"], p.get("url", ""), p.get("price_aud"), p.get("stock_status", "unknown"),
+                       p.get("retailer_sku"))
+        for p in scraped
+    ]
+
+
 def main() -> int:
     setup_logging()
     logger.info("Loading watchlist...")
@@ -504,6 +514,8 @@ def main() -> int:
         # SCRAPER_TIMEOUT_SECONDS, and results used to be saved only at the very
         # end, so a slow GPU pass cost the finished CPUs as well (R2).
         save_category_snapshot(DATA_DIR, "scorptec", category, today, watchlist, cat_results, cat_ids)
+        save_catalogue(DATA_DIR, "scorptec", category, today,
+                       catalogue_items([p for ps in cat_scraped.values() for p in ps]))
         report.set(category, matched=len(cat_results))
         report.flush()
         results.extend(cat_results)
