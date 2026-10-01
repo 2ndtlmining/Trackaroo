@@ -3,8 +3,6 @@
 import json
 from unittest import mock
 
-import pytest
-
 import run_daily
 from scraper import pccg, scorptec, umart
 
@@ -69,6 +67,23 @@ def test_pccg_scrape_category_without_dir_writes_nothing(tmp_path, monkeypatch):
         {"name": "x", "price": "$1", "url": "u", "stock_status": "in_stock"}])
     monkeypatch.chdir(tmp_path)
     pccg.scrape_category("gpu", [])
+    assert not (tmp_path / "catalogue").exists()
+
+
+def test_pccg_malformed_price_never_breaks_scrape(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(pccg, "algolia_fetch_catalogue", lambda *a, **k: [
+        {"name": "x", "price": "$,", "url": "u", "stock_status": "in_stock"}])
+    with caplog.at_level("WARNING"):
+        out = pccg.scrape_category("gpu", [], catalogue_dir=tmp_path, file_date="02_October_2026")
+    assert out[2] is False
+    assert "Could not save pccg" in caplog.text
+
+
+def test_pccg_breaker_path_writes_no_catalogue(tmp_path, monkeypatch):
+    monkeypatch.setattr(pccg, "algolia_fetch_catalogue", lambda *a, **k: [])
+    monkeypatch.setattr(pccg, "_write_cooldown", lambda *a, **k: None)
+    out = pccg.scrape_category("gpu", [], catalogue_dir=tmp_path, file_date="02_October_2026")
+    assert out == ([], set(), True)
     assert not (tmp_path / "catalogue").exists()
 
 

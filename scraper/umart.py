@@ -315,8 +315,11 @@ def main() -> int:
         products, matched_ids, cat_scraped = scrape_umart(watchlist, only_category=category, report=report)
         # Saved per category so a timeout during GPUs keeps the CPUs (R2).
         save_category_snapshot(DATA_DIR, "umart", category, today, watchlist, products, matched_ids)
-        save_catalogue(DATA_DIR, "umart", category, today,
-                       catalogue_items([p for ps in cat_scraped.values() for p in ps]))
+        try:
+            save_catalogue(DATA_DIR, "umart", category, today,
+                           catalogue_items([p for ps in cat_scraped.values() for p in ps]))
+        except Exception as exc:  # the catalogue must never break a scrape (#16)
+            logger.warning("Could not save umart %s catalogue: %s", category, exc)
         report.set(category, matched=len(products))
         report.flush()
 

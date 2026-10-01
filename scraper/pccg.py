@@ -594,6 +594,18 @@ def algolia_fetch_catalogue(
     return all_products
 
 
+def _save_pccg_catalogue(catalogue: list, category: str, catalogue_dir: Path, file_date: str) -> None:
+    """Best-effort: building or saving the catalogue must never break a scrape (#16)."""
+    try:
+        save_catalogue(catalogue_dir, "pccg", category, file_date, [
+            catalogue_item(p.get("name", ""), p.get("url", ""), _parse_price(p.get("price")) or None,
+                           p.get("stock_status", "unknown"), p.get("sku"))
+            for p in catalogue
+        ])
+    except Exception as exc:
+        LOGGER.warning("Could not save pccg %s catalogue: %s", category, exc)
+
+
 def scrape_category(
     category: str,
     watchlist: list[WatchlistProduct],
@@ -638,11 +650,7 @@ def scrape_category(
     # The discovery report (#16) wants everything on sale, matched or not.
     # The catalogue is already in hand, so this costs no Algolia query.
     if catalogue_dir is not None and file_date is not None:
-        save_catalogue(catalogue_dir, "pccg", category, file_date, [
-            catalogue_item(p.get("name", ""), p.get("url", ""), _parse_price(p.get("price")) or None,
-                           p.get("stock_status", "unknown"), p.get("sku"))
-            for p in catalogue
-        ])
+        _save_pccg_catalogue(catalogue, category, catalogue_dir, file_date)
 
     # Map each model back to its global index in the full watchlist
     model_to_global: Dict[str, int] = {

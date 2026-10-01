@@ -514,8 +514,11 @@ def main() -> int:
         # SCRAPER_TIMEOUT_SECONDS, and results used to be saved only at the very
         # end, so a slow GPU pass cost the finished CPUs as well (R2).
         save_category_snapshot(DATA_DIR, "scorptec", category, today, watchlist, cat_results, cat_ids)
-        save_catalogue(DATA_DIR, "scorptec", category, today,
-                       catalogue_items([p for ps in cat_scraped.values() for p in ps]))
+        try:
+            save_catalogue(DATA_DIR, "scorptec", category, today,
+                           catalogue_items([p for ps in cat_scraped.values() for p in ps]))
+        except Exception as exc:  # the catalogue must never break a scrape (#16)
+            logger.warning("Could not save scorptec %s catalogue: %s", category, exc)
         report.set(category, matched=len(cat_results))
         report.flush()
         results.extend(cat_results)
