@@ -20,6 +20,7 @@
 	// A cooling-down retailer currently reads as stale (spec §5 defers reading
 	// data/pccg_cooldown.json). Warning tone, never an error tone: the PCCG
 	// circuit breaker is working as designed and the UI must not cry wolf.
+	// `stale`, `never` and `incomplete` all take the same warning tone below.
 	function pillClass(state: RetailerHealth['state']): string {
 		if (state === 'fresh') return 'border-down/40 bg-down/10 text-down';
 		if (state === 'recent') return 'border-border bg-surface text-text-muted';
@@ -62,6 +63,9 @@
 					<span aria-hidden="true">{marker(r.state)}</span>
 					<span class="font-medium">{r.label}</span>
 					<span>{r.text}</span>
+					{#if r.detail}
+						<span class="text-text-muted">· {r.detail}</span>
+					{/if}
 				</span>
 			{/each}
 		</div>

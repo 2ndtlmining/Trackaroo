@@ -413,23 +413,72 @@ export function getHeaderStats(db: DB): HeaderStats {
 export interface RetailerFreshness {
 	retailer: Retailer;
 	latestSnapshotDate: string | null;
+	// Latest scrape_runs row (R3): local wall-clock 'YYYY-MM-DDTHH:MM:SS', its
+	// status, and the products it matched. Optional so callers building rows by
+	// hand (tests, older data) need not supply them.
+	lastRunAt?: string | null;
+	lastRunStatus?: string | null;
+	lastRunMatched?: number | null;
 }
 
-// Per-retailer currency for the homepage health strip. Deliberately DB-only:
-// distinguishing an intended circuit-breaker pause from real staleness would
-// require reading data/pccg_cooldown.json, coupling the web app to the
-// pipeline's file layout (spec §5 defers this).
+// True when `name` is a table in this DB. The dashboard must keep rendering on a
+// DB from before a migration ran (Review Focus 5).
+export function tableExists(db: DB, name: string): boolean {
+	return (
+		db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !==
+		undefined
+	);
+}
+
+// Per-retailer currency for the homepage health strip and /healthz.
+// The retailer list comes from active_retailers -- the pipeline's
+// config.ACTIVE_RETAILERS mirrored into the DB -- so a retailer that has never
+// written a row is listed as missing instead of silently absent (R1, 28-Sep:
+// Umart on prod). A retailer that is no longer active but has history follows,
+// by slug. On a DB without the table, retailers with data are listed by slug.
 export function getRetailerFreshness(db: DB): RetailerFreshness[] {
-	const rows = db
+	const latest = db
 		.prepare(
 			`SELECT l.retailer AS retailer, MAX(s.snapshot_date) AS latest
 			 FROM retailer_listings l
 			 JOIN price_snapshots s ON s.retailer_listing_id = l.id
-			 GROUP BY l.retailer
-			 ORDER BY l.retailer ASC`
+			 GROUP BY l.retailer`
 		)
-		.all() as Array<{ retailer: Retailer; latest: string | null }>;
-	return rows.map((r) => ({ retailer: r.retailer, latestSnapshotDate: r.latest }));
+		.all() as Array<{ retailer: string; latest: string | null }>;
+	const latestBy = new Map(latest.map((r) => [r.retailer, r.latest]));
+
+	const active = tableExists(db, 'active_retailers')
+		? (
+				db
+					.prepare('SELECT retailer FROM active_retailers ORDER BY position, retailer')
+					.all() as Array<{ retailer: string }>
+			).map((r) => r.retailer)
+		: [];
+	const inactive = [...latestBy.keys()].filter((r) => !active.includes(r)).sort();
+
+	// One GROUP BY pass, not a correlated MAX(id) subquery re-run per row
+	// (final review M4) -- /healthz calls this on every health-strip request.
+	const runs = tableExists(db, 'scrape_runs')
+		? (db
+				.prepare(
+					`SELECT r.retailer AS retailer, r.finished_at AS at, r.status AS status, r.matched AS matched
+					 FROM scrape_runs r
+					 WHERE r.id IN (SELECT MAX(id) FROM scrape_runs GROUP BY retailer)`
+				)
+				.all() as Array<{ retailer: string; at: string; status: string; matched: number | null }>)
+		: [];
+	const runBy = new Map(runs.map((r) => [r.retailer, r]));
+
+	return [...active, ...inactive].map((retailer) => {
+		const run = runBy.get(retailer);
+		return {
+			retailer: retailer as Retailer,
+			latestSnapshotDate: latestBy.get(retailer) ?? null,
+			lastRunAt: run?.at ?? null,
+			lastRunStatus: run?.status ?? null,
+			lastRunMatched: run?.matched ?? null
+		};
+	});
 }
 
 export function getCategoryCounts(db: DB): Map<Category, number> {

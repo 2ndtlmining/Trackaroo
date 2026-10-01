@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,11 +23,19 @@ import {
 	getRetailerFreshness,
 	getSparklines,
 	groupListingsByProduct,
+	tableExists,
 	upsertAlert
 } from '../src/lib/server/repos';
 import { MIN_HISTORY_POINTS } from '../src/lib/constants';
 import { RETAILER_OPTIONS } from '../src/lib/filters';
-import { createSeededDb, DATA_DIR, SCHEMA_PATH, parseDateFromFilename, type SeededDb } from './helpers/seed';
+import {
+	createSeededDb,
+	DATA_DIR,
+	SCHEMA_PATH,
+	SYNTHETIC,
+	parseDateFromFilename,
+	type SeededDb
+} from './helpers/seed';
 
 // Every retailer the display layer declares. Asserting against this rather
 // than a hardcoded pair means adding a retailer to the pipeline does not break
@@ -49,7 +57,9 @@ afterAll(() => {
 });
 
 describe('getLatestListings', () => {
-	it('returns all active listings with a latest snapshot', () => {
+	// Skipped on synthetic data (#13): the CI fixture's listing URLs are
+	// relative (`/p/...`), unlike the real scrape's absolute `https://` URLs.
+	it.skipIf(SYNTHETIC)('returns all active listings with a latest snapshot', () => {
 		const rows = getLatestListings(db);
 		expect(rows.length).toBeGreaterThan(0);
 		for (const row of rows) {
@@ -592,7 +602,9 @@ describe('getPriceBand', () => {
 		expect(point!.high).toBeCloseTo(agg.mx as number, 2);
 	});
 
-	it('is null on days where nothing is in stock', () => {
+	// Skipped on synthetic data (#13): the CI fixture has no product day where
+	// every listing is out of stock, unlike the real scrape history.
+	it.skipIf(SYNTHETIC)('is null on days where nothing is in stock', () => {
 		const candidate = db
 			.prepare(
 				`SELECT p.id AS pid, s.snapshot_date AS date
@@ -1250,9 +1262,149 @@ describe('getRetailerFreshness', () => {
 		}
 	});
 
-	it('orders retailers deterministically by slug', () => {
-		const slugs = getRetailerFreshness(db).map((r) => r.retailer);
-		expect([...slugs].sort()).toEqual(slugs);
+	// F19: a config position order that is NOT alphabetical (pccg < scorptec
+	// alphabetically, but scorptec is position 0) proves this is really
+	// ordering by active_retailers.position, not coincidentally by slug.
+	it('orders active retailers by config position, then any others by slug', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-fresh-order-'));
+		const d = openDatabase(path.join(dir, 'order.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec(
+				"INSERT INTO active_retailers (retailer, position) VALUES ('scorptec', 0), ('pccg', 1), ('umart', 2)"
+			);
+			d.exec(`INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 5600', 1);
+				INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'mwave', 'https://x/1', 'active');
+				INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, '2026-09-01', 199, 'in_stock');`);
+			const slugs = getRetailerFreshness(d).map((r) => r.retailer);
+			expect(slugs).toEqual(['scorptec', 'pccg', 'umart', 'mwave']);
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('getRetailerFreshness lists every active retailer (R1)', () => {
+	function freshnessDb(withActive: boolean) {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-fresh-'));
+		const d = openDatabase(path.join(dir, 'f.db'), { readonly: false, fileMustExist: false });
+		d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+		if (!withActive) d.exec('DROP TABLE active_retailers');
+		else
+			d.exec(
+				"INSERT INTO active_retailers (retailer, position) VALUES ('scorptec', 0), ('pccg', 1), ('umart', 2)"
+			);
+		d.exec(`INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Ryzen 5 5600', 1);
+			INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'scorptec', 'https://x/1', 'active');
+			INSERT INTO retailer_listings (product_id, retailer, listing_url, status) VALUES (1, 'mwave', 'https://x/2', 'active');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (1, '2026-09-28', 199, 'in_stock');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES (2, '2026-08-01', 210, 'in_stock');`);
+		return {
+			d,
+			close: () => {
+				d.close();
+				fs.rmSync(dir, { recursive: true, force: true });
+			}
+		};
+	}
+
+	it('lists active retailers in config order, with null for one that never reported', () => {
+		const { d, close } = freshnessDb(true);
+		try {
+			expect(getRetailerFreshness(d).map((r) => [r.retailer, r.latestSnapshotDate])).toEqual([
+				['scorptec', '2026-09-28'],
+				['pccg', null],
+				['umart', null],
+				// no longer active, but its history is real -- still shown, after the active ones
+				['mwave', '2026-08-01']
+			]);
+		} finally {
+			close();
+		}
+	});
+
+	it('falls back to retailers with data when active_retailers is missing', () => {
+		const { d, close } = freshnessDb(false);
+		try {
+			expect(tableExists(d, 'active_retailers')).toBe(false);
+			expect(getRetailerFreshness(d).map((r) => r.retailer)).toEqual(['mwave', 'scorptec']);
+		} finally {
+			close();
+		}
+	});
+});
+
+describe('getRetailerFreshness carries the last scrape run (R3)', () => {
+	it('reports the latest run time, status and matched count per retailer', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-runs-'));
+		const d = openDatabase(path.join(dir, 'r.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec(`INSERT INTO active_retailers (retailer, position) VALUES ('scorptec', 0), ('umart', 1);
+				INSERT INTO scrape_runs (retailer, run_date, started_at, finished_at, status, matched)
+				VALUES ('scorptec', '2026-09-29', '2026-09-29T04:00:02', '2026-09-29T04:03:10', 'failed', NULL),
+				       ('scorptec', '2026-09-29', '2026-09-29T05:00:01', '2026-09-29T05:02:44', 'ok', 312);`);
+			expect(getRetailerFreshness(d)).toEqual([
+				{
+					retailer: 'scorptec',
+					latestSnapshotDate: null,
+					lastRunAt: '2026-09-29T05:02:44',
+					lastRunStatus: 'ok',
+					lastRunMatched: 312
+				},
+				{
+					retailer: 'umart',
+					latestSnapshotDate: null,
+					lastRunAt: null,
+					lastRunStatus: null,
+					lastRunMatched: null
+				}
+			]);
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('works without a scrape_runs table (Review Focus 5)', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-noruns-'));
+		const d = openDatabase(path.join(dir, 'r.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec(
+				"DROP TABLE scrape_runs; INSERT INTO active_retailers (retailer, position) VALUES ('umart', 0);"
+			);
+			expect(getRetailerFreshness(d)[0]).toMatchObject({ retailer: 'umart', lastRunAt: null });
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('reads the latest scrape_runs row with one GROUP BY, not a per-row correlated subquery (final review M4)', () => {
+		// /healthz calls getRetailerFreshness on every strip-query request, and
+		// a correlated `WHERE r.id = (SELECT MAX(id) FROM scrape_runs WHERE
+		// retailer = r.retailer)` re-scans scrape_runs once per retailer row.
+		// `WHERE id IN (SELECT MAX(id) FROM scrape_runs GROUP BY retailer)`
+		// does the same single-latest-row-per-retailer selection with one pass.
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-runsql-'));
+		const d = openDatabase(path.join(dir, 'r.db'), { readonly: false, fileMustExist: false });
+		try {
+			d.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+			d.exec("INSERT INTO active_retailers (retailer, position) VALUES ('scorptec', 0);");
+			const spy = vi.spyOn(d, 'prepare');
+			getRetailerFreshness(d);
+			const scrapeRunsSql = spy.mock.calls
+				.map((call) => call[0] as string)
+				.find((sql) => sql.includes('scrape_runs'));
+			expect(scrapeRunsSql).toBeDefined();
+			expect(scrapeRunsSql).not.toMatch(/WHERE\s+r\.id\s*=/i);
+			expect(scrapeRunsSql).toMatch(/id\s+IN\s*\(\s*SELECT\s+MAX\(id\)\s+FROM\s+scrape_runs\s+GROUP\s+BY\s+retailer\s*\)/i);
+		} finally {
+			d.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 

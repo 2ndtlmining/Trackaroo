@@ -225,3 +225,26 @@ def test_a_naive_timestamp_is_treated_as_utc(tmp_path, monkeypatch):
     results = check_scraper_cooldown()
 
     assert statuses(results) == {"scraper_cooldown_pccg": CheckResult.WARNING}
+
+
+def test_check_scraper_cooldown_parses_the_file_only_once(tmp_path, monkeypatch):
+    """I1: the tripped_at/tz/expiry math must live in one place, read the file once."""
+    path = tmp_path / "pccg_cooldown.json"
+    write_cooldown(path, datetime.now(timezone.utc) - timedelta(hours=1))
+    monkeypatch.setattr("config.PCCG_COOLDOWN_FILE", path)
+    monkeypatch.setattr("config.PCCG_COOLDOWN_HOURS", 4.0)
+
+    calls = []
+    original_read_text = Path.read_text
+
+    def counting_read_text(self, *a, **k):
+        calls.append(self)
+        return original_read_text(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+
+    results = check_scraper_cooldown()
+
+    assert statuses(results) == {"scraper_cooldown_pccg": CheckResult.WARNING}
+    assert "resumes in 3.0h" in results[0].message
+    assert calls == [path]  # read exactly once, not once per helper

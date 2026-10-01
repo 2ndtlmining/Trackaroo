@@ -9,14 +9,15 @@ This monitor closes it. It reads only the database — no scraping, no network,
 no writes — so it is cheap and safe to run on any schedule, independently of
 the pipeline it is watching.
 
-Severity is deliberately split:
+Severity (29-Sep-2026, #8):
 
-- **ERROR** — nothing at all in the DB, the DB is missing/unreadable, or the
-  newest snapshot across *every* retailer is older than the threshold. That
-  means no run has succeeded, and it alerts.
-- **WARNING** — a single retailer is lagging while others are current (e.g.
-  PCCG sitting in its rate-limit cooldown). The pipeline is running and the
-  data is merely degraded, so this reports but does not page.
+- **ERROR** -- nothing in the DB, the DB is missing/unreadable, the newest
+  snapshot is older than today, or any active retailer has nothing today
+  (including one that has never reported, R1). The monitor runs at
+  STALENESS_CHECK_HOUR, after the last retry (RETRY_UNTIL_HOUR), so by then a
+  missing day is an outage, not "not yet".
+- **WARNING** -- a retailer missing today while its scraper cooldown is
+  active (PCCG's circuit breaker): expected, reported, never paged.
 
 Exit code is 1 on ERROR and 0 otherwise, so a scheduler with no Discord
 configured still has a usable signal.
@@ -35,17 +36,20 @@ from pathlib import Path
 from typing import List, Optional
 
 from config import ACTIVE_RETAILERS, DB_PATH, setup_logging
-from health_checks import CheckResult
+from health_checks import CheckResult, cooldown_explains
 from notify_discord import send_alert
 
 LOGGER = logging.getLogger(__name__)
 
-# A run that has not fired *yet today* is not an outage — the scheduled hour
-# may simply not have arrived. Two days without data means one was missed.
-DEFAULT_THRESHOLD_DAYS = 1
+# The monitor runs at STALENESS_CHECK_HOUR (10), after the last hourly retry
+# (RETRY_UNTIL_HOUR, 9). By then anything older than today means the day was
+# missed. The old default of 1 read yesterday's data as fresh at 10:00 and only
+# alerted on day 2 (#8).
+DEFAULT_THRESHOLD_DAYS = 0
 
 # Retailers the pipeline is expected to cover. A retailer absent from the DB
-# entirely is a warning, not an error: it may never have been scraped yet.
+# entirely (including one that has never reported at all, R1) is an error by
+# STALENESS_CHECK_HOUR unless an active scraper cooldown explains it (#8).
 # Sourced from config so a new scraper cannot be added without the monitor
 # learning to miss it.
 EXPECTED_RETAILERS = ACTIVE_RETAILERS
@@ -144,28 +148,25 @@ def evaluate(
         seen = {r["retailer"]: r["last_date"] for r in rows}
         for retailer in EXPECTED_RETAILERS:
             name = f"retailer_staleness_{retailer}"
-            if retailer not in seen:
-                results.append(CheckResult(
-                    name, CheckResult.WARNING, f"No snapshot data for {retailer}"))
-                continue
             try:
-                r_last = datetime.strptime(seen[retailer], "%Y-%m-%d").date()
+                r_last = datetime.strptime(seen[retailer], "%Y-%m-%d").date() if retailer in seen else None
             except (ValueError, TypeError):
                 results.append(CheckResult(
                     name, CheckResult.WARNING,
                     f"Unparseable snapshot_date for {retailer}: {seen[retailer]!r}"))
                 continue
-            r_days = (today - r_last).days
-            if r_days > threshold_days:
-                results.append(CheckResult(
-                    name, CheckResult.WARNING,
-                    f"{retailer} last seen {r_last} ({r_days} day(s) ago) while other "
-                    f"retailers are current — check for a cooldown or a scraper break",
-                ))
+            r_days = (today - r_last).days if r_last else None
+            if r_days is not None and r_days <= threshold_days:
+                results.append(CheckResult(name, CheckResult.OK, f"{retailer} current as of {r_last}"))
+                continue
+            what = (f"{retailer} last seen {r_last} ({r_days} day(s) ago)" if r_last
+                    else f"No snapshot data for {retailer} at all")
+            if cooldown_explains(retailer):
+                results.append(CheckResult(name, CheckResult.WARNING,
+                                           f"{what} - scraper cooldown active, expected"))
             else:
-                results.append(CheckResult(
-                    name, CheckResult.OK,
-                    f"{retailer} current as of {r_last}"))
+                results.append(CheckResult(name, CheckResult.ERROR,
+                                           f"{what} - the scraper is failing or not running"))
 
         return results
     finally:
@@ -221,7 +222,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         description="Alert when Trackaroo's price data has gone stale (a run never happened)")
     parser.add_argument("--db", default=None, help="SQLite DB path (default: config.DB_PATH)")
     parser.add_argument("--threshold-days", type=int, default=None,
-                        help=f"Days of silence tolerated before ERROR (default: {DEFAULT_THRESHOLD_DAYS})")
+                        help="Days of silence tolerated before ERROR (default: 0 = today must have data)")
     parser.add_argument("--today", default=None, help="Override today's date (YYYY-MM-DD), for testing")
     parser.add_argument("--dry-run", action="store_true", help="Print the alert instead of posting it")
     args = parser.parse_args(argv)

@@ -21,15 +21,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
+from scraper import pccg
 from scraper.pccg import (
+    AlgoliaAuthError,
     _clear_cooldown,
     _cooldown_active,
     _retry_wait,
     _write_cooldown,
     algolia_batch_search,
+    algolia_fetch_catalogue,
     algolia_single_search,
     scrape_category,
 )
+from scraper.run_report import EXIT_AUTH
 
 ALGOLIA_RESPONSE_OK = {
     "results": [
@@ -299,3 +303,39 @@ def test_clear_cooldown_removes_file(tmp_path, monkeypatch):
 
     _clear_cooldown()
     assert not (tmp_path / "pccg_cooldown.json").exists()
+
+
+# ── Rejected key is an alerting error, not an empty catalogue (#11a) ──
+
+def _status(code):
+    def _respond(*args, **kwargs):
+        resp = unittest.mock.Mock()
+        resp.status_code = code
+        resp.text = "Invalid Application-ID or API key"
+        resp.headers = {}
+        return resp
+    return _respond
+
+
+@pytest.mark.parametrize("code", [401, 403])
+def test_a_rejected_key_raises_instead_of_returning_an_empty_catalogue(monkeypatch, code):
+    """#11a: an empty catalogue trips the breaker and writes a 4h cooldown -- a
+    rejected key must not look like that."""
+    monkeypatch.setattr("scraper.pccg.requests.post", _status(code))
+    with pytest.raises(AlgoliaAuthError) as exc:
+        algolia_fetch_catalogue("CPUs")
+    assert exc.value.status == code
+
+
+def test_a_rejected_key_exits_4_with_no_cooldown_and_no_empty_snapshot(tmp_path, monkeypatch):
+    cooldown = tmp_path / "pccg_cooldown.json"
+    monkeypatch.setattr("scraper.pccg.PCCG_COOLDOWN_FILE", cooldown)
+    monkeypatch.setattr("scraper.pccg.DATA_DIR", tmp_path)
+    monkeypatch.setattr("scraper.pccg.requests.post", _status(403))
+    monkeypatch.setenv("TRACKAROO_RUN_REPORT", str(tmp_path / "report.json"))
+
+    assert pccg.main() == EXIT_AUTH
+    assert not cooldown.exists()
+    assert not list(tmp_path.glob("*_pccg_*.json"))
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert "ALGOLIA_API_KEY" in report["notes"][0]

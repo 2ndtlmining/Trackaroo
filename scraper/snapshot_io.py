@@ -137,3 +137,32 @@ def save_snapshot(
     _atomic_write(path, data)
     LOGGER.info("Saved: %s (%d products)", path, incoming)
     return path
+
+
+def save_category_snapshot(
+    data_dir: Path,
+    retailer: str,
+    category: str,
+    scrape_date: str,
+    watchlist: List[Dict[str, Any]],
+    products: List[Dict[str, Any]],
+    matched_ids: Any,
+) -> Path:
+    """Build and save one category's snapshot, the moment it is done (R2).
+
+    ``matched_ids`` are indices into ``watchlist``. Goes through save_snapshot,
+    so a partial result never replaces a fuller file already on disk.
+    """
+    unmatched = [
+        wp["model"] for i, wp in enumerate(watchlist)
+        if wp["category"] == category and i not in matched_ids
+    ]
+    data = build_snapshot(
+        retailer=retailer,
+        scrape_date=scrape_date,
+        category=category,
+        total_watchlist=len(watchlist),
+        products=products,
+        unmatched_models=unmatched,
+    )
+    return save_snapshot(data_dir / f"{category}_{retailer}_{scrape_date}.json", data)

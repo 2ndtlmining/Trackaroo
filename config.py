@@ -24,7 +24,7 @@ Environment variables (all optional):
     TRACKAROO_MATCH_THRESHOLDS_JSON     Per-retailer match thresholds (JSON object)
     TRACKAROO_PRICE_ANOMALY_STD_DEVS    Price-anomaly sigma gate      (default: 3.0)
     TRACKAROO_MIN_HISTORY_FOR_ANOMALY   Min PRIOR points for the sigma test (default: 10)
-    TRACKAROO_PRICE_MOVE_PCT            Day-over-day move flagged on its own (default: 0.20)
+    TRACKAROO_PRICE_MOVE_PCT            Day-over-day move flagged on its own (default: 0.10)
 
     TRACKAROO_SCRAPER_TIMEOUT_SECONDS   Per-scraper subprocess timeout (default: 300)
     TRACKAROO_BATCH_SIZE                Algolia batch size            (default: 16)
@@ -39,8 +39,13 @@ Environment variables (all optional):
     TRACKAROO_CATEGORY_PASS_DELAY       Delay between CPU/GPU passes  (default: 2.0)
     TRACKAROO_BUSY_TIMEOUT_MS           SQLite busy timeout (ms)       (default: 5000)
 
-    TRACKAROO_BACKUP_KEEP               Backups to retain (days)      (default: 14)
+    TRACKAROO_BACKUP_KEEP                Days of backups to retain (newest per day) (default: 14)
+    TRACKAROO_BACKUP_MIRROR_DIR          Off-host copy of each backup  (default: unset = off)
+    TRACKAROO_BACKUP_MAX_AGE_HOURS       Backup-age warning threshold  (default: 36)
     TRACKAROO_SCRAPER_GAP_SECONDS       Delay between the two scrapers (default: 2.0)
+
+    RUN_AT_HOUR                         Daily run hour, local 0-23      (default: 4)
+    RETRY_UNTIL_HOUR                    Last hourly retry, local 0-23   (default: 9)
 
     TRACKAROO_SCORPTEC_TIMEOUT_SECONDS  Scorptec HTTP timeout          (default: 15)
     TRACKAROO_SCORPTEC_MAX_RETRIES      Scorptec fetch retries         (default: 2)
@@ -70,6 +75,9 @@ Environment variables (all optional):
 
     TRACKAROO_DEFAULT_MIN_PER_CATEGORY  Match-count fallback threshold (default: 5)
     TRACKAROO_DEFAULT_MIN_TOTAL         Match-count fallback threshold (default: 10)
+    TRACKAROO_MATCH_DROP_RATIO          Relative match-drop alert ratio (default: 0.6)
+    TRACKAROO_MATCH_DROP_WINDOW_DAYS    Match-drop trailing window (days)  (default: 7)
+    TRACKAROO_MATCH_DROP_MIN_HISTORY    Match-drop min prior days needed   (default: 3)
     TRACKAROO_NOTIFY_TIMEOUT_SECONDS    Alert delivery HTTP/SMTP timeout (default: 10)
     TRACKAROO_RESTOCK_COOLDOWN_HOURS    Restock-alert re-fire cooldown (default: 24)
 """
@@ -78,7 +86,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 # ── Base directory ────────────────────────────────────────────────────
 # config.py lives at the repo root, so the repo root is simply its directory.
@@ -104,6 +112,11 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_optional_path(name: str) -> Optional[Path]:
+    value = os.environ.get(name, "").strip()
+    return Path(value).expanduser() if value else None
+
+
 # ── File paths ────────────────────────────────────────────────────────
 DATA_DIR = _env_path("TRACKAROO_DATA_DIR", BASE_DIR / "data")
 DB_PATH = _env_path("TRACKAROO_DB", BASE_DIR / "db" / "trackaroo.db")
@@ -123,10 +136,13 @@ BUSY_TIMEOUT_MS = _env_int("TRACKAROO_BUSY_TIMEOUT_MS", 5000)
 # ── Health-check thresholds ───────────────────────────────────────────
 # Expected match counts per retailer per scrape (multi-variant). Calibrated
 # 11-Aug-2026 to ~194 Scorptec / ~41 PCCG matched variants at ~50% of
-# baseline, to avoid false alarms from normal stock-level variation.
+# baseline, to avoid false alarms from normal stock-level variation. Umart
+# added 29-Sep-2026 from 31-Aug: 27 CPU + 155 GPU = 182 (#7, #15); the per-
+# category floor is set by its small CPU side.
 DEFAULT_MATCH_THRESHOLDS: Dict[str, Dict[str, int]] = {
     "scorptec": {"min_total": 90, "min_per_category": 30},
     "pccg": {"min_total": 20, "min_per_category": 5},
+    "umart": {"min_total": 90, "min_per_category": 10},
 }
 
 
@@ -175,6 +191,15 @@ PRICE_MOVE_PCT = _env_float("TRACKAROO_PRICE_MOVE_PCT", 0.10)
 DEFAULT_MIN_PER_CATEGORY = _env_int("TRACKAROO_DEFAULT_MIN_PER_CATEGORY", 5)
 DEFAULT_MIN_TOTAL = _env_int("TRACKAROO_DEFAULT_MIN_TOTAL", 10)
 
+# Relative drop rule (#7b, #14): today's listings per retailer and category
+# below MATCH_DROP_RATIO of the trailing MATCH_DROP_WINDOW_DAYS median is an
+# ERROR. Needs MATCH_DROP_MIN_HISTORY prior days; below that the static
+# MATCH_THRESHOLDS are the cold-start fallback. PCCG had 54 against ~121 on
+# 25-Aug and passed the static floor of 20.
+MATCH_DROP_RATIO = _env_float("TRACKAROO_MATCH_DROP_RATIO", 0.6)
+MATCH_DROP_WINDOW_DAYS = _env_int("TRACKAROO_MATCH_DROP_WINDOW_DAYS", 7)
+MATCH_DROP_MIN_HISTORY = _env_int("TRACKAROO_MATCH_DROP_MIN_HISTORY", 3)
+
 # ── Scraper tuning ────────────────────────────────────────────────────
 # Per-scraper subprocess timeout in the daily runner
 SCRAPER_TIMEOUT_SECONDS = _env_int("TRACKAROO_SCRAPER_TIMEOUT_SECONDS", 300)
@@ -195,12 +220,27 @@ PCCG_COOLDOWN_FILE = _env_path("TRACKAROO_PCCG_COOLDOWN_FILE", DATA_DIR / "pccg_
 # Short pause between the CPU and GPU category passes (same Algolia index/IP).
 CATEGORY_PASS_DELAY = _env_float("TRACKAROO_CATEGORY_PASS_DELAY", 2.0)
 
-# ── Backup retention ──────────────────────────────────────────────────
-# Number of most-recent DB backups to keep; older ones are pruned.
+# ── Backup retention and integrity (backup_db.py, #10) ────────────────
+# Keep the newest backup of each of the last BACKUP_KEEP *days* (plus the 3
+# newest overall). Age-based since 29-Sep-2026: hourly retries and manual runs
+# made several backups a day, and keep-the-newest-14 then covered ~11 days.
 BACKUP_KEEP = _env_int("TRACKAROO_BACKUP_KEEP", 14)
+# Optional off-host copy of every backup (a NAS mount). None = no mirror.
+BACKUP_MIRROR_DIR = _env_optional_path("TRACKAROO_BACKUP_MIRROR_DIR")
+# check_backups warns when the newest backup is older than this.
+BACKUP_MAX_AGE_HOURS = _env_int("TRACKAROO_BACKUP_MAX_AGE_HOURS", 36)
 
 # Polite gap between the two scrapers in the daily runner.
 SCRAPER_GAP_SECONDS = _env_float("TRACKAROO_SCRAPER_GAP_SECONDS", 2.0)
+
+# ── Scheduling (deploy/entrypoint*.sh -> run_daily.py --scheduled) ─────
+# Same env names the entrypoints always used (no TRACKAROO_ prefix), so one
+# setting drives both. The daily run starts at RUN_AT_HOUR; a retailer that
+# failed or came back incomplete is retried hourly up to and including
+# RETRY_UNTIL_HOUR (#8). Keep RETRY_UNTIL_HOUR < STALENESS_CHECK_HOUR (10) so
+# the staleness monitor judges a finished day.
+RUN_AT_HOUR = _env_int("RUN_AT_HOUR", 4)
+RETRY_UNTIL_HOUR = _env_int("RETRY_UNTIL_HOUR", 9)
 
 # ── Scorptec scraper tuning ───────────────────────────────────────────
 SCORPTEC_TIMEOUT_SECONDS = _env_int("TRACKAROO_SCORPTEC_TIMEOUT_SECONDS", 15)

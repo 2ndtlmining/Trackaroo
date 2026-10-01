@@ -9,6 +9,7 @@ no-op without webhooks, dry-run).
 import argparse
 import sqlite3
 import sys
+import unittest.mock
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,17 @@ class _OkResponse:
 
     def raise_for_status(self):
         return None
+
+
+class _ErrorResponse:
+    """A real 5xx: `requests.post` returns normally, and `raise_for_status()`
+    is what turns it into an exception -- fix-round-1 I1 covers exactly this
+    path, not just a raising `requests.post`.
+    """
+    status_code = 500
+
+    def raise_for_status(self):
+        raise requests.HTTPError("500 Server Error")
 
 
 # ── format_aud ───────────────────────────────────────────────────────
@@ -272,7 +284,7 @@ class TestBuildEmbed:
 # ── send_embed ───────────────────────────────────────────────────────
 
 class TestSendEmbed:
-    def test_posts_embed_json(self, monkeypatch):
+    def test_posts_embed_json_and_reports_success(self, monkeypatch):
         captured = {}
 
         def fake_post(url, json=None, timeout=None):
@@ -282,18 +294,67 @@ class TestSendEmbed:
             return _OkResponse()
 
         monkeypatch.setattr("notify_discord.requests.post", fake_post)
-        send_embed("https://hook/gpu", {"title": "t"})
+        assert send_embed("https://hook/gpu", {"title": "t"}) is True
         assert captured["url"] == "https://hook/gpu"
         assert captured["json"] == {"embeds": [{"title": "t"}]}
         assert captured["timeout"] == 10
 
-    def test_swallows_webhook_errors(self, monkeypatch, caplog):
+    def test_swallows_webhook_errors_and_reports_failure(self, monkeypatch, caplog):
+        """Fix-round-1 I1: a raised RequestException must not just be logged --
+        the caller needs to know delivery failed so a same-day claim can be
+        released for the next hourly retry."""
         def fake_post(url, json=None, timeout=None):
             raise requests.RequestException("boom")
 
         monkeypatch.setattr("notify_discord.requests.post", fake_post)
-        send_embed("https://hook/gpu", {"title": "t"})  # must not raise
+        assert send_embed("https://hook/gpu", {"title": "t"}) is False  # must not raise
         assert "Discord webhook failed" in caplog.text
+
+    def test_a_non_2xx_status_reports_failure(self, monkeypatch, caplog):
+        """Fix-round-1 I1: a real webhook outage/5xx never raises out of
+        requests.post itself -- raise_for_status() is what turns it into an
+        exception, and that must also be reported as a delivery failure."""
+        monkeypatch.setattr("notify_discord.requests.post", lambda *a, **k: _ErrorResponse())
+        assert send_embed("https://hook/gpu", {"title": "t"}) is False
+        assert "Discord webhook failed" in caplog.text
+
+
+class TestSendEmbedRedaction:
+    """final review M2: requests' HTTPError/ConnectionError messages embed the
+    full request URL, and a Discord webhook URL's token lives in the path --
+    logging the exception directly (``LOGGER.error(..., e)``) leaked it.
+    Apply the same redaction as heartbeat.py's fix-round-1 I1: exception
+    class name + HTTP status only (+ scheme://hostname), never the raw
+    exception text or the URL itself."""
+
+    TOKEN_URL = "https://discord.com/api/webhooks/123456/SENTINEL-DISCORD-TOKEN"
+
+    def test_a_raising_post_never_logs_the_webhook_token(self, monkeypatch, caplog):
+        def fake_post(url, json=None, timeout=None):
+            # requests/urllib3 embed the full URL in exception text -- this is
+            # the real shape a ConnectionError's MaxRetryError message takes.
+            raise requests.ConnectionError(f"Max retries exceeded with url: {url}")
+
+        monkeypatch.setattr("notify_discord.requests.post", fake_post)
+        with caplog.at_level("ERROR"):
+            assert send_embed(self.TOKEN_URL, {"title": "t"}) is False
+        assert "SENTINEL-DISCORD-TOKEN" not in caplog.text
+        for record in caplog.records:
+            assert "SENTINEL-DISCORD-TOKEN" not in record.getMessage()
+
+    def test_a_404_response_never_logs_the_webhook_token(self, monkeypatch, caplog):
+        resp = unittest.mock.Mock(status_code=404)
+        resp.raise_for_status.side_effect = requests.HTTPError(
+            f"404 Client Error: Not Found for url: {self.TOKEN_URL}", response=resp
+        )
+        monkeypatch.setattr("notify_discord.requests.post", lambda *a, **k: resp)
+        with caplog.at_level("ERROR"):
+            assert send_embed(self.TOKEN_URL, {"title": "t"}) is False
+        assert "SENTINEL-DISCORD-TOKEN" not in caplog.text
+        for record in caplog.records:
+            assert "SENTINEL-DISCORD-TOKEN" not in record.getMessage()
+        # The status code is still useful and not secret -- keep reporting it.
+        assert "404" in caplog.text
 
 
 # ── send_alert ──────────────────────────────────────────────────────
@@ -308,7 +369,7 @@ class TestSendAlert:
         monkeypatch.setattr(
             "notify_discord.requests.post", lambda *a, **k: posts.append(1) or _OkResponse()
         )
-        assert send_alert(["- boom"]) == 0
+        assert send_alert(["- boom"]) is False  # harmless: nothing was ever going to be sent
         assert posts == []
 
     def test_sends_alert_embed_when_configured(self, monkeypatch):
@@ -323,7 +384,7 @@ class TestSendAlert:
 
         monkeypatch.setattr("notify_discord.requests.post", fake_post)
         lines = ["- Scraper **PCCG** failed", "- Health check error: thing (ERROR): boom"]
-        assert send_alert(lines) == 1
+        assert send_alert(lines) is True
 
         assert captured["url"] == "https://hook/alert"
         embed = captured["json"]["embeds"][0]
@@ -340,11 +401,15 @@ class TestSendAlert:
             "notify_discord.requests.post", lambda *a, **k: posts.append(1) or _OkResponse()
         )
 
-        assert send_alert(["- Scraper **Scorptec** failed"], dry_run=True) == 1
+        assert send_alert(["- Scraper **Scorptec** failed"], dry_run=True) is True
         assert posts == []
         assert "pipeline issue" in capsys.readouterr().out
 
-    def test_swallows_webhook_errors(self, monkeypatch, caplog):
+    def test_a_raising_post_is_reported_as_failure_not_success(self, monkeypatch, caplog):
+        """Fix-round-1 I1: this used to be `# still counted as attempted` and
+        return 1 -- i.e. a real webhook outage was silently reported as a
+        successful send, so run_daily never released the same-day claim and
+        the next hourly retry skipped resending it."""
         monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
         monkeypatch.setenv("DISCORD_WEBHOOK_ALERT", "https://hook/alert")
 
@@ -352,7 +417,17 @@ class TestSendAlert:
             raise requests.RequestException("boom")
 
         monkeypatch.setattr("notify_discord.requests.post", fake_post)
-        assert send_alert(["- boom"]) == 1  # still counted as attempted
+        assert send_alert(["- boom"]) is False
+        assert "Discord webhook failed" in caplog.text
+
+    def test_a_non_2xx_status_is_reported_as_failure_not_success(self, monkeypatch, caplog):
+        """Fix-round-1 I1: the non-raising failure mode (a real Discord 5xx) --
+        requests.post returns normally, raise_for_status() is what raises."""
+        monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
+        monkeypatch.setenv("DISCORD_WEBHOOK_ALERT", "https://hook/alert")
+        monkeypatch.setattr("notify_discord.requests.post", lambda *a, **k: _ErrorResponse())
+
+        assert send_alert(["- boom"]) is False
         assert "Discord webhook failed" in caplog.text
 
 
@@ -428,6 +503,19 @@ class TestRun:
         assert count == 1
         assert {u for u, _ in posts} == {"https://hook/digest"}
         assert all("Test — Trackaroo digest" in j["embeds"][0]["title"] for _, j in posts)
+
+    def test_a_failed_send_is_not_counted_as_delivered(self, monkeypatch, db_path):
+        """Fix-round-1 I1: run() used to count an embed as "sent" the moment it
+        was attempted, regardless of whether Discord actually accepted it."""
+        conn = sqlite3.connect(str(db_path))
+        _seed_listing(conn, category="gpu", brand="NVIDIA", model="RTX 5070", snapshots=[("2026-08-10", 999, "in_stock"), ("2026-08-11", 1049, "in_stock")])
+        conn.close()
+
+        monkeypatch.setattr("notify_discord.load_dotenv", lambda *a, **k: None)
+        monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://hook/digest")
+        monkeypatch.setattr("notify_discord.requests.post", lambda *a, **k: _ErrorResponse())
+
+        assert run(db_path=str(db_path)) == 0
 
 
 def os_environ(key):

@@ -1075,6 +1075,21 @@ describe('HealthStrip', () => {
 		});
 		expect(html).toContain('No snapshots yet');
 	});
+
+	it('shows the run detail next to the age when there is one', () => {
+		const html = renderComponent(HealthStrip, {
+			retailers: [
+				{ retailer: 'umart', label: 'Umart', state: 'fresh', days: 0, text: 'today 04:12', detail: '182 matched' },
+				{ retailer: 'pccg', label: 'PCCG', state: 'incomplete', days: 1, text: 'timeout at 05:01', detail: null }
+			],
+			latestSnapshotDate: '2026-08-25',
+			snapshotDays: 17,
+			snapshotCount: 4988
+		});
+		expect(html).toContain('today 04:12');
+		expect(html).toContain('182 matched');
+		expect(html).toContain('timeout at 05:01');
+	});
 });
 
 describe('MoverRow', () => {

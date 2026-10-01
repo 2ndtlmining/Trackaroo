@@ -36,6 +36,22 @@ class TestSeedMain:
         monkeypatch.setattr(seed, "DB_PATH", tmp_path / "seed2.db")
         seed.main(["--dry-run"])
 
+    def test_active_retailer_sync_failure_does_not_crash_boot(self, monkeypatch, tmp_path, caplog):
+        """seed.py runs on every container boot under `set -e` (CLAUDE.md /
+        deploy/*.sh); a sync_active_retailers failure must log a WARNING and
+        let main() return normally, never crash-loop the container (F20)."""
+        import seed
+
+        def boom(conn, retailers):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(seed, "DB_PATH", tmp_path / "seed3.db")
+        monkeypatch.setattr(seed, "sync_active_retailers", boom)
+        with caplog.at_level("WARNING"):
+            seed.main([])  # not dry-run: this is the path that calls the sync
+        assert "Active-retailer sync failed" in caplog.text
+        assert not any(r.levelname == "ERROR" for r in caplog.records)
+
 
 # ── query.main ───────────────────────────────────────────────────────
 
@@ -114,7 +130,7 @@ class TestRunDailyMain:
         import run_daily
 
         def fake_scraper(name, module, label):
-            return True
+            return run_daily.ScrapeOutcome(label, "ok", 0)
 
         def fake_init_db(path):
             conn = sqlite3.connect(":memory:")
@@ -132,10 +148,14 @@ class TestRunDailyMain:
         """Aborts with SystemExit when both scrapers fail."""
         import run_daily
 
-        monkeypatch.setattr(run_daily, "run_scraper", lambda *a, **k: False)
+        monkeypatch.setattr(
+            run_daily, "run_scraper",
+            lambda name, module, label: run_daily.ScrapeOutcome(label, "failed", 1),
+        )
         monkeypatch.setattr(run_daily, "DATA_DIR", tmp_path)
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit) as exc:
             run_daily.main(["--dry-run", "--no-health"])
+        assert exc.value.code == 1
 
     def test_alerts_failure_does_not_break_run(self, monkeypatch, tmp_path):
         """A failing alerts step (e.g. missing price_alerts table) must not crash the daily run."""
@@ -151,16 +171,18 @@ class TestRunDailyMain:
         def boom(*a, **k):
             raise RuntimeError("no such table: price_alerts")
 
-        monkeypatch.setattr(run_daily, "run_scraper", lambda *a, **k: True)
+        monkeypatch.setattr(
+            run_daily, "run_scraper",
+            lambda name, module, label: run_daily.ScrapeOutcome(label, "ok", 0),
+        )
         monkeypatch.setattr(run_daily, "init_db", fake_init_db)
         monkeypatch.setattr(run_daily, "DATA_DIR", tmp_path)
         monkeypatch.setattr(
-            run_daily, "ingest_today", lambda conn, dry_run=False: {"inserted": 0, "skipped": 0, "errors": 0}
+            run_daily, "ingest_today",
+            lambda conn, dry_run=False, filename=None: {"inserted": 0, "skipped": 0, "errors": 0, "bad_files": []},
         )
         monkeypatch.setattr(run_daily, "check_json_files", lambda *a, **k: [])
-        monkeypatch.setattr(run_daily, "check_db_freshness", lambda *a, **k: [])
-        monkeypatch.setattr(run_daily, "check_today_coverage", lambda *a, **k: [])
-        monkeypatch.setattr(run_daily, "check_match_count_anomalies", lambda *a, **k: [])
+        monkeypatch.setattr(run_daily, "run_db_checks", lambda: [])
         monkeypatch.setattr("check_delisted.run", lambda *a, **k: None)
         monkeypatch.setattr("check_stale_listings.run", lambda *a, **k: None)
         monkeypatch.setattr("notify_discord.run", lambda *a, **k: None)

@@ -54,7 +54,7 @@ function parseDateFromFilename(filename) {
 // 5060 Ti, all three brands and both retailers are present, there is a
 // current-2 tier row, and listings carry price history for sparklines,
 // movers, and the 90-day-low chips.
-function buildSyntheticSources() {
+export function buildSyntheticSources() {
 	const dates = ['18_August_2026', '19_August_2026', '20_August_2026'];
 	// model -> [category, brand, gen_tier]
 	const defs = {
@@ -445,6 +445,14 @@ export function seedE2eDb(dbPath = DB_PATH) {
 			'2026-08-15T00:00:00Z'
 		);
 	}
+
+	// The pipeline mirrors config.ACTIVE_RETAILERS into this table (R1). MWave is
+	// declared active here with no rows on purpose: the health strip must list
+	// it as "missing" in both the synthetic and the real-data seed.
+	const activeRetailer = db.prepare(
+		'INSERT INTO active_retailers (retailer, position) VALUES (?, ?)'
+	);
+	['scorptec', 'pccg', 'umart', 'mwave'].forEach((r, i) => activeRetailer.run(r, i));
 
 	db.close();
 	return dbPath;

@@ -94,7 +94,9 @@ if [ "$seed_files" -eq 0 ]; then
 fi
 
 log "Empty DB found — ingesting ${seed_files} baked data/*.json snapshots..."
-TRACKAROO_DATA_DIR=/app/seed-data python ingest.py
+# ingest.py skips an unreadable file and exits 1 at the end (#12); the rest of
+# the history is in, so a bad file must not crash-loop the container.
+TRACKAROO_DATA_DIR=/app/seed-data python ingest.py || log "WARNING: ingest reported errors hydrating the seed data (see above) - continuing"
 
 # Old snapshot JSON carries the matcher's old decisions; re-apply today's rules
 # so a rebuilt DB does not resurrect mis-filed listings (#1, #2). Both

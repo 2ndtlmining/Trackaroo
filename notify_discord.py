@@ -36,12 +36,29 @@ import os
 import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlsplit
 
 import requests
 
 from config import DB_PATH, NOTIFY_TIMEOUT_SECONDS
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _safe_host(url: str) -> str:
+    """scheme://hostname[:port] only -- a Discord webhook URL's token lives
+    in the path, so nothing more specific than this may ever reach a log
+    line. Mirrors heartbeat._safe_host (final review M2)."""
+    try:
+        parts = urlsplit(url)
+        if parts.scheme and parts.hostname:
+            host = parts.hostname
+            if parts.port:
+                host = f"{host}:{parts.port}"
+            return f"{parts.scheme}://{host}"
+    except ValueError:
+        pass
+    return "<unparseable>"
 
 # ── Brand-agnostic presentational constants ────────────────────────────
 # Match the app's dark-theme tokens in web/src/app.css.
@@ -190,16 +207,38 @@ def build_embed(key: str, products: List[dict], public_base_url: str = "") -> di
     }
 
 
-def send_embed(webhook_url: str, embed: dict) -> None:
-    """POST one embed to a Discord webhook. Never raises on failure."""
+def send_embed(webhook_url: str, embed: dict) -> bool:
+    """POST one embed to a Discord webhook. Never raises.
+
+    Returns:
+        True if Discord accepted the embed (2xx). False on any failure —
+        a network error/timeout, or a non-2xx response (``raise_for_status``
+        turns that into a ``requests.HTTPError``, caught below like any other
+        ``RequestException``). Callers use this to tell a real delivery
+        failure apart from success, so a claimed "sent once today" marker can
+        be released for the next hourly retry instead of silently believed
+        (#8 fix-round-1 I1 — this used to always report success even when the
+        POST failed, so a webhook outage was never retried).
+    """
     try:
         resp = requests.post(webhook_url, json={"embeds": [embed]}, timeout=NOTIFY_TIMEOUT_SECONDS)
         resp.raise_for_status()
+        return True
     except requests.RequestException as e:  # noqa: BLE001 - notify failures must not break the pipeline
-        LOGGER.error("Discord webhook failed: %s", e)
+        # Never log `e` directly: requests/urllib3 embed the full URL in
+        # exception messages (HTTPError's "... for url: ...",
+        # ConnectionError/Timeout's MaxRetryError "... with url: ..."), and
+        # the webhook URL's path IS the Discord token (final review M2).
+        # Only the scheme+host, the exception's class name, and (for an
+        # HTTPError with a response) its status code are safe -- same
+        # redaction as heartbeat._safe_host (fix-round-1 I1).
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        detail = f" (HTTP {status})" if status is not None else ""
+        LOGGER.error("Discord webhook failed: %s%s (%s)", type(e).__name__, detail, _safe_host(webhook_url))
+        return False
 
 
-def send_alert(lines: List[str], dry_run: bool = False) -> int:
+def send_alert(lines: List[str], dry_run: bool = False) -> bool:
     """Send a pipeline-issue alert to ``DISCORD_WEBHOOK_ALERT``, if configured.
 
     The daily digest is gated on a clean run (see run_daily.py), so scraper
@@ -212,12 +251,18 @@ def send_alert(lines: List[str], dry_run: bool = False) -> int:
         dry_run: Print the embed instead of posting it.
 
     Returns:
-        1 if an alert was sent/printed, 0 if no webhook was configured.
+        True if the alert was actually delivered (posted successfully, or
+        printed under ``dry_run``). False if nothing was delivered: no
+        webhook configured (harmless — there was nothing to send) or the POST
+        failed. ``run_daily.claim_once``/``release_once`` treat a falsy
+        (or exception/None-from-best_effort) result as "not sent", releasing
+        a same-day claim so a failed 04:00 alert is retried at 05:00 rather
+        than silently marked done (#8 fix-round-1 I1).
     """
     load_dotenv()
     webhook = os.environ.get("DISCORD_WEBHOOK_ALERT")
     if not webhook:
-        return 0
+        return False
     embed = {
         "title": "Trackaroo alert — pipeline issue",
         "color": ALERT_COLOR,
@@ -225,14 +270,25 @@ def send_alert(lines: List[str], dry_run: bool = False) -> int:
     }
     if dry_run:
         print(json.dumps(embed, indent=2))
-    else:
-        send_embed(webhook, embed)
-    LOGGER.info("Discord alert sent (dry_run=%s)", dry_run)
-    return 1
+        LOGGER.info("Discord alert sent (dry_run=%s)", dry_run)
+        return True
+    ok = send_embed(webhook, embed)
+    if ok:
+        LOGGER.info("Discord alert sent (dry_run=%s)", dry_run)
+    return ok
 
 
 def run(db_path: Optional[str] = None, dry_run: bool = False, test: bool = False) -> int:
-    """Load config, build the digest and send it. Returns the embed count."""
+    """Load config, build the digest and send it.
+
+    Returns:
+        The number of embeds actually delivered (posted successfully, or
+        printed under ``dry_run``) — 0 if no webhook is configured, or if
+        every send failed. A caller checking "was anything delivered" can
+        treat this as a plain falsy/truthy value (#8 fix-round-1 I1: a
+        digest that posts to a webhook returning a 5xx used to still report
+        success here).
+    """
     load_dotenv()
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
     public_base_url = os.environ.get("TRACKAROO_PUBLIC_BASE_URL", "").rstrip("/")
@@ -252,15 +308,18 @@ def run(db_path: Optional[str] = None, dry_run: bool = False, test: bool = False
 
     digests = build_digest(rows)
     sent = 0
+    failed = 0
     for key, products in digests.items():
         embed = build_embed(key, products, public_base_url)
         if dry_run:
             print(f"# {key}")
             print(json.dumps(embed, indent=2))
+            sent += 1
+        elif send_embed(webhook_url, embed):
+            sent += 1
         else:
-            send_embed(webhook_url, embed)
-        sent += 1
-    LOGGER.info("Discord digest: %d embeds (dry_run=%s)", sent, dry_run)
+            failed += 1
+    LOGGER.info("Discord digest: %d embeds sent, %d failed (dry_run=%s)", sent, failed, dry_run)
     return sent
 
 
@@ -274,10 +333,11 @@ def _send_test_embed(webhook_url: Optional[str], dry_run: bool) -> int:
         return 0
     if dry_run:
         print(json.dumps(sample, indent=2))
-    else:
-        send_embed(webhook_url, sample)
-    LOGGER.info("Discord test: 1 sample embed sent (dry_run=%s)", dry_run)
-    return 1
+        LOGGER.info("Discord test: 1 sample embed sent (dry_run=%s)", dry_run)
+        return 1
+    ok = send_embed(webhook_url, sample)
+    LOGGER.info("Discord test: 1 sample embed %s (dry_run=%s)", "sent" if ok else "failed", dry_run)
+    return 1 if ok else 0
 
 
 def main(argv: Optional[List[str]] = None) -> None:

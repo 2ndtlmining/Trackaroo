@@ -24,10 +24,13 @@ sys.path.insert(0, sys_path)
 from config import ACTIVE_RETAILERS
 from health_checks import (
     CheckResult,
+    check_backups,
     check_json_files,
     check_db_freshness,
     check_today_coverage,
     check_match_count_anomalies,
+    check_match_count_drop,
+    check_run_report,
     check_price_anomalies,
     check_spec_coverage,
     run_all_checks,
@@ -39,6 +42,7 @@ from health_checks import (
     SPEC_COVERAGE_MIN_PCT,
     SPEC_STALE_THRESHOLD_DAYS,
 )
+from health_checks import cooldown_explains, pccg_cooldown_remaining_hours
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -196,6 +200,19 @@ class TestCheckJsonFiles:
 
         results = check_json_files()  # No date argument
         assert len(results) > 0
+
+
+class TestZeroMatchIsAnError:
+    def test_a_category_that_matched_nothing_is_an_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("health_checks.DATA_DIR", tmp_path)
+        today = date.today().strftime("%d_%B_%Y")
+        _make_json_file(tmp_path, "umart", "gpu", 0)
+
+        results = check_json_files(today)
+
+        [r] = [r for r in results if r.check_name == "json_match_count_umart_gpu"]
+        assert r.status == CheckResult.ERROR
+        assert "0 matched" in r.message
 
 
 # ── Database freshness checks ───────────────────────────────────────
@@ -778,7 +795,7 @@ class TestPriceMoveRule:
         assert not any(r.status == CheckResult.WARNING for r in results), results
 
     def test_threshold_is_a_sane_fraction(self):
-        """PRICE_MOVE_PCT is a fraction (0.20), not a percentage (20)."""
+        """PRICE_MOVE_PCT is a fraction (0.10), not a percentage (10)."""
         assert 0 < PRICE_MOVE_PCT < 1
 
 
@@ -801,8 +818,7 @@ class TestCheckTodayCoverage:
         scorptec = [r for r in results if r.check_name == "today_coverage_scorptec"][0]
         assert scorptec.status == CheckResult.OK
 
-    def test_warns_for_retailer_missing_today(self, db_path):
-        """Retailer absent from today's snapshot is a named warning, not an error."""
+    def _yesterday_only(self, db_path):
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('cpu', 'AMD', 'Test CPU', 1)")
@@ -812,10 +828,26 @@ class TestCheckTodayCoverage:
         conn.commit()
         conn.close()
 
-        results = check_today_coverage(db_path)
-        by_name = {r.check_name: r for r in results}
-        assert by_name["today_coverage_pccg"].status == CheckResult.WARNING
+    def test_a_retailer_missing_today_is_an_error(self, db_path, monkeypatch):
+        """#7(c): silence from an active retailer pages someone, unless a cooldown explains it."""
+        monkeypatch.setattr("health_checks.cooldown_explains", lambda retailer: False)
+        self._yesterday_only(db_path)
+
+        by_name = {r.check_name: r for r in check_today_coverage(db_path)}
+
+        assert by_name["today_coverage_pccg"].status == CheckResult.ERROR
         assert "no snapshot for today" in by_name["today_coverage_pccg"].message
+        assert by_name["today_coverage_umart"].status == CheckResult.ERROR
+
+    def test_a_cooldown_turns_the_missing_retailer_into_a_warning(self, db_path, monkeypatch):
+        monkeypatch.setattr("health_checks.cooldown_explains", lambda retailer: retailer == "pccg")
+        self._yesterday_only(db_path)
+
+        by_name = {r.check_name: r for r in check_today_coverage(db_path)}
+
+        assert by_name["today_coverage_pccg"].status == CheckResult.WARNING
+        assert "cooldown" in by_name["today_coverage_pccg"].message
+        assert by_name["today_coverage_umart"].status == CheckResult.ERROR
 
     def test_every_active_retailer_reported(self, db_path):
         """One result per retailer we scrape -- not per retailer with data.
@@ -845,6 +877,22 @@ class TestCheckTodayCoverage:
             f"today_coverage_{r}" for r in ACTIVE_RETAILERS
         }
         assert all(r.status == CheckResult.OK for r in results)
+
+
+class TestCooldownExplains:
+    def test_an_active_pccg_cooldown_explains_pccg_only(self, tmp_path, monkeypatch):
+        cooldown = tmp_path / "pccg_cooldown.json"
+        cooldown.write_text(json.dumps({"tripped_at": datetime.now().astimezone().isoformat(),
+                                        "reason": "empty catalogue"}), encoding="utf-8")
+        monkeypatch.setattr("config.PCCG_COOLDOWN_FILE", cooldown)
+
+        assert pccg_cooldown_remaining_hours() > 0
+        assert cooldown_explains("pccg") is True
+        assert cooldown_explains("umart") is False
+
+    def test_no_cooldown_file_explains_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("config.PCCG_COOLDOWN_FILE", tmp_path / "absent.json")
+        assert cooldown_explains("pccg") is False
 
 
 # ── Spec coverage / staleness ────────────────────────────────────────
@@ -999,3 +1047,108 @@ class TestThresholds:
 
     def test_min_history_positive(self):
         assert MIN_HISTORY_FOR_ANOMALY > 0
+
+
+# ── Scraper telemetry -> health results (#14) ────────────────────────
+
+class TestCheckRunReport:
+    def test_a_clean_report_says_nothing(self):
+        c = {"pages_attempted": 3, "pages_fetched": 3, "cards_seen": 60, "cards_dropped": 1}
+        assert check_run_report({"retailer": "umart", "categories": {"gpu": c}}) == []
+
+    def test_many_unparseable_cards_is_an_error(self):
+        c = {"pages_attempted": 1, "pages_fetched": 1, "cards_seen": 20, "cards_dropped": 5}
+        [r] = check_run_report({"retailer": "umart", "categories": {"gpu": c}})
+        assert r.status == CheckResult.ERROR
+        assert "5 of 20" in r.message
+
+    def test_pccg_selector_drift_is_skipped(self):
+        """F14: an empty PCCG Algolia catalogue is already a block/credentials
+        error caught upstream (circuit breaker / AlgoliaAuthError) -- this
+        rule must not double-alert on it."""
+        c = {"pages_attempted": 1, "pages_fetched": 1, "cards_seen": 0, "cards_dropped": 0}
+        assert check_run_report({"retailer": "pccg", "categories": {"gpu": c}}) == []
+
+    def test_pccg_unparsed_cards_still_fires(self):
+        """Fix round 1: unparsed_cards is NOT part of the F14 pccg skip -- it
+        catches partial field-shape drift (e.g. an Algolia hit schema rename
+        dropping products_name on some hits) that the empty-catalogue circuit
+        breaker cannot see, since the catalogue here isn't empty."""
+        c = {"pages_attempted": 1, "pages_fetched": 1, "cards_seen": 20, "cards_dropped": 5}
+        [r] = check_run_report({"retailer": "pccg", "categories": {"gpu": c}})
+        assert r.check_name == "unparsed_cards_pccg_gpu"
+        assert r.status == CheckResult.ERROR
+        assert "5 of 20" in r.message
+
+
+def _drop_db(db_path, series):
+    """series: {date: listing count} for pccg/gpu."""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("INSERT INTO products (category, brand, model, tracked) VALUES ('gpu', 'NVIDIA', 'RTX 5070', 1)")
+    most = max(series.values())
+    for i in range(1, most + 1):
+        conn.execute("INSERT INTO retailer_listings (product_id, retailer, listing_url, status) "
+                     "VALUES (1, 'pccg', ?, 'active')", (f"https://x/{i}",))
+    for day, n in series.items():
+        for i in range(1, n + 1):
+            conn.execute("INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) "
+                         "VALUES (?, ?, 100, 'in_stock')", (i, day))
+    conn.commit()
+    conn.close()
+
+
+class TestMatchCountDrop:
+    PRIOR = {f"2026-09-{d:02d}": 100 for d in range(22, 29)}
+
+    def test_45_percent_of_the_median_is_an_error(self, db_path):
+        """#7 acceptance: a PCCG day at 45% of its 7-day median produces an ERROR."""
+        _drop_db(db_path, {**self.PRIOR, "2026-09-29": 45})
+        [r] = check_match_count_drop(db_path, today=date(2026, 9, 29))
+        assert (r.check_name, r.status) == ("match_drop_pccg_gpu", CheckResult.ERROR)
+        assert "45 listings today" in r.message
+
+    def test_90_percent_is_fine(self, db_path):
+        _drop_db(db_path, {**self.PRIOR, "2026-09-29": 90})
+        [r] = check_match_count_drop(db_path, today=date(2026, 9, 29))
+        assert r.status == CheckResult.OK
+
+    def test_too_little_history_is_not_judged(self, db_path):
+        _drop_db(db_path, {"2026-09-27": 100, "2026-09-28": 100, "2026-09-29": 10})
+        assert check_match_count_drop(db_path, today=date(2026, 9, 29)) == []
+
+    def test_a_missing_day_is_left_to_today_coverage(self, db_path):
+        _drop_db(db_path, self.PRIOR)
+        assert check_match_count_drop(db_path, today=date(2026, 9, 29)) == []
+
+
+class TestCheckBackups:
+    def test_a_recent_backup_is_ok(self, tmp_path):
+        (tmp_path / "trackaroo_2026-09-29_040512.db").write_text("x")
+        [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.OK
+
+    def test_an_old_backup_warns(self, tmp_path):
+        (tmp_path / "trackaroo_2026-09-26_040512.db").write_text("x")
+        [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.WARNING
+        assert "trackaroo_2026-09-26_040512.db" in r.message
+
+    def test_no_backups_warns(self, tmp_path):
+        [r] = check_backups(tmp_path / "absent", now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.WARNING
+
+    def test_an_impossible_date_is_skipped_not_raised(self, tmp_path):
+        """A name matching BACKUP_NAME_RE but not a real calendar date (e.g. a
+        corrupted or hand-edited filename) must be skipped, not crash the
+        check (#10 minor)."""
+        (tmp_path / "trackaroo_2026-09-31_040512.db").write_text("x")  # September has 30 days
+        [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.WARNING
+        assert "No database backups" in r.message
+
+    def test_a_future_dated_newest_backup_warns(self, tmp_path):
+        """A future timestamp must not be trusted as fresh forever (#10 minor)."""
+        (tmp_path / "trackaroo_2026-10-05_040512.db").write_text("x")
+        [r] = check_backups(tmp_path, now=datetime(2026, 9, 29, 10, 0))
+        assert r.status == CheckResult.WARNING
+        assert "future" in r.message.lower()

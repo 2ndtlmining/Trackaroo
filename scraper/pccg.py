@@ -17,7 +17,7 @@ import random
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
 
 import requests
@@ -45,7 +45,8 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.chip_key import Matcher
-from scraper.snapshot_io import build_snapshot, save_snapshot
+from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED, RunReport, exit_code_for
+from scraper.snapshot_io import save_category_snapshot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -200,6 +201,18 @@ def _log_api_status_error(r: Any) -> None:
         )
     else:
         LOGGER.error("Algolia API error: %s - %s", r.status_code, r.text[:200])
+
+
+class AlgoliaAuthError(RuntimeError):
+    """PCCG's public search key was rejected (HTTP 401/403).
+
+    Distinct from an empty catalogue (a block): backing off cannot fix a
+    rotated key, so no cooldown is written and a human is paged (#11a).
+    """
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"Algolia rejected the PCCG search key (HTTP {status})")
+        self.status = status
 
 
 # ── Circuit-breaker cooldown ─────────────────────────────────────────
@@ -458,6 +471,7 @@ def algolia_fetch_catalogue(
     category_filter: str,
     hits_per_page: int = ALGOLIA_CATALOGUE_HITS_PER_PAGE,
     max_pages: int = ALGOLIA_CATALOGUE_MAX_PAGES,
+    stats: Optional[Dict[str, int]] = None,
 ) -> list[Dict[str, Any]]:
     """Fetch an entire PCCG category in as few Algolia queries as possible.
 
@@ -486,12 +500,17 @@ def algolia_fetch_catalogue(
 
     Returns:
         List of product dicts for the whole category (empty on failure).
+
+    Raises:
+        AlgoliaAuthError: the key was rejected (401/403).
     """
     filter_str = f'categories.lvl0:"{category_filter}"'
     all_products: list[Dict[str, Any]] = []
+    counts = stats if stats is not None else {}
     page = 0
 
     while page < max_pages:
+        counts["pages_attempted"] = counts.get("pages_attempted", 0) + 1
         params_dict = {
             "query": "",
             "hitsPerPage": hits_per_page,
@@ -517,6 +536,9 @@ def algolia_fetch_catalogue(
                     )
                     time.sleep(wait)
                     continue
+                if r.status_code in (401, 403):
+                    _log_api_status_error(r)
+                    raise AlgoliaAuthError(r.status_code)
                 if r.status_code != 200:
                     _log_api_status_error(r)
                     return all_products
@@ -531,7 +553,14 @@ def algolia_fetch_catalogue(
 
                 result = data["results"][0]
                 hits = result.get("hits", [])
-                all_products.extend(_extract_products(hits))
+                extracted = _extract_products(hits)
+                counts["pages_fetched"] = counts.get("pages_fetched", 0) + 1
+                counts["cards_seen"] = counts.get("cards_seen", 0) + len(hits)
+                counts["cards_dropped"] = counts.get("cards_dropped", 0) + len(hits) - len(extracted)
+                if len(extracted) < len(hits):
+                    LOGGER.warning("Dropped %d of %d Algolia hit(s) with no product name",
+                                   len(hits) - len(extracted), len(hits))
+                all_products.extend(extracted)
 
                 nb_pages = result.get("nbPages", 1)
                 retries_exhausted = False
@@ -566,6 +595,7 @@ def algolia_fetch_catalogue(
 def scrape_category(
     category: str,
     watchlist: list[WatchlistProduct],
+    report: Optional[RunReport] = None,
 ) -> Tuple[list[Dict[str, Any]], set[int], bool]:
     """Scrape a single category (cpu or gpu) from PCCG via Algolia API.
 
@@ -584,7 +614,9 @@ def scrape_category(
     breaker_tripped = False
 
     # One query for the whole category — the watchlist is matched locally.
-    catalogue = algolia_fetch_catalogue(category_filter)
+    catalogue = algolia_fetch_catalogue(
+        category_filter, stats=report.category(category) if report is not None else None
+    )
 
     # An entirely empty category is a block, not an empty shop: PCCG always
     # stocks GPUs and CPUs, so nothing back means the request never really
@@ -652,77 +684,75 @@ def scrape_category(
     return results, matched_global, breaker_tripped
 
 
-def main() -> None:
+def main() -> int:
     """Run the PCCG scraper to collect price data for all watchlist products."""
     setup_logging()
     LOGGER.info("Loading watchlist...")
     watchlist = load_watchlist()
     LOGGER.info("  %d products", len(watchlist))
 
-    # Respect a circuit-breaker cooldown before doing anything else — a
-    # scheduled retry hitting a recently-blocking API would just add harm.
+    report = RunReport("pccg")
+
+    # Respect a circuit-breaker cooldown before doing anything else.
     if _cooldown_active():
         LOGGER.warning(
             "Skipping PCCG scrape: cooldown still active (file %s, window %.0fh). "
             "This is expected handled behaviour, not an error.",
             PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS,
         )
-        return
+        report.note(f"skipped: circuit-breaker cooldown active ({PCCG_COOLDOWN_HOURS:.0f}h window)")
+        report.flush()
+        return EXIT_SKIPPED
+
+    today = date.today().strftime(FILE_DATE_FORMAT)
+    DATA_DIR.mkdir(exist_ok=True)
 
     all_results: list[Dict[str, Any]] = []
     all_matched: set[int] = set()
     all_tripped: list[str] = []
 
-    for i, category in enumerate(["cpu", "gpu"]):
-        results, matched, tripped = scrape_category(category, watchlist)
-        all_results.extend(results)
-        all_matched.update(matched)
-        LOGGER.info("  %s: %d matched", category.upper(), len(results))
-        if tripped:
-            all_tripped.append(category)
-        # Short pause between category passes — both hit the same Algolia
-        # index from the same IP back-to-back.
-        if i == 0:
-            LOGGER.info("  Pausing %.1fs before next category pass...", CATEGORY_PASS_DELAY)
-            time.sleep(CATEGORY_PASS_DELAY)
+    try:
+        for i, category in enumerate(["cpu", "gpu"]):
+            results, matched, tripped = scrape_category(category, watchlist, report=report)
+            # Saved per category so a timeout during GPUs keeps the CPUs (R2).
+            save_category_snapshot(DATA_DIR, "pccg", category, today, watchlist, results, matched)
+            report.set(category, matched=len(results))
+            report.flush()
+            all_results.extend(results)
+            all_matched.update(matched)
+            LOGGER.info("  %s: %d matched", category.upper(), len(results))
+            if tripped:
+                all_tripped.append(category)
+                report.note(f"circuit breaker tripped for {category} (empty catalogue - treated as a block)")
+                report.flush()
+            # Short pause between category passes -- same Algolia index and IP.
+            if i == 0:
+                LOGGER.info("  Pausing %.1fs before next category pass...", CATEGORY_PASS_DELAY)
+                time.sleep(CATEGORY_PASS_DELAY)
+    except AlgoliaAuthError as e:
+        LOGGER.error(
+            "%s. No cooldown written: waiting cannot fix a rejected key. Update "
+            "ALGOLIA_API_KEY - see DEPLOYMENT.md, 'PCCG key rotation'.", e,
+        )
+        report.note(f"{e} - update ALGOLIA_API_KEY (DEPLOYMENT.md: 'PCCG key rotation')")
+        report.flush()
+        return EXIT_AUTH
 
-    # A full (non-tripped) scrape means PCCG is healthy — clear any stale
-    # cooldown so the default path next run is a normal scrape.
     if not all_tripped:
         _clear_cooldown()
     else:
-        LOGGER.error("PCCG scrape incomplete — circuit breaker tripped for: %s", ", ".join(all_tripped))
+        LOGGER.error("PCCG scrape incomplete - circuit breaker tripped for: %s", ", ".join(all_tripped))
 
-    # Report unmatched
     unmatched = [wp["model"] for i, wp in enumerate(watchlist) if i not in all_matched]
     LOGGER.info("\n%s\nTotal: %d matched / %d", "=" * 60, len(all_results), len(watchlist))
     LOGGER.info("Unmatched: %d", len(unmatched))
-    if unmatched:
-        LOGGER.info("\nUnmatched products:")
-        for m in unmatched:
-            LOGGER.info("  - %s", m)
+    for m in unmatched:
+        LOGGER.info("  - %s", m)
 
-    # Save to separate JSON files
-    today = date.today().strftime(FILE_DATE_FORMAT)
-    DATA_DIR.mkdir(exist_ok=True)
-
-    for category in ["cpu", "gpu"]:
-        cat_results = [p for p in all_results if p["watchlist_category"] == category]
-        cat_unmatched = [
-            m for m in unmatched
-            if any(wp["model"] == m and wp["category"] == category for wp in watchlist)
-        ]
-        output_file = DATA_DIR / f"{category}_pccg_{today}.json"
-        output_data = build_snapshot(
-            retailer="pccg",
-            scrape_date=today,
-            category=category,
-            total_watchlist=len(watchlist),
-            products=cat_results,
-            unmatched_models=cat_unmatched,
-        )
-        save_snapshot(output_file, output_data)
+    if all_tripped:
+        return EXIT_DEGRADED
+    return exit_code_for(report)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

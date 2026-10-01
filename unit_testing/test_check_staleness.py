@@ -20,6 +20,12 @@ import check_staleness
 from health_checks import CheckResult
 
 
+@pytest.fixture(autouse=True)
+def _no_cooldown(monkeypatch):
+    """A real data/pccg_cooldown.json on the dev machine must not flip a result."""
+    monkeypatch.setattr(check_staleness, "cooldown_explains", lambda retailer: False)
+
+
 SCHEMA = """
 CREATE TABLE products (
     id INTEGER PRIMARY KEY,
@@ -85,15 +91,16 @@ def test_todays_data_is_not_stale(tmp_path):
     assert _statuses(results)["snapshot_staleness"] == CheckResult.OK
 
 
-def test_yesterdays_data_is_tolerated_at_default_threshold(tmp_path):
-    """A run that has not fired *yet today* is not an outage."""
+def test_no_data_today_is_an_error_by_the_check_hour(tmp_path):
+    """#8: the monitor runs at STALENESS_CHECK_HOUR, after the retry cutoff --
+    by then a day without data is an outage, not 'not yet'."""
     today = date(2026, 8, 27)
     db = _make_db(tmp_path, [("scorptec", "2026-08-26"), ("pccg", "2026-08-26"),
                              ("umart", "2026-08-26")])
 
     results = check_staleness.evaluate(db_path=db, today=today)
 
-    assert _worst(results) == CheckResult.OK
+    assert _statuses(results)["snapshot_staleness"] == CheckResult.ERROR
 
 
 # ── The failure this monitor exists for ────────────────────────────
@@ -113,22 +120,39 @@ def test_two_days_without_data_is_an_error(tmp_path):
 
 def test_threshold_is_configurable(tmp_path):
     today = date(2026, 8, 27)
-    db = _make_db(tmp_path, [("scorptec", "2026-08-25")])
+    db = _make_db(tmp_path, [("scorptec", "2026-08-25"), ("pccg", "2026-08-25"), ("umart", "2026-08-25")])
 
     assert _worst(check_staleness.evaluate(db_path=db, today=today, threshold_days=5)) != CheckResult.ERROR
     assert _worst(check_staleness.evaluate(db_path=db, today=today, threshold_days=1)) == CheckResult.ERROR
 
 
-def test_one_lagging_retailer_warns_but_does_not_error(tmp_path):
-    """PCCG cooling down is degraded, not an outage — the pipeline still ran."""
+def test_a_lagging_retailer_is_an_error(tmp_path):
+    """#8: page on any single retailer missing today."""
     today = date(2026, 8, 27)
-    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-22")])
+    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-22"), ("umart", "2026-08-27")])
+
+    results = check_staleness.evaluate(db_path=db, today=today)
+
+    assert _statuses(results)["retailer_staleness_pccg"] == CheckResult.ERROR
+    assert _statuses(results)["snapshot_staleness"] == CheckResult.OK
+
+
+def test_a_cooling_down_retailer_only_warns(tmp_path, monkeypatch):
+    monkeypatch.setattr(check_staleness, "cooldown_explains", lambda retailer: retailer == "pccg")
+    today = date(2026, 8, 27)
+    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-22"), ("umart", "2026-08-27")])
 
     results = check_staleness.evaluate(db_path=db, today=today)
 
     assert _worst(results) == CheckResult.WARNING
-    assert _statuses(results)["retailer_staleness_pccg"] == CheckResult.WARNING
-    assert _statuses(results)["snapshot_staleness"] == CheckResult.OK
+
+
+def test_a_retailer_that_never_reported_is_an_error(tmp_path):
+    """R1: Umart had no rows on prod and nothing alerted."""
+    today = date(2026, 8, 27)
+    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-27")])
+
+    assert _statuses(check_staleness.evaluate(db_path=db, today=today))["retailer_staleness_umart"] == CheckResult.ERROR
 
 
 # ── Degenerate inputs must alert, not crash ────────────────────────
@@ -175,7 +199,7 @@ def test_run_returns_nonzero_exit_when_stale(tmp_path, monkeypatch):
 def test_run_returns_zero_and_stays_quiet_when_fresh(tmp_path, monkeypatch):
     sent = []
     monkeypatch.setattr(check_staleness, "send_alert", lambda lines, dry_run=False: sent.append(lines) or 1)
-    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-27")])
+    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-27"), ("umart", "2026-08-27")])
 
     code = check_staleness.run(db_path=str(db), today=date(2026, 8, 27))
 
@@ -184,10 +208,11 @@ def test_run_returns_zero_and_stays_quiet_when_fresh(tmp_path, monkeypatch):
 
 
 def test_warnings_alone_do_not_alert_or_fail(tmp_path, monkeypatch):
-    """One lagging retailer is reported, but must not page anyone."""
+    """A cooling-down retailer is reported, but must not page anyone."""
     sent = []
     monkeypatch.setattr(check_staleness, "send_alert", lambda lines, dry_run=False: sent.append(lines) or 1)
-    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-20")])
+    monkeypatch.setattr(check_staleness, "cooldown_explains", lambda retailer: retailer == "pccg")
+    db = _make_db(tmp_path, [("scorptec", "2026-08-27"), ("pccg", "2026-08-20"), ("umart", "2026-08-27")])
 
     code = check_staleness.run(db_path=str(db), today=date(2026, 8, 27))
 

@@ -22,18 +22,23 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import statistics
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
 from config import (
+    BACKUP_MAX_AGE_HOURS,
     DATA_DIR,
     DB_DATE_FORMAT,
     DB_PATH,
     DEFAULT_MIN_PER_CATEGORY,
     DEFAULT_MIN_TOTAL,
     FILE_DATE_FORMAT,
+    MATCH_DROP_MIN_HISTORY,
+    MATCH_DROP_RATIO,
+    MATCH_DROP_WINDOW_DAYS,
     MATCH_THRESHOLDS,
     MIN_HISTORY_FOR_ANOMALY,
     ACTIVE_RETAILERS,
@@ -116,10 +121,18 @@ def check_json_files(target_date: Optional[str] = None) -> list[CheckResult]:
                 ))
                 continue
 
-            # Check match count
+            # Check match count. Zero is a failed scrape, not a low day: every
+            # retailer stocks both categories (#7). Below the threshold stays
+            # a warning -- stock levels do move.
             matched = data.get("matched", 0)
             threshold = MATCH_THRESHOLDS.get(retailer, {}).get("min_per_category", DEFAULT_MIN_PER_CATEGORY)
-            if matched < threshold:
+            if matched == 0:
+                results.append(CheckResult(
+                    f"json_match_count_{retailer}_{category}",
+                    CheckResult.ERROR,
+                    f"0 matched products in {filename} - the scrape returned nothing for this category",
+                ))
+            elif matched < threshold:
                 results.append(CheckResult(
                     f"json_match_count_{retailer}_{category}",
                     CheckResult.WARNING,
@@ -281,14 +294,67 @@ def check_db_freshness(db_path: Optional[Path] = None) -> list[CheckResult]:
 
 # ── Today coverage (per-retailer) ────────────────────────────────────
 
+def _read_cooldown_payload() -> Optional[dict]:
+    """Parse config.PCCG_COOLDOWN_FILE into ``{"tripped_at": tz-aware datetime,
+    "reason": str}``, or None when the file is missing or unreadable.
+
+    The single place that parses the cooldown file and normalises a tz-naive
+    ``tripped_at`` to UTC -- both ``pccg_cooldown_remaining_hours`` and
+    ``check_scraper_cooldown`` build on this instead of each re-parsing the
+    file and re-doing the tz fix-up.
+    """
+    from config import PCCG_COOLDOWN_FILE
+
+    try:
+        payload = json.loads(PCCG_COOLDOWN_FILE.read_text(encoding="utf-8"))
+        tripped_at = datetime.fromisoformat(payload["tripped_at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if tripped_at.tzinfo is None:
+        tripped_at = tripped_at.replace(tzinfo=timezone.utc)
+    return {"tripped_at": tripped_at, "reason": payload.get("reason", "unknown")}
+
+
+def pccg_cooldown_remaining_hours(now: Optional[datetime] = None, _payload: Optional[dict] = None) -> float:
+    """Hours left on the PCCG circuit-breaker cooldown; 0.0 when none is active.
+
+    Reads config.PCCG_COOLDOWN_FILE at call time (via ``_read_cooldown_payload``)
+    so tests can point it at a temp file. An unreadable file counts as no
+    cooldown -- the scraper treats it the same way (scraper/pccg.py
+    _cooldown_active).
+
+    ``_payload`` is a private hook for callers (``check_scraper_cooldown``)
+    that already parsed the file themselves, so they can get the remaining-
+    hours math from here without paying for a second read.
+    """
+    from config import PCCG_COOLDOWN_HOURS
+
+    payload = _payload if _payload is not None else _read_cooldown_payload()
+    if payload is None:
+        return 0.0
+    now = now or datetime.now(timezone.utc)
+    remaining = (payload["tripped_at"] + timedelta(hours=PCCG_COOLDOWN_HOURS) - now).total_seconds() / 3600
+    return max(remaining, 0.0)
+
+
+def cooldown_explains(retailer: str) -> bool:
+    """True when an active scraper cooldown explains a retailer's silence today.
+
+    Only PCCG has a cooldown. A retailer silent for any other reason is a
+    failure that must page (#7c).
+    """
+    return retailer == "pccg" and pccg_cooldown_remaining_hours() > 0
+
+
 def check_today_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
     """Report, per retailer, whether today's date has a snapshot yet.
 
     Goal: make "Scorptec ingested, PCCG missing for today" a named,
-    expected-shape warning instead of something only visible by reading scrape
-    logs. Backed by the cooldown mechanism (docs/archive/IMPROVEMENT_16_Aug_V1.md §10.3/10.4):
-    a recent PCCG circuit-breaker trip legitimately skips today's PCCG scrape,
-    so this check surfaces the gap as a warning rather than an error.
+    expected-shape result instead of something only visible by reading scrape
+    logs. A retailer missing today is an ERROR unless an active scraper
+    cooldown explains it (docs/archive/IMPROVEMENT_16_Aug_V1.md §10.3/10.4): a
+    recent PCCG circuit-breaker trip legitimately skips today's PCCG scrape,
+    so that case surfaces as a warning instead (#7c).
 
     Args:
         db_path: Path to the SQLite database. Defaults to db/trackaroo.db.
@@ -329,11 +395,20 @@ def check_today_coverage(db_path: Optional[Path] = None) -> list[CheckResult]:
                     CheckResult.OK,
                     f"{retailer}: {with_today[retailer]} variants captured for today ({today})",
                 ))
-            else:
+            elif cooldown_explains(retailer):
                 results.append(CheckResult(
                     f"today_coverage_{retailer}",
                     CheckResult.WARNING,
-                    f"{retailer}: no snapshot for today ({today}) yet",
+                    f"{retailer}: no snapshot for today ({today}) yet - scraper cooldown "
+                    f"active, expected",
+                ))
+            else:
+                # An active retailer with no rows today -- including one that has
+                # never written a row at all (R1) -- is an outage, not a note (#7c).
+                results.append(CheckResult(
+                    f"today_coverage_{retailer}",
+                    CheckResult.ERROR,
+                    f"{retailer}: no snapshot for today ({today})",
                 ))
     except sqlite3.Error:
         pass  # Handled by other checks
@@ -438,6 +513,116 @@ def check_match_count_anomalies(db_path: Optional[Path] = None) -> list[CheckRes
     finally:
         conn.close()
 
+    return results
+
+
+UNPARSED_CARD_RATIO = 0.10
+
+
+def check_run_report(report: dict) -> list[CheckResult]:
+    """Scraper telemetry (scraper/run_report.py) -> health results (#14).
+
+    - a page fetched but no product cards on it: ERROR, selector drift;
+    - more than 10% of cards unparseable: ERROR, drift likely;
+    - fewer pages fetched than attempted: WARNING, a pagination hole.
+
+    PCCG is skipped for the selector_drift rule only (#14 F14): an entirely
+    empty PCCG Algolia catalogue is already caught upstream as a
+    circuit-breaker trip or an AlgoliaAuthError
+    (scraper/pccg.py scrape_category/algolia_fetch_catalogue) -- alerting
+    again here would just double up on the same event under a different name.
+    unparsed_cards is NOT skipped for PCCG: it catches partial field-shape
+    drift (e.g. an Algolia hit schema rename dropping products_name on some
+    hits) that the empty-catalogue circuit breaker cannot see, because the
+    catalogue isn't empty -- only some of its hits fail to parse.
+    """
+    results: list[CheckResult] = []
+    retailer = report.get("retailer", "unknown")
+    for category, c in sorted((report.get("categories") or {}).items()):
+        where = f"{retailer}/{category}"
+        attempted = c.get("pages_attempted", 0)
+        fetched = c.get("pages_fetched", 0)
+        seen = c.get("cards_seen", 0)
+        dropped = c.get("cards_dropped", 0)
+        if retailer != "pccg" and fetched and not seen:
+            results.append(CheckResult(
+                f"selector_drift_{retailer}_{category}", CheckResult.ERROR,
+                f"selector drift at {where}: {fetched} page(s) fetched but 0 product cards "
+                f"found - the retailer's markup probably changed",
+            ))
+        elif seen and dropped / seen > UNPARSED_CARD_RATIO:
+            results.append(CheckResult(
+                f"unparsed_cards_{retailer}_{category}", CheckResult.ERROR,
+                f"{where}: {dropped} of {seen} product cards could not be parsed - selector drift likely",
+            ))
+        if fetched < attempted:
+            results.append(CheckResult(
+                f"pagination_hole_{retailer}_{category}", CheckResult.WARNING,
+                f"pagination hole at {where}: fetched {fetched} of {attempted} page(s)",
+            ))
+    return results
+
+
+def check_match_count_drop(
+    db_path: Optional[Path] = None,
+    today: Optional[date] = None,
+) -> list[CheckResult]:
+    """Today's listing count per retailer and category vs its trailing median (#7b).
+
+    The static thresholds sit far below normal volume, so a half-empty day
+    passed. A retailer with no rows today is skipped: check_today_coverage
+    reports that. Fewer than MATCH_DROP_MIN_HISTORY prior days: not judged.
+    """
+    if db_path is None:
+        db_path = DB_PATH
+    if not Path(db_path).exists():
+        return []
+    today = today or date.today()
+    end = today.strftime(DB_DATE_FORMAT)
+    start = (today - timedelta(days=MATCH_DROP_WINDOW_DAYS)).strftime(DB_DATE_FORMAT)
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute("""
+            SELECT rl.retailer, p.category, ps.snapshot_date, COUNT(DISTINCT rl.id)
+            FROM price_snapshots ps
+            JOIN retailer_listings rl ON rl.id = ps.retailer_listing_id
+            JOIN products p ON p.id = rl.product_id
+            WHERE ps.snapshot_date BETWEEN ? AND ?
+            GROUP BY rl.retailer, p.category, ps.snapshot_date
+        """, (start, end)).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    series: dict = {}
+    for retailer, category, day, n in rows:
+        series.setdefault((retailer, category), {})[day] = n
+
+    results: list[CheckResult] = []
+    for (retailer, category), by_day in sorted(series.items()):
+        today_n = by_day.get(end)
+        prior = [n for day, n in by_day.items() if day != end]
+        if today_n is None or len(prior) < MATCH_DROP_MIN_HISTORY:
+            continue
+        median = statistics.median(prior)
+        name = f"match_drop_{retailer}_{category}"
+        if today_n < MATCH_DROP_RATIO * median:
+            results.append(CheckResult(
+                name, CheckResult.ERROR,
+                f"{retailer}/{category}: {today_n} listings today vs a trailing "
+                f"{MATCH_DROP_WINDOW_DAYS}-day median of {median:g} ({today_n / median:.0%}; "
+                f"alert below {MATCH_DROP_RATIO:.0%})",
+            ))
+        else:
+            results.append(CheckResult(
+                name, CheckResult.OK,
+                f"{retailer}/{category}: {today_n} listings today (median {median:g})",
+            ))
     return results
 
 
@@ -909,28 +1094,31 @@ def check_scraper_cooldown() -> list[CheckResult]:
         A single CheckResult describing the cooldown, or an empty list when no
         cooldown file exists (the normal case).
     """
-    from config import PCCG_COOLDOWN_FILE, PCCG_COOLDOWN_HOURS
+    from config import PCCG_COOLDOWN_FILE
 
     if not PCCG_COOLDOWN_FILE.exists():
         return []
 
-    try:
-        with open(PCCG_COOLDOWN_FILE, encoding="utf-8") as f:
-            payload = json.load(f)
-        tripped_at = datetime.fromisoformat(payload["tripped_at"])
-        reason = payload.get("reason", "unknown")
-    except (OSError, ValueError, KeyError, TypeError):
+    # One parse of the file, shared with pccg_cooldown_remaining_hours -- see
+    # _read_cooldown_payload. Only the file's existence is checked twice
+    # (here, to tell "no cooldown" from "unreadable cooldown" apart), never
+    # its contents.
+    payload = _read_cooldown_payload()
+    if payload is None:
         return [CheckResult(
             "scraper_cooldown_pccg", CheckResult.WARNING,
             f"PCCG cooldown file {PCCG_COOLDOWN_FILE.name} exists but is unreadable",
         )]
 
-    if tripped_at.tzinfo is None:
-        tripped_at = tripped_at.replace(tzinfo=timezone.utc)
-    expires_at = tripped_at + timedelta(hours=PCCG_COOLDOWN_HOURS)
-    remaining = (expires_at - datetime.now(timezone.utc)).total_seconds()
+    # The remaining-time math (tripped_at + PCCG_COOLDOWN_HOURS vs. now) lives
+    # only in pccg_cooldown_remaining_hours; the display expiry is derived
+    # from its answer rather than recomputed here. ``payload`` is passed
+    # through so that call doesn't re-read the file a second time.
+    now = datetime.now(timezone.utc)
+    remaining_hours = pccg_cooldown_remaining_hours(now, payload)
+    expires_at = now + timedelta(hours=remaining_hours)
 
-    if remaining <= 0:
+    if remaining_hours <= 0:
         return [CheckResult(
             "scraper_cooldown_pccg", CheckResult.OK,
             f"PCCG cooldown expired at {expires_at.isoformat(timespec='seconds')}; "
@@ -939,12 +1127,57 @@ def check_scraper_cooldown() -> list[CheckResult]:
 
     return [CheckResult(
         "scraper_cooldown_pccg", CheckResult.WARNING,
-        f"PCCG scraping paused ({reason}) since "
-        f"{tripped_at.isoformat(timespec='seconds')} — resumes in "
-        f"{remaining / 3600:.1f}h at {expires_at.isoformat(timespec='seconds')}. "
+        f"PCCG scraping paused ({payload['reason']}) since "
+        f"{payload['tripped_at'].isoformat(timespec='seconds')} — resumes in "
+        f"{remaining_hours:.1f}h at {expires_at.isoformat(timespec='seconds')}. "
         f"Missing PCCG data for today is expected until then.",
     )]
 
+
+# ── Backup age ───────────────────────────────────────────────────────
+
+def check_backups(
+    backup_dir: Optional[Path] = None,
+    now: Optional[datetime] = None,
+    max_age_hours: float = BACKUP_MAX_AGE_HOURS,
+) -> list[CheckResult]:
+    """Report the newest DB backup's age (#10).
+
+    Integrity is checked when each backup is taken (backup_db.quick_check, which
+    alerts on failure); this catches backups that silently stopped happening.
+
+    A name that matches BACKUP_NAME_RE but isn't a real calendar date (e.g. a
+    corrupted or hand-edited filename) is skipped rather than raising, and a
+    newest backup timestamped in the future is reported rather than trusted
+    as fresh forever.
+    """
+    from backup_db import list_backups
+    from config import BACKUP_DIR
+
+    backup_dir = Path(backup_dir or BACKUP_DIR)
+    now = now or datetime.now()
+
+    dated = []
+    for p in list_backups(backup_dir):
+        try:
+            taken = datetime.strptime(p.name[len("trackaroo_"):-len(".db")], "%Y-%m-%d_%H%M%S")
+        except ValueError:
+            continue  # regex-matched but not a real calendar date - not a usable backup
+        dated.append((taken, p.name))
+
+    if not dated:
+        return [CheckResult("backup_age", CheckResult.WARNING, f"No database backups in {backup_dir}")]
+
+    dated.sort()
+    taken, newest = dated[-1]
+    if taken > now:
+        return [CheckResult("backup_age", CheckResult.WARNING,
+                            f"Newest backup {newest} is timestamped in the future ({taken.isoformat()})")]
+    age_h = (now - taken).total_seconds() / 3600
+    if age_h > max_age_hours:
+        return [CheckResult("backup_age", CheckResult.WARNING,
+                            f"Newest backup {newest} is {age_h:.0f}h old (limit {max_age_hours:.0f}h)")]
+    return [CheckResult("backup_age", CheckResult.OK, f"Newest backup {newest} ({age_h:.0f}h old)")]
 
 
 # ── Aggregate runner ────────────────────────────────────────────────
@@ -992,6 +1225,12 @@ def run_all_checks(
     match_results = check_match_count_anomalies(db_path)
     all_results.extend(match_results)
     for r in match_results:
+        LOGGER.info("  %s", r)
+
+    LOGGER.info("\n--- Match Count Drop (vs trailing median) ---")
+    drop_results = check_match_count_drop(db_path)
+    all_results.extend(drop_results)
+    for r in drop_results:
         LOGGER.info("  %s", r)
 
     # JSON/DB parity — can the JSON backup still rebuild this day?
