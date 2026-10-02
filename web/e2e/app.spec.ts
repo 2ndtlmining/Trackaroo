@@ -741,17 +741,77 @@ test('the footer names the running build (#3)', async ({ page }) => {
 	await expect(page.getByTestId('build-version')).toHaveText('build dev');
 });
 
+test('error page is styled and offers retry (#29)', async ({ page }) => {
+	await goto(page, '/product/999999');
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+	await expect(page.getByText('404', { exact: true })).toBeVisible();
+	const retry = page.getByRole('link', { name: 'Try again' });
+	await expect(retry).toHaveAttribute('href', '/product/999999');
+	await expect(page.getByRole('main').getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+});
+
 test.describe('command palette', () => {
+	test('is a combobox: active option, Enter, Escape returns focus, Tab is trapped (#29)', async ({ page }) => {
+		await goto(page, '/');
+		const trigger = page.getByRole('button', { name: 'Search products' });
+		await trigger.focus();
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		const input = dialog.getByRole('combobox', { name: 'Search products' });
+		await expect(input).toHaveAttribute('aria-expanded', 'true');
+		await expect(input).toHaveAttribute('aria-autocomplete', 'list');
+		const listboxId = await input.getAttribute('aria-controls');
+		expect(listboxId).toBeTruthy();
+		await expect(page.locator(`#${listboxId}`)).toHaveAttribute('role', 'listbox');
+
+		await input.fill('rx 7800 xt');
+		await page.keyboard.press('ArrowDown');
+		const activeId = await input.getAttribute('aria-activedescendant');
+		expect(activeId).toBeTruthy();
+		const active = page.locator(`#${activeId}`);
+		await expect(active).toHaveAttribute('role', 'option');
+		await expect(active).toHaveAttribute('aria-selected', 'true');
+
+		// Tab never leaves the palette.
+		for (let i = 0; i < 4; i++) {
+			await page.keyboard.press('Tab');
+			expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+		}
+		await page.keyboard.press('Shift+Tab');
+		expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+
+		await input.focus();
+		await page.keyboard.press('Enter');
+		await expect(page).toHaveURL(/\/product\/\d+$/);
+
+		// Reopen from the button, Escape closes and hands focus back to it.
+		await trigger.focus();
+		await page.keyboard.press('Control+k');
+		await expect(dialog).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
+		await expect(trigger).toBeFocused();
+	});
+
+	test('palette with no results has no active option and is not expanded', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const input = page.getByRole('combobox', { name: 'Search products' });
+		await input.fill('zzzzzzzz-no-such-thing');
+		await expect(input).not.toHaveAttribute('aria-activedescendant', /.+/);
+		await expect(input).toHaveAttribute('aria-expanded', 'false');
+	});
+
 	test('opens with Ctrl+K, searches and navigates to a product on Enter', async ({ page }) => {
 		await goto(page, '/');
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
 		await expect(dialog).toBeVisible();
-		await expect(dialog.getByRole('textbox', { name: 'Search products' })).toBeFocused();
+		await expect(dialog.getByRole('combobox', { name: 'Search products' })).toBeFocused();
 
 		// Exactly one match: two would render the palette's "Compare A vs B"
 		// row instead, and Enter would open /compare.
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('rx 7800 xt');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('rx 7800 xt');
 		const first = dialog.getByRole('option').first();
 		await expect(first).toContainText('Radeon RX 7800 XT');
 		await page.keyboard.press('Enter');
@@ -773,7 +833,7 @@ test.describe('command palette', () => {
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
 		await expect(dialog).toBeVisible();
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('RTX 5060');
 		await expect(dialog.getByRole('option').first()).toContainText('Compare');
 	});
 
@@ -781,7 +841,7 @@ test.describe('command palette', () => {
 		await goto(page, '/');
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('RTX 5060');
 		await expect(dialog.getByText(/snapshots/).first()).toBeVisible();
 		await expect(dialog.getByText(/snapshots/)).toHaveCount(2);
 	});
@@ -790,7 +850,7 @@ test.describe('command palette', () => {
 		await goto(page, '/');
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('e2e deal demo gpu 16gb');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('e2e deal demo gpu 16gb');
 		await expect(dialog.getByRole('option').first()).toContainText('E2E Deal Demo GPU 16GB');
 	});
 
@@ -800,7 +860,7 @@ test.describe('command palette', () => {
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
 		// "7600" matches the Ryzen 5 7600 CPU and (in real data) the RX 7600 GPU;
 		// with synthetic data it matches one product. Either way, no compare row.
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('7600');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('7600');
 		await expect(dialog.getByRole('option', { name: /^Compare / })).toHaveCount(0);
 	});
 });
@@ -1228,7 +1288,7 @@ test.describe('product detail offer list', () => {
 		// component, so this exercises the client-side-navigation reuse path.
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('rx 7800 xt');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('rx 7800 xt');
 		await page.keyboard.press('Enter');
 
 		await expect(page.getByRole('heading', { name: /Radeon RX 7800 XT/ })).toBeVisible();

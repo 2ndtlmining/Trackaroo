@@ -9,6 +9,7 @@
 	 * with no way back into the app.
 	 */
 	const status = $derived(page.status);
+	const heading = $derived(status === 404 ? 'Page not found' : 'Something went wrong');
 	const message = $derived(page.error?.message ?? 'Something went wrong.');
 
 	const hint = $derived.by(() => {
@@ -23,11 +24,11 @@
 	});
 </script>
 
-<PageHead title={String(status)} description={message} />
+<PageHead title={heading} description={message} />
 
 <div class="mx-auto max-w-xl py-16 text-center">
-	<p class="num text-5xl font-semibold text-text-muted">{status}</p>
-	<h1 class="mt-3 text-lg font-semibold text-text">{message}</h1>
+	<h1 class="text-2xl font-semibold text-text">{heading}</h1>
+	<p class="mt-3 text-sm text-text">{message}</p>
 
 	{#if hint}
 		<p class="mt-3 text-sm text-text-muted">{hint}</p>
@@ -35,16 +36,18 @@
 
 	<div class="mt-8 flex items-center justify-center gap-3">
 		<a
-			href="/"
+			href={page.url.pathname + page.url.search}
+			data-sveltekit-reload
 			class="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text no-underline hover:bg-surface-hover hover:no-underline"
 		>
-			Back to dashboard
+			Try again
 		</a>
 		<a
-			href="/products"
+			href="/"
 			class="rounded-md px-3 py-2 text-sm text-text-muted no-underline hover:text-text hover:no-underline"
 		>
-			Browse products
+			Home
 		</a>
 	</div>
+	<p class="num mt-6 text-xs text-text-muted">{status}</p>
 </div>
