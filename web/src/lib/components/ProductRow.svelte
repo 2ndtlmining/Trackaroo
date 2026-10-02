@@ -1,7 +1,9 @@
 <script lang="ts">
 	import BrandIcon from './BrandIcon.svelte';
+	import Sparkline from './Sparkline.svelte';
 	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
-	import { formatAud, formatMonthYear, formatPct } from '$lib/formats';
+	import { formatAud, formatMonthYear, formatPct, formatTrend } from '$lib/formats';
+	import { COL } from '$lib/catalogColumns';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30 } from '$lib/offers';
 	import type { CatalogRow } from '$lib/productIndex';
 
@@ -9,7 +11,9 @@
 		group,
 		compareSelected = false,
 		compareDisabled = false,
-		onToggleCompare
+		onToggleCompare,
+		price = undefined,
+		retailer = undefined
 	}: {
 		// neverListed: tracked in the watchlist but no retailer has ever listed
 		// it — a different statement from "listed, currently out of stock".
@@ -21,13 +25,19 @@
 		compareSelected?: boolean;
 		compareDisabled?: boolean;
 		onToggleCompare?: (productId: number) => void;
+		// The catalogue's shown price and its retailer (#23): with a retailer
+		// filter on, that retailer's price rather than the cheapest anywhere.
+		price?: number | null;
+		retailer?: string | null;
 	} = $props();
 
-	const retailerLabel = $derived(
-		group.cheapestInStockRetailer ? lookupRetailerLabel(group.cheapestInStockRetailer) : null
-	);
+	const shown = $derived(price === undefined ? group.cheapestInStockPrice : price);
+	const retailerSlug = $derived(retailer === undefined ? group.cheapestInStockRetailer : retailer);
+	const retailerLabel = $derived(retailerSlug ? lookupRetailerLabel(retailerSlug) : null);
 
-	const deltaPct = $derived(deltaVsAvg30(group.cheapestInStockPrice, group.avg30 ?? null));
+	const deltaPct = $derived(deltaVsAvg30(shown, group.avg30 ?? null));
+	const cpu = $derived(group.category === 'cpu');
+	const trend = $derived(formatTrend(group.sparkline ?? []));
 
 	const specHeader = $derived(group.category === 'gpu' ? 'VRAM' : 'Cores');
 	const specValue = $derived(
@@ -44,8 +54,12 @@
 	const released = $derived(group.launchDate ? formatMonthYear(group.launchDate) : '—');
 </script>
 
+<!-- One row of the catalogue's ARIA table (#23): the flex layout wraps on a
+     phone, which a native <tr> cannot, so the table semantics are explicit.
+     Every child is a cell; cells hidden at a breakpoint simply drop out. -->
 <div
 	class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-surface-hover"
+	role="row"
 	data-testid="catalog-row"
 >
 	{#if onToggleCompare}
@@ -53,62 +67,76 @@
 		     under the 24px WCAG 2.2 AA minimum and awkward to hit on a phone.
 		     Negative margin keeps the row's visual density unchanged. Its title
 		     and aria-label say what ticking does (U5). -->
-		<label
-			class="-m-2 flex w-14 shrink-0 items-center p-2"
-			class:cursor-pointer={!compareDisabled}
-			title="Add to comparison"
-		>
-			<input
-				type="checkbox"
-				class="size-4 shrink-0 accent-accent"
-				checked={compareSelected}
-				disabled={compareDisabled}
-				aria-label={`Compare ${group.model}`}
-				onchange={() => onToggleCompare?.(group.productId)}
-			/>
-		</label>
+		<span class="-my-2 flex {COL.compare}" role="cell">
+			<label
+				class="flex items-center p-2"
+				class:cursor-pointer={!compareDisabled}
+				title="Add to comparison"
+			>
+				<input
+					type="checkbox"
+					class="size-4 shrink-0 accent-accent"
+					checked={compareSelected}
+					disabled={compareDisabled}
+					aria-label={`Compare ${group.model}`}
+					onchange={() => onToggleCompare?.(group.productId)}
+				/>
+			</label>
+		</span>
 	{/if}
 
-	<span class="w-24 shrink-0">
-		{#if group.cheapestInStockPrice !== null}
-			<span class="num text-sm font-semibold text-text"
-				>{formatAud(group.cheapestInStockPrice)}</span
-			>
+	<span class={COL.price} role="cell" data-testid="row-price">
+		{#if shown !== null}
+			<span class="num text-sm font-semibold text-text">{formatAud(shown)}</span>
 		{:else}
 			<span class="text-sm text-text-muted">—</span>
 		{/if}
 	</span>
 
-	<a
-		href={`/product/${group.productId}`}
-		class="min-w-0 flex-1 basis-40 truncate text-sm no-underline hover:underline {group.neverListed
-			? 'text-text-muted'
-			: 'text-text'}"
-		title={group.model}
-	>
-		{group.model}
-	</a>
+	<span class={COL.model} role="cell">
+		<a
+			href={`/product/${group.productId}`}
+			class="block truncate text-sm no-underline hover:underline {group.neverListed
+				? 'text-text-muted'
+				: 'text-text'}"
+			title={group.model}
+		>
+			{group.model}
+		</a>
+	</span>
 
-	<span class="hidden w-16 shrink-0 text-right text-xs text-text-muted md:inline"
+	<span class="{COL.spec} text-xs text-text-muted" role="cell"
 		><span class="sr-only">{`${specHeader}: `}</span><span class="num">{specValue}</span></span
 	>
-	<span class="hidden w-20 shrink-0 text-xs text-text-muted md:inline"
+	{#if cpu}
+		<span class="{COL.socket} text-xs text-text-muted" role="cell"
+			><span class="sr-only">{'Socket: '}</span>{group.socket ?? '—'}</span
+		>
+		<span class="{COL.threads} text-xs text-text-muted" role="cell"
+			><span class="sr-only">{'Threads: '}</span><span class="num">{group.threads ?? '—'}</span
+			></span
+		>
+	{/if}
+	<span class="{COL.released} text-xs text-text-muted" role="cell"
 		><span class="sr-only">{'Released: '}</span>{released}</span
 	>
-	<span
-		class="hidden w-20 shrink-0 text-right text-xs text-text-muted md:inline"
-		title="In stock of listed"
+	<span class="{COL.listings} text-xs text-text-muted" role="cell" title="In stock of listed"
 		><span class="sr-only">{'Listings: '}</span><span class="num"
 			>{group.inStockCount} of {group.listingCount ?? 0}</span
 		></span
 	>
-
-	<span class="hidden shrink-0 items-center gap-1.5 text-xs text-text-muted lg:flex">
-		<BrandIcon brand={group.brand} size={12} />
-		{group.brand}
+	<span class="{COL.trend} text-xs" role="cell" data-testid="row-trend">
+		<Sparkline values={group.sparkline ?? []} label={trend ? `30-day trend: ${trend}` : undefined} />
 	</span>
 
-	<span class="w-36 shrink-0 text-xs">
+	{#if !cpu}
+		<span class="{COL.brand} items-center gap-1.5 text-xs text-text-muted" role="cell">
+			<BrandIcon brand={group.brand} size={12} />
+			{group.brand}
+		</span>
+	{/if}
+
+	<span class="{COL.delta} text-xs" role="cell">
 		{#if deltaPct !== null}
 			{@const d = deltaPresentation(deltaPct)}
 			<span class={d.class}
@@ -118,12 +146,12 @@
 			>
 		{:else if group.neverListed}
 			<span class="text-text-muted">Not listed</span>
-		{:else if group.cheapestInStockPrice === null}
+		{:else if shown === null}
 			<span class="text-text-muted">No stock</span>
 		{:else}
 			<span class="text-text-muted">Not enough history</span>
 		{/if}
 	</span>
 
-	<span class="w-20 shrink-0 text-right text-xs text-text-muted">{retailerLabel ?? ''}</span>
+	<span class="{COL.retailer} text-xs text-text-muted" role="cell">{retailerLabel ?? ''}</span>
 </div>

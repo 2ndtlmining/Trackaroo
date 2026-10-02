@@ -12,6 +12,7 @@ import {
 	formatSeenDate,
 	formatShortDate,
 	formatPct,
+	formatTrend,
 	formatProcess,
 	formatRelative,
 	formatSignedAud,
@@ -252,5 +253,20 @@ describe('updatedLabel (#30)', () => {
 	});
 	it('missing: never', () => {
 		expect(updatedLabel(null, now)).toBe('Never updated');
+	});
+});
+
+describe('formatTrend (#23)', () => {
+	it('names the direction and the rounded first-to-last change', () => {
+		expect(formatTrend([500, 520, 480])).toBe('down 4%');
+		expect(formatTrend([400, 412])).toBe('up 3%');
+	});
+	it('calls a change that rounds to 0% flat', () => {
+		expect(formatTrend([1000, 1004])).toBe('flat');
+		expect(formatTrend([700, 700])).toBe('flat');
+	});
+	it('is null with fewer than two points', () => {
+		expect(formatTrend([])).toBeNull();
+		expect(formatTrend([499])).toBeNull();
 	});
 });

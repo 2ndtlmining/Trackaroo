@@ -90,6 +90,33 @@ test.describe('mobile viewport', () => {
 		await expect(page.getByTestId('catalog-header')).toBeHidden();
 	});
 
+	test('filter dialog opens, focuses inside, applies, returns focus (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const open = page.getByRole('button', { name: /^Filters/ });
+		await expect(open).toHaveText(/Filters \(0 active\)/);
+		await open.click();
+		const dialog = page.getByRole('dialog', { name: 'Filters' });
+		await expect(dialog).toBeVisible();
+		expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+		await dialog.getByRole('checkbox', { name: 'NVIDIA', exact: true }).check();
+		await dialog.getByRole('button', { name: /^Show \d+ results?$/ }).click();
+		await expect(dialog).toBeHidden();
+		await expect(open).toBeFocused();
+		await expect(page).toHaveURL(/brand=NVIDIA/);
+		await expect(open).toHaveText(/Filters \(1 active\)/);
+	});
+
+	test('the open filter dialog does not scroll horizontally (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('button', { name: /^Filters/ }).click();
+		await expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible();
+		const { viewport, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
+		const box = await page.getByRole('dialog', { name: 'Filters' }).boundingBox();
+		expect(box!.x).toBeGreaterThanOrEqual(0);
+		expect(box!.x + box!.width).toBeLessThanOrEqual(PHONE.width);
+	});
+
 	test('product detail does not scroll horizontally at 390px', async ({ page }) => {
 		await goto(page, '/products');
 		const href = await page.locator('a[href^="/product/"]').first().getAttribute('href');

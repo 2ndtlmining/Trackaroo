@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-	activeFilterCount, applyCatalogView, catalogViewParams, parseCatalogView, shownPrice,
+	ACTIVE_RETAILER_OPTIONS, activeFilterCount, applyCatalogView, catalogViewParams, earliestYear, genOptions,
+	parseCatalogView, shownPrice,
 	type CatalogRowInput
 } from '../src/lib/catalogView';
 
@@ -93,5 +94,33 @@ describe('applyCatalogView', () => {
 	it('counts active filters (not sort)', () => {
 		// brand counts once however many brands are ticked; sort is not a filter
 		expect(activeFilterCount(p('max=500&brand=AMD,Intel&in_stock=1&sort=price'))).toBe(3);
+	});
+});
+
+describe('catalogue control helpers (#23)', () => {
+	it('genOptions labels each tier present by its short series names, newest first', () => {
+		const rows = [
+			{ brand: 'AMD', category: 'gpu', generationTier: 'current-1' as const },
+			{ brand: 'NVIDIA', category: 'gpu', generationTier: 'current' as const },
+			{ brand: 'Intel', category: 'gpu', generationTier: 'current' as const },
+			{ brand: 'NVIDIA', category: 'gpu', generationTier: 'current' as const },
+			{ brand: 'NVIDIA', category: 'gpu', generationTier: null }
+		];
+		expect(genOptions(rows)).toEqual([
+			{ value: 'current', label: 'RTX 50 / Arc B' },
+			{ value: 'current-1', label: 'RX 7000' }
+		]);
+	});
+	it('genOptions uses the CPU series names', () => {
+		expect(genOptions([{ brand: 'AMD', category: 'cpu', generationTier: 'current-2' as const }])).toEqual([
+			{ value: 'current-2', label: 'Ryzen 5000' }
+		]);
+	});
+	it('earliestYear is the smallest release year, null when none', () => {
+		expect(earliestYear([{ releaseYear: 2025 }, { releaseYear: null }, { releaseYear: 2024 }])).toBe(2024);
+		expect(earliestYear([{ releaseYear: null }, {}])).toBeNull();
+	});
+	it('the retailer picker offers only the active retailers', () => {
+		expect(ACTIVE_RETAILER_OPTIONS.map((o) => o.value)).toEqual(['scorptec', 'pccg', 'umart']);
 	});
 });

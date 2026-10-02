@@ -204,10 +204,14 @@ describe('/products catalogue controls data (#23)', () => {
 	});
 
 	it('CPU rows carry socket/threads keys, GPU rows have them null', async () => {
-		for (const g of (await run('category=cpu')).groups as any[]) {
+		const cpu = (await run('category=cpu')).groups as any[];
+		for (const g of cpu) {
 			expect(g).toHaveProperty('socket');
 			expect(g).toHaveProperty('threads');
 		}
+		// The seed gives the Core Ultra 5 245 real CPU specs (test/helpers/seed.ts).
+		const seededCpu = cpu.find((g) => g.socket !== null && g.threads !== null);
+		expect(seededCpu).toMatchObject({ socket: 'LGA1851', threads: 10 });
 		for (const g of (await run('category=gpu')).groups as any[]) {
 			expect(g.socket).toBeNull();
 			expect(g.threads).toBeNull();
@@ -227,7 +231,6 @@ describe('/products catalogue controls data (#23)', () => {
 	it('gpu groups payload stays under 40 KB', async () => {
 		const data = await run('category=gpu');
 		const size = JSON.stringify(data.groups).length;
-		console.log(`gpu groups payload bytes: ${size}`);
 		expect(size).toBeLessThan(40 * 1024);
 	});
 });

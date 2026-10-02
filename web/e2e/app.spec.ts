@@ -551,6 +551,154 @@ test.describe('product index', () => {
 	});
 });
 
+// The catalogue's filters and sort live in the URL (#23, spec §4). Prices are
+// read from the rendered rows, so these hold for the real scrape and the
+// synthetic fixture alike.
+async function rowPrices(page: Page): Promise<(number | null)[]> {
+	const texts = await page.getByTestId('row-price').allTextContents();
+	return texts.map((t) => {
+		const v = t.trim();
+		return v.startsWith('$') ? Number(v.replace(/[$,]/g, '')) : null;
+	});
+}
+
+async function rowNames(page: Page): Promise<string[]> {
+	return page.getByTestId('catalog-row').getByRole('link').allTextContents();
+}
+
+test.describe('catalogue filters and sort (#23)', () => {
+	test('max price preset filters rows and writes ?max=', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const preset = page.getByRole('button', { name: '$1,000', exact: true });
+		await expect(preset).toHaveAttribute('aria-pressed', 'false');
+		await preset.click();
+		await expect(page).toHaveURL(/max=1000/);
+		await expect(preset).toHaveAttribute('aria-pressed', 'true');
+		const prices = await rowPrices(page);
+		expect(prices.length).toBeGreaterThan(0);
+		for (const p of prices) {
+			expect(p).not.toBeNull();
+			expect(p!).toBeLessThanOrEqual(1000);
+		}
+	});
+
+	test('the max price box applies after a pause, not per keystroke', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('spinbutton', { name: 'Max price' }).fill('800');
+		await expect(page).toHaveURL(/max=800/);
+		for (const p of await rowPrices(page)) expect(p!).toBeLessThanOrEqual(800);
+	});
+
+	test('brand + gen + retailer combine and survive reload', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('checkbox', { name: 'NVIDIA', exact: true }).check();
+		const gens = page.getByRole('group', { name: 'Generation' }).getByRole('checkbox');
+		const genLabel = ((await gens.first().locator('xpath=..').textContent()) ?? '').trim();
+		await gens.first().check();
+		await page.getByRole('combobox', { name: 'Retailer' }).selectOption('scorptec');
+		await expect(page).toHaveURL(/brand=NVIDIA/);
+		await expect(page).toHaveURL(/gen=current/);
+		await expect(page).toHaveURL(/retailer=scorptec/);
+		await expect(page.getByRole('columnheader', { name: /Price at Scorptec/ })).toBeVisible();
+		const before = await rowNames(page);
+
+		await page.reload();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('checkbox', { name: 'NVIDIA', exact: true })).toBeChecked();
+		await expect(page.getByRole('checkbox', { name: 'AMD', exact: true })).not.toBeChecked();
+		await expect(
+			page.getByRole('group', { name: 'Generation' }).getByRole('checkbox', { name: genLabel, exact: true })
+		).toBeChecked();
+		await expect(page.getByRole('combobox', { name: 'Retailer' })).toHaveValue('scorptec');
+		expect(await rowNames(page)).toEqual(before);
+	});
+
+	test('sort by price toggles direction and aria-sort', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const header = page.getByRole('columnheader', { name: /^Price/ });
+		await expect(header).toHaveAttribute('aria-sort', 'none');
+		await header.getByRole('button').click();
+		await expect(page).toHaveURL(/sort=price/);
+		await expect(header).toHaveAttribute('aria-sort', 'ascending');
+		await expect(page.getByRole('columnheader', { name: /^Model/ })).toHaveAttribute('aria-sort', 'none');
+		// Any sort flattens the series groups.
+		await expect(page.getByRole('heading', { level: 2 })).toHaveCount(0);
+		const asc = (await rowPrices(page)).filter((p): p is number => p !== null);
+		expect(asc.length).toBeGreaterThan(1);
+		expect(asc).toEqual([...asc].sort((a, b) => a - b));
+
+		await header.getByRole('button').click();
+		await expect(page).toHaveURL(/dir=desc/);
+		await expect(header).toHaveAttribute('aria-sort', 'descending');
+		const desc = (await rowPrices(page)).filter((p): p is number => p !== null);
+		expect(desc).toEqual([...desc].sort((a, b) => b - a));
+	});
+
+	test('invalid params render the default view', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const plain = await page.getByTestId('catalog-row').count();
+		await goto(page, '/products?category=gpu&max=abc&sort=bogus');
+		await expect(page.getByTestId('catalog-row')).toHaveCount(plain);
+		await expect(page.getByRole('heading', { level: 2 }).first()).toBeVisible();
+	});
+
+	test('no hydration errors on a filtered URL', async ({ page }) => {
+		const errors: string[] = [];
+		page.on('console', (msg) => {
+			if (msg.type() === 'error' || msg.type() === 'warning') errors.push(msg.text());
+		});
+		page.on('pageerror', (err) => errors.push(err.message));
+		await goto(page, '/products?category=gpu&brand=AMD&sort=price');
+		await expect(page.getByRole('columnheader', { name: /^Price/ })).toHaveAttribute('aria-sort', 'ascending');
+		expect(errors.filter((e) => /hydrat/i.test(e))).toEqual([]);
+	});
+
+	test('empty state', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const plain = await page.getByTestId('catalog-row').count();
+		await goto(page, '/products?category=gpu&max=1');
+		await expect(page.getByText('No products match these filters.')).toBeVisible();
+		await expect(page.getByTestId('catalog-row')).toHaveCount(0);
+		await page.getByTestId('catalog-empty').getByRole('link', { name: 'Clear filters' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page).not.toHaveURL(/max=/);
+		await expect(page.getByTestId('catalog-row')).toHaveCount(plain);
+	});
+
+	test('CPU columns', async ({ page }) => {
+		await goto(page, '/products?category=cpu');
+		for (const name of ['Socket', 'Threads', 'Cores']) {
+			await expect(page.getByRole('columnheader', { name: new RegExp(`^${name}`) })).toBeVisible();
+		}
+		await expect(page.getByRole('columnheader', { name: /^VRAM/ })).toHaveCount(0);
+	});
+
+	test('each row has a 30-day trend with an accessible label', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const labels = await page
+			.getByTestId('row-trend')
+			.locator('[aria-label]')
+			.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+		expect(labels.length).toBeGreaterThan(0);
+		for (const l of labels) expect(l).toMatch(/^(30-day trend: (up|down) \d+%|30-day trend: flat|Not enough history)$/);
+	});
+});
+
+test.describe('catalogue without JavaScript (#23)', () => {
+	test.use({ javaScriptEnabled: false });
+
+	test('shared link renders without JS', async ({ page }) => {
+		await goto(page, '/products?category=gpu&max=500&sort=price');
+		const prices = await rowPrices(page);
+		expect(prices.length).toBeGreaterThan(0);
+		for (const p of prices) expect(p!).toBeLessThanOrEqual(500);
+		expect(prices).toEqual([...prices].sort((a, b) => a! - b!));
+		await expect(page.getByRole('columnheader', { name: /^Price/ })).toHaveAttribute('aria-sort', 'ascending');
+		// The controls are a plain GET form with a visible submit button.
+		await expect(page.getByRole('button', { name: 'Apply filters' })).toBeVisible();
+	});
+});
+
 test('the footer names the running build (#3)', async ({ page }) => {
 	await goto(page, '/');
 	// vite dev has no TRACKAROO_VERSION, so the stamp reads "dev".

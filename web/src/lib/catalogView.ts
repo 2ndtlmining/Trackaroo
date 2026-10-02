@@ -1,4 +1,5 @@
 import { RETAILER_OPTIONS, TIER_OPTIONS } from './filters';
+import { generationTierLabel } from './tiers';
 import type { GenerationTier, Retailer } from './types';
 
 export type CatalogSort = 'price' | 'name' | 'spec' | 'released' | 'listings';
@@ -146,4 +147,46 @@ export function activeFilterCount(view: CatalogView): number {
 		(view.inStock ? 1 : 0) +
 		(view.retailer ? 1 : 0)
 	);
+}
+
+// The retailer picker offers only the retailers the pipeline still scrapes
+// (config.ACTIVE_RETAILERS). The parser accepts all six slugs so an old link
+// still parses; it just narrows to a retailer with no current prices.
+const ACTIVE_RETAILERS: readonly Retailer[] = ['scorptec', 'pccg', 'umart'];
+export const ACTIVE_RETAILER_OPTIONS = RETAILER_OPTIONS.filter((o) => ACTIVE_RETAILERS.includes(o.value));
+
+export const CATALOG_BRANDS: readonly string[] = BRANDS;
+
+interface GenSource {
+	brand: string;
+	category: string;
+	generationTier: GenerationTier | null;
+}
+
+// One option per tier present, labelled by the series it holds in this
+// category ("RTX 50 / RX 9000"): "current-1" means nothing to a buyer.
+export function genOptions(rows: GenSource[]): { value: GenerationTier; label: string }[] {
+	const out: { value: GenerationTier; label: string }[] = [];
+	for (const tier of GENS as GenerationTier[]) {
+		const inTier = rows.filter((r) => r.generationTier === tier);
+		if (!inTier.length) continue;
+		const names: string[] = [];
+		for (const brand of BRANDS) {
+			const r = inTier.find((x) => x.brand === brand);
+			const label = r ? generationTierLabel(r.brand, r.category, tier) : null;
+			const short = label?.replace(/\s*\(.*\)$/, '');
+			if (short && !names.includes(short)) names.push(short);
+		}
+		out.push({ value: tier, label: names.join(' / ') });
+	}
+	return out;
+}
+
+// The earliest release year in a series group: its launch year.
+export function earliestYear(items: { releaseYear?: number | null }[]): number | null {
+	let min: number | null = null;
+	for (const i of items) {
+		if (i.releaseYear != null && (min === null || i.releaseYear < min)) min = i.releaseYear;
+	}
+	return min;
 }
