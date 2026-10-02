@@ -73,7 +73,7 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 234 vitest + 52 Playwright e2e (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 877 vitest + 162 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -400,14 +400,18 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (234 vitest)
+# Run frontend unit tests (877 vitest)
 npm test
 
-# Run browser e2e regression tests (52 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (162 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
 Point it at a different DB file with `TRACKAROO_DB=/path/to/trackaroo.db`. The default path resolves to `<repo>/db/trackaroo.db` relative to the server module.
+
+### Browsing the catalogue
+
+`/products?category=gpu` (or `cpu`) filters and sorts the catalogue, and the whole view lives in the URL, so any filtered list can be bookmarked or shared as a link. Filters: a maximum price (presets of $500, $1000, $2000, or any amount), brand, GPU/CPU generation, in stock only, and a retailer. Sort by price, model, VRAM (GPU) or cores (CPU), release date or number of listings; click a column header, or use the sort control, and click again to reverse. The controls are an inline form on desktop. On a phone they sit behind a "Filters (N active)" button that opens a dialog, and with JavaScript off they stay inline as a plain GET form, so the filters still work. "Clear filters" resets the URL. The compare page marks the best value in each spec row, and the product-page chart can show the 30-day average line.
 
 ## Data model
 
@@ -525,7 +529,7 @@ Trackaroo/
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
     ├── test/                   # 239 vitest regression tests (11 suites)
-    ├── e2e/                    # 52 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── e2e/                    # 162 Playwright regression tests (app.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```
