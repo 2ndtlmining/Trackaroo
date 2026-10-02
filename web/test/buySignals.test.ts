@@ -3,13 +3,18 @@ import type { PriceBandPoint } from '../src/lib/server/repos';
 import {
 	addDays,
 	asOfDate,
+	buildSignals,
 	dailyLows,
+	lowestInDays,
+	pricePercentile,
+	trend7,
 	lowSummary,
 	whereToBuy,
 	windowStats,
 	type DailyLow
 } from '../src/lib/buySignals';
 import { offer } from './helpers/offers';
+import { SUCCESSORS } from '../src/lib/successors';
 
 function lows(pairs: Array<[string, number]>): DailyLow[] {
 	return pairs.map(([date, price]) => ({ date, price }));
@@ -144,5 +149,109 @@ describe('whereToBuy', () => {
 
 	it('leaves out a retailer whose only listings are delisted or stale', () => {
 		expect(whereToBuy([offer({ retailer: 'pccg', stale: true, inStock: false })])).toEqual([]);
+	});
+});
+
+const ten = lows(
+	[100, 90, 80, 70, 60, 50, 40, 30, 20, 10].map((p, i): [string, number] => [`2026-09-${String(i + 1).padStart(2, '0')}`, p])
+);
+// A quiet date: no sale event within 21 days.
+const QUIET = new Date('2026-09-10T00:00:00Z');
+
+describe('pricePercentile', () => {
+	it('is the share of window days with a higher low, and the span', () => {
+		expect(pricePercentile(ten, 55, '2026-09-10')).toEqual({ pct: 50, days: 10 });
+		expect(pricePercentile(ten, 5, '2026-09-10')).toEqual({ pct: 100, days: 10 });
+	});
+	it('caps the window at 180 days', () => {
+		const long: DailyLow[] = [];
+		for (let i = 0; i < 300; i++) long.push({ date: addDays('2026-01-01', i), price: 100 });
+		expect(pricePercentile(long, 100, '2026-10-28')?.days).toBe(180);
+	});
+	it('is null under the history gate', () => {
+		expect(pricePercentile(ten.slice(0, 2), 50, '2026-09-02')).toBeNull();
+	});
+});
+
+describe('lowestInDays', () => {
+	it('says since tracking began when no lower day exists', () => {
+		expect(lowestInDays(ten, 10, '2026-09-10')).toEqual({ days: 10, sinceStart: true });
+	});
+	it('counts days since the last lower price', () => {
+		expect(lowestInDays(lows([['2026-09-01', 50], ['2026-09-05', 90], ['2026-09-10', 80]]), 80, '2026-09-10'))
+			.toEqual({ days: 9, sinceStart: false });
+	});
+	it('is null with no history', () => {
+		expect(lowestInDays([], 80, '2026-09-10')).toBeNull();
+	});
+});
+
+describe('trend7', () => {
+	const t = (a: number, b: number) => trend7(lows([['2026-09-04', a], ['2026-09-10', b]]), '2026-09-10');
+	it('classifies falling, flat and rising', () => {
+		expect(t(100, 96)).toMatchObject({ dir: 'falling', change: -4 });
+		expect(t(100, 100.5)).toMatchObject({ dir: 'flat', change: 0.5 });
+		expect(t(100, 103)).toMatchObject({ dir: 'rising', change: 3 });
+	});
+	it('is null with fewer than 2 points in 7 days', () => {
+		expect(trend7(lows([['2026-09-01', 100], ['2026-09-10', 90]]), '2026-09-10')).toBeNull();
+	});
+});
+
+describe('buildSignals', () => {
+	const base = { asOf: '2026-09-10', avg30: 100, series: null, now: QUIET };
+	it('gives exactly one gathering signal below the gate', () => {
+		const s = buildSignals({ ...base, lows: ten.slice(0, 2), today: 50 });
+		expect(s).toHaveLength(1);
+		expect(s[0]).toMatchObject({ key: 'gathering', tone: 'neutral', icon: 'dash', claim: 'Gathering history (2 days)' });
+	});
+	it('maps tones and icons; every signal has evidence and no emoji', () => {
+		const s = buildSignals({ ...base, lows: ten, today: 10, avg30: 100 });
+		const by = Object.fromEntries(s.map((x) => [x.key, x]));
+		expect(by.percentile).toMatchObject({ tone: 'good', icon: 'check' });
+		expect(by.lowest).toMatchObject({ tone: 'neutral', icon: 'dash', claim: 'Lowest since tracking began' });
+		expect(by.avg).toMatchObject({ tone: 'good', icon: 'check' });
+		expect(by.trend).toMatchObject({ tone: 'good', icon: 'down' });
+		expect(by.trend.claim).toBe('7-day trend: falling (−85.7%)');
+		for (const x of s) {
+			expect(x.evidence.length).toBeGreaterThan(0);
+			expect(x.claim.length).toBeGreaterThan(0);
+			expect(`${x.claim} ${x.evidence}`).not.toMatch(/\p{Extended_Pictographic}/u);
+		}
+	});
+	it('uses 30+ days for a good lowest signal', () => {
+		const long: DailyLow[] = [{ date: '2026-06-01', price: 50 }];
+		for (let i = 0; i < 40; i++) long.push({ date: addDays('2026-08-01', i), price: 100 });
+		const s = buildSignals({ ...base, asOf: '2026-09-09', lows: long, today: 100 });
+		expect(s.find((x) => x.key === 'lowest')).toMatchObject({ tone: 'good', icon: 'check', claim: 'Lowest in 100 days' });
+	});
+	it('applies the +-2% average rule; only above-average is bad', () => {
+		const avg = (today: number) => buildSignals({ ...base, lows: ten, today, avg30: 100 }).find((x) => x.key === 'avg')!;
+		expect(avg(97.9)).toMatchObject({ tone: 'good', icon: 'check' });
+		expect(avg(101)).toMatchObject({ tone: 'neutral', icon: 'dash' });
+		expect(avg(99)).toMatchObject({ tone: 'neutral' });
+		expect(avg(102.5)).toMatchObject({ tone: 'bad', icon: 'alert', claim: '2.5% above its 30-day average' });
+	});
+	it('rising trend is warn/up, flat is neutral/dash', () => {
+		const up = lows([['2026-09-04', 100], ['2026-09-05', 100], ['2026-09-10', 105]]);
+		expect(buildSignals({ ...base, lows: up, today: 105 }).find((x) => x.key === 'trend'))
+			.toMatchObject({ tone: 'warn', icon: 'up' });
+		const flat = lows([['2026-09-04', 100], ['2026-09-05', 100], ['2026-09-10', 100.5]]);
+		expect(buildSignals({ ...base, lows: flat, today: 100.5 }).find((x) => x.key === 'trend'))
+			.toMatchObject({ tone: 'neutral', icon: 'dash' });
+	});
+	it('adds a sale signal near an event and a successor signal when mapped', () => {
+		const now = new Date('2026-12-14T00:00:00Z');
+		const s = buildSignals({ ...base, asOf: '2026-12-14', lows: ten, today: 10, now });
+		expect(s.find((x) => x.key === 'sale')).toMatchObject({ tone: 'warn', icon: 'calendar', claim: 'Boxing Day starts in 12 days' });
+		const run = buildSignals({ ...base, lows: ten, today: 10, now: new Date('2026-11-27T00:00:00Z') });
+		expect(run.find((x) => x.key === 'sale')?.claim).toBe('Black Friday sale on now');
+		SUCCESSORS['RTX 50'] = 'RTX 60';
+		try {
+			const sc = buildSignals({ ...base, lows: ten, today: 10, series: 'RTX 50' });
+			expect(sc.find((x) => x.key === 'successor')).toMatchObject({ tone: 'warn', icon: 'alert', claim: 'Successor announced (RTX 60)' });
+		} finally {
+			delete SUCCESSORS['RTX 50'];
+		}
 	});
 });
