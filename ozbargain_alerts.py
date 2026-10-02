@@ -23,6 +23,7 @@ _BEST_SQL = """
 SELECT ps.price_aud, l.retailer
 FROM price_snapshots ps
 JOIN retailer_listings l ON l.id = ps.retailer_listing_id AND l.status = 'active'
+JOIN products p ON p.id = l.product_id AND p.tracked = 1
 WHERE l.product_id = :pid
   AND ps.snapshot_date = (SELECT MAX(snapshot_date) FROM price_snapshots)
   AND ps.stock_status = 'in_stock'
@@ -71,8 +72,7 @@ def alert_candidates(conn: sqlite3.Connection, now: datetime) -> List[dict]:
         conn.row_factory = prev
     out: List[dict] = []
     for d in deals:
-        start = ozbargain._aware(d["starts_at"]) if d["starts_at"] else None
-        if start is not None and start > now:
+        if not ozbargain.is_live(d, now):
             continue
         best = best_in_stock(conn, d["product_id"])
         if best is not None and not d["price_aud"] < best[0]:
@@ -85,14 +85,19 @@ def alert_candidates(conn: sqlite3.Connection, now: datetime) -> List[dict]:
     return out[:MAX_ALERTS_PER_POLL]
 
 
+def _price(v: float) -> str:
+    """Whole dollars when whole, else cents ($1,198.99 must not read as $1,199)."""
+    return f"${v:,.2f}" if v % 1 else f"${v:,.0f}"
+
+
 def build_embed(candidate: dict, base_url: str) -> dict:
     """One Discord embed for a deal (no emoji, never a /goto/ link)."""
     c = candidate
-    title = f"OzBargain: {c['product_name']} {notify_discord.format_aud(c['price_aud'])}"
+    title = f"OzBargain: {c['product_name']} {_price(c['price_aud'])}"
     if c.get("retailer"):
         title += f" at {c['retailer']}"
     if c.get("best_price") is not None:
-        ours = (f"Our best today: {notify_discord.format_aud(c['best_price'])} at "
+        ours = (f"Our best today: {_price(c['best_price'])} at "
                 f"{notify_discord.retailer_label(c['best_retailer'])}")
     else:
         ours = "Not in stock at our retailers"

@@ -1288,6 +1288,11 @@ class TestCheckOzbargain:
         sqlite3.connect(p).close()
         assert check_ozbargain(p, now=self._now()) == []
 
+    def test_silent_when_no_poll_rows_yet(self, tmp_path, monkeypatch):
+        from health_checks import check_ozbargain
+        monkeypatch.delenv("OZB_ENABLED", raising=False)
+        assert check_ozbargain(self._db(tmp_path, []), now=self._now()) == []
+
     def test_silent_when_disabled(self, tmp_path, monkeypatch):
         from health_checks import check_ozbargain
         monkeypatch.setenv("OZB_ENABLED", "0")

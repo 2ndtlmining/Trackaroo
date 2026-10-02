@@ -26,12 +26,14 @@ import requests
 from config import DB_PATH
 from discover_rules import is_excluded_title
 from migrate import migrate_add_ozbargain_tables
+from ozbargain_live import LIVE_SEEN_DAYS, MELBOURNE, _aware, is_live  # noqa: F401 (re-exported)
 from scraper.chip_key import Matcher
 
 LOGGER = logging.getLogger(__name__)
 TIMEOUT = 10
 DEALS_RETENTION_DAYS = 180
 POLLS_RETENTION_DAYS = 30
+RESTART_GUARD_MINUTES = 90  # a restart/crash loop must not burn the 18 polls/day budget
 # discover_rules.is_excluded_title misses prebuilt PCs ("Gaming PC with RTX 5070"):
 # a whole-PC deal is not a card or CPU price, so it is never matched.
 _PREBUILT_RE = re.compile(
@@ -45,12 +47,6 @@ FEEDS: Tuple[Tuple[str, str], ...] = (
 USER_AGENT = "Trackaroo/1.0 (+https://github.com/2ndtlmining/Trackaroo)"
 
 NODE_URL = "https://www.ozbargain.com.au/node/{}"
-try:  # naive feed times are Melbourne local (DST-correct when tzdata exists)
-    from zoneinfo import ZoneInfo
-
-    MELBOURNE = ZoneInfo("Australia/Melbourne")
-except Exception:  # no tzdata (e.g. Windows without the tzdata package)
-    MELBOURNE = timezone(timedelta(hours=10))
 EXPIRED_MSGS = {"expired", "sold out", "out of stock"}
 
 _PRICE_RE = re.compile(r"([A-Za-z]*)\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?")
@@ -117,14 +113,6 @@ def _int(value: Optional[str]) -> int:
         return int(value) if value is not None else 0
     except ValueError:
         return 0
-
-
-def _aware(iso: str) -> Optional[datetime]:
-    try:
-        dt = datetime.fromisoformat(iso.strip())
-    except ValueError:
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=MELBOURNE)
 
 
 def _node_id(item: ET.Element) -> Optional[int]:
@@ -243,14 +231,15 @@ ON CONFLICT(node_id) DO UPDATE SET
     votes_pos = excluded.votes_pos, votes_neg = excluded.votes_neg,
     comment_count = excluded.comment_count, posted_at = excluded.posted_at,
     starts_at = excluded.starts_at, expires_at = excluded.expires_at, expired = excluded.expired,
-    product_id = COALESCE(ozb_deals.product_id, excluded.product_id),
+    product_id = COALESCE(excluded.product_id, ozb_deals.product_id),
     last_seen_at = excluded.last_seen_at
 """
 
 
 def upsert_items(conn: sqlite3.Connection, items: Sequence[FeedItem],
                  product_ids: Sequence[Optional[int]], seen_at: str) -> None:
-    """Upsert on node_id. first_seen_at, alerted_at and a non-null product_id are kept."""
+    """Upsert on node_id. first_seen_at, alerted_at and a non-null product_id are kept
+    (a re-match to another product wins; a null re-match does not clear it)."""
     conn.executemany(_UPSERT_SQL, [
         (i.node_id, i.category, i.title, i.url, i.price_aud, i.retailer, i.votes_pos, i.votes_neg,
          i.comment_count, i.posted_at, i.starts_at, i.expires_at, int(i.expired), pid, seen_at, seen_at)
@@ -298,6 +287,15 @@ def poll(conn: sqlite3.Connection, now: datetime, dry_run: bool = False) -> Dict
     return result
 
 
+def _polled_recently(conn: sqlite3.Connection, now: datetime) -> bool:
+    cut = now - timedelta(minutes=RESTART_GUARD_MINUTES)
+    for (raw,) in conn.execute("SELECT polled_at FROM ozb_polls"):
+        ts = _aware(raw) if raw else None
+        if ts is not None and cut < ts <= now + timedelta(minutes=RESTART_GUARD_MINUTES):
+            return True
+    return False
+
+
 def run(db_path: Optional[Path] = None, dry_run: bool = False,
         now: Optional[datetime] = None) -> Dict[str, Any]:
     """One poll against the DB. A dry run writes nothing (no tables, no poll row)."""
@@ -307,6 +305,9 @@ def run(db_path: Optional[Path] = None, dry_run: bool = False,
     try:
         if not dry_run:
             migrate_add_ozbargain_tables(conn)
+            if _polled_recently(conn, now):
+                LOGGER.info("OzBargain poll skipped: last poll under %d minutes ago", RESTART_GUARD_MINUTES)
+                return {"ok": False, "skipped": True, "items": 0, "matched": 0, "errors": [], "matches": []}
         result = poll(conn, now, dry_run=dry_run)
         if not dry_run:
             prune(conn, now)

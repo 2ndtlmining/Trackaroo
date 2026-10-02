@@ -1184,7 +1184,7 @@ def check_ozbargain(db_path: Path, now: Optional[datetime] = None) -> list[Check
     try:
         conn = sqlite3.connect(str(db_path))
         try:
-            rows = [r[0] for r in conn.execute("SELECT polled_at FROM ozb_polls WHERE ok = 1")]
+            all_rows = list(conn.execute("SELECT polled_at, ok FROM ozb_polls"))
         finally:
             conn.close()
     except sqlite3.OperationalError as e:
@@ -1193,8 +1193,12 @@ def check_ozbargain(db_path: Path, now: Optional[datetime] = None) -> list[Check
         return [CheckResult("ozbargain", CheckResult.WARNING, f"OzBargain poll state unreadable: {e}")]
     except sqlite3.Error as e:
         return [CheckResult("ozbargain", CheckResult.WARNING, f"OzBargain poll state unreadable: {e}")]
+    if not all_rows:  # nothing has polled yet (fresh deploy)
+        return []
     newest = None
-    for raw in rows:
+    for raw, ok in all_rows:
+        if not ok:
+            continue
         try:
             ts = datetime.fromisoformat(raw)
         except (TypeError, ValueError):

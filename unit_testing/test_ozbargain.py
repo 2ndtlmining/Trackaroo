@@ -1,5 +1,5 @@
 """OzBargain RSS feed parser (#34). Pure parsing; no network."""
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -223,7 +223,6 @@ def test_naive_expiry_uses_melbourne_dst():
 import dataclasses  # noqa: E402
 import logging  # noqa: E402
 import sqlite3  # noqa: E402
-from datetime import timedelta  # noqa: E402
 from unittest.mock import MagicMock  # noqa: E402
 
 TRACKED = [
@@ -453,3 +452,81 @@ def test_run_survives_alert_failure(run_env, monkeypatch):
         raise RuntimeError("x")
     monkeypatch.setattr("ozbargain_alerts.send_alerts", boom)
     assert ozbargain.run(db_path=path, now=NOW)["ok"]
+
+
+# --- R8 live rule (final review C1)
+def _live(**kw):
+    d = dict(expired=0, starts_at=None, expires_at=None, last_seen_at=NOW.isoformat())
+    d.update(kw)
+    return ozbargain.is_live(d, NOW)
+
+
+def test_is_live_basic_and_expired_flag():
+    assert _live()
+    assert not _live(expired=1)
+
+
+def test_is_live_start_and_expiry():
+    assert not _live(starts_at="2026-10-03T13:00:00+10:00")
+    assert _live(starts_at="2026-10-03T11:00:00+10:00")
+    assert not _live(expires_at="2026-10-03T11:00:00+10:00")
+    assert not _live(expires_at="2026-10-03T12:00:00+10:00")  # == now is over
+    assert _live(expires_at="2026-10-03T13:00:00+10:00")
+    assert _live(starts_at="garbage", expires_at="garbage")  # unparseable = absent
+
+
+def test_is_live_last_seen_window():
+    assert _live(last_seen_at=(NOW - timedelta(days=6)).isoformat())
+    assert _live(last_seen_at=(NOW - timedelta(days=7)).isoformat())
+    assert not _live(last_seen_at=(NOW - timedelta(days=8)).isoformat())
+    assert not _live(last_seen_at=None)
+    assert not _live(last_seen_at="garbage")
+
+
+# --- upsert follows a re-match (M4)
+def test_upsert_follows_rematch_but_null_keeps(mdb, gpu_items):
+    item = gpu_items[912001]
+    a, b = _pid(mdb, "RTX 5070 Ti"), _pid(mdb, "RTX 5080")
+    ozbargain.upsert_items(mdb, [item], [a], "2026-10-03T10:00:00")
+    ozbargain.upsert_items(mdb, [item], [b], "2026-10-03T12:00:00")
+    assert _deals(mdb)[912001]["product_id"] == b
+    ozbargain.upsert_items(mdb, [item], [None], "2026-10-03T14:00:00")
+    assert _deals(mdb)[912001]["product_id"] == b
+
+
+# --- restart guard (M5)
+def test_run_skips_within_90_minutes(run_env, caplog):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+    ozbargain.run(db_path=path, now=NOW)
+    assert len(calls) == 2
+    with caplog.at_level(logging.INFO):
+        res = ozbargain.run(db_path=path, now=NOW + timedelta(minutes=89))
+    assert len(calls) == 2 and res["ok"] is False and res.get("skipped")
+    assert any("skip" in r.getMessage().lower() for r in caplog.records)
+    assert len(_polls(path)[0]) == 1
+
+
+def test_run_polls_after_91_minutes(run_env):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+    ozbargain.run(db_path=path, now=NOW)
+    res = ozbargain.run(db_path=path, now=NOW + timedelta(minutes=91))
+    assert len(calls) == 4 and res["ok"] and len(_polls(path)[0]) == 2
+
+
+def test_run_guard_compares_datetimes_across_offsets(run_env):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+    ozbargain.run(db_path=path, now=NOW)  # 12:00 +10
+    # 02:30 UTC == 12:30 +10, 30 minutes later though the string sorts earlier
+    ozbargain.run(db_path=path, now=datetime(2026, 10, 3, 2, 30, tzinfo=timezone.utc))
+    assert len(calls) == 2
+
+
+def test_run_dry_run_ignores_guard(run_env):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+    ozbargain.run(db_path=path, now=NOW)
+    ozbargain.run(db_path=path, dry_run=True, now=NOW + timedelta(minutes=5))
+    assert len(calls) == 4

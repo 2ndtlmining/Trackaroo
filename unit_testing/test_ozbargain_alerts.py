@@ -50,7 +50,7 @@ def deal(conn, **kw):
     d = dict(node_id=_nid[0], category="gpu", title="t", url=f"https://www.ozbargain.com.au/node/{_nid[0]}",
              price_aud=1099.0, retailer="Mwave", votes_pos=42, votes_neg=1, comment_count=0,
              posted_at=None, starts_at=None, expires_at=None, expired=0, product_id=1,
-             first_seen_at="x", last_seen_at="x", alerted_at=None)
+             first_seen_at=NOW.isoformat(), last_seen_at=NOW.isoformat(), alerted_at=None)
     d.update(kw)
     cols = ",".join(d)
     conn.execute(f"INSERT INTO ozb_deals ({cols}) VALUES ({','.join('?' * len(d))})", list(d.values()))
@@ -176,6 +176,26 @@ def test_cap_and_order(db):
     assert [c["price_aud"] for c in got] == [800, 850, 900, 950, 970]
 
 
+def test_date_expired_excluded(db):
+    snap(db)
+    deal(db, expires_at="2026-10-03T11:00:00+10:00")
+    future = deal(db, expires_at="2026-10-04T11:00:00+10:00")
+    assert ids(db) == [future]
+
+
+@pytest.mark.parametrize("days,included", [(8, False), (6, True)])
+def test_stale_last_seen_excluded(db, days, included):
+    snap(db)
+    n = deal(db, last_seen_at=(NOW - timedelta(days=days)).isoformat())
+    assert (ids(db) == [n]) is included
+
+
+def test_untracked_product_has_no_best(db):
+    snap(db, price=1000)
+    db.execute("UPDATE products SET tracked = 0 WHERE id = 1")
+    assert oa.best_in_stock(db, 1) is None
+
+
 # --- send_alerts
 def alerted(db):
     return [r[0] for r in db.execute("SELECT alerted_at FROM ozb_deals ORDER BY node_id")]
@@ -256,3 +276,11 @@ def test_embed_no_best_no_base():
     e = oa.build_embed(cand(best_price=None, best_retailer=None), "")
     assert "Not in stock at our retailers" in e["description"]
     assert "/product/" not in e["description"]
+
+
+def test_embed_keeps_cents():
+    e = oa.build_embed(cand(price_aud=1198.99, best_price=1199.0), "")
+    assert e["title"] == "OzBargain: NVIDIA RTX 5070 Ti 16GB $1,198.99 at Mwave"
+    assert "Our best today: $1,199 at PCCG" in e["description"]
+    e2 = oa.build_embed(cand(best_price=1198.99), "")
+    assert "Our best today: $1,198.99 at PCCG" in e2["description"]

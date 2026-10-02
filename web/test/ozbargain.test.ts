@@ -113,11 +113,42 @@ describe('getOzbDeals', () => {
 		expect(getOzbDeals(db as any, 1, NOW).live.map((d) => d.nodeId)).toEqual([started]);
 	});
 
+	it('treats a date-expired deal (expired = 0, expiry in the past) as expired, not live', () => {
+		deal({ expires_at: hoursAgo(1) });
+		const open = deal({ expires_at: hoursAgo(-5) });
+		const { live, expired } = getOzbDeals(db as any, 1, NOW);
+		expect(live.map((d) => d.nodeId)).toEqual([open]);
+		expect(expired).toHaveLength(1);
+		expect(expired[0].expired).toBe(true);
+	});
+
+	it('treats a deal not seen in the feed for 8 days as expired, 6 days as live', () => {
+		const stale = deal({ last_seen_at: daysAgo(8) });
+		const fresh = deal({ last_seen_at: daysAgo(6) });
+		deal({ last_seen_at: 'garbage' });
+		const { live, expired } = getOzbDeals(db as any, 1, NOW);
+		expect(live.map((d) => d.nodeId)).toEqual([fresh]);
+		expect(expired.map((d) => d.nodeId)).toContain(stale);
+		expect(expired.find((d) => d.nodeId === stale)?.expired).toBe(true);
+	});
+
+	it('keeps an upcoming deal out of both lists', () => {
+		deal({ starts_at: hoursAgo(-5) });
+		expect(getOzbDeals(db as any, 1, NOW)).toEqual({ live: [], expired: [] });
+	});
+
 	it('is empty, without throwing, when the table is missing', () => {
 		const bare = new Database(':memory:');
 		expect(getOzbDeals(bare as any, 1, NOW)).toEqual({ live: [], expired: [] });
 		expect(getLiveOzbDealByProduct(bare as any, NOW).size).toBe(0);
 		bare.close();
+	});
+
+	it('rethrows anything but "no such table"', () => {
+		const odd = new Database(':memory:');
+		odd.exec('CREATE TABLE ozb_deals (node_id INTEGER)');
+		expect(() => getOzbDeals(odd as any, 1, NOW)).toThrow(/no such column/i);
+		odd.close();
 	});
 });
 
@@ -128,6 +159,8 @@ describe('getLiveOzbDealByProduct', () => {
 		deal({ product_id: 1, price_aud: null });
 		deal({ product_id: 1, price_aud: 100, expired: 1 });
 		deal({ product_id: 1, price_aud: 50, starts_at: hoursAgo(-1) });
+		deal({ product_id: 1, price_aud: 40, expires_at: hoursAgo(1) });
+		deal({ product_id: 1, price_aud: 30, last_seen_at: daysAgo(8) });
 		deal({ product_id: null, price_aud: 10 });
 		deal({ product_id: 2, price_aud: null });
 		const map = getLiveOzbDealByProduct(db as any, NOW);

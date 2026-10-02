@@ -13,6 +13,7 @@ import { cheapestListingPerProduct } from './sql';
 const LIVE_CAP = 5;
 const EXPIRED_CAP = 10;
 const EXPIRED_WINDOW_MS = 30 * 24 * 3_600_000;
+const LIVE_SEEN_MS = 7 * 24 * 3_600_000;
 
 interface Row {
 	nodeId: number;
@@ -24,6 +25,7 @@ interface Row {
 	votesNeg: number;
 	postedAt: string | null;
 	startsAt: string | null;
+	expiresAt: string | null;
 	expired: number;
 	productId: number | null;
 	firstSeenAt: string;
@@ -32,13 +34,15 @@ interface Row {
 
 const COLUMNS = `node_id AS nodeId, title, url, price_aud AS priceAud, retailer,
 	votes_pos AS votesPos, votes_neg AS votesNeg, posted_at AS postedAt, starts_at AS startsAt,
-	expired, product_id AS productId, first_seen_at AS firstSeenAt, last_seen_at AS lastSeenAt`;
+	expires_at AS expiresAt, expired, product_id AS productId, first_seen_at AS firstSeenAt, last_seen_at AS lastSeenAt`;
 
 function rows(db: DB, where: string, ...params: unknown[]): Row[] {
 	try {
 		return db.prepare(`SELECT ${COLUMNS} FROM ozb_deals WHERE ${where}`).all(...params) as Row[];
-	} catch {
-		return [];
+	} catch (e) {
+		// An older DB without the table is "no deals"; anything else is a real fault.
+		if (e instanceof Error && /no such table/i.test(e.message)) return [];
+		throw e;
 	}
 }
 
@@ -47,15 +51,24 @@ function ms(iso: string | null): number {
 	return new Date(iso).getTime();
 }
 
-// "Live" is the alert rule's: not expired, and started (or no start date).
-function isLive(r: Row, now: Date): boolean {
-	if (r.expired) return false;
-	if (r.startsAt === null) return true;
+function isUpcoming(r: Row, now: Date): boolean {
 	const start = ms(r.startsAt);
-	return Number.isNaN(start) || start <= now.getTime();
+	return !Number.isNaN(start) && start > now.getTime();
 }
 
-function toDeal(r: Row): OzbDeal {
+// R8, the alert rule's "live": not flagged expired, started, expiry (if any)
+// still ahead, and seen in the feed within 7 days. Unparseable start/expiry
+// count as absent; a missing or unparseable last-seen is not live.
+function isLive(r: Row, now: Date): boolean {
+	if (r.expired || isUpcoming(r, now)) return false;
+	const t = now.getTime();
+	const end = ms(r.expiresAt);
+	if (!Number.isNaN(end) && end <= t) return false;
+	const seen = ms(r.lastSeenAt);
+	return !Number.isNaN(seen) && t - seen <= LIVE_SEEN_MS;
+}
+
+function toDeal(r: Row, expired: boolean): OzbDeal {
 	return {
 		nodeId: r.nodeId,
 		title: r.title,
@@ -65,7 +78,7 @@ function toDeal(r: Row): OzbDeal {
 		votesPos: r.votesPos,
 		votesNeg: r.votesNeg,
 		postedAt: r.postedAt,
-		expired: r.expired !== 0
+		expired
 	};
 }
 
@@ -90,13 +103,13 @@ export function getOzbDeals(
 		.filter((r) => isLive(r, now))
 		.sort(newestFirst((r) => ms(r.postedAt ?? r.firstSeenAt)))
 		.slice(0, LIVE_CAP)
-		.map(toDeal);
+		.map((r) => toDeal(r, false));
 	const since = now.getTime() - EXPIRED_WINDOW_MS;
 	const expired = all
-		.filter((r) => r.expired && ms(r.lastSeenAt) >= since)
+		.filter((r) => !isLive(r, now) && !isUpcoming(r, now) && ms(r.lastSeenAt) >= since)
 		.sort(newestFirst((r) => ms(r.lastSeenAt)))
 		.slice(0, EXPIRED_CAP)
-		.map(toDeal);
+		.map((r) => toDeal(r, true));
 	return { live, expired };
 }
 
@@ -109,7 +122,7 @@ export function getLiveOzbDealByProduct(db: DB, now: Date = new Date()): Map<num
 		const cur = best.get(pid);
 		if (!cur || (r.priceAud as number) < (cur.priceAud as number)) best.set(pid, r);
 	}
-	return new Map([...best].map(([pid, r]) => [pid, toDeal(r)]));
+	return new Map([...best].map(([pid, r]) => [pid, toDeal(r, false)]));
 }
 
 // "Below our best" uses the Python alert's rule (R1/R7): the cheapest in-stock,
