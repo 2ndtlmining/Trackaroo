@@ -301,6 +301,7 @@
 		ctx.font = `${11 * dpr}px ${fontFamily}`;
 		ctx.textBaseline = 'top';
 		ctx.textAlign = 'left';
+		// saleEvents arrive in date order (saleEventsInRange), so label rows pack left to right.
 		const rowEnds: number[] = [];
 		for (const e of saleEvents) {
 			const ts = Math.max(new Date(`${e.start}T00:00:00Z`).getTime(), xMin);

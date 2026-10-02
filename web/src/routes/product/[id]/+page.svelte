@@ -31,6 +31,7 @@
 			productIndex: ProductIndexEntry[];
 			fx: FxRate | null;
 			msrpUsd: number | null;
+			today: string;
 		};
 		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
 	} = $props();
@@ -109,7 +110,7 @@ label:
 			asOf,
 			avg30: headline.avg30 ?? null,
 			series: data.specs?.generation ?? null,
-			now: new Date()
+			todayIso: data.today
 		})
 	);
 	const where = $derived(whereToBuy(offers));

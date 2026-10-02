@@ -250,14 +250,14 @@ describe('MSRP data (#32)', () => {
 		for (const d of [...data.belowAverage, ...data.atAllTimeLow]) expect(d).toHaveProperty('msrpUsd');
 	});
 
-	it('/deals?below_msrp=1 keeps only rows under MSRP: none without a rate (Task 3)', async () => {
+	it('/deals?below_msrp=1 is ignored without a rate (the toggle is hidden then)', async () => {
 		const { load } = await import('../src/routes/deals/+page.server');
 		const all = load({ url: new URL('http://x/deals'), setHeaders: noopSetHeaders } as any);
 		expect(all.belowMsrp).toBe(false);
 		const data = load({ url: new URL('http://x/deals?below_msrp=1'), setHeaders: noopSetHeaders } as any);
-		expect(data.belowMsrp).toBe(true);
-		expect([...data.belowAverage, ...data.atAllTimeLow]).toEqual([]);
-		expect(data.totals.category).toBe(0);
+		expect(data.belowMsrp).toBe(false);
+		expect(data.totals.category).toBe(all.totals.category);
+		expect(data.eligibleCount).toBe(all.eligibleCount);
 	});
 
 	it('/product/[id] returns fx and msrpUsd', async () => {
@@ -267,6 +267,7 @@ describe('MSRP data (#32)', () => {
 		const data = load({ params: { id: String(id) } } as any);
 		expect(data.fx).toBeNull();
 		expect(data).toHaveProperty('msrpUsd');
+		expect(data.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 	});
 
 	it('getLaunchMsrps reads positive MSRPs per category', async () => {
@@ -276,6 +277,11 @@ describe('MSRP data (#32)', () => {
 			INSERT INTO specs VALUES (1,'gpu',999),(2,'cpu',299),(3,'gpu',NULL),(4,'gpu',0);`);
 		expect([...getLaunchMsrps(db as any, 'gpu')]).toEqual([[1, 999]]);
 		expect([...getLaunchMsrps(db as any)].sort()).toEqual([[1, 999], [2, 299]]);
+		db.exec(`INSERT INTO specs VALUES (1,'gpu',799),(1,'gpu',1099)`);
+		// One rule everywhere: the lowest positive MSRP across a product's spec rows.
+		const { getProductMsrp } = await import('../src/lib/server/repos');
+		expect(getProductMsrp(db as any, 1)).toBe(799);
+		expect(getProductMsrp(db as any, 3)).toBeNull();
 		db.close();
 	});
 });

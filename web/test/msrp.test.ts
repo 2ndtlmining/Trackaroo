@@ -81,6 +81,10 @@ describe('msrp presentation (Task 3)', () => {
 	});
 	it('isBelowMsrp needs every input and a negative delta', () => {
 		expect(isBelowMsrp(100, 399, fx(1.5))).toBe(true);
+		// Agrees with the display: -0.3% shows "0%", so it is not "below".
+		expect(isBelowMsrp(657, 399, fx(1.5))).toBe(false);
+		expect(formatMsrpDelta(msrpDelta(657, msrpAud(399, fx(1.5))))).toBe('0%');
+		expect(isBelowMsrp(650, 399, fx(1.5))).toBe(true);
 		expect(isBelowMsrp(500, 279, fx(1.5))).toBe(false);
 		expect(isBelowMsrp(100, null, fx(1.5))).toBe(false);
 		expect(isBelowMsrp(100, 399, null)).toBe(false);

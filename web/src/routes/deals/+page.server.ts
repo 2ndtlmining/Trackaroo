@@ -35,7 +35,8 @@ export function load({
 	const fx = getLatestFxRate(db);
 	// ?below_msrp=1 (Task 3) narrows before the facets are counted, so every
 	// chip still counts the rows it would show.
-	const belowMsrp = url.searchParams.get('below_msrp') === '1';
+	// Without a rate the toggle is hidden, so the param must not filter either.
+	const belowMsrp = fx !== null && url.searchParams.get('below_msrp') === '1';
 	const shown = shownDeals(toDeals(candidates));
 	const deals = belowMsrp ? shown.filter((d) => isBelowMsrp(d.price, d.msrpUsd, fx)) : shown;
 

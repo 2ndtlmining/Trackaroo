@@ -6,7 +6,7 @@
 import { MIN_HISTORY_POINTS } from './constants';
 import type { ListingDisplay } from './listingsPanel';
 import type { PriceBandPoint } from './models';
-import { formatAud, melbourneTodayIso } from './formats';
+import { formatAud } from './formats';
 import { daysBetween, upcomingSaleEvent } from './saleEvents';
 import { successorFor } from './successors';
 
@@ -162,6 +162,7 @@ export function pricePercentile(
 	return { pct: (atOrAbove / win.length) * 100, days: daysBetween(win[0].date, asOf) + 1 };
 }
 
+// `lows` is date-ascending (getPriceBand orders by snapshot_date).
 // How long since the price was last strictly lower than today's. When it never
 // was, `sinceStart` is true and `days` is how long tracking has run.
 export function lowestInDays(
@@ -177,6 +178,7 @@ export function lowestInDays(
 	return { days: daysBetween(upto[0].date, asOf) + 1, sinceStart: true };
 }
 
+// `lows` is date-ascending (getPriceBand orders by snapshot_date).
 // First-to-last change over the daily lows of the 7 days ending asOf; flat
 // within +-1%.
 export function trend7(
@@ -215,9 +217,10 @@ export function buildSignals(input: {
 	asOf: string | null;
 	avg30: number | null;
 	series: string | null;
-	now: Date;
+	// Melbourne 'YYYY-MM-DD', supplied by the server load (hydration-safe).
+	todayIso: string;
 }): Signal[] {
-	const { lows, today, asOf, avg30, series, now } = input;
+	const { lows, today, asOf, avg30, series, todayIso } = input;
 	const out: Signal[] = [];
 
 	if (lows.length < MIN_HISTORY_POINTS || asOf === null) {
@@ -231,7 +234,8 @@ export function buildSignals(input: {
 	} else if (today !== null) {
 		const pc = pricePercentile(lows, today, asOf);
 		if (pc) {
-			const good = pc.pct >= 70;
+			// Decided on the rounded figure the claim prints, so 69.6 ("70%") is good.
+			const good = Math.round(pc.pct) >= 70;
 			out.push({
 				key: 'percentile',
 				tone: good ? 'good' : 'neutral',
@@ -283,7 +287,7 @@ export function buildSignals(input: {
 		}
 	}
 
-	const sale = upcomingSaleEvent(melbourneTodayIso(now));
+	const sale = upcomingSaleEvent(todayIso);
 	if (sale) {
 		const { event, startsInDays, running } = sale;
 		const when =

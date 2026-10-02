@@ -30,8 +30,13 @@ MAX_AUD_PER_USD = 2.5
 BACKFILL_DAYS = 7  # the RBA path also fills recent missing days (controller ruling R1)
 
 
-def _in_bounds(rate: float) -> bool:
-    return MIN_AUD_PER_USD <= rate <= MAX_AUD_PER_USD
+def _in_bounds(rate: float, source: str = "") -> bool:
+    ok = MIN_AUD_PER_USD <= rate <= MAX_AUD_PER_USD
+    if not ok:
+        LOGGER.warning(
+            "FX %s rate %.4f outside %.1f-%.1f, rejected", source, rate, MIN_AUD_PER_USD, MAX_AUD_PER_USD
+        )
+    return ok
 
 
 def _numeric_rba_rows(text: str) -> List[Tuple[str, float]]:
@@ -67,7 +72,7 @@ def parse_rba_rows(text: str) -> List[Tuple[str, float]]:
     rows = []
     for d, v in _numeric_rba_rows(text):
         rate = 1.0 / v
-        if _in_bounds(rate):
+        if _in_bounds(rate, "RBA"):
             rows.append((d, rate))
     return sorted(rows)
 
@@ -79,7 +84,7 @@ def parse_rba_csv(text: str) -> Optional[Tuple[str, float]]:
         return None
     d, v = max(rows)
     rate = 1.0 / v
-    return (d, rate) if _in_bounds(rate) else None
+    return (d, rate) if _in_bounds(rate, "RBA") else None
 
 
 def parse_frankfurter(payload: dict) -> Optional[Tuple[str, float]]:
@@ -88,7 +93,7 @@ def parse_frankfurter(payload: dict) -> Optional[Tuple[str, float]]:
         rate = float(payload["rates"]["AUD"])
     except (KeyError, TypeError, ValueError):
         return None
-    return (d, rate) if _in_bounds(rate) else None
+    return (d, rate) if _in_bounds(rate, "Frankfurter") else None
 
 
 def _fetch_rba() -> List[Tuple[str, float]]:

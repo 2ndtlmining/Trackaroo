@@ -48,23 +48,29 @@ export const MSRP_TONE_CLASS: Record<MsrpTone, string> = {
 	over: 'text-warning'
 };
 
+// The whole percent every MSRP label prints, and the one the Below MSRP filter
+// must agree with: a delta that rounds to 0% is "at MSRP", not below it.
+function wholePct(delta: number): number {
+	return Math.round(Math.abs(delta) * 100);
+}
+
 // A signed whole percent ("−3%", "+12%", "0%"), or "–" when unknown.
 export function formatMsrpDelta(delta: number | null): string {
 	if (delta === null) return '–';
-	const pct = Math.round(Math.abs(delta) * 100);
+	const pct = wholePct(delta);
 	if (pct === 0) return '0%';
 	return `${delta < 0 ? '−' : '+'}${pct}%`;
 }
 
 // "3% under US launch MSRP", "12% over US launch MSRP", "At US launch MSRP".
 export function msrpPhrase(delta: number): string {
-	const pct = Math.round(Math.abs(delta) * 100);
+	const pct = wholePct(delta);
 	if (pct === 0) return 'At US launch MSRP';
 	return `${pct}% ${delta < 0 ? 'under' : 'over'} US launch MSRP`;
 }
 
-// For /deals?below_msrp=1: any price under MSRP in today's AUD, however slight.
+// For /deals?below_msrp=1: under MSRP by at least the 1% the label can show.
 export function isBelowMsrp(price: number | null, msrpUsd: number | null, fx: FxRate | null): boolean {
 	const delta = msrpDelta(price, msrpAud(msrpUsd, fx));
-	return delta !== null && delta < 0;
+	return delta !== null && delta < 0 && wholePct(delta) > 0;
 }

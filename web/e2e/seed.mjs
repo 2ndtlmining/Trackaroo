@@ -471,16 +471,12 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		).run(smallGpu.id);
 	}
 
-	// US launch MSRPs for the vs-MSRP cues (Task 3, #32). Real launch prices on
-	// the real products (their AU prices depend on data/, so no e2e asserts a
-	// value on them), and two pinned deal fixtures whose prices never change:
+	// US launch MSRPs for the vs-MSRP cues (Task 3, #32). Only on two pinned
+	// deal fixtures whose prices never change (never on real products, whose
+	// prices come from data/ and could land near 0%):
 	// at the seeded 1.5 AUD/USD, MSRP in AUD = USD x 1.65, so
 	//   E2E Deal Demo GPU  A$100 vs US$399 (A$658.35) -> 85% under
 	//   E2E New Low GPU    A$500 vs US$279 (A$460.35) -> 9% over
-	const setMsrp = db.prepare('UPDATE specs SET launch_msrp_usd = ? WHERE product_id = ?');
-	if (firstProduct) setMsrp.run(309, firstProduct.id);
-	if (firstGpu) setMsrp.run(429, firstGpu.id);
-	if (smallGpu) setMsrp.run(299, smallGpu.id);
 	const msrpFixture = db.prepare(
 		`INSERT INTO specs (product_id, source, source_record_key, category, launch_msrp_usd, raw_json, last_synced_at)
 		 SELECT id, 'rightnow-gpu-db', model, 'gpu', ?, '{}', '2026-08-15T00:00:00Z'

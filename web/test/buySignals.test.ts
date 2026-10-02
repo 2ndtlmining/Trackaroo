@@ -13,6 +13,7 @@ import {
 	windowStats,
 	type DailyLow
 } from '../src/lib/buySignals';
+import { melbourneTodayIso } from '../src/lib/formats';
 import { offer } from './helpers/offers';
 import { SUCCESSORS } from '../src/lib/successors';
 
@@ -156,7 +157,7 @@ const ten = lows(
 	[100, 90, 80, 70, 60, 50, 40, 30, 20, 10].map((p, i): [string, number] => [`2026-09-${String(i + 1).padStart(2, '0')}`, p])
 );
 // A quiet date: no sale event within 21 days.
-const QUIET = new Date('2026-09-10T00:00:00Z');
+const QUIET = '2026-09-10';
 
 describe('pricePercentile', () => {
 	it('is the share of window days with a low at or above today, and the span', () => {
@@ -205,7 +206,7 @@ describe('trend7', () => {
 });
 
 describe('buildSignals', () => {
-	const base = { asOf: '2026-09-10', avg30: 100, series: null, now: QUIET };
+	const base = { asOf: '2026-09-10', avg30: 100, series: null, todayIso: QUIET };
 	it('gives exactly one gathering signal below the gate', () => {
 		const s = buildSignals({ ...base, lows: ten.slice(0, 2), today: 50 });
 		expect(s).toHaveLength(1);
@@ -224,6 +225,16 @@ describe('buildSignals', () => {
 			expect(x.claim.length).toBeGreaterThan(0);
 			expect(`${x.claim} ${x.evidence}`).not.toMatch(/\p{Extended_Pictographic}/u);
 		}
+	});
+	it('decides the percentile tone on the rounded figure it prints (69.6 reads 70 = good)', () => {
+		const l: DailyLow[] = [];
+		for (let i = 0; i < 23; i++) l.push({ date: addDays('2026-08-19', i), price: i < 7 ? 50 : 100 });
+		const s = buildSignals({ ...base, lows: l, today: 100 });
+		expect(s.find((x) => x.key === 'percentile')).toMatchObject({
+			tone: 'good',
+			icon: 'check',
+			claim: 'As cheap as or cheaper than 70% of days (last 23 days)'
+		});
 	});
 	it('uses 30+ days for a good lowest signal', () => {
 		const long: DailyLow[] = [{ date: '2026-06-01', price: 50 }];
@@ -248,7 +259,7 @@ describe('buildSignals', () => {
 	});
 	it('uses the Melbourne date for event badges', () => {
 		// 14:30Z on 26 Nov is already 27 Nov (Black Friday) in Melbourne.
-		const s = buildSignals({ ...base, lows: ten, today: 10, now: new Date('2026-11-26T14:30:00Z') });
+		const s = buildSignals({ ...base, lows: ten, today: 10, todayIso: melbourneTodayIso(new Date('2026-11-26T14:30:00Z')) });
 		expect(s.find((x) => x.key === 'sale')?.claim).toBe('Black Friday sale on now');
 	});
 	it('states the window in the percentile claim and wording for a zero-day low', () => {
@@ -269,18 +280,18 @@ describe('buildSignals', () => {
 		expect(s.find((x) => x.key === 'lowest')?.claim).toBe('Lowest since tracking began');
 	});
 	it('says when a sale event’s dates are estimated (R9)', () => {
-		const cf = buildSignals({ ...base, lows: ten, today: 10, now: new Date('2026-11-01T00:00:00Z') });
+		const cf = buildSignals({ ...base, lows: ten, today: 10, todayIso: '2026-11-01' });
 		const sale = cf.find((x) => x.key === 'sale')!;
 		expect(sale.claim).toBe('Click Frenzy starts in 9 days');
 		expect(sale.evidence).toContain('estimated dates');
-		const bf = buildSignals({ ...base, lows: ten, today: 10, now: new Date('2026-11-27T00:00:00Z') });
+		const bf = buildSignals({ ...base, lows: ten, today: 10, todayIso: '2026-11-27' });
 		expect(bf.find((x) => x.key === 'sale')?.evidence).not.toContain('estimated');
 	});
 	it('adds a sale signal near an event and a successor signal when mapped', () => {
-		const now = new Date('2026-12-14T00:00:00Z');
-		const s = buildSignals({ ...base, asOf: '2026-12-14', lows: ten, today: 10, now });
+		const todayIso = '2026-12-14';
+		const s = buildSignals({ ...base, asOf: '2026-12-14', lows: ten, today: 10, todayIso });
 		expect(s.find((x) => x.key === 'sale')).toMatchObject({ tone: 'warn', icon: 'calendar', claim: 'Boxing Day starts in 12 days' });
-		const run = buildSignals({ ...base, lows: ten, today: 10, now: new Date('2026-11-27T00:00:00Z') });
+		const run = buildSignals({ ...base, lows: ten, today: 10, todayIso: '2026-11-27' });
 		expect(run.find((x) => x.key === 'sale')?.claim).toBe('Black Friday sale on now');
 		SUCCESSORS['RTX 50'] = 'RTX 60';
 		try {

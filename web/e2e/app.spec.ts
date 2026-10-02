@@ -1448,7 +1448,7 @@ test.describe('product detail specs', () => {
 	});
 
 	test('renders no spec panel when the product has no specs', async ({ page }) => {
-		await goto(page, '/product/2');
+		await goto(page, `/product/${productIdByModel('E2E Thin History GPU')}`);
 		await expect(page.getByRole('heading', { name: 'Specs' })).toHaveCount(0);
 	});
 
@@ -1779,7 +1779,7 @@ test.describe('MSRP cues (Task 3)', () => {
 	});
 
 	test('a product without an MSRP shows no MSRP line', async ({ page }) => {
-		await goto(page, '/product/2');
+		await goto(page, `/product/${productIdByModel('E2E Thin History GPU')}`);
 		await expect(page.getByTestId('msrp-line')).toHaveCount(0);
 	});
 

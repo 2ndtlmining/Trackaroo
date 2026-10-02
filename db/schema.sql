@@ -105,7 +105,7 @@ CREATE TABLE specs (
     source_record_key TEXT    NOT NULL,               -- identifying name from the source dataset, kept for traceability
     category          TEXT    NOT NULL CHECK (category IN ('cpu', 'gpu')),   -- matches products.category
     architecture      TEXT,                           -- e.g. 'Blackwell', 'RDNA 4', 'Zen 5', 'Arrow Lake'
-    generation        TEXT,                           -- e.g. 'RTX 50', 'Ryzen 9000'
+    generation        TEXT,                           -- e.g. 'GeForce 50', 'Ryzen 9000'
     launch_date       TEXT,                           -- ISO date, nullable if unknown
     launch_msrp_usd   REAL,                           -- as published in source; convert currency at display time
     -- GPU-specific (nullable for CPU rows)

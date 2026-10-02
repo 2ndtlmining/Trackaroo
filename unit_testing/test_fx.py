@@ -69,6 +69,23 @@ class TestParsers:
         assert fx.parse_rba_csv("Series ID,FXRUSD\n30-Sep-2026,1.25\n") is None  # 0.8 AUD/USD
         assert fx.parse_rba_csv("Series ID,FXRUSD\n30-Sep-2026,0.3333\n") is None  # 3.0 AUD/USD
 
+    def test_out_of_range_rates_log_a_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="fx"):
+            fx.parse_rba_rows("Series ID,FXRUSD\n29-Sep-2026,0.6500\n01-Oct-2026,0.3\n")
+            assert "FX RBA rate 3.3333 outside 1.0-2.5, rejected" in caplog.text
+            caplog.clear()
+            fx.parse_rba_csv("Series ID,FXRUSD\n30-Sep-2026,1.25\n")
+            assert "FX RBA rate 0.8000 outside 1.0-2.5, rejected" in caplog.text
+            caplog.clear()
+            fx.parse_frankfurter({"date": "2026-10-01", "rates": {"AUD": 3.0}})
+            assert "FX Frankfurter rate 3.0000 outside 1.0-2.5, rejected" in caplog.text
+
+    def test_in_range_rates_do_not_warn(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="fx"):
+            fx.parse_frankfurter(FRANK)
+            fx.parse_rba_rows("Series ID,FXRUSD\n29-Sep-2026,0.6500\n")
+        assert caplog.text == ""
+
     def test_frankfurter(self):
         assert fx.parse_frankfurter(FRANK) == ("2026-10-01", 1.53)
 
