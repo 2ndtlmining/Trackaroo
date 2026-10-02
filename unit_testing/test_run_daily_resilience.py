@@ -284,3 +284,26 @@ class TestDiscoveryStep:
 
     def test_check_discovery_is_registered(self):
         assert "check_discovery" in [name for name, _ in run_daily._db_checks()]
+
+
+class TestFxStep:
+    def test_fx_crash_does_not_break_the_run(self, isolated_pipeline, monkeypatch):
+        monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))
+        baseline = run_daily.run(_args())
+        assert len(isolated_pipeline.fx_runs) == 1
+        backups_before = isolated_pipeline.backups
+
+        import fx
+        monkeypatch.setattr(fx, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+        code = run_daily.run(_args())
+
+        assert code == baseline
+        assert isolated_pipeline.backups == backups_before + 1
+
+    def test_dry_run_skips_fx(self, isolated_pipeline, monkeypatch):
+        monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))
+        run_daily.run(_args("--dry-run"))
+        assert isolated_pipeline.fx_runs == []
+
+    def test_check_fx_rate_is_registered(self):
+        assert "check_fx_rate" in [name for name, _ in run_daily._db_checks()]

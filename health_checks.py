@@ -1163,6 +1163,32 @@ def check_discovery(db_path: Path, today: Optional[date] = None) -> list[CheckRe
     return [CheckResult("discovery", CheckResult.OK, "No new parts or conflicts")]
 
 
+FX_MAX_AGE_DAYS = 7
+
+
+def check_fx_rate(db_path: Path, today: Optional[date] = None) -> list[CheckResult]:
+    """AUD/USD cache (#32): WARNING when the newest rate is over 7 days old or absent. Never ERROR."""
+    today = today or date.today()
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            newest = conn.execute("SELECT MAX(rate_date) FROM fx_rates").fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        return [CheckResult("fx_rate", CheckResult.WARNING, f"FX rate state unreadable: {e}")]
+    if not newest:
+        return [CheckResult("fx_rate", CheckResult.WARNING, "No AUD/USD rate cached yet")]
+    try:
+        age = (today - date.fromisoformat(newest)).days
+    except ValueError:
+        return [CheckResult("fx_rate", CheckResult.WARNING, f"FX rate date unreadable: {newest!r}")]
+    if age > FX_MAX_AGE_DAYS:
+        return [CheckResult("fx_rate", CheckResult.WARNING,
+                            f"AUD/USD rate is {age} days old (newest {newest}); MSRP conversion is stale")]
+    return [CheckResult("fx_rate", CheckResult.OK, f"AUD/USD rate fresh ({newest})")]
+
+
 def check_backups(
     backup_dir: Optional[Path] = None,
     now: Optional[datetime] = None,

@@ -718,6 +718,30 @@ def migrate_add_discovery_tables(conn: sqlite3.Connection, dry_run: bool = False
         conn.commit()
 
 
+FX_RATES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS fx_rates (
+    rate_date    TEXT PRIMARY KEY,
+    aud_per_usd  REAL NOT NULL CHECK (aud_per_usd > 0),
+    source       TEXT NOT NULL,
+    fetched_at   TEXT NOT NULL
+)
+"""
+
+
+def migrate_add_fx_rates_table(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Create the fx_rates cache table (#32): additive, create-if-missing."""
+    if check_table_exists(conn, "fx_rates"):
+        LOGGER.info("  [SKIP] fx_rates table already exists")
+        return
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would create fx_rates table")
+        return
+    LOGGER.info("  [MIGRATE] Creating fx_rates table...")
+    conn.execute(FX_RATES_TABLE_SQL)
+    conn.commit()
+    LOGGER.info("  [OK] fx_rates table created")
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -765,6 +789,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: discovery tables (#16)
         migrate_add_discovery_tables(conn, dry_run=args.dry_run)
+
+        # Migration: AUD/USD rate cache (#32)
+        migrate_add_fx_rates_table(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify

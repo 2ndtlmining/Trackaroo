@@ -1197,3 +1197,43 @@ class TestCheckDiscovery:
         conn.commit()
         [r] = check_discovery(p, today=date(2026, 10, 2))
         assert r.status == CheckResult.OK
+
+
+class TestCheckFxRate:
+    def _db(self, tmp_path, rate_date=None):
+        from ingest import init_db
+        p = tmp_path / "fx.db"
+        conn = init_db(p)
+        if rate_date:
+            conn.execute("INSERT INTO fx_rates VALUES (?, 1.53, 'rba', 'x')", (rate_date,))
+            conn.commit()
+        conn.close()
+        return p
+
+    def test_ok_when_fresh(self, tmp_path):
+        from health_checks import CheckResult, check_fx_rate
+        [r] = check_fx_rate(self._db(tmp_path, "2026-10-01"), today=date(2026, 10, 3))
+        assert r.status == CheckResult.OK
+
+    def test_ok_at_seven_days(self, tmp_path):
+        from health_checks import CheckResult, check_fx_rate
+        [r] = check_fx_rate(self._db(tmp_path, "2026-09-26"), today=date(2026, 10, 3))
+        assert r.status == CheckResult.OK
+
+    def test_warning_when_eight_days_old(self, tmp_path):
+        from health_checks import CheckResult, check_fx_rate
+        [r] = check_fx_rate(self._db(tmp_path, "2026-09-25"), today=date(2026, 10, 3))
+        assert r.status == CheckResult.WARNING
+
+    def test_warning_when_empty(self, tmp_path):
+        from health_checks import CheckResult, check_fx_rate
+        [r] = check_fx_rate(self._db(tmp_path), today=date(2026, 10, 3))
+        assert r.status == CheckResult.WARNING
+
+    def test_never_error_even_without_table(self, tmp_path):
+        import sqlite3
+        from health_checks import CheckResult, check_fx_rate
+        p = tmp_path / "bare.db"
+        sqlite3.connect(p).close()
+        results = check_fx_rate(p)
+        assert results and all(r.status != CheckResult.ERROR for r in results)

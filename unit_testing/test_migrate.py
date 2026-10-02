@@ -840,3 +840,35 @@ class TestDiscoveryTables:
             conn.execute(
                 "INSERT INTO discovered_parts (category, part_key, display_name, status, first_seen, last_seen, suggested_row)"
                 " VALUES ('gpu', 'rtx 5050|8', 'x', 'maybe', '2026-10-02', '2026-10-02', 'r')")
+
+
+class TestFxRatesTable:
+    def _tables(self, conn):
+        return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+    def test_creates_and_is_idempotent(self):
+        import sqlite3
+        import migrate
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_fx_rates_table(conn)
+        migrate.migrate_add_fx_rates_table(conn)
+        assert "fx_rates" in self._tables(conn)
+
+    def test_dry_run_creates_nothing(self):
+        import sqlite3
+        import migrate
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_fx_rates_table(conn, dry_run=True)
+        assert "fx_rates" not in self._tables(conn)
+
+    def test_schema_sql_creates_it_too(self, db):
+        assert "fx_rates" in self._tables(db)
+
+    def test_rejects_non_positive_rate(self):
+        import sqlite3
+        import migrate
+        import pytest
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_fx_rates_table(conn)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO fx_rates VALUES ('2026-10-01', 0, 'rba', 'x')")
