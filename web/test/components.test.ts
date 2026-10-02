@@ -19,6 +19,7 @@ import BuyPanel from '../src/lib/components/BuyPanel.svelte';
 import PriceDataTable from '../src/lib/components/PriceDataTable.svelte';
 import SegmentedControl from '../src/lib/components/SegmentedControl.svelte';
 import MsrpLine from '../src/lib/components/MsrpLine.svelte';
+import SignalBadge from '../src/lib/components/SignalBadge.svelte';
 import { offer as offerRow } from './helpers/offers';
 import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint, Mover } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
@@ -1075,6 +1076,67 @@ describe('BuyPanel (#31)', () => {
 			where
 		});
 		expect(html).toContain('Nothing is in stock today');
+	});
+
+	it('adds the 180-day column and puts the windows across the top', () => {
+		const html = renderComponent(BuyPanel, {
+			low,
+			windows: [...windows, { days: 180, points: 20, low: 689, median: 719, high: 799, enough: true }],
+			where
+		});
+		expect(html).toMatch(/<th[^>]*scope="col"[^>]*>\s*180 days/);
+		expect(html).toMatch(/<th[^>]*scope="row"[^>]*>\s*Median/);
+		expect(html).toContain('$689');
+	});
+
+	it('renders one badge per signal, claim and evidence both visible', () => {
+		const html = renderComponent(BuyPanel, {
+			low,
+			windows,
+			where,
+			signals: [
+				{ key: 'lowest', tone: 'good', icon: 'check', claim: 'Lowest in 94 days', evidence: 'The price was last lower 94 days ago.' },
+				{ key: 'trend', tone: 'warn', icon: 'up', claim: '7-day trend: rising (+3%)', evidence: 'Flat is within 1%.' }
+			]
+		});
+		expect(html.match(/data-testid="signal"/g)).toHaveLength(2);
+		expect(html).toContain('Lowest in 94 days');
+		expect(html).toContain('The price was last lower 94 days ago.');
+		expect(html).toContain('7-day trend: rising (+3%)');
+	});
+});
+
+describe('SignalBadge (#31)', () => {
+	const sig = (tone: string, icon: string) => ({ key: 'avg', tone, icon, claim: 'Claim text', evidence: 'Evidence text' });
+
+	it('shows the claim and the evidence, with a decorative icon', () => {
+		const html = renderComponent(SignalBadge, { signal: sig('good', 'check') });
+		expect(html).toContain('Claim text');
+		expect(html).toContain('Evidence text');
+		expect(html).toMatch(/<svg[^>]*aria-hidden="true"/);
+		expect(html).toContain('lucide-circle-check');
+	});
+
+	it.each([
+		['good', 'text-success', 'bg-success-soft'],
+		['warn', 'text-warning', 'bg-warning-soft'],
+		['bad', 'text-danger', 'bg-danger-soft'],
+		['neutral', 'text-text-muted', 'bg-surface-hover']
+	])('maps tone %s onto existing tokens', (tone, text, bg) => {
+		const html = renderComponent(SignalBadge, { signal: sig(tone, 'dash') });
+		expect(html).toContain(text);
+		expect(html).toContain(bg);
+	});
+
+	it.each([
+		['check', 'lucide-circle-check'],
+		['dash', 'lucide-minus'],
+		['down', 'lucide-trending-down'],
+		['up', 'lucide-trending-up'],
+		['calendar', 'lucide-calendar-clock'],
+		['alert', 'lucide-triangle-alert']
+	])('icon %s is Lucide %s', (icon, cls) => {
+		expect(renderComponent(SignalBadge, { signal: sig('neutral', icon) })).toContain(cls);
 	});
 });
 

@@ -2,15 +2,30 @@
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import { retailerLabel } from '$lib/filters';
 	import { formatAud, formatDate } from '$lib/formats';
-	import type { LowSummary, RetailerOffer, WindowStats } from '$lib/buySignals';
+	import SignalBadge from './SignalBadge.svelte';
+	import type { LowSummary, RetailerOffer, Signal, WindowStats } from '$lib/buySignals';
 
 	// Facts, not a verdict (#31 option A; 17-Aug decision): the low and when it
-	// was, the recent spread, and who has it cheapest right now.
+	// was, a checklist of separate signals each with its evidence, the recent
+	// spread, and who has it cheapest right now.
 	let {
 		low,
 		windows,
-		where
-	}: { low: LowSummary | null; windows: WindowStats[]; where: RetailerOffer[] } = $props();
+		where,
+		signals = []
+	}: {
+		low: LowSummary | null;
+		windows: WindowStats[];
+		where: RetailerOffer[];
+		signals?: Signal[];
+	} = $props();
+
+	const ROWS = [
+		{ label: 'Low', pick: (w: WindowStats) => w.low },
+		{ label: 'Median', pick: (w: WindowStats) => w.median },
+		{ label: 'High', pick: (w: WindowStats) => w.high }
+	];
+	const filled = (w: WindowStats) => w.enough && w.low !== null && w.median !== null && w.high !== null;
 </script>
 
 <section class="rounded-md border border-border bg-surface p-4" aria-labelledby="buy-heading">
@@ -33,32 +48,41 @@
 		{/if}
 	</p>
 
+	{#if signals.length > 0}
+		<ul class="mt-3 grid gap-2 md:grid-cols-2" aria-label="Buying signals">
+			{#each signals as signal (signal.key)}
+				<SignalBadge {signal} />
+			{/each}
+		</ul>
+	{/if}
+
 	{#if windows.length > 0}
-		<table class="mt-3 w-full max-w-md text-sm">
+		<!-- Windows across the top, statistics down the side: a compact 3x3 strip. -->
+		<table class="mt-4 w-full max-w-lg text-sm tabular-nums" data-testid="stats-strip">
 			<caption class="sr-only">
 				Cheapest in-stock price per day: low, median and high over recent windows
 			</caption>
 			<thead>
-				<tr class="text-left text-xs text-text-muted">
-					<th scope="col" class="py-1 pr-3 font-medium">Last</th>
-					<th scope="col" class="py-1 pr-3 text-right font-medium">Low</th>
-					<th scope="col" class="py-1 pr-3 text-right font-medium">Median</th>
-					<th scope="col" class="py-1 text-right font-medium">High</th>
+				<tr class="text-xs text-text-muted">
+					<td class="py-1 pr-3"></td>
+					{#each windows as w (w.days)}
+						<th scope="col" class="py-1 pl-3 text-right font-medium">{w.days} days</th>
+					{/each}
 				</tr>
 			</thead>
 			<tbody>
-				{#each windows as w (w.days)}
+				{#each ROWS as row, r (row.label)}
 					<tr class="border-t border-border">
-						<th scope="row" class="py-1 pr-3 text-left font-normal text-text-muted">{w.days} days</th>
-						{#if w.enough && w.low !== null && w.median !== null && w.high !== null}
-							<td class="num py-1 pr-3 text-right text-text">{formatAud(w.low)}</td>
-							<td class="num py-1 pr-3 text-right text-text">{formatAud(w.median)}</td>
-							<td class="num py-1 text-right text-text">{formatAud(w.high)}</td>
-						{:else}
-							<td colspan="3" class="py-1 text-right text-text-muted">
-								Gathering history ({w.points} {w.points === 1 ? 'day' : 'days'})
-							</td>
-						{/if}
+						<th scope="row" class="py-1.5 pr-3 text-left font-normal text-text-muted">{row.label}</th>
+						{#each windows as w (w.days)}
+							{#if filled(w)}
+								<td class="num py-1.5 pl-3 text-right text-text">{formatAud(row.pick(w) as number)}</td>
+							{:else if r === 0}
+								<td rowspan={ROWS.length} class="py-1.5 pl-3 text-right align-middle text-xs text-text-muted">
+									Gathering history ({w.points} {w.points === 1 ? 'day' : 'days'})
+								</td>
+							{/if}
+						{/each}
 					</tr>
 				{/each}
 			</tbody>

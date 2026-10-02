@@ -1596,8 +1596,12 @@ test.describe('is now a good time to buy? (#31)', () => {
 		await expect(panel).toBeVisible();
 		await expect(panel.getByTestId('low-summary')).toContainText(/Lowest since|Today is the lowest price since/);
 		await expect(panel).not.toContainText('all-time');
-		await expect(panel.getByRole('rowheader', { name: '30 days' })).toBeVisible();
-		await expect(panel.getByRole('rowheader', { name: '90 days' })).toBeVisible();
+		// The stats strip puts the windows across the top (Task 5): 30 / 90 / 180.
+		const strip = panel.getByRole('table', { name: /low, median and high/ });
+		await expect(strip.getByRole('columnheader', { name: '30 days' })).toBeVisible();
+		await expect(strip.getByRole('columnheader', { name: '90 days' })).toBeVisible();
+		await expect(strip.getByRole('columnheader', { name: '180 days' })).toBeVisible();
+		await expect(strip.getByRole('rowheader', { name: 'Median' })).toBeVisible();
 		// The RTX 5060 Ti is seeded at both retailers.
 		await expect(panel.getByRole('rowheader', { name: 'Scorptec' })).toBeVisible();
 		await expect(panel.getByRole('rowheader', { name: 'PCCG' })).toBeVisible();
@@ -1618,6 +1622,48 @@ test.describe('is now a good time to buy? (#31)', () => {
 		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
 		await expect(panel.getByText('Gathering history (2 days)').first()).toBeVisible();
 		await expect(panel).not.toContainText('NaN');
+		// Under the gate the history badges collapse into one gathering badge.
+		const gathering = panel.getByTestId('signal').filter({ hasText: 'Gathering history (2 days)' });
+		await expect(gathering).toHaveCount(1);
+		await expect(gathering).toContainText('at least 3 days');
+	});
+
+	test('the checklist shows each signal with its evidence and a decorative Lucide icon (Task 5)', async ({
+		page
+	}) => {
+		await goto(page, `/product/${productIdByModel('E2E New Low GPU')}`);
+		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
+		await expect(panel.getByRole('heading', { name: 'Is now a good time to buy?' })).toBeVisible();
+		const badges = panel.getByTestId('signal');
+		// 5 daily lows 520 -> 500, today 500: percentile, lowest, vs avg and trend.
+		expect(await badges.count()).toBeGreaterThanOrEqual(4);
+		const lowest = badges.filter({ hasText: 'Lowest since tracking began' });
+		await expect(lowest).toContainText('No lower price in 5 tracked days.');
+		// avg30 507.40: today is 1.5% under it, inside the neutral +-2% band.
+		await expect(badges.filter({ hasText: 'Within 2% of its 30-day average' })).toContainText(
+			/against a 30-day average of \$507/
+		);
+		await expect(badges.filter({ hasText: '7-day trend: falling' })).toContainText('flat is within 1%');
+		for (const badge of await badges.all()) {
+			await expect(badge.getByTestId('signal-claim')).not.toBeEmpty();
+			await expect(badge.getByTestId('signal-evidence')).not.toBeEmpty();
+			await expect(badge.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+		}
+	});
+
+	test('the chart names the AU sale events inside its date range (Task 5)', async ({ page }) => {
+		// The fixture has a day inside EOFY (15-30 June) and recent days, so the
+		// plotted range includes EOFY; the canvas itself cannot be asserted.
+		await goto(page, `/product/${productIdByModel('E2E Sale Window GPU')}`);
+		const legend = page.getByRole('list', { name: 'Chart legend' });
+		await expect(legend).toContainText('Sale events');
+		await expect(page.getByTestId('chart-sale-events')).toContainText(/Sale events shown: EOFY \(15 Jun/);
+	});
+
+	test('a chart range with no sale event names none', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E New Low GPU')}`);
+		await expect(page.getByRole('list', { name: 'Chart legend' })).not.toContainText('Sale events');
+		await expect(page.getByTestId('chart-sale-events')).toHaveCount(0);
 	});
 });
 

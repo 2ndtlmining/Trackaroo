@@ -72,3 +72,15 @@ export function upcomingSaleEvent(
 	const startsInDays = daysBetween(todayIso, next.start);
 	return startsInDays <= horizonDays ? { event: next, startsInDays, running: false } : null;
 }
+
+// Every event overlapping the inclusive range [fromIso, toIso], in date order:
+// the price chart marks these on its x axis. An event that began before the
+// range and is still running at its start counts.
+export function saleEventsInRange(fromIso: string, toIso: string): SaleEvent[] {
+	if (fromIso > toIso) return [];
+	const out: SaleEvent[] = [];
+	for (let y = Number(fromIso.slice(0, 4)); y <= Number(toIso.slice(0, 4)); y++) {
+		for (const e of saleEventsFor(y)) if (e.start <= toIso && e.end >= fromIso) out.push(e);
+	}
+	return out;
+}

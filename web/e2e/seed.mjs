@@ -355,6 +355,20 @@ export function seedE2eDb(dbPath = DB_PATH) {
 			[1, 502],
 			[0, 500]
 		]);
+		// E2E Sale Window GPU (Task 5): a flat price with one extra day inside
+		// the most recent EOFY sale (20 June), so the chart's date range covers a
+		// sale event whatever data/ holds. Flat, so it is never a deal or a mover.
+		const latestYear = Number(latestRow.d.slice(0, 4));
+		const eofyYear = latestRow.d >= `${latestYear}-07-01` ? latestYear : latestYear - 1;
+		const eofyDaysAgo = db
+			.prepare('SELECT CAST(julianday(?) - julianday(?) AS INTEGER) AS n')
+			.get(latestRow.d, `${eofyYear}-06-20`).n;
+		addDealFixture('E2E Sale Window GPU', '/p/e2e-sale-window', [
+			[eofyDaysAgo, 800],
+			[2, 800],
+			[1, 800],
+			[0, 800]
+		]);
 	}
 
 	// Deterministic spec rows so the product page spec panel is testable:

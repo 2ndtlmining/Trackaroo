@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CURATED_YEARS, saleEventsFor, upcomingSaleEvent } from '../src/lib/saleEvents';
+import { CURATED_YEARS, saleEventsFor, saleEventsInRange, upcomingSaleEvent } from '../src/lib/saleEvents';
 
 const ev = (year: number, name: string) => saleEventsFor(year).find((e) => e.name === name)!;
 
@@ -49,5 +49,28 @@ describe('upcomingSaleEvent', () => {
 	});
 	it('is null when nothing is within the horizon', () => {
 		expect(upcomingSaleEvent('2026-09-10')).toBeNull();
+	});
+});
+
+describe('saleEventsInRange (chart markers)', () => {
+	it('returns every event overlapping the inclusive range, in date order', () => {
+		const names = saleEventsInRange('2026-06-01', '2026-07-31').map((e) => e.name);
+		expect(names).toEqual(['EOFY', 'Prime Day']);
+	});
+	it('includes an event that started before the range and is still running', () => {
+		expect(saleEventsInRange('2026-06-29', '2026-07-01').map((e) => e.name)).toEqual(['EOFY']);
+	});
+	it('spans year boundaries', () => {
+		const names = saleEventsInRange('2025-12-20', '2026-01-05').map((e) => e.name);
+		expect(names).toEqual(['Boxing Day']);
+		expect(saleEventsInRange('2025-11-25', '2026-06-16').map((e) => e.name)).toEqual([
+			'Black Friday',
+			'Boxing Day',
+			'EOFY'
+		]);
+	});
+	it('is empty for a range with no event, and for an inverted range', () => {
+		expect(saleEventsInRange('2026-08-10', '2026-10-03')).toEqual([]);
+		expect(saleEventsInRange('2026-07-31', '2026-06-01')).toEqual([]);
 	});
 });
