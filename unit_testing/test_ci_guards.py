@@ -56,3 +56,19 @@ def test_dockerfile_has_a_healthcheck_on_healthz_and_a_version_stamp():
     [line] = [l for l in text.splitlines() if l.startswith("HEALTHCHECK")]
     assert "--start-period=5m" in line
     assert "/healthz" in text.split("HEALTHCHECK", 1)[1]
+
+
+def test_ozb_loop_is_scheduled_only_past_the_skip_pipeline_exit():
+    text = (REPO / "deploy" / "entrypoint-single.sh").read_text(encoding="utf-8")
+    assert "ozb_loop() {" in text
+    knob = text.index('if [ "${SKIP_PIPELINE:-0}" = "1" ]')
+    start = text.index("ozb_loop &")
+    assert start > knob
+    assert text.index("ozb_loop() {") < knob  # defined early, only started late
+    assert '[ "$OZB_ENABLED" = "1" ] && ozb_loop &' in text
+    assert ': "${OZB_ENABLED:=1}"' in text
+    assert ': "${OZB_POLL_HOURS:=07,09,11,13,15,17,19,21,23}"' in text
+    assert "python ozbargain.py" in text
+    assert 'case ",$OZB_POLL_HOURS," in' in text
+    assert 'stamp="$(date \'+%Y-%m-%d\')T$hour"' in text
+    assert '"$last_run" != "$stamp"' in text

@@ -285,6 +285,9 @@ class TestDiscoveryStep:
     def test_check_discovery_is_registered(self):
         assert "check_discovery" in [name for name, _ in run_daily._db_checks()]
 
+    def test_check_ozbargain_is_registered(self):
+        assert "check_ozbargain" in [name for name, _ in run_daily._db_checks()]
+
 
 class TestFxStep:
     def test_fx_crash_does_not_break_the_run(self, isolated_pipeline, monkeypatch):
