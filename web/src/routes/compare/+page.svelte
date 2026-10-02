@@ -2,7 +2,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
-	import { buildCompareRows } from '$lib/compareRows';
+	import { bestIndexes, buildCompareRows } from '$lib/compareRows';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import type { CompareEntry, ProductIndexEntry } from '$lib/models';
 	import type { Category } from '$lib/types';
@@ -21,7 +21,11 @@
 
 	const entries = $derived(data.entries);
 	const rows = $derived(
-		buildCompareRows(entries).map((d) => ({ label: d.label, values: entries.map(d.value) }))
+		buildCompareRows(entries).map((d) => ({
+			label: d.label,
+			values: entries.map(d.value),
+			best: bestIndexes(d, entries)
+		}))
 	);
 	// Only products with price history are worth comparing; the index already
 	// knows which, so the picker costs no query.
@@ -125,9 +129,16 @@
 						>
 							{row.label}
 						</th>
-						{#each row.values as value}
+						{#each row.values as value, i}
 							<td class="px-3 py-2 text-text">
-								{#if value !== null}
+								{#if value !== null && row.best.has(i)}
+									<span class="font-semibold">{value}</span>
+									<span
+										class="ml-1.5 rounded-sm bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent"
+										aria-hidden="true">Best</span
+									>
+									<span class="sr-only">(best value in this row)</span>
+								{:else if value !== null}
 									{value}
 								{:else}
 									<span class="text-text-muted">N/A</span>

@@ -34,6 +34,15 @@ export function formatPct(value: number): string {
 	return `${sign}${Math.abs(value).toFixed(1)}%`;
 }
 
+// First-to-last change of a price series, for a sparkline's label (#23):
+// 'down 4%', 'up 3%', or 'flat' when it rounds to 0%. Null under two points.
+export function formatTrend(values: number[]): string | null {
+	if (values.length < 2 || values[0] <= 0) return null;
+	const pct = Math.round(((values[values.length - 1] - values[0]) / values[0]) * 100);
+	if (pct === 0) return 'flat';
+	return `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct)}%`;
+}
+
 // How old is it? One rule (#30):
 //  - date-only values ('YYYY-MM-DD'): daysBehindToday + stalenessLabel
 //  - true timestamps: formatRelative

@@ -2,6 +2,7 @@ import type { DB } from '../db';
 import type { Category, GenerationTier, ListingFilters, ListingStatus, Retailer, StockStatus } from '../../types';
 import {
 	LATEST_CTE,
+	dailyCheapestInStock,
 	notBundle,
 	pointsInWindowSubquery,
 	windowStartPriceSubquery,
@@ -139,6 +140,52 @@ export function getLaunchDates(db: DB, category: Category): Map<number, string> 
 		)
 		.all(category) as Array<{ productId: number; launchDate: string }>;
 	return new Map(rows.map((r) => [r.productId, r.launchDate]));
+}
+
+// CPU-only spec columns for the catalogue's Socket / Threads columns. Same
+// shape as getLaunchDates: one memoisable per-category read, never a JOIN into
+// the list query. GPU rows simply have no entry.
+export function getCpuSpecs(
+	db: DB,
+	category: Category
+): Map<number, { socket: string | null; threads: number | null }> {
+	const rows = db
+		.prepare(
+			`SELECT product_id AS productId, MIN(socket) AS socket, MIN(thread_count) AS threads
+			 FROM specs
+			 WHERE category = ? AND (socket IS NOT NULL OR thread_count IS NOT NULL)
+			 GROUP BY product_id`
+		)
+		.all(category) as Array<{ productId: number; socket: string | null; threads: number | null }>;
+	return new Map(rows.map((r) => [r.productId, { socket: r.socket, threads: r.threads }]));
+}
+
+// Daily cheapest in-stock price per tracked product over the trailing window,
+// oldest first, for the catalogue's trend column. One query per category, built
+// on dailyCheapestInStock (the window is its bound '?' parameter).
+export function getProductSparklines(
+	db: DB,
+	category: Category,
+	days = 30
+): Map<number, Array<{ date: string; price: number }>> {
+	const rows = db
+		.prepare(
+			`SELECT d.product_id AS productId, d.snapshot_date AS date, d.price AS price
+			 FROM (${dailyCheapestInStock({ form: 'standalone', perProduct: true, window: '?' })}) d
+			 JOIN products p ON p.id = d.product_id
+			 WHERE p.tracked = 1 AND p.category = ?
+			 ORDER BY d.product_id, d.snapshot_date ASC`
+		)
+		.all(`-${days} days`, category) as Array<{ productId: number; date: string; price: number }>;
+	const out = new Map<number, Array<{ date: string; price: number }>>();
+	for (const r of rows) {
+		const arr = out.get(r.productId) ?? [];
+		arr.push({ date: r.date, price: r.price });
+		out.set(r.productId, arr);
+	}
+	// The window is inclusive at both ends, so it can hold days + 1 dates.
+	for (const [id, arr] of out) if (arr.length > days) out.set(id, arr.slice(-days));
+	return out;
 }
 
 export function getProductIndex(db: DB): ProductIndexEntry[] {

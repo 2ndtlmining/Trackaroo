@@ -17,8 +17,23 @@ function tokens(block: string): Record<string, string> {
 	return out;
 }
 
-const dark = tokens(css.match(/:root\s*\{([^}]*)\}/)![1]);
-const light = { ...dark, ...tokens(css.match(/\[data-theme='light'\]\s*\{([^}]*)\}/)![1]) };
+function rgba(block: string, name: string): [number, number, number, number] {
+	const m = block.match(new RegExp('--' + name + ':\\s*rgba\\(([^)]*)\\)'));
+	const [r, g, b, a] = m![1].split(',').map((x) => parseFloat(x));
+	return [r, g, b, a];
+}
+
+/** Composite an rgba() token over a solid #rrggbb surface; returns solid hex. */
+function over(fg: [number, number, number, number], bg: string): string {
+	const [r, g, b, a] = fg;
+	const ch = (c: number, i: number) => Math.round(c * a + parseInt(bg.slice(i, i + 2), 16) * (1 - a));
+	return '#' + [ch(r, 1), ch(g, 3), ch(b, 5)].map((c) => c.toString(16).padStart(2, '0')).join('');
+}
+
+const darkBlock = css.match(/:root\s*\{([^}]*)\}/)![1];
+const lightBlock = css.match(/\[data-theme='light'\]\s*\{([^}]*)\}/)![1];
+const dark = tokens(darkBlock);
+const light = { ...dark, ...tokens(lightBlock) };
 
 function luminance(hex: string): number {
 	const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
@@ -71,9 +86,24 @@ describe.each([
 	);
 });
 
+describe.each([
+	['dark', dark, darkBlock],
+	['light', light, lightBlock]
+] as const)('%s accent on accent-soft (#29)', (_name, t, block) => {
+	it.each(['bg', 'surface'])('accent text on accent-soft over %s is at least 4.5:1', (surface) => {
+		const soft = over(rgba(block, 'accent-soft'), t[surface]);
+		expect(contrast(t.accent, soft)).toBeGreaterThanOrEqual(4.5);
+	});
+});
+
 describe('contrast()', () => {
 	it('matches the WCAG reference values', () => {
 		expect(contrast('#000000', '#ffffff')).toBeCloseTo(21, 1);
 		expect(contrast('#767676', '#ffffff')).toBeCloseTo(4.54, 2);
+	});
+
+	it('shows the old light accent #2563eb would have failed on accent-soft over bg', () => {
+		const soft = over(rgba(lightBlock, 'accent-soft'), light.bg);
+		expect(contrast('#2563eb', soft)).toBeLessThan(4.5);
 	});
 });

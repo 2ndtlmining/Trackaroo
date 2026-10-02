@@ -2,9 +2,15 @@
 	import { formatAud } from '$lib/formats';
 	import type { PricePoint } from '$lib/models';
 
-	let { points }: { points: PricePoint[] | undefined } = $props();
+	// `points` (dated, /movers) or bare `values` (oldest first, the catalogue's
+	// product trend, #23). `label` replaces the default "$a → $b" name.
+	let {
+		points = undefined,
+		values: raw = undefined,
+		label = undefined
+	}: { points?: PricePoint[]; values?: number[]; label?: string } = $props();
 
-	const values = $derived((points ?? []).map((p) => p.price));
+	const values = $derived(raw ?? (points ?? []).map((p) => p.price));
 	const ready = $derived(values.length >= 2);
 
 	const direction = $derived.by(() => {
@@ -37,9 +43,9 @@
 	});
 
 	const title = $derived(
-		ready
-			? `${formatAud(values[0])} → ${formatAud(values[values.length - 1])}`
-			: 'Not enough history'
+		!ready
+			? 'Not enough history'
+			: (label ?? `${formatAud(values[0])} → ${formatAud(values[values.length - 1])}`)
 	);
 </script>
 
@@ -58,5 +64,5 @@
 		<polyline points={polylinePoints} />
 	</svg>
 {:else}
-	<span class="text-text-muted" title="Not enough history" aria-label="Not enough history">—</span>
+	<span class="text-text-muted" title="Not enough history" role="img" aria-label="Not enough history">—</span>
 {/if}

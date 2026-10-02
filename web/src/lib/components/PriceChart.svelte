@@ -4,6 +4,7 @@
 	import 'uplot/dist/uPlot.min.css';
 	import { formatAud, formatChartTick } from '$lib/formats';
 	import { renderTooltip, type TooltipRow } from '$lib/chartTooltip';
+	import { axisStartsAtZero, gapSegments } from '$lib/chartExtras';
 
 	export interface ChartSeries {
 		listingId: number;
@@ -22,6 +23,7 @@
 		band = null,
 		cheapestInStock = null,
 		lowMarker = null,
+		avg30 = null,
 		summary,
 		height = 300
 	}: {
@@ -30,6 +32,8 @@
 		cheapestInStock?: { date: string; price: number } | null;
 		// Dashed horizontal line at the lowest recorded cheapest price (#27).
 		lowMarker?: number | null;
+		// Dashed horizontal line at the 30-day average (#27). Not a retailer.
+		avg30?: number | null;
 		// Accessible name for the canvas: see chartSummary.ts.
 		summary: string;
 		height?: number;
@@ -39,6 +43,12 @@
 	let u: uPlot | null = null;
 	let tooltipEl: HTMLDivElement | null = null;
 	let chartReady = $state(false);
+	let yMin = $state<number | null>(null);
+	// avgIdx: series index the tooltip skips (reference line). realIdx: the real
+	// series whose missing days get dotted connectors. Set by buildSeries().
+	let avgIdx = -1;
+	let realIdx: number[] = [];
+	let xDates: string[] = [];
 	let resizeObserver: ResizeObserver | null = null;
 	let themeObserver: MutationObserver | null = null;
 
@@ -65,6 +75,7 @@
 		const date = formatChartTick(x);
 		const rows: TooltipRow[] = [];
 		uInstance.series.slice(1).forEach((s, i) => {
+			if (i + 1 === avgIdx) return;
 			const raw = uInstance.data[i + 1][didx];
 			if (raw == null) return;
 			rows.push({ label: typeof s.label === 'string' ? s.label : '', value: formatAud(raw) });
@@ -102,6 +113,8 @@
 		const muted = cssVar('--text-muted');
 
 		const result: Partial<uPlot.Series>[] = [{ label: 'Date' }];
+		avgIdx = -1;
+		realIdx = [];
 
 		if (band) {
 			result.push({
@@ -150,11 +163,27 @@
 			});
 		}
 
+		if (avg30 !== null) {
+			avgIdx = result.length;
+			result.push({
+				label: `30-day avg ${formatAud(avg30)}`,
+				stroke: muted,
+				width: 1,
+				dash: [8, 4],
+				points: { show: false },
+				value: (_self: uPlot, rawValue: number) =>
+					rawValue == null ? '—' : formatAud(rawValue)
+			});
+		}
+
 		for (const s of series) {
+			realIdx.push(result.length);
 			result.push({
 				label: s.label,
 				stroke: accent,
 				width: 1.75,
+				// Gaps break the line; drawGaps() adds a dotted connector instead.
+				spanGaps: false,
 				dash: LINE_STYLES[result.length % LINE_STYLES.length],
 				points: { show: true, size: 4 },
 				value: (_self: uPlot, rawValue: number) =>
@@ -173,6 +202,7 @@
 		for (const s of series) for (const p of s.points) dates.add(p.date);
 		if (cheapestInStock) dates.add(cheapestInStock.date);
 		const xAxis = [...dates].sort();
+		xDates = xAxis;
 		const xs = xAxis.map((d) => new Date(`${d}T00:00:00Z`).getTime());
 
 		const ys: (number | null)[][] = [];
@@ -189,12 +219,41 @@
 		if (cheapestInStock) {
 			ys.push(xAxis.map((d) => (d === cheapestInStock.date ? cheapestInStock.price : null)));
 		}
+		if (avg30 !== null) {
+			ys.push(xAxis.map(() => avg30));
+		}
 		for (const s of series) {
 			const byDate = new Map(s.points.map((p) => [p.date, p.price]));
 			ys.push(xAxis.map((d) => byDate.get(d) ?? null));
 		}
 
 		return [xs, ...ys] as uPlot.AlignedData;
+	}
+
+	// Dotted connectors across missing days of each real series (#27).
+	function drawGaps(uInstance: uPlot) {
+		const ctx = uInstance.ctx;
+		const xs = uInstance.data[0];
+		ctx.save();
+		ctx.strokeStyle = cssVar('--accent');
+		ctx.lineWidth = 1.5 * devicePixelRatio;
+		ctx.setLineDash([2 * devicePixelRatio, 4 * devicePixelRatio]);
+		for (const idx of realIdx) {
+			const ys = uInstance.data[idx] as (number | null)[];
+			for (const { from, to } of gapSegments(xDates, ys)) {
+				ctx.beginPath();
+				ctx.moveTo(
+					uInstance.valToPos(xs[from] as number, 'x', true),
+					uInstance.valToPos(ys[from] as number, 'y', true)
+				);
+				ctx.lineTo(
+					uInstance.valToPos(xs[to] as number, 'x', true),
+					uInstance.valToPos(ys[to] as number, 'y', true)
+				);
+				ctx.stroke();
+			}
+		}
+		ctx.restore();
 	}
 
 	function mount() {
@@ -226,6 +285,12 @@
 				cursor: { y: false },
 				focus: { alpha: 0.25 },
 				hooks: {
+					draw: [drawGaps],
+					setScale: [
+						(uInstance, key) => {
+							if (key === 'y') yMin = uInstance.scales.y.min ?? null;
+						}
+					],
 					setCursor: [(uInstance) => showTooltip(uInstance, uInstance.cursor.idx ?? null)]
 				}
 			},
@@ -332,6 +397,22 @@
 					Lowest recorded <span class="num">{formatAud(lowMarker)}</span>
 				</li>
 			{/if}
+			{#if avg30 !== null}
+				<li class="flex items-center gap-1.5">
+					<svg width="18" height="10" aria-hidden="true">
+						<line
+							x1="0"
+							y1="5"
+							x2="18"
+							y2="5"
+							stroke="var(--text-muted)"
+							stroke-width="1"
+							stroke-dasharray="8 4"
+						/>
+					</svg>
+					30-day avg {formatAud(avg30)}
+				</li>
+			{/if}
 			{#if cheapestInStock}
 				<li class="flex items-center gap-1.5">
 					<svg width="10" height="10" aria-hidden="true"
@@ -357,5 +438,8 @@
 				</li>
 			{/if}
 		</ul>
+		{#if yMin !== null && !axisStartsAtZero(yMin)}
+			<p class="mt-1 text-xs text-text-muted">Axis doesn't start at $0.</p>
+		{/if}
 	</figcaption>
 </figure>

@@ -88,6 +88,10 @@
 
 	const quickCompare = $derived(quickComparePair(visible));
 
+	const LISTBOX_ID = 'palette-listbox';
+	const optionId = (row: (typeof results)[number]) =>
+		row.kind === 'compare' ? 'palette-option-compare' : `palette-option-${row.item.id}`;
+
 	const results = $derived.by(() => {
 		const list: Array<
 			{ kind: 'compare'; a: ProductIndexEntry; b: ProductIndexEntry } | { kind: 'item'; item: ProductIndexEntry }
@@ -107,6 +111,9 @@
 		if (open) highlight = 0;
 	});
 
+	// Arrow keys clamp at the ends (no wrap).
+	const activeId = $derived(results[highlight] ? optionId(results[highlight]) : undefined);
+
 	function clampHighlight(index: number) {
 		highlight = Math.max(0, Math.min(index, results.length - 1));
 	}
@@ -122,13 +129,22 @@
 		onClose();
 	}
 
+	// The listbox scrolls (max-h-80), so keyboard moves keep the active option
+	// on screen; the options' ids never change, so it is already in the DOM.
+	function revealHighlight() {
+		const row = results[highlight];
+		if (row) document.getElementById(optionId(row))?.scrollIntoView({ block: 'nearest' });
+	}
+
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'ArrowDown') {
 			event.preventDefault();
 			clampHighlight(highlight + 1);
+			revealHighlight();
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
 			clampHighlight(highlight - 1);
+			revealHighlight();
 		} else if (event.key === 'Enter') {
 			event.preventDefault();
 			activate();
@@ -179,6 +195,12 @@
 					onkeydown={onKeydown}
 					class="w-full bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
 					aria-label="Search products"
+					role="combobox"
+					aria-autocomplete="list"
+					aria-expanded={results.length > 0}
+					aria-controls={LISTBOX_ID}
+					aria-activedescendant={activeId}
+					autocomplete="off"
 				/>
 				<kbd class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[10px] text-text-muted">esc</kbd>
 			</div>
@@ -186,48 +208,52 @@
 				<p class="mx-3 my-2 rounded-md border border-border bg-surface px-3 py-6 text-center text-sm text-text-muted">
 					No matches.
 				</p>
-			{:else}
-				<ul role="listbox" aria-label="Results" class="max-h-80 overflow-y-auto py-1">
-					{#each results as row, i (row.kind === 'compare' ? 'compare' : row.item.id)}
-						<li>
-							<button
-								type="button"
-								role="option"
-								aria-selected={i === highlight}
-								onclick={() => {
-									highlight = i;
-									activate();
-								}}
-								onmouseenter={() => (highlight = i)}
-								class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm {i === highlight
-									? 'bg-surface-hover'
-									: ''}"
-							>
-								{#if row.kind === 'compare'}
-									<span class="text-accent">
-										Compare {row.a.model} vs {row.b.model}
-									</span>
-								{:else}
-									<span
-										class="flex-1 truncate {row.item.snapshotCount === 0
-											? 'text-text-muted'
-											: 'text-text'}"
-									>
-										{row.item.model}
-									</span>
-									<span class="shrink-0 text-xs text-text-muted">{row.item.brand}</span>
-									<span class="shrink-0 text-xs text-text-muted">
-										{row.item.snapshotCount === 0
-											? 'no data yet'
-											: `${row.item.snapshotCount} ${row.item.snapshotCount === 1 ? 'snapshot' : 'snapshots'}`}
-									</span>
-									<Badge tone="neutral" label={row.item.category.toUpperCase()} />
-								{/if}
-							</button>
-						</li>
-					{/each}
-				</ul>
 			{/if}
+			<ul
+				id={LISTBOX_ID}
+				role="listbox"
+				aria-label="Results"
+				class={results.length === 0 ? 'hidden' : 'max-h-80 overflow-y-auto py-1'}
+			>
+				{#each results as row, i (row.kind === 'compare' ? 'compare' : row.item.id)}
+					<!-- Keyboard use goes through the combobox input (Arrow/Enter), per the ARIA pattern. -->
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<li
+						id={optionId(row)}
+						role="option"
+						aria-selected={i === highlight}
+						onclick={() => {
+							highlight = i;
+							activate();
+						}}
+						onmouseenter={() => (highlight = i)}
+						class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm {i === highlight
+							? 'bg-surface-hover'
+							: ''}"
+					>
+						{#if row.kind === 'compare'}
+							<span class="text-accent">
+								Compare {row.a.model} vs {row.b.model}
+							</span>
+						{:else}
+							<span
+								class="flex-1 truncate {row.item.snapshotCount === 0
+									? 'text-text-muted'
+									: 'text-text'}"
+							>
+								{row.item.model}
+							</span>
+							<span class="shrink-0 text-xs text-text-muted">{row.item.brand}</span>
+							<span class="shrink-0 text-xs text-text-muted">
+								{row.item.snapshotCount === 0
+									? 'no data yet'
+									: `${row.item.snapshotCount} ${row.item.snapshotCount === 1 ? 'snapshot' : 'snapshots'}`}
+							</span>
+							<Badge tone="neutral" label={row.item.category.toUpperCase()} />
+						{/if}
+					</li>
+				{/each}
+			</ul>
 		</div>
 	</div>
 {/if}

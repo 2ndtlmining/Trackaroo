@@ -111,7 +111,7 @@
 					<li class="px-3 py-2 text-sm">
 						<span class="text-text">{c.title}</span>
 						<span class="block text-xs text-text-muted">
-							{label(c.retailer)} · filed under <a href="/product/{c.filedProductId}">{c.filedModel}</a> · {c.reason}
+							{label(c.retailer)} · filed under <a href="/product/{c.filedProductId}" class="underline">{c.filedModel}</a> · {c.reason}
 						</span>
 					</li>
 				{/each}

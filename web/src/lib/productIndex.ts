@@ -1,7 +1,7 @@
 // Grouping for the /products index. Pure, so the ordering rule is pinned by
 // tests rather than by how the page happens to render.
 import { GENERIC_TIER_LABELS, generationTierLabel } from './tiers';
-import type { Category, GenerationTier } from './types';
+import type { Category, GenerationTier, Retailer } from './types';
 import type { ProductGroup } from './models';
 
 // One /products row: a product group without its listings (#28), plus the
@@ -12,6 +12,13 @@ export type CatalogRow = Omit<ProductGroup, 'listings'> & {
 	cores?: number | null;
 	launchDate?: string | null;
 	listingCount?: number;
+	// Catalogue controls and columns (#23): cheapest price per retailer, the
+	// 30-day trend (oldest first), CPU socket/threads, launch year.
+	retailerPrices?: Partial<Record<Retailer, { inStock: number | null; any: number | null }>>;
+	sparkline?: number[];
+	socket?: string | null;
+	threads?: number | null;
+	releaseYear?: number | null;
 };
 
 export interface IndexGroup<T> {

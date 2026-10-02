@@ -14,8 +14,28 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-02 — finish the pages (#23 #26 #27 #29) on branch
+  `feat/2026-10-02-finish-pages`; NOT merged, NOT deployed.** #23: `/products`
+  gets catalogue filters (max price, brand, generation, in stock, retailer) and
+  sort (price, model, VRAM/cores, released, listings), all in the URL (shareable,
+  `replaceState`), per-card sparklines, CPU columns, a phone filter dialog and an
+  inline no-JS form; pure view logic in `web/src/lib/catalogView.ts`. #26: compare
+  marks the best value per spec row. #27: product chart gets a 30-day average
+  line, dotted gaps and an axis note. #29: styled error page, command palette
+  follows the combobox pattern, and axe (`@axe-core/playwright`) now runs in e2e
+  over the main pages in both themes (serious/critical must be zero). Visible
+  token change: the light accent moved `#2563eb` -> `#1d4ed8`, because the old
+  value is 4.32:1 against accent-soft over bg (below the 4.5 AA minimum); the new
+  value is 5.6:1 and `test/contrast.test.ts` pins accent on accent-soft for both
+  themes. Catalogue `/products?category=gpu` TTFB measured about 9 ms warm (temp
+  copy of the DB). Final-review fixes: a retailer view marks an out-of-stock
+  price "(out of stock)" with no deal cue; search results honour the filters;
+  the phone filter dialog closes when the viewport widens past md; `in_stock=true`
+  parses like `1`; the In stock toggle no longer adds a history entry; a ticked
+  brand/generation keeps its control. No data or schema change. Counts: pytest
+  1182, vitest 886, Playwright 167, svelte-check 0/0, build ok.
 - **2026-10-02 — #30 web code health (refactor) on branch
-  `refactor/2026-10-02-web-code-health`; NOT merged, NOT deployed.** The 1,416-line
+  `refactor/2026-10-02-web-code-health`; merged as PR #48 (68cc1c6), NOT deployed.** The 1,416-line
   `web/src/lib/server/repos.ts` is split into `web/src/lib/server/queries/*`
   (repos.ts stays as the barrel) with DTO types in `$lib/models`; client code
   never imports `$lib/server` (`test/boundaries.test.ts`, `test/sql.test.ts`

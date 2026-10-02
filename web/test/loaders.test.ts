@@ -174,3 +174,63 @@ describe('/products catalog fields (#23)', () => {
 		}
 	});
 });
+
+describe('/products catalogue controls data (#23)', () => {
+	async function run(q: string) {
+		const { load } = await import('../src/routes/products/+page.server');
+		return load({ url: new URL(`http://x/products?${q}`), setHeaders: noopSetHeaders } as any);
+	}
+
+	it('retailerPrices: any <= inStock per retailer, for both inStock values', async () => {
+		for (const q of ['category=gpu', 'category=gpu&in_stock=1', 'category=cpu']) {
+			const data = await run(q);
+			for (const g of data.groups as any[]) {
+				expect(g.retailerPrices).toBeTypeOf('object');
+				for (const rp of Object.values(g.retailerPrices) as any[]) {
+					if (rp.inStock !== null) expect(rp.any).toBeLessThanOrEqual(rp.inStock);
+				}
+			}
+		}
+	});
+
+	it('retailerPrices.any survives the in-stock filter', async () => {
+		const all = (await run('category=gpu')).groups as any[];
+		const only = (await run('category=gpu&in_stock=1')).groups as any[];
+		for (const g of only) {
+			const twin = all.find((x) => x.productId === g.productId);
+			expect(g.retailerPrices).toEqual(twin.retailerPrices);
+			expect(g.listingCount).toBe(twin.listingCount);
+		}
+	});
+
+	it('CPU rows carry socket/threads keys, GPU rows have them null', async () => {
+		const cpu = (await run('category=cpu')).groups as any[];
+		for (const g of cpu) {
+			expect(g).toHaveProperty('socket');
+			expect(g).toHaveProperty('threads');
+		}
+		// The seed gives the Core Ultra 5 245 real CPU specs (test/helpers/seed.ts).
+		const seededCpu = cpu.find((g) => g.socket !== null && g.threads !== null);
+		expect(seededCpu).toMatchObject({ socket: 'LGA1851', threads: 10 });
+		for (const g of (await run('category=gpu')).groups as any[]) {
+			expect(g.socket).toBeNull();
+			expect(g.threads).toBeNull();
+		}
+	});
+
+	it('releaseYear matches launchDate; sparkline is at most 30 positive prices', async () => {
+		for (const cat of ['gpu', 'cpu']) {
+			for (const g of (await run(`category=${cat}`)).groups as any[]) {
+				expect(g.releaseYear).toBe(g.launchDate ? Number(g.launchDate.slice(0, 4)) : null);
+				expect(g.sparkline.length).toBeLessThanOrEqual(30);
+				for (const p of g.sparkline) expect(p).toBeGreaterThan(0);
+			}
+		}
+	});
+
+	it('gpu groups payload stays under 40 KB', async () => {
+		const data = await run('category=gpu');
+		const size = JSON.stringify(data.groups).length;
+		expect(size).toBeLessThan(40 * 1024);
+	});
+});

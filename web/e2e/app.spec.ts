@@ -509,31 +509,33 @@ test.describe('product index', () => {
 	// Back it writes the entry just left over the one landed on.
 	test('Back and Forward between two /products entries keep each entry\'s search', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		const box = page.getByLabel(/^Search GPUs$/);
+		const box = page.getByLabel(/^Search (GPUs|CPUs)$/);
 		await box.fill('5060');
 		await expect(page).toHaveURL(/q=5060$/);
 
-		// "In stock" is a real navigation: a second /products history entry.
-		await page.getByRole('checkbox', { name: 'In stock' }).check();
-		await expect(page).toHaveURL(/in_stock=1/);
+		// The CPUs nav link is a real navigation: a second /products history
+		// entry. (The In stock toggle replaces its entry, final review #5.)
+		await page
+			.getByRole('navigation', { name: 'Main' })
+			.getByRole('link', { name: 'CPUs', exact: true })
+			.click();
+		await expect(page).toHaveURL(/category=cpu/);
 		await page.waitForLoadState('networkidle');
-		await box.fill('5070');
-		await expect(page).toHaveURL(/q=5070/);
+		await box.fill('ryzen');
+		await expect(page).toHaveURL(/q=ryzen/);
 
 		await page.goBack();
 		await page.waitForLoadState('networkidle');
 		await expect(page).toHaveURL(/\/products\?category=gpu&q=5060$/);
 		await expect(box).toHaveValue('5060');
-		await expect(page.getByRole('checkbox', { name: 'In stock' })).not.toBeChecked();
 		// Still this entry's URL once the sync effect has had its chance to run.
 		await expect(page).toHaveURL(/\/products\?category=gpu&q=5060$/);
 
 		await page.goForward();
 		await page.waitForLoadState('networkidle');
-		await expect(page).toHaveURL(/in_stock=1/);
-		await expect(page).toHaveURL(/q=5070/);
-		await expect(box).toHaveValue('5070');
-		await expect(page.getByRole('checkbox', { name: 'In stock' })).toBeChecked();
+		await expect(page).toHaveURL(/category=cpu/);
+		await expect(page).toHaveURL(/q=ryzen/);
+		await expect(box).toHaveValue('ryzen');
 	});
 
 	test('a shared compare selection is restored, and one pick prompts for another (#26)', async ({ page }) => {
@@ -551,23 +553,355 @@ test.describe('product index', () => {
 	});
 });
 
+// The catalogue's filters and sort live in the URL (#23, spec §4). Prices are
+// read from the rendered rows, so these hold for the real scrape and the
+// synthetic fixture alike.
+async function rowPrices(page: Page): Promise<(number | null)[]> {
+	const texts = await page.getByTestId('row-price').allTextContents();
+	return texts.map((t) => {
+		const v = t.trim();
+		return v.startsWith('$') ? Number(v.replace(/[$,]/g, '')) : null;
+	});
+}
+
+async function rowNames(page: Page): Promise<string[]> {
+	return page.getByTestId('catalog-row').getByRole('link').allTextContents();
+}
+
+test.describe('catalogue filters and sort (#23)', () => {
+	test('max price preset filters rows and writes ?max=', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const preset = page.getByRole('button', { name: '$1,000', exact: true });
+		await expect(preset).toHaveAttribute('aria-pressed', 'false');
+		await preset.click();
+		await expect(page).toHaveURL(/max=1000/);
+		await expect(preset).toHaveAttribute('aria-pressed', 'true');
+		const prices = await rowPrices(page);
+		expect(prices.length).toBeGreaterThan(0);
+		for (const p of prices) {
+			expect(p).not.toBeNull();
+			expect(p!).toBeLessThanOrEqual(1000);
+		}
+	});
+
+	test('the max price box applies after a pause, not per keystroke', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		// Record every URL the page writes, so a per-keystroke max=8 / max=80
+		// would show up even though the address bar settles on max=800.
+		await page.evaluate(() => {
+			const seen: string[] = [];
+			(window as unknown as { __urls: string[] }).__urls = seen;
+			const original = history.replaceState.bind(history);
+			history.replaceState = (data, unused, url) => {
+				if (url) seen.push(String(url));
+				return original(data, unused, url);
+			};
+		});
+		await page.getByRole('spinbutton', { name: 'Max price' }).pressSequentially('800', { delay: 50 });
+		await expect(page).toHaveURL(/max=800/);
+		const urls = await page.evaluate(() => (window as unknown as { __urls: string[] }).__urls);
+		expect(urls.some((u) => /max=800\b/.test(u))).toBe(true);
+		expect(urls.filter((u) => /max=(8|80)(&|$)/.test(u))).toEqual([]);
+		for (const p of await rowPrices(page)) expect(p!).toBeLessThanOrEqual(800);
+	});
+
+	test('a retailer that is no longer tracked still shows in the picker', async ({ page }) => {
+		await goto(page, '/products?category=gpu&retailer=mwave');
+		const select = page.getByRole('combobox', { name: 'Retailer' });
+		await expect(select).toHaveValue('mwave');
+		await expect(select.getByRole('option', { name: 'MWave (no longer tracked)' })).toHaveCount(1);
+	});
+
+	test('default order keeps series groups headed by their release year', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await expect(page.getByRole('heading', { level: 2 }).first()).toHaveText(/· \d{4}/);
+	});
+
+	test('brand + gen + retailer combine and survive reload', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('checkbox', { name: 'NVIDIA', exact: true }).check();
+		const gens = page.getByRole('group', { name: 'Generation' }).getByRole('checkbox');
+		const genLabel = ((await gens.first().locator('xpath=..').textContent()) ?? '').trim();
+		await gens.first().check();
+		await page.getByRole('combobox', { name: 'Retailer' }).selectOption('scorptec');
+		await expect(page).toHaveURL(/brand=NVIDIA/);
+		await expect(page).toHaveURL(/gen=current/);
+		await expect(page).toHaveURL(/retailer=scorptec/);
+		await expect(page.getByRole('columnheader', { name: /Price at Scorptec/ })).toBeVisible();
+		const before = await rowNames(page);
+
+		await page.reload();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('checkbox', { name: 'NVIDIA', exact: true })).toBeChecked();
+		await expect(page.getByRole('checkbox', { name: 'AMD', exact: true })).not.toBeChecked();
+		await expect(
+			page.getByRole('group', { name: 'Generation' }).getByRole('checkbox', { name: genLabel, exact: true })
+		).toBeChecked();
+		await expect(page.getByRole('combobox', { name: 'Retailer' })).toHaveValue('scorptec');
+		expect(await rowNames(page)).toEqual(before);
+	});
+
+	test('sort by price toggles direction and aria-sort', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const header = page.getByRole('columnheader', { name: /^Price/ });
+		await expect(header).toHaveAttribute('aria-sort', 'none');
+		await header.getByRole('button').click();
+		await expect(page).toHaveURL(/sort=price/);
+		await expect(header).toHaveAttribute('aria-sort', 'ascending');
+		await expect(page.getByRole('columnheader', { name: /^Model/ })).toHaveAttribute('aria-sort', 'none');
+		// Any sort flattens the series groups.
+		await expect(page.getByRole('heading', { level: 2 })).toHaveCount(0);
+		const asc = (await rowPrices(page)).filter((p): p is number => p !== null);
+		expect(asc.length).toBeGreaterThan(1);
+		expect(asc).toEqual([...asc].sort((a, b) => a - b));
+
+		await header.getByRole('button').click();
+		await expect(page).toHaveURL(/dir=desc/);
+		await expect(header).toHaveAttribute('aria-sort', 'descending');
+		const desc = (await rowPrices(page)).filter((p): p is number => p !== null);
+		expect(desc).toEqual([...desc].sort((a, b) => b - a));
+	});
+
+	test('invalid params render the default view', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const plain = await page.getByTestId('catalog-row').count();
+		await goto(page, '/products?category=gpu&max=abc&sort=bogus');
+		await expect(page.getByTestId('catalog-row')).toHaveCount(plain);
+		await expect(page.getByRole('heading', { level: 2 }).first()).toBeVisible();
+	});
+
+	test('no hydration errors on a filtered URL', async ({ page }) => {
+		const errors: string[] = [];
+		page.on('console', (msg) => {
+			if (msg.type() === 'error' || msg.type() === 'warning') errors.push(msg.text());
+		});
+		page.on('pageerror', (err) => errors.push(err.message));
+		await goto(page, '/products?category=gpu&brand=AMD&sort=price');
+		await expect(page.getByRole('columnheader', { name: /^Price/ })).toHaveAttribute('aria-sort', 'ascending');
+		expect(errors.filter((e) => /hydrat/i.test(e))).toEqual([]);
+	});
+
+	test('empty state', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const plain = await page.getByTestId('catalog-row').count();
+		await goto(page, '/products?category=gpu&max=1');
+		await expect(page.getByText('No products match these filters.')).toBeVisible();
+		await expect(page.getByTestId('catalog-row')).toHaveCount(0);
+		await page.getByTestId('catalog-empty').getByRole('link', { name: 'Clear filters' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page).not.toHaveURL(/max=/);
+		await expect(page.getByTestId('catalog-row')).toHaveCount(plain);
+	});
+
+	test('CPU columns', async ({ page }) => {
+		await goto(page, '/products?category=cpu');
+		for (const name of ['Socket', 'Threads', 'Cores']) {
+			await expect(page.getByRole('columnheader', { name: new RegExp(`^${name}`) })).toBeVisible();
+		}
+		await expect(page.getByRole('columnheader', { name: /^VRAM/ })).toHaveCount(0);
+	});
+
+	// Final review #1: a retailer view with in_stock off shows that retailer's
+	// any-stock price, so a row whose only listings there are out of stock
+	// must say so and must not show a deal cue. Read lazily from the seeded DB:
+	// the synthetic fixture has no such product, so it skips there.
+	test('a retailer view marks an out-of-stock price and drops its delta', async ({ page }) => {
+		const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+		let hit: { id: number; category: string; retailer: string } | undefined;
+		try {
+			hit = db
+				.prepare(
+					`WITH latest AS (
+						SELECT s.* FROM price_snapshots s
+						JOIN (
+							SELECT retailer_listing_id, MAX(snapshot_date) AS max_date
+							FROM price_snapshots
+							GROUP BY retailer_listing_id
+						) m ON m.retailer_listing_id = s.retailer_listing_id
+						  AND m.max_date = s.snapshot_date
+					)
+					SELECT p.id, p.category, l.retailer
+					FROM retailer_listings l
+					JOIN latest lat ON lat.retailer_listing_id = l.id
+					JOIN products p ON p.id = l.product_id
+					WHERE l.status = 'active' AND p.tracked = 1
+					  AND l.retailer IN ('scorptec', 'pccg', 'umart')
+					  AND lower(l.variant_name) NOT LIKE '%bundle%'
+					  AND lower(l.variant_name) NOT LIKE '%combo%'
+					  AND lower(l.listing_url) NOT LIKE '%bundle%'
+					  AND lower(l.listing_url) NOT LIKE '%bdl-%'
+					GROUP BY p.id, l.retailer
+					HAVING SUM(lat.stock_status = 'in_stock') = 0
+					ORDER BY p.id, l.retailer
+					LIMIT 1`
+				)
+				.get() as typeof hit;
+		} finally {
+			db.close();
+		}
+		test.skip(!hit, 'the seed has no product listed only out of stock at a retailer');
+		await goto(page, `/products?category=${hit!.category}&retailer=${hit!.retailer}`);
+		const row = page
+			.getByTestId('catalog-row')
+			.filter({ has: page.locator(`a[href="/product/${hit!.id}"]`) });
+		await expect(row).toHaveCount(1);
+		await expect(row.getByTestId('row-price')).toContainText('(out of stock)');
+		await expect(row.getByTestId('row-delta')).toHaveText('No stock');
+	});
+
+	// Final review #2: the view applies to search results too. "x" matches
+	// every GeForce RTX and Radeon RX model.
+	test('a brand filter narrows the search results', async ({ page }) => {
+		await goto(page, '/products?category=gpu&q=x');
+		const all = await rowNames(page);
+		expect(all.some((n) => /GeForce/.test(n))).toBe(true);
+		expect(all.some((n) => /Radeon/.test(n))).toBe(true);
+		await goto(page, '/products?category=gpu&brand=AMD&q=x');
+		const amd = await rowNames(page);
+		expect(amd.length).toBeGreaterThan(0);
+		for (const n of amd) expect(n).toMatch(/Radeon/);
+		await expect(page.getByTestId('index-count')).toContainText(`${amd.length} of`);
+	});
+
+	// Final review #5: the In stock toggle replaces the history entry, like
+	// every other filter.
+	test('the In stock toggle adds no history entry', async ({ page }) => {
+		await goto(page, '/');
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('checkbox', { name: 'In stock' }).check();
+		await expect(page).toHaveURL(/in_stock=1/);
+		await page.waitForLoadState('networkidle');
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page).not.toHaveURL(/\/products/);
+	});
+
+	// Final review #6: an active filter keeps its control even when no row
+	// has that value (no CPU is an NVIDIA one, in either seed).
+	test('a selected brand no row has keeps a checked control', async ({ page }) => {
+		await goto(page, '/products?category=cpu&in_stock=1&brand=NVIDIA');
+		const box = page.getByRole('checkbox', { name: 'NVIDIA', exact: true });
+		await expect(box).toBeChecked();
+		// Unticking clears the filter; with no NVIDIA row the control then goes.
+		await box.click();
+		await expect(page).not.toHaveURL(/brand=/);
+		await expect(box).toHaveCount(0);
+		await expect(page.getByTestId('catalog-row').first()).toBeVisible();
+	});
+
+	test('each row has a 30-day trend with an accessible label', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const labels = await page
+			.getByTestId('row-trend')
+			.locator('[aria-label]')
+			.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+		expect(labels.length).toBeGreaterThan(0);
+		for (const l of labels) expect(l).toMatch(/^(30-day trend: (up|down) \d+%|30-day trend: flat|Not enough history)$/);
+	});
+});
+
+test.describe('catalogue without JavaScript (#23)', () => {
+	test.use({ javaScriptEnabled: false });
+
+	test('shared link renders without JS', async ({ page }) => {
+		await goto(page, '/products?category=gpu&max=500&sort=price');
+		const prices = await rowPrices(page);
+		expect(prices.length).toBeGreaterThan(0);
+		for (const p of prices) expect(p!).toBeLessThanOrEqual(500);
+		expect(prices).toEqual([...prices].sort((a, b) => a! - b!));
+		await expect(page.getByRole('columnheader', { name: /^Price/ })).toHaveAttribute('aria-sort', 'ascending');
+		// The controls are a plain GET form with a visible submit button.
+		await expect(page.getByRole('button', { name: 'Apply filters' })).toBeVisible();
+	});
+
+	test('the filter form submits as a plain GET form', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const form = page.getByRole('form', { name: 'Catalogue filters' });
+		await form.getByRole('checkbox', { name: 'NVIDIA', exact: true }).check();
+		await form.getByRole('button', { name: 'Apply filters' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/brand=NVIDIA/);
+		await expect(page.getByRole('checkbox', { name: 'NVIDIA', exact: true })).toBeChecked();
+	});
+});
+
 test('the footer names the running build (#3)', async ({ page }) => {
 	await goto(page, '/');
 	// vite dev has no TRACKAROO_VERSION, so the stamp reads "dev".
 	await expect(page.getByTestId('build-version')).toHaveText('build dev');
 });
 
+test('error page is styled and offers retry (#29)', async ({ page }) => {
+	await goto(page, '/product/999999');
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+	await expect(page.getByText('404', { exact: true })).toBeVisible();
+	const retry = page.getByRole('link', { name: 'Try again' });
+	await expect(retry).toHaveAttribute('href', '/product/999999');
+	await expect(page.getByRole('main').getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+});
+
 test.describe('command palette', () => {
+	test('is a combobox: active option, Enter, Escape returns focus, Tab is trapped (#29)', async ({ page }) => {
+		await goto(page, '/');
+		const trigger = page.getByRole('button', { name: 'Search products' });
+		await trigger.focus();
+		await page.keyboard.press('Control+k');
+		const dialog = page.getByRole('dialog', { name: 'Search products' });
+		const input = dialog.getByRole('combobox', { name: 'Search products' });
+		await expect(input).toHaveAttribute('aria-expanded', 'true');
+		await expect(input).toHaveAttribute('aria-autocomplete', 'list');
+		const listboxId = await input.getAttribute('aria-controls');
+		expect(listboxId).toBeTruthy();
+		await expect(page.locator(`#${listboxId}`)).toHaveAttribute('role', 'listbox');
+
+		await input.fill('rx 7800 xt');
+		await page.keyboard.press('ArrowDown');
+		const activeId = await input.getAttribute('aria-activedescendant');
+		expect(activeId).toBeTruthy();
+		const active = page.locator(`#${activeId}`);
+		await expect(active).toHaveAttribute('role', 'option');
+		await expect(active).toHaveAttribute('aria-selected', 'true');
+
+		// Tab never leaves the palette.
+		for (let i = 0; i < 4; i++) {
+			await page.keyboard.press('Tab');
+			expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+		}
+		await page.keyboard.press('Shift+Tab');
+		expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+
+		await input.focus();
+		await page.keyboard.press('Enter');
+		await expect(page).toHaveURL(/\/product\/\d+$/);
+
+		// Reopen from the button, Escape closes and hands focus back to it.
+		await trigger.focus();
+		await page.keyboard.press('Control+k');
+		await expect(dialog).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
+		await expect(trigger).toBeFocused();
+	});
+
+	test('palette with no results has no active option and is not expanded', async ({ page }) => {
+		await goto(page, '/');
+		await page.keyboard.press('Control+k');
+		const input = page.getByRole('combobox', { name: 'Search products' });
+		await input.fill('zzzzzzzz-no-such-thing');
+		await expect(input).not.toHaveAttribute('aria-activedescendant', /.+/);
+		await expect(input).toHaveAttribute('aria-expanded', 'false');
+	});
+
 	test('opens with Ctrl+K, searches and navigates to a product on Enter', async ({ page }) => {
 		await goto(page, '/');
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
 		await expect(dialog).toBeVisible();
-		await expect(dialog.getByRole('textbox', { name: 'Search products' })).toBeFocused();
+		await expect(dialog.getByRole('combobox', { name: 'Search products' })).toBeFocused();
 
 		// Exactly one match: two would render the palette's "Compare A vs B"
 		// row instead, and Enter would open /compare.
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('rx 7800 xt');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('rx 7800 xt');
 		const first = dialog.getByRole('option').first();
 		await expect(first).toContainText('Radeon RX 7800 XT');
 		await page.keyboard.press('Enter');
@@ -589,7 +923,7 @@ test.describe('command palette', () => {
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
 		await expect(dialog).toBeVisible();
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('RTX 5060');
 		await expect(dialog.getByRole('option').first()).toContainText('Compare');
 	});
 
@@ -597,7 +931,7 @@ test.describe('command palette', () => {
 		await goto(page, '/');
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('RTX 5060');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('RTX 5060');
 		await expect(dialog.getByText(/snapshots/).first()).toBeVisible();
 		await expect(dialog.getByText(/snapshots/)).toHaveCount(2);
 	});
@@ -606,7 +940,7 @@ test.describe('command palette', () => {
 		await goto(page, '/');
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('e2e deal demo gpu 16gb');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('e2e deal demo gpu 16gb');
 		await expect(dialog.getByRole('option').first()).toContainText('E2E Deal Demo GPU 16GB');
 	});
 
@@ -616,7 +950,7 @@ test.describe('command palette', () => {
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
 		// "7600" matches the Ryzen 5 7600 CPU and (in real data) the RX 7600 GPU;
 		// with synthetic data it matches one product. Either way, no compare row.
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('7600');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('7600');
 		await expect(dialog.getByRole('option', { name: /^Compare / })).toHaveCount(0);
 	});
 });
@@ -670,6 +1004,25 @@ test.describe('compare', () => {
 		const bar = page.getByRole('region', { name: 'Compare bar' });
 		await bar.getByRole('button', { name: 'Clear' }).click();
 		await expect(page.getByRole('region', { name: 'Compare bar' })).toHaveCount(0);
+	});
+
+	test('marks the best value in a spec row (#26)', async ({ page }) => {
+		const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+		const ids = db
+			.prepare(
+				"SELECT product_id AS id FROM specs WHERE category = 'gpu' AND vram_gb IS NOT NULL ORDER BY vram_gb DESC"
+			)
+			.all() as { id: number }[];
+		db.close();
+		expect(ids.length).toBeGreaterThanOrEqual(2);
+		const [high, low] = [ids[0].id, ids[ids.length - 1].id];
+
+		await goto(page, `/compare?ids=${low},${high}`);
+		const cells = page.locator('tbody tr', { has: page.getByRole('rowheader', { name: 'VRAM', exact: true }) }).locator('td');
+		await expect(cells).toHaveCount(2);
+		await expect(cells.nth(0)).not.toContainText('Best');
+		await expect(cells.nth(1)).toContainText('Best');
+		await expect(cells.nth(1)).toContainText('16GB');
 	});
 
 	test('rejects invalid compare URLs', async ({ page }) => {
@@ -1011,6 +1364,12 @@ test.describe('product detail offer list', () => {
 		await expect(page.getByRole('table').filter({ hasText: 'Dearest in stock' })).toBeVisible();
 	});
 
+	test('the chart shows the 30-day average and the axis note (#27)', async ({ page }) => {
+		await goto(page, '/product/1');
+		await expect(page.getByRole('list', { name: 'Chart legend' })).toContainText('30-day avg');
+		await expect(page.getByText("Axis doesn't start at $0.")).toBeVisible();
+	});
+
 	test('re-renders the chart when navigating between products', async ({ page }) => {
 		await openGpuProduct(page);
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
@@ -1019,7 +1378,7 @@ test.describe('product detail offer list', () => {
 		// component, so this exercises the client-side-navigation reuse path.
 		await page.keyboard.press('Control+k');
 		const dialog = page.getByRole('dialog', { name: 'Search products' });
-		await dialog.getByRole('textbox', { name: 'Search products' }).fill('rx 7800 xt');
+		await dialog.getByRole('combobox', { name: 'Search products' }).fill('rx 7800 xt');
 		await page.keyboard.press('Enter');
 
 		await expect(page.getByRole('heading', { name: /Radeon RX 7800 XT/ })).toBeVisible();

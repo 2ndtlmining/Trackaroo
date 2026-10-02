@@ -90,6 +90,60 @@ test.describe('mobile viewport', () => {
 		await expect(page.getByTestId('catalog-header')).toBeHidden();
 	});
 
+	test('filter dialog opens, focuses inside, applies, returns focus (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const open = page.getByRole('button', { name: /^Filters/ });
+		await expect(open).toHaveText(/Filters \(0 active\)/);
+		await open.click();
+		const dialog = page.getByRole('dialog', { name: 'Filters' });
+		await expect(dialog).toBeVisible();
+		expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+		await dialog.getByRole('checkbox', { name: 'NVIDIA', exact: true }).check();
+		await dialog.getByRole('button', { name: /^Show \d+ results?$/ }).click();
+		await expect(dialog).toBeHidden();
+		await expect(open).toBeFocused();
+		await expect(page).toHaveURL(/brand=NVIDIA/);
+		await expect(open).toHaveText(/Filters \(1 active\)/);
+	});
+
+	test('while searching, the panel counts the search results (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu&q=5060');
+		const rows = await page.getByTestId('catalog-row').count();
+		await page.getByRole('button', { name: /^Filters/ }).click();
+		expect(rows).toBeGreaterThan(0);
+		await expect(
+			page.getByRole('dialog', { name: 'Filters' }).getByRole('button', { name: /^Show \d+ results?$/ })
+		).toHaveAccessibleName(new RegExp(`^Show ${rows} results?$`));
+	});
+
+	// Final review #3: a modal dialog makes the rest of the page inert, and the
+	// dialog itself is md:hidden, so widening past md with it open (a tablet
+	// rotating) must close it rather than leave an inert, dialog-less page.
+	test('widening past md closes the open filter dialog (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('button', { name: /^Filters/ }).click();
+		const dialog = page.getByRole('dialog', { name: 'Filters' });
+		await expect(dialog).toBeVisible();
+		await page.setViewportSize({ width: 1024, height: 844 });
+		await expect
+			.poll(() => page.locator('dialog[aria-label="Filters"]').evaluate((d) => (d as HTMLDialogElement).open))
+			.toBe(false);
+		const form = page.getByRole('form', { name: 'Catalogue filters' });
+		await form.getByRole('checkbox', { name: 'AMD', exact: true }).click({ timeout: 2000 });
+		await expect(page).toHaveURL(/brand=AMD/);
+	});
+
+	test('the open filter dialog does not scroll horizontally (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('button', { name: /^Filters/ }).click();
+		await expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible();
+		const { viewport, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
+		const box = await page.getByRole('dialog', { name: 'Filters' }).boundingBox();
+		expect(box!.x).toBeGreaterThanOrEqual(0);
+		expect(box!.x + box!.width).toBeLessThanOrEqual(PHONE.width);
+	});
+
 	test('product detail does not scroll horizontally at 390px', async ({ page }) => {
 		await goto(page, '/products');
 		const href = await page.locator('a[href^="/product/"]').first().getAttribute('href');
@@ -125,6 +179,20 @@ test.describe('mobile viewport', () => {
 		await page.mouse.click(box!.x + 2, box!.y + box!.height / 2);
 
 		await expect(checkbox).toBeChecked();
+	});
+});
+
+test.describe('phone without JavaScript (#23)', () => {
+	test.use({ viewport: PHONE, javaScriptEnabled: false });
+
+	test('the filters show inline and the dialog opener hides', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await expect(page.getByRole('button', { name: /^Filters/ })).toBeHidden();
+		const form = page.getByRole('form', { name: 'Catalogue filters' });
+		await expect(form).toBeVisible();
+		await expect(form.getByRole('button', { name: 'Apply filters' })).toBeVisible();
+		const { viewport, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
 	});
 });
 
