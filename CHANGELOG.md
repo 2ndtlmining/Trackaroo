@@ -11,6 +11,8 @@ How it works:
 
 ## Unreleased
 
+## 0.4.0 — 2026-10-03
+
 ### Added
 - **Buying signals** on every product (#31): an "Is now a good time to buy?" checklist with icons and the evidence for each badge (price percentile, lowest in N days, vs 30-day average, 7-day trend, upcoming AU sale events, successor announced), plus a 30 / 90 / 180-day low / median / high table.
 - **US launch MSRP in today's AUD** (#32): "N% under/over US launch MSRP (≈A$X inc. GST)" on the product page, a sortable "vs MSRP" column in the catalogue, and a "Below MSRP" filter on /deals. The rate is cached daily from the RBA, with the ECB rate (via Frankfurter) as a fallback.

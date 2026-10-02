@@ -14,6 +14,16 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-03 -- release v0.4.0 cut: version in the footer + /changelog.**
+  Branch `feat/2026-10-03-version-footer` (on top of buying signals, PR #52).
+  The footer reads `v0.4.0 · build <sha>`. The release links to `/changelog`,
+  which renders the repo-root `CHANGELOG.md` bundled at build time.
+  `web/package.json` is the single release source (vite `define`). `/healthz`
+  adds `release`. `python release.py X.Y.Z` moves Unreleased into a dated
+  version and bumps package.json and the lockfile. After merge, tag the merge
+  commit `v0.4.0` and push the tag (no tags exist yet). The Dockerfile copies
+  `CHANGELOG.md` into the web build stage. From now on every PR adds a line
+  under Unreleased.
 - **2026-10-03 -- buying signals and MSRP in AUD (#31 #32) built on branch
   `feat/2026-10-02-buying-signals`; NOT merged, NOT deployed.** New `fx.py`
   (RBA F11.1 rate with Frankfurter fallback into `fx_rates`; best-effort
