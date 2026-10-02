@@ -1237,3 +1237,71 @@ class TestCheckFxRate:
         sqlite3.connect(p).close()
         results = check_fx_rate(p)
         assert results and all(r.status != CheckResult.ERROR for r in results)
+
+
+class TestCheckOzbargain:
+    NOW = None
+
+    def _db(self, tmp_path, polls=()):
+        import sqlite3
+        from ingest import init_db
+        p = tmp_path / "ozb.db"
+        init_db(p).close()
+        conn = sqlite3.connect(p)
+        conn.execute("CREATE TABLE IF NOT EXISTS ozb_polls (polled_at TEXT PRIMARY KEY, ok INTEGER NOT NULL,"
+                     " items INTEGER NOT NULL DEFAULT 0, error TEXT)")
+        for hours_ago, ok in polls:
+            ts = (self._now() - timedelta(hours=hours_ago)).isoformat(timespec="seconds")
+            conn.execute("INSERT INTO ozb_polls (polled_at, ok, items) VALUES (?, ?, 0)", (ts, ok))
+        conn.commit()
+        conn.close()
+        return p
+
+    @staticmethod
+    def _now():
+        from ozbargain import MELBOURNE
+        return datetime(2026, 10, 3, 12, 0, tzinfo=MELBOURNE)
+
+    def test_ok_when_recent_ok_poll(self, tmp_path, monkeypatch):
+        from health_checks import CheckResult, check_ozbargain
+        monkeypatch.delenv("OZB_ENABLED", raising=False)
+        [r] = check_ozbargain(self._db(tmp_path, [(3, 1)]), now=self._now())
+        assert r.status == CheckResult.OK
+
+    def test_warns_when_newest_ok_poll_is_old(self, tmp_path, monkeypatch):
+        from health_checks import CheckResult, check_ozbargain
+        monkeypatch.delenv("OZB_ENABLED", raising=False)
+        [r] = check_ozbargain(self._db(tmp_path, [(25, 1), (1, 0)]), now=self._now())
+        assert r.status == CheckResult.WARNING
+
+    def test_warns_when_every_poll_failed(self, tmp_path, monkeypatch):
+        from health_checks import CheckResult, check_ozbargain
+        monkeypatch.delenv("OZB_ENABLED", raising=False)
+        [r] = check_ozbargain(self._db(tmp_path, [(2, 0), (4, 0)]), now=self._now())
+        assert r.status == CheckResult.WARNING
+
+    def test_silent_when_table_missing(self, tmp_path, monkeypatch):
+        import sqlite3
+        from health_checks import check_ozbargain
+        monkeypatch.delenv("OZB_ENABLED", raising=False)
+        p = tmp_path / "bare.db"
+        sqlite3.connect(p).close()
+        assert check_ozbargain(p, now=self._now()) == []
+
+    def test_silent_when_no_poll_rows_yet(self, tmp_path, monkeypatch):
+        from health_checks import check_ozbargain
+        monkeypatch.delenv("OZB_ENABLED", raising=False)
+        assert check_ozbargain(self._db(tmp_path, []), now=self._now()) == []
+
+    def test_silent_when_disabled(self, tmp_path, monkeypatch):
+        from health_checks import check_ozbargain
+        monkeypatch.setenv("OZB_ENABLED", "0")
+        assert check_ozbargain(self._db(tmp_path, [(30, 1)]), now=self._now()) == []
+
+    def test_unreadable_db_is_warning_never_error(self, tmp_path, monkeypatch):
+        from health_checks import CheckResult, check_ozbargain
+        monkeypatch.delenv("OZB_ENABLED", raising=False)
+        p = tmp_path / "junk.db"
+        p.write_bytes(b"this is not a sqlite database" * 50)
+        [r] = check_ozbargain(p, now=self._now())
+        assert r.status == CheckResult.WARNING

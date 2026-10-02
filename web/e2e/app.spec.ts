@@ -1773,6 +1773,57 @@ function productIdByModel(model: string): number {
 	}
 }
 
+// #34: the seed gives E2E Deal Demo GPU (best in stock A$100) a live $89 deal,
+// a live $1,099 deal and an expired $79 one.
+test.describe('OzBargain deals (#34)', () => {
+	test('the product page lists live deals and marks the one below our best', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E Deal Demo GPU')}`);
+		const panel = page.getByRole('region', { name: 'OzBargain deals' });
+		await expect(panel.getByRole('heading', { name: 'OzBargain deals' })).toBeVisible();
+		const rows = panel.getByTestId('ozb-row');
+		await expect(rows).toHaveCount(2);
+		await expect(rows.first()).toContainText('$89');
+		await expect(rows.first()).toContainText('Below our best');
+		await expect(rows.first()).toContainText('+42 / −1');
+		await expect(rows.nth(1)).toContainText('$1,099');
+		await expect(rows.nth(1)).not.toContainText('Below our best');
+		const links = panel.getByRole('link', { name: /View deal/ });
+		await expect(links).toHaveCount(2);
+		for (const link of await links.all()) {
+			const href = (await link.getAttribute('href')) ?? '';
+			expect(href).toMatch(/^https:\/\/www\.ozbargain\.com\.au\/node\/\d+$/);
+			expect(href).not.toContain('/goto/');
+			await expect(link).toHaveAttribute('target', '_blank');
+		}
+
+		const toggle = panel.getByRole('button', { name: /expired \(1\)$/ });
+		await expect(toggle).toHaveText('Show expired (1)');
+		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+		await toggle.click();
+		await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+		await expect(toggle).toHaveText('Hide expired (1)');
+		await expect(page.locator(`#${await toggle.getAttribute('aria-controls')}`)).toBeVisible();
+		await expect(rows).toHaveCount(3);
+		await expect(rows.nth(2)).toContainText('Expired');
+		await expect(rows.nth(2)).toContainText('$79');
+	});
+
+	test('a product without deals has no OzBargain panel', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E New Low GPU')}`);
+		await expect(page.getByRole('heading', { name: 'OzBargain deals' })).toHaveCount(0);
+	});
+
+	test('/deals shows an OzBargain chip linking to the cheaper live deal', async ({ page }) => {
+		await goto(page, '/deals');
+		const row = page.getByTestId('deal-row').filter({ has: page.getByRole('link', { name: 'E2E Deal Demo GPU', exact: true }) });
+		const chip = row.getByTestId('ozb-chip');
+		await expect(chip).toHaveText('OzBargain $89');
+		await expect(chip).toHaveAttribute('href', 'https://www.ozbargain.com.au/node/910001');
+		await expect(chip).toHaveAttribute('target', '_blank');
+		await expect(page.getByTestId('ozb-chip')).toHaveCount(1);
+	});
+});
+
 test.describe('MSRP cues (Task 3)', () => {
 	test('the product page states the gap to US launch MSRP and explains it', async ({ page }) => {
 		await goto(page, `/product/${productIdByModel('E2E Deal Demo GPU')}`);

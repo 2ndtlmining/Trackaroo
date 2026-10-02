@@ -1163,6 +1163,59 @@ def check_discovery(db_path: Path, today: Optional[date] = None) -> list[CheckRe
     return [CheckResult("discovery", CheckResult.OK, "No new parts or conflicts")]
 
 
+OZB_MAX_AGE_HOURS = 24
+
+
+def check_ozbargain(db_path: Path, now: Optional[datetime] = None) -> list[CheckResult]:
+    """OzBargain poller (#34): WARNING when no successful poll in 24h. Never ERROR.
+
+    Silent (empty list) when OZB_ENABLED=0 or the ozb_polls table does not exist yet.
+    """
+    import os
+    if os.environ.get("OZB_ENABLED", "1") == "0":
+        return []
+    try:
+        from ozbargain import MELBOURNE
+    except Exception:  # pragma: no cover - ozbargain import is light, but never fail a check
+        MELBOURNE = timezone(timedelta(hours=10))
+    now = now or datetime.now(MELBOURNE)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=MELBOURNE)
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            all_rows = list(conn.execute("SELECT polled_at, ok FROM ozb_polls"))
+        finally:
+            conn.close()
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            return []
+        return [CheckResult("ozbargain", CheckResult.WARNING, f"OzBargain poll state unreadable: {e}")]
+    except sqlite3.Error as e:
+        return [CheckResult("ozbargain", CheckResult.WARNING, f"OzBargain poll state unreadable: {e}")]
+    if not all_rows:  # nothing has polled yet (fresh deploy)
+        return []
+    newest = None
+    for raw, ok in all_rows:
+        if not ok:
+            continue
+        try:
+            ts = datetime.fromisoformat(raw)
+        except (TypeError, ValueError):
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=MELBOURNE)
+        if newest is None or ts > newest:
+            newest = ts
+    if newest is None:
+        return [CheckResult("ozbargain", CheckResult.WARNING, "No successful OzBargain poll recorded")]
+    age_h = (now - newest).total_seconds() / 3600
+    if age_h > OZB_MAX_AGE_HOURS:
+        return [CheckResult("ozbargain", CheckResult.WARNING,
+                            f"No successful OzBargain poll in {age_h:.0f}h (newest {newest.isoformat(timespec='seconds')})")]
+    return [CheckResult("ozbargain", CheckResult.OK, f"OzBargain polled {age_h:.1f}h ago")]
+
+
 FX_MAX_AGE_DAYS = 7
 
 

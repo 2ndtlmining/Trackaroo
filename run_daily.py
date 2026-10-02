@@ -53,6 +53,7 @@ from health_checks import (
     check_match_count_anomalies,
     check_match_count_drop,
     check_missing_days,
+    check_ozbargain,
     check_run_report,
     check_scraper_cooldown,
     check_price_anomalies,
@@ -366,6 +367,7 @@ def _db_checks() -> List[Tuple[str, Callable[[], List[CheckResult]]]]:
         ("check_scraper_cooldown", lambda: check_scraper_cooldown()),
         ("check_discovery", lambda: check_discovery(DB_PATH)),
         ("check_fx_rate", lambda: check_fx_rate(DB_PATH)),
+        ("check_ozbargain", lambda: check_ozbargain(DB_PATH)),
         ("check_backups", lambda: check_backups()),
     ]
 

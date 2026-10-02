@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
+	import Tag from '@lucide/svelte/icons/tag';
 	import Badge from './Badge.svelte';
 	import BrandIcon from './BrandIcon.svelte';
 	import StockBadge from './StockBadge.svelte';
@@ -15,6 +16,7 @@
 	} from '$lib/formats';
 	import { MSRP_TONE_CLASS, formatMsrpDelta, msrpTone } from '$lib/msrp';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30, type ListingDisplay } from '$lib/offers';
+	import type { OzbDeal } from '$lib/models';
 
 	let {
 		offer,
@@ -26,7 +28,8 @@
 		saving,
 		lowSince,
 		nearLowSince,
-		vsMsrp
+		vsMsrp,
+		ozb
 	}: {
 		offer: ListingDisplay;
 		avg30: number | null;
@@ -53,6 +56,8 @@
 		// /deals only (Task 3): the price against US launch MSRP in today's AUD
 		// (msrpDelta). null shows "–"; undefined leaves the cell out.
 		vsMsrp?: number | null;
+		// /deals only (#34): the cheapest live OzBargain deal for this product.
+		ozb?: OzbDeal | null;
 	} = $props();
 
 	const retailerLabel = $derived(lookupRetailerLabel(offer.retailer));
@@ -136,6 +141,20 @@
 			<Badge tone="accent" label={`Lowest since ${formatShortDate(lowSince)}`} />
 		{:else if nearLowSince}
 			<Badge tone="accent" label={`Near low since ${formatShortDate(nearLowSince)}`} />
+		{/if}
+		{#if ozb && ozb.priceAud !== null}
+			<a
+				href={ozb.url}
+				target="_blank"
+				rel="noopener noreferrer"
+				title={ozb.title}
+				aria-label="OzBargain {formatAud(ozb.priceAud)} (opens in a new tab)"
+				data-testid="ozb-chip"
+				class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-accent no-underline hover:bg-surface-hover"
+			>
+				<Tag size={12} aria-hidden="true" />
+				OzBargain <span class="num font-medium">{formatAud(ozb.priceAud)}</span>
+			</a>
 		{/if}
 	</div>
 

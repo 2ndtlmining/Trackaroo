@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:ozb="https://www.ozbargain.com.au">
+  <channel>
+    <title>OzBargain - cpu</title>
+    <link>https://www.ozbargain.com.au</link>
+    <description>fixture</description>
+    <item>
+      <title>AMD Ryzen 7 9800X3D $689 @ PCCG</title>
+      <link>https://www.ozbargain.com.au/node/913001</link>
+      <pubDate>Fri, 03 Oct 2026 07:40:00 +1000</pubDate>
+      <guid isPermaLink="false">913001 at https://www.ozbargain.com.au</guid>
+      <category domain="https://www.ozbargain.com.au/cat/computing">Computing</category>
+      <category domain="https://www.ozbargain.com.au/product/amd-ryzen-7-9800x3d">amd-ryzen-7-9800x3d</category>
+      <ozb:meta comment-count="20" click-count="140" votes-pos="55" votes-neg="2" expiry="2026-10-06T23:59:00+10:00" url="https://www.ozbargain.com.au/goto/913001"/>
+    </item>
+    <item>
+      <title>Intel Core Ultra 5 245K $399 @ Amazon AU</title>
+      <link>https://www.ozbargain.com.au/node/913002</link>
+      <pubDate>Thu, 02 Oct 2026 16:10:00 +1000</pubDate>
+      <guid isPermaLink="false">913002 at https://www.ozbargain.com.au</guid>
+      <category domain="https://www.ozbargain.com.au/cat/computing">Computing</category>
+      <ozb:meta comment-count="6" click-count="42" votes-pos="18" votes-neg="1" url="https://www.ozbargain.com.au/goto/913002"/>
+    </item>
+    <item>
+      <title>AMD Ryzen 5 9600X $279 @ Scorptec</title>
+      <link>https://www.ozbargain.com.au/node/913003</link>
+      <pubDate>Mon, 29 Sep 2026 09:00:00 +1000</pubDate>
+      <guid isPermaLink="false">913003 at https://www.ozbargain.com.au</guid>
+      <category domain="https://www.ozbargain.com.au/cat/computing">Computing</category>
+      <ozb:meta comment-count="30" click-count="210" votes-pos="60" votes-neg="3" url="https://www.ozbargain.com.au/goto/913003"/>
+      <ozb:title-msg type="expired">expired</ozb:title-msg>
+    </item>
+  </channel>
+</rss>

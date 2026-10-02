@@ -10,3 +10,4 @@ export * from './queries/compare';
 export * from './queries/alerts';
 export * from './queries/health';
 export * from './queries/fx';
+export * from './queries/ozbargain';

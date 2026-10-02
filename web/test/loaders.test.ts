@@ -299,3 +299,20 @@ describe('getLatestFxRate (#32)', () => {
 		db.close();
 	});
 });
+
+describe('OzBargain deals (#34)', () => {
+	it('/product/[id] returns ozb { live, expired }, empty without deals', async () => {
+		const { load } = await import('../src/routes/product/[id]/+page.server');
+		const { getDb } = await import('../src/lib/server/db');
+		const id = (getDb().prepare('SELECT id FROM products WHERE tracked = 1 ORDER BY id LIMIT 1').get() as { id: number }).id;
+		const data = load({ params: { id: String(id) } } as any);
+		expect(data.ozb).toEqual({ live: [], expired: [] });
+		expect(data).toHaveProperty('ozbBest');
+	});
+
+	it('/deals rows carry ozb, null without deals', async () => {
+		const { load } = await import('../src/routes/deals/+page.server');
+		const data = load({ url: new URL('http://x/deals'), setHeaders: noopSetHeaders } as any);
+		for (const d of [...data.belowAverage, ...data.atAllTimeLow]) expect(d).toHaveProperty('ozb', null);
+	});
+});

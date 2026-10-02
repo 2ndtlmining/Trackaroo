@@ -1,4 +1,4 @@
-import { getDealCandidates, getLatestFxRate } from '$lib/server/repos';
+import { getDealCandidates, getLatestFxRate, getLiveOzbDealByProduct } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 import { memo } from '$lib/server/cache';
 import {
@@ -61,12 +61,17 @@ export function load({
 	const forBrand = filterDeals(deals, { ...filters, brand: null });
 
 	const visible = filterDeals(deals, filters);
+	// The cheapest live OzBargain deal per product (#34), for the row chip.
+	// Not memoised: "live" depends on the clock (starts_at), not on data_version.
+	const ozb = getLiveOzbDealByProduct(db, new Date());
+	const withOzb = <T extends { productId: number }>(rows: T[]) =>
+		rows.map((d) => ({ ...d, ozb: ozb.get(d.productId) ?? null }));
 
 	return {
 		fx,
 		belowMsrp,
-		belowAverage: belowAverage(visible),
-		atAllTimeLow: atAllTimeLow(visible),
+		belowAverage: withOzb(belowAverage(visible)),
+		atAllTimeLow: withOzb(atAllTimeLow(visible)),
 		filters,
 		facets: {
 			category: categoryFacetCounts(forCategory),

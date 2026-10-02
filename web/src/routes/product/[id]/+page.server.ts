@@ -1,6 +1,8 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import {
+	getBestInStockPrice,
 	getLatestFxRate,
+	getOzbDeals,
 	getProductMsrp,
 	getProductAlerts,
 	getProductHistory,
@@ -31,11 +33,17 @@ export function load({ params }: { params: { id: string } }) {
 	if (!data) {
 		error(404, 'Product not found');
 	}
+	const now = new Date();
 	return {
 		...data,
 		alerts: getProductAlerts(db, id),
 		fx: getLatestFxRate(db),
 		msrpUsd: getProductMsrp(db, id),
+		// OzBargain deals (#34). ozbBest is the Python alert's "best in stock"
+		// (R1/R7), so "Below our best" here and the Discord alert agree.
+		ozb: getOzbDeals(db, id, now),
+		ozbBest: getBestInStockPrice(db, id),
+		ozbNow: now.toISOString(),
 		// Computed once on the server so a render near Melbourne midnight cannot
 		// differ between server and client (sale badge).
 		today: melbourneTodayIso(new Date())

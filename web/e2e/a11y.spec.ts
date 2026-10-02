@@ -25,6 +25,17 @@ function compareIds(): [number, number] {
 	return [ids[0].id, ids[ids.length - 1].id];
 }
 
+// The product page with seeded OzBargain deals (#34), expired toggle included.
+const OZB_PRODUCT = '/product/<E2E Deal Demo GPU>';
+function ozbProductId(): number {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		return (db.prepare("SELECT id FROM products WHERE model = 'E2E Deal Demo GPU'").get() as { id: number }).id;
+	} finally {
+		db.close();
+	}
+}
+
 async function scan(page: Page, theme: 'light' | 'dark', route: string) {
 	// The site themes via a stored preference, not prefers-color-scheme.
 	await page.addInitScript((t) => localStorage.setItem('trackaroo-theme', t), theme);
@@ -45,7 +56,8 @@ const PAGES = [
 	'/discover',
 	'/changelog',
 	'/compare',
-	'/product/999999'
+	'/product/999999',
+	OZB_PRODUCT
 ];
 
 test('the two themes really render different backgrounds', async ({ browser }) => {
@@ -72,6 +84,7 @@ for (const theme of ['light', 'dark'] as const) {
 					const [a, b] = compareIds();
 					target = `/compare?ids=${a},${b}`;
 				}
+				if (route === OZB_PRODUCT) target = `/product/${ozbProductId()}`;
 				await scan(page, theme, target);
 			});
 		}

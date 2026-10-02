@@ -14,6 +14,16 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-03 -- OzBargain deals (#34) built on branch `feat/2026-10-03-ozbargain`.**
+  `ozbargain.py` polls the video-card and cpu RSS tag feeds every 2 hours (07-23,
+  `OZB_POLL_HOURS`, 18 GETs a day) into `ozb_deals`/`ozb_polls`; `ozbargain_alerts.py`
+  sends one Discord alert per deal that beats our best in-stock price; `check_ozbargain`
+  is WARNING-only; product pages get an OzBargain panel and /deals a chip. Deals never
+  enter price history. Gate: pytest **1340 passed**, vitest **1024 passed** (50 files),
+  Playwright **184 passed**, svelte-check **0 errors, 0 warnings**, `npm run build` ok.
+  Deploy: `deploy/redeploy.sh` outside 04:00-09:59, then
+  `docker compose exec trackaroo python ozbargain.py --dry-run` once.
+
 - **2026-10-03 -- release v0.4.0 cut: version in the footer + /changelog.**
   Branch `feat/2026-10-03-version-footer` (on top of buying signals, PR #52).
   The footer reads `v0.4.0 · build <sha>`. The release links to `/changelog`,

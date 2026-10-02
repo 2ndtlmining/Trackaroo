@@ -3,6 +3,7 @@
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import ProductHeadline from '$lib/components/ProductHeadline.svelte';
 	import BuyPanel from '$lib/components/BuyPanel.svelte';
+	import OzbDealsPanel from '$lib/components/OzbDealsPanel.svelte';
 	import OfferList from '$lib/components/OfferList.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
@@ -20,7 +21,7 @@
 	import { toListingDisplays } from '$lib/listingsPanel';
 	import { asOfDate, buildSignals, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import { type ProductHistory, type AlertRow, type FxRate, type ProductIndexEntry } from '$lib/models';
+	import { type ProductHistory, type AlertRow, type FxRate, type ProductIndexEntry, type OzbDeal } from '$lib/models';
 
 	let {
 		data,
@@ -32,6 +33,9 @@
 			fx: FxRate | null;
 			msrpUsd: number | null;
 			today: string;
+			ozb: { live: OzbDeal[]; expired: OzbDeal[] };
+			ozbBest: number | null;
+			ozbNow: string;
 		};
 		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
 	} = $props();
@@ -182,6 +186,8 @@ label:
 	</div>
 
 	<BuyPanel {low} windows={buyWindows} {where} {signals} />
+
+	<OzbDealsPanel live={data.ozb.live} expired={data.ozb.expired} best={data.ozbBest} now={data.ozbNow} />
 
 	{#if hasChartData}
 		<div class="space-y-4">

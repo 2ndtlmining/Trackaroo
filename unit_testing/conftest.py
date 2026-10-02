@@ -223,3 +223,11 @@ def isolated_pipeline(monkeypatch, tmp_path):
 
     monkeypatch.setattr("heartbeat.ping", fake_ping)
     return calls
+
+
+# ozbargain.run() defaults to the real DB (it creates the ozb tables, upserts
+# deals and writes an ozb_polls row).
+@pytest.fixture(autouse=True)
+def _no_real_ozbargain_path(monkeypatch, tmp_path):
+    import ozbargain
+    monkeypatch.setattr(ozbargain, "DB_PATH", tmp_path / "ozb-guard.db")

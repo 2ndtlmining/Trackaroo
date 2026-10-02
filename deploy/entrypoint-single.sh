@@ -53,6 +53,9 @@
 #   TRACKAROO_DISCORD_WEBHOOK_URL / TRACKAROO_SMTP_* / TRACKAROO_ALERT_WEBHOOK_URL
 #                        Price-alert delivery (check_alerts.py) — all optional,
 #                        see .env.example
+#   OZB_ENABLED          0 = never start the OzBargain poll loop (default 1)
+#   OZB_POLL_HOURS       Comma list of local hours (zero-padded) to poll OzBargain
+#                        (default 07,09,11,13,15,17,19,21,23)
 #   SKIP_PIPELINE        1 = dashboard only: no boot catch-up, no scheduler, no
 #                        spec sync, no staleness loop -- nothing ever scrapes.
 #                        Used by CI's boot smoke test (--network none).
@@ -138,6 +141,27 @@ staleness_loop() {
     done
 }
 
+# OzBargain deal poller (#34): one poll (2 RSS GETs) every 2 hours, 07:00-23:00.
+# Same wall-clock shape as the loops above; the 10-minute tick keeps the poll near
+# the top of the hour and the date+hour last_run guard prevents a repeat.
+: "${OZB_ENABLED:=1}"
+: "${OZB_POLL_HOURS:=07,09,11,13,15,17,19,21,23}"
+run_ozbargain() {
+    log "Polling OzBargain..."
+    python ozbargain.py && log "OzBargain poll finished." || log "OzBargain poll finished with errors (next poll retries)."
+}
+ozb_loop() {
+    last_run=""
+    while true; do
+        hour=$(date '+%H')
+        stamp="$(date '+%Y-%m-%d')T$hour"
+        case ",$OZB_POLL_HOURS," in
+            *",$hour,"*) if [ "$last_run" != "$stamp" ]; then run_ozbargain; last_run="$stamp"; fi ;;
+        esac
+        sleep 600
+    done
+}
+
 # ── 1. Ensure the DB exists (init empty DB + seed watchlist) ──────────────
 python seed.py
 
@@ -172,6 +196,7 @@ fi
 # Weekly spec sync runs in its own background loop (see spec_sync_loop).
 spec_sync_loop &
 staleness_loop &
+[ "$OZB_ENABLED" != "0" ] && ozb_loop &
 
 # Catch-up: if the container was down over the run hour, whatever today is
 # still missing would be lost permanently (retailers only expose current

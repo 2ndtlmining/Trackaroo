@@ -268,3 +268,32 @@ CREATE TABLE IF NOT EXISTS fx_rates (
     source       TEXT NOT NULL,                    -- 'rba' or 'frankfurter'
     fetched_at   TEXT NOT NULL                     -- UTC 'YYYY-MM-DDTHH:MM:SSZ'
 );
+
+-- OzBargain deal feed (#34): community posts, never snapshots. Keep in step with migrate.OZB_TABLES_SQL.
+CREATE TABLE ozb_deals (
+    node_id        INTEGER PRIMARY KEY,
+    category       TEXT    NOT NULL,          -- 'gpu' | 'cpu' (the feed it came from)
+    title          TEXT    NOT NULL,
+    url            TEXT    NOT NULL,          -- the node page, never /goto/
+    price_aud      REAL,                      -- parsed from the title; NULL if none
+    retailer       TEXT,                      -- after " @ " in the title; NULL if none
+    votes_pos      INTEGER NOT NULL DEFAULT 0,
+    votes_neg      INTEGER NOT NULL DEFAULT 0,
+    comment_count  INTEGER NOT NULL DEFAULT 0,
+    posted_at      TEXT,
+    starts_at      TEXT,
+    expires_at     TEXT,
+    expired        INTEGER NOT NULL DEFAULT 0,
+    product_id     INTEGER REFERENCES products(id),  -- NULL = unmatched
+    first_seen_at  TEXT    NOT NULL,
+    last_seen_at   TEXT    NOT NULL,
+    alerted_at     TEXT
+);
+CREATE INDEX idx_ozb_deals_product ON ozb_deals(product_id, expired);
+
+CREATE TABLE ozb_polls (
+    polled_at  TEXT    PRIMARY KEY,
+    ok         INTEGER NOT NULL,
+    items      INTEGER NOT NULL DEFAULT 0,
+    error      TEXT
+);
