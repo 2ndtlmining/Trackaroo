@@ -383,6 +383,27 @@ container. That is the whole point of mapping them.
 See [DEPLOYMENT.md](DEPLOYMENT.md) for host scheduling, reverse-proxy notes,
 and monitoring.
 
+### Releases and the version in the footer
+
+The footer shows the release and the build, e.g. `v0.4.0 · build 328073f`.
+The release links to `/changelog`, which renders [`CHANGELOG.md`](CHANGELOG.md).
+`/healthz` reports both: `release` and `version` (the git SHA).
+
+- **Release number:** `web/package.json` `version` is the single source. It is
+  baked in at build time.
+- **Changelog:** each PR adds its lines under `## Unreleased` in `CHANGELOG.md`.
+- **Cutting a release:**
+  1. Run `python release.py X.Y.Z` from the repo root. It moves Unreleased into
+     `## X.Y.Z — <today>` and bumps `web/package.json` and its lockfile.
+  2. Commit, and merge.
+  3. Tag the merge commit and push the tag:
+     `git tag -a vX.Y.Z -m vX.Y.Z <sha> && git push origin vX.Y.Z`.
+  4. Redeploy.
+- **Version numbers:** the minor number goes up for features, the patch number
+  for fixes.
+- **Guard:** a test fails if the newest changelog release and `package.json`
+  disagree.
+
 ## Frontend (`web/`)
 
 SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard (sortable table — click a column header for ▲/▼ price/change/freshness sorting), `/products` (card grid grouped by product — each card shows a cheapest-in-stock trend sparkline, expandable variant listings with inline 7-day trend sparklines, compare checkboxes), `/compare?ids=` (side-by-side specs + per-retailer best prices for 2–4 same-category products), `/movers` (24h/7d/30d, sortable by window/abs-pct/price *and* clickable ▲/▼ column headers, per-row trend sparklines), `/product/[id]` (meta + uPlot history chart with low/high band and all-time/30d-avg chips + brand-grouped listings panel + spec panel + a **price alerts** panel to arm "tell me under $X" / restock alerts). A global **command palette** (Ctrl/Cmd+K) searches the tracked products from any page and jumps straight to a product (or offers a quick "Compare A vs B" when exactly two match); each result shows its snapshot-count badge. Retailer variant names are display-cased (`titleCase()` — e.g. `rtx`→`RTX`, `5600x`→`5600X`) at render time; the stored data stays raw.

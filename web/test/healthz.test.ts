@@ -47,7 +47,7 @@ describe('/healthz (#9)', () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get('cache-control')).toBe('no-store');
 		const body = await res.json();
-		expect(body).toMatchObject({ ok: true, version: 'abc1234' });
+		expect(body).toMatchObject({ ok: true, version: 'abc1234', release: __APP_RELEASE__ });
 		expect(body.retailers.map((r: { retailer: string; latestSnapshotDate: string | null }) => [r.retailer, r.latestSnapshotDate])).toEqual([
 			['scorptec', '2026-09-28'],
 			['umart', null]

@@ -12,7 +12,8 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 | [`README.md`](README.md) | Setup, commands, repo layout |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Spec (Part 1), watchlist scope rules + **how to add a product (Part 2 §7)**, decision log (Part 3) |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Running it — Docker and native |
-| [`STATUS.md`](STATUS.md) | Current state + changelog |
+| [`STATUS.md`](STATUS.md) | Current state + working log |
+| [`CHANGELOG.md`](CHANGELOG.md) | User-facing release notes, shown at `/changelog`; add a line under **Unreleased** in every PR, cut with `python release.py X.Y.Z` |
 | `docs/archive/` | Implemented/declined plans, kept for rationale |
 | `docs/proposals/` | Not-yet-built work (e.g. RAM tracking) |
 

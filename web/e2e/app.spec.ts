@@ -1,5 +1,6 @@
 ﻿import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { saleEventsInRange } from '../src/lib/saleEvents';
@@ -830,6 +831,24 @@ test('the footer names the running build (#3)', async ({ page }) => {
 	await goto(page, '/');
 	// vite dev has no TRACKAROO_VERSION, so the stamp reads "dev".
 	await expect(page.getByTestId('build-version')).toHaveText('build dev');
+});
+
+test('the footer release links to the changelog, which lists it first', async ({ page }) => {
+	const pkg = JSON.parse(readFileSync(path.join(here, '..', 'package.json'), 'utf8'));
+	await goto(page, '/');
+	const release = page.getByTestId('release-version');
+	await expect(release).toHaveText(`v${pkg.version}`);
+	await release.click();
+	await expect(page).toHaveURL(/\/changelog$/);
+	await expect(page.getByRole('heading', { level: 1, name: "What's new" })).toBeVisible();
+	await expect(page.getByTestId('release').first().getByRole('heading', { level: 2 })).toHaveText(
+		`v${pkg.version}`
+	);
+	// Issue references become links to GitHub.
+	await expect(page.getByRole('link', { name: '#16' })).toHaveAttribute(
+		'href',
+		'https://github.com/2ndtlmining/Trackaroo/issues/16'
+	);
 });
 
 test('error page is styled and offers retry (#29)', async ({ page }) => {

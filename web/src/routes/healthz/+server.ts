@@ -8,12 +8,13 @@
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import { getRetailerFreshness } from '$lib/server/repos';
-import { buildVersion } from '$lib/server/version';
+import { buildVersion, releaseVersion } from '$lib/server/version';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
 export function GET(): Response {
 	const version = buildVersion();
+	const release = releaseVersion();
 	try {
 		const retailers = getRetailerFreshness(getDb()).map((r) => ({
 			retailer: r.retailer,
@@ -21,10 +22,10 @@ export function GET(): Response {
 			lastRunAt: r.lastRunAt ?? null,
 			lastRunStatus: r.lastRunStatus ?? null
 		}));
-		return json({ ok: true, version, retailers }, { headers: NO_STORE });
+		return json({ ok: true, version, release, retailers }, { headers: NO_STORE });
 	} catch (e) {
 		return json(
-			{ ok: false, version, error: e instanceof Error ? e.message : String(e) },
+			{ ok: false, version, release, error: e instanceof Error ? e.message : String(e) },
 			{ status: 503, headers: NO_STORE }
 		);
 	}

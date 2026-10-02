@@ -43,6 +43,7 @@ const PAGES = [
 	'/deals',
 	'/movers',
 	'/discover',
+	'/changelog',
 	'/compare',
 	'/product/999999'
 ];
