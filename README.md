@@ -66,14 +66,14 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 1231 tests via pytest |
+| **Regression tests** | ✅ Complete | 1340 tests via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines, "Deal" badges), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), product-page "since tracked" chips (all-time low/high + 30-day average), price-drop & restock alerts panel on the product page, command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 1009 vitest + 179 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 1024 vitest + 184 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -137,6 +137,36 @@ python sync_specs.py --report-only
 # Run regression tests
 python -m pytest unit_testing/ -v
 ```
+
+## OzBargain deals
+
+Trackaroo reads OzBargain's RSS tag feeds (`/tag/video-card/feed` and `/tag/cpu/feed`)
+to show community deals on matching product pages, mark them on `/deals`, and send a
+Discord alert when a deal beats our best in-stock price.
+
+- **When:** `ozbargain.py` runs on its own loop in the container, separate from the 04:00
+  scrape, at the hours in `OZB_POLL_HOURS` (zero-padded, comma-separated, default
+  `07,09,11,13,15,17,19,21,23`, local time). `OZB_ENABLED=0` turns it off; it never
+  starts under `SKIP_PIPELINE=1`.
+- **Budget:** one poll is 2 GETs (one per feed), so the default is 18 requests a day.
+  RSS only: the `/goto/` redirect, `/api/` and `/search/` are never fetched, and the
+  deal link is always the OzBargain node page.
+- **Prices** are parsed from the post title. Coupon or saving amounts ("$50 off",
+  "Save $100", "$30 cashback") and non-AUD prices (US$, NZ$) are skipped; a post with no
+  usable price shows "price in post".
+- **Matching** uses the same chip-key matcher as discovery. Deals with ambiguous VRAM,
+  prebuilt PCs and bundles are stored but not attached to a product.
+- **Alert rule:** a live, matched deal alerts when its price is below the cheapest
+  in-stock, non-bundle, active listing at our retailers on the latest scrape date (or
+  when nothing is in stock), and its votes are not net-negative. "Live" means not
+  expired, started, with an expiry still in the future, and seen in the feed within the
+  last 7 days. Each deal alerts once, at most 5 are sent per poll, and a failed Discord
+  send is retried on the next poll. It needs `DISCORD_WEBHOOK_URL`.
+- **Dry run** (parse and match, print, no writes and no Discord):
+  `docker compose exec trackaroo python ozbargain.py --dry-run`
+- **Never price history:** deals live in their own `ozb_deals` and `ozb_polls` tables and
+  never enter `listings`, `price_snapshots`, charts or the deals maths. `check_ozbargain`
+  only ever warns (no successful poll in 24 hours).
 
 ## Discovering and adding new parts
 
@@ -335,6 +365,7 @@ docker run -d --name trackaroo -p 3000:3000 --restart unless-stopped \
 | Backups retained | 14 | `-e TRACKAROO_BACKUP_KEEP=30` |
 | Dashboard host port | 3000 | `-p 8080:3000` — the right-hand number must stay **3000** unless you also set `PORT`; `-p 2222:2222` without `PORT=2222` starts the container but nothing listens on it |
 | Spec-sync day / hour | Sun / 03 | `-e SPEC_SYNC_DOW=1 -e SPEC_SYNC_HOUR=12` |
+| OzBargain poll hours | `07,09,11,13,15,17,19,21,23` | `-e OZB_POLL_HOURS=08,20` (zero-padded); `-e OZB_ENABLED=0` disables |
 
 The timezone matters for correctness, not display: the scrapers stamp snapshots
 with the local date, so a UTC container running before 10:00 AEST would file
