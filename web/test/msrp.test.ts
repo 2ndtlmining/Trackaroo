@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { GST, msrpAud, msrpDelta, msrpExplanation } from '../src/lib/msrp';
+import {
+	GST,
+	MSRP_TONE_CLASS,
+	formatMsrpDelta,
+	isBelowMsrp,
+	msrpAud,
+	msrpDelta,
+	msrpExplanation,
+	msrpPhrase,
+	msrpTone
+} from '../src/lib/msrp';
 import type { FxRate } from '../src/lib/models';
 
 const fx = (audPerUsd: number, source = 'rba', rateDate = '2026-10-01'): FxRate => ({ rateDate, audPerUsd, source });
@@ -44,5 +54,36 @@ describe('msrpExplanation', () => {
 	it('maps frankfurter to ECB and shows unknown sources raw', () => {
 		expect(msrpExplanation(1099, fx(1.5, 'frankfurter'))).toContain('(ECB, 1 Oct 2026)');
 		expect(msrpExplanation(1099, fx(1.5, 'mystery'))).toContain('(mystery, 1 Oct 2026)');
+	});
+});
+
+describe('msrp presentation (Task 3)', () => {
+	it('tones: under at -2% or less, near within 2%, over at +2% or more', () => {
+		expect(msrpTone(-0.03)).toBe('under');
+		expect(msrpTone(-0.02)).toBe('under');
+		expect(msrpTone(-0.019)).toBe('near');
+		expect(msrpTone(0)).toBe('near');
+		expect(msrpTone(0.019)).toBe('near');
+		expect(msrpTone(0.02)).toBe('over');
+		expect(MSRP_TONE_CLASS).toEqual({ under: 'text-success', near: 'text-text-muted', over: 'text-warning' });
+	});
+	it('formats a signed whole percent, "–" when unknown', () => {
+		expect(formatMsrpDelta(-0.034)).toBe('−3%');
+		expect(formatMsrpDelta(0.12)).toBe('+12%');
+		expect(formatMsrpDelta(0.004)).toBe('0%');
+		expect(formatMsrpDelta(-0.004)).toBe('0%');
+		expect(formatMsrpDelta(null)).toBe('–');
+	});
+	it('phrases the line in words', () => {
+		expect(msrpPhrase(-0.034)).toBe('3% under US launch MSRP');
+		expect(msrpPhrase(0.12)).toBe('12% over US launch MSRP');
+		expect(msrpPhrase(0.004)).toBe('At US launch MSRP');
+	});
+	it('isBelowMsrp needs every input and a negative delta', () => {
+		expect(isBelowMsrp(100, 399, fx(1.5))).toBe(true);
+		expect(isBelowMsrp(500, 279, fx(1.5))).toBe(false);
+		expect(isBelowMsrp(100, null, fx(1.5))).toBe(false);
+		expect(isBelowMsrp(100, 399, null)).toBe(false);
+		expect(isBelowMsrp(null, 399, fx(1.5))).toBe(false);
 	});
 });

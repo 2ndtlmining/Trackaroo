@@ -11,6 +11,7 @@ import {
 	type DealFilters
 } from '$lib/deals';
 import { facetCounts } from '$lib/offers';
+import { isBelowMsrp } from '$lib/msrp';
 
 function param(url: URL, key: string): string | null {
 	const value = url.searchParams.get(key);
@@ -31,7 +32,12 @@ export function load({
 	const candidates = memo(db, 'dealCandidates', () => getDealCandidates(db));
 	// Facets count the rows the page can actually show, so "All 42" can't sit
 	// above 32 rows (28-Sep finding).
-	const deals = shownDeals(toDeals(candidates));
+	const fx = getLatestFxRate(db);
+	// ?below_msrp=1 (Task 3) narrows before the facets are counted, so every
+	// chip still counts the rows it would show.
+	const belowMsrp = url.searchParams.get('below_msrp') === '1';
+	const shown = shownDeals(toDeals(candidates));
+	const deals = belowMsrp ? shown.filter((d) => isBelowMsrp(d.price, d.msrpUsd, fx)) : shown;
 
 	// Earliest history across all candidates, not just the shown ones, so the
 	// subtitle states the true depth of "all-time" even when the deepest
@@ -56,7 +62,8 @@ export function load({
 	const visible = filterDeals(deals, filters);
 
 	return {
-		fx: getLatestFxRate(db),
+		fx,
+		belowMsrp,
 		belowAverage: belowAverage(visible),
 		atAllTimeLow: atAllTimeLow(visible),
 		filters,

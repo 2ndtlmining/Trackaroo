@@ -20,13 +20,18 @@
 	import { toListingDisplays } from '$lib/listingsPanel';
 	import { asOfDate, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import { type ProductHistory, type AlertRow, type ProductIndexEntry } from '$lib/models';
+	import { type ProductHistory, type AlertRow, type FxRate, type ProductIndexEntry } from '$lib/models';
 
 	let {
 		data,
 		form
 	}: {
-		data: ProductHistory & { alerts: AlertRow[]; productIndex: ProductIndexEntry[] };
+		data: ProductHistory & {
+			alerts: AlertRow[];
+			productIndex: ProductIndexEntry[];
+			fx: FxRate | null;
+			msrpUsd: number | null;
+		};
 		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
 	} = $props();
 
@@ -152,6 +157,8 @@ label:
 				listingCount={series.length}
 				snapshotCount={totalPoints}
 				{span}
+				msrpUsd={data.msrpUsd}
+				fx={data.fx}
 			/>
 		</div>
 		{#if product.last_snapshot_at}

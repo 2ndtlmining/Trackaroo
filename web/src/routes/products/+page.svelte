@@ -297,6 +297,7 @@
 						price={shownPrice(group, view)}
 						retailer={view.retailer ?? undefined}
 						outOfStock={shownStock(group, view) === 'out'}
+						fx={data.fx}
 						compareSelected={compareIds.has(group.productId)}
 						compareDisabled={!compareIds.has(group.productId) && compareIds.size >= MAX_COMPARE}
 						onToggleCompare={toggleCompare}
@@ -369,6 +370,7 @@
 							price={shownPrice(item, view)}
 							retailer={view.retailer ?? undefined}
 							outOfStock={shownStock(item, view) === 'out'}
+							fx={data.fx}
 							compareSelected={compareIds.has(item.productId)}
 							compareDisabled={!compareIds.has(item.productId) && compareIds.size >= MAX_COMPARE}
 							onToggleCompare={toggleCompare}
@@ -399,6 +401,7 @@
 									price={shownPrice(item, view)}
 									retailer={view.retailer ?? undefined}
 									outOfStock={shownStock(item, view) === 'out'}
+							fx={data.fx}
 									compareSelected={compareIds.has(item.productId)}
 									compareDisabled={!compareIds.has(item.productId) && compareIds.size >= MAX_COMPARE}
 									onToggleCompare={toggleCompare}

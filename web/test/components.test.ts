@@ -18,6 +18,7 @@ import CategorySection from '../src/lib/components/CategorySection.svelte';
 import BuyPanel from '../src/lib/components/BuyPanel.svelte';
 import PriceDataTable from '../src/lib/components/PriceDataTable.svelte';
 import SegmentedControl from '../src/lib/components/SegmentedControl.svelte';
+import MsrpLine from '../src/lib/components/MsrpLine.svelte';
 import { offer as offerRow } from './helpers/offers';
 import type { LatestListing, ProductGroup, Series, CheapestListing, SparklinePoint, Mover } from '../src/lib/server/repos';
 import type { ListingRow, SpecRow, SnapshotRow } from '../src/lib/server/db';
@@ -604,7 +605,7 @@ describe('OfferRow', () => {
 
 	it('labels the outbound link "Buy at <retailer>" with an accessible name (#6)', () => {
 		const html = renderComponent(OfferRow, { offer: offerRow(), avg30: 1400 });
-		expect(html).toContain('Buy at Scorptec ↗');
+		expect(html).toMatch(/Buy at Scorptec[^<]*(<!---->)*<svg[^>]*aria-hidden="true"/);
 		expect(html).toContain('aria-label="Buy at Scorptec (opens in a new tab)"');
 		expect(html).not.toContain('View →');
 	});
@@ -1361,6 +1362,70 @@ describe('ProductRow catalog columns (#23, U5)', () => {
 		expect(html).toContain('Cores:');
 		expect(html).toContain('>8<');
 		expect(html).toContain('Released: </span>—');
+	});
+	const fx = { rateDate: '2026-10-01', audPerUsd: 1.5, source: 'rba' };
+
+	it('shows a toned whole-percent vs MSRP from lg up (Task 3)', () => {
+		// 899 vs 549 x 1.5 x 1.1 = 905.85 -> within 2%: muted
+		const near = renderComponent(ProductRow, { group: { ...row, msrpUsd: 549 }, fx });
+		expect(near).toMatch(/data-testid="row-msrp"[^>]*>/);
+		expect(near).toContain('−1%');
+		expect(near).toContain('vs MSRP: ');
+		// 899 vs 499 x 1.65 = 823.35 -> 9% over: warning
+		const over = renderComponent(ProductRow, { group: { ...row, msrpUsd: 499 }, fx });
+		expect(over).toMatch(/text-warning[^>]*>\+9%/);
+		// 899 vs 599 x 1.65 = 988.35 -> 9% under: success
+		const under = renderComponent(ProductRow, { group: { ...row, msrpUsd: 599 }, fx });
+		expect(under).toMatch(/text-success[^>]*>−9%/);
+	});
+
+	it('shows "–" vs MSRP without an MSRP or a rate', () => {
+		const html = renderComponent(ProductRow, { group: { ...row, msrpUsd: null }, fx });
+		expect(html).toMatch(/vs MSRP: <\/span><span[^>]*>–</);
+		const noFx = renderComponent(ProductRow, { group: { ...row, msrpUsd: 599 } });
+		expect(noFx).toMatch(/vs MSRP: <\/span><span[^>]*>–</);
+	});
+});
+
+describe('MsrpLine (Task 3)', () => {
+	const fx = { rateDate: '2026-10-01', audPerUsd: 1.5, source: 'rba' };
+
+	it('renders nothing when any input is missing', () => {
+		expect(renderComponent(MsrpLine, { price: null, msrpUsd: 1099, fx })).not.toContain('MSRP');
+		expect(renderComponent(MsrpLine, { price: 1700, msrpUsd: null, fx })).not.toContain('MSRP');
+		expect(renderComponent(MsrpLine, { price: 1700, msrpUsd: 1099, fx: null })).not.toContain('MSRP');
+	});
+
+	it('states the delta, the AUD equivalent and an explanation toggle', () => {
+		// 1099 x 1.65 = 1813.35; 1700 is 6% under
+		const html = renderComponent(MsrpLine, { price: 1700, msrpUsd: 1099, fx });
+		expect(html).toContain('6% under US launch MSRP');
+		expect(html.replace(/<[^>]+>/g, '')).toContain('≈A$1,813 inc. GST');
+		expect(html).toContain('aria-expanded="false"');
+		expect(html).toMatch(/aria-controls="[^"]+"/);
+		expect(html).toContain('aria-label="How the MSRP is converted"');
+		// Every icon is decorative.
+		const svgs = html.match(/<svg[^>]*>/g) ?? [];
+		expect(svgs.length).toBe(2);
+		for (const svg of svgs) expect(svg).toContain('aria-hidden="true"');
+	});
+
+	it('opens the explanation and closes it on Escape', async () => {
+		const target = document.createElement('div');
+		document.body.appendChild(target);
+		const comp = mount(MsrpLine as never, { target, props: { price: 1700, msrpUsd: 1099, fx } });
+		const button = target.querySelector('button')!;
+		button.click();
+		await tick();
+		expect(button.getAttribute('aria-expanded')).toBe('true');
+		const panel = target.querySelector(`#${button.getAttribute('aria-controls')}`)!;
+		expect(panel.textContent).toContain('AUD/USD');
+		expect(panel.textContent).toContain('GST');
+		button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		await tick();
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+		unmount(comp);
+		target.remove();
 	});
 });
 

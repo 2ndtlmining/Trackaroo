@@ -8,7 +8,9 @@ export const COL = {
 	// -mx-2: the row's padded compare label overhangs its cell (ProductRow).
 	compare: '-mx-2 w-14 shrink-0',
 	price: 'w-24 shrink-0',
-	model: 'min-w-0 flex-1 basis-40',
+	// basis-32: at lg the row also carries the vs-MSRP column, and a wider
+	// basis would wrap the model onto its own line there.
+	model: 'min-w-0 flex-1 basis-32',
 	spec: 'hidden w-16 shrink-0 text-right md:block',
 	socket: 'hidden w-16 shrink-0 xl:block',
 	threads: 'hidden w-14 shrink-0 text-right xl:block',
@@ -17,6 +19,7 @@ export const COL = {
 	trend: 'hidden w-14 shrink-0 lg:block',
 	brand: 'hidden w-20 shrink-0 xl:flex',
 	delta: 'w-36 shrink-0',
+	msrp: 'hidden w-16 shrink-0 text-right lg:block',
 	retailer: 'w-20 shrink-0 text-right'
 } as const;
 
@@ -46,6 +49,7 @@ export function catalogColumns(category: Category, priceAt: string | null): Cata
 		{ key: 'trend', label: '30-day' },
 		...(cpu ? [] : [{ key: 'brand', label: 'Brand' } as CatalogColumn]),
 		{ key: 'delta', label: 'vs average' },
+		{ key: 'msrp', label: 'vs MSRP', sort: 'msrp' },
 		{ key: 'retailer', label: 'Retailer' }
 	];
 }

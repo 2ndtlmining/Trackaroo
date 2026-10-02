@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import { copyText } from '$lib/clipboard';
 	import { formatAud, formatShortDate } from '$lib/formats';
@@ -67,7 +68,7 @@
 						</span>
 						<span class="text-xs text-text-muted">{p.listingCount} listings · {p.retailers.map(label).join(', ')}</span>
 						<span class="tabular-nums text-sm text-text">
-							from {#if p.minPriceUrl}<a href={p.minPriceUrl} target="_blank" rel="noopener noreferrer">{money(p.minPrice)} ↗</a>{:else}{money(p.minPrice)}{/if}
+							from {#if p.minPriceUrl}<a href={p.minPriceUrl} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5">{money(p.minPrice)}<ArrowUpRight size={13} aria-hidden="true" /></a>{:else}{money(p.minPrice)}{/if}
 						</span>
 						<span class="flex gap-2">
 							<form method="POST" action="?/track"><input type="hidden" name="id" value={p.id} /><button class="min-h-6 rounded-md border border-accent bg-accent-soft px-3 text-sm font-medium text-accent hover:bg-surface-hover">Track</button></form>

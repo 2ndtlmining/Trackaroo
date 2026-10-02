@@ -1659,3 +1659,80 @@ test.describe.serial('/discover (#16)', () => {
 		await expect(page.getByTestId('discover-untracked').getByText('GeForce RTX 5050 8GB')).toBeVisible();
 	});
 });
+
+// Task 3 (#32): the seed pins two deal fixtures against a 1.5 AUD/USD rate, so
+// MSRP in AUD = USD x 1.65: E2E Deal Demo GPU A$100 vs US$399 (85% under),
+// E2E New Low GPU A$500 vs US$279 (9% over).
+function productIdByModel(model: string): number {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		const row = db.prepare('SELECT id FROM products WHERE model = ?').get(model) as { id: number };
+		return row.id;
+	} finally {
+		db.close();
+	}
+}
+
+test.describe('MSRP cues (Task 3)', () => {
+	test('the product page states the gap to US launch MSRP and explains it', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E Deal Demo GPU')}`);
+		const line = page.getByTestId('msrp-line');
+		await expect(line).toContainText('85% under US launch MSRP');
+		await expect(line).toContainText('≈A$658 inc. GST');
+		const info = line.getByRole('button', { name: 'How the MSRP is converted' });
+		await expect(info).toHaveAttribute('aria-expanded', 'false');
+		await info.click();
+		await expect(info).toHaveAttribute('aria-expanded', 'true');
+		const panel = page.locator(`#${await info.getAttribute('aria-controls')}`);
+		await expect(panel).toBeVisible();
+		await expect(panel).toContainText('US$399');
+		await expect(panel).toContainText('AUD/USD');
+		await expect(panel).toContainText('GST');
+		await page.keyboard.press('Escape');
+		await expect(info).toHaveAttribute('aria-expanded', 'false');
+		await expect(panel).toBeHidden();
+	});
+
+	test('a price above MSRP reads "over"', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E New Low GPU')}`);
+		await expect(page.getByTestId('msrp-line')).toContainText('9% over US launch MSRP');
+	});
+
+	test('a product without an MSRP shows no MSRP line', async ({ page }) => {
+		await goto(page, '/product/2');
+		await expect(page.getByTestId('msrp-line')).toHaveCount(0);
+	});
+
+	test('the catalogue sorts by vs MSRP, cheapest against MSRP first', async ({ page }) => {
+		await goto(page, '/products?category=gpu&sort=msrp');
+		const header = page.getByRole('columnheader', { name: /^vs MSRP/ });
+		await expect(header).toHaveAttribute('aria-sort', 'ascending');
+		const first = page.getByTestId('catalog-row').first();
+		await expect(first.getByRole('link')).toHaveText('E2E Deal Demo GPU 16GB');
+		await expect(first.getByTestId('row-msrp')).toContainText('−85%');
+		await expect(page.locator('select[name="sort"] option[value="msrp"]').first()).toHaveText('vs MSRP');
+	});
+
+	test('/deals?below_msrp=1 lists only deals under MSRP', async ({ page }) => {
+		await goto(page, '/deals?below_msrp=1');
+		await expect(page.getByRole('button', { name: 'Below MSRP' })).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU', exact: true })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'E2E New Low GPU', exact: true })).toHaveCount(0);
+		const values = await page.getByTestId('deal-msrp-value').allTextContents();
+		expect(values.length).toBeGreaterThan(0);
+		for (const v of values) expect(v.trim()).toMatch(/^−/);
+	});
+
+	test('the Below MSRP toggle writes ?below_msrp=1 and every deal row shows vs MSRP', async ({ page }) => {
+		await goto(page, '/deals');
+		const rows = page.getByTestId('deal-row');
+		await expect(rows.first().getByTestId('deal-msrp-value')).toBeVisible();
+		expect(await page.getByTestId('deal-msrp-value').count()).toBe(await rows.count());
+		const toggle = page.getByRole('button', { name: 'Below MSRP' });
+		await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+		await toggle.click();
+		await expect(page).toHaveURL(/below_msrp=1/);
+		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('link', { name: 'E2E New Low GPU', exact: true })).toHaveCount(0);
+	});
+});

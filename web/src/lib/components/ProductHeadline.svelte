@@ -1,20 +1,27 @@
 <script lang="ts">
+	import MsrpLine from './MsrpLine.svelte';
 	import PriceRangeBar from './PriceRangeBar.svelte';
 	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
 	import { formatAud, formatPct } from '$lib/formats';
 	import { avgWindowLabel, deltaPresentation } from '$lib/offers';
+	import type { FxRate } from '$lib/models';
 	import type { Headline } from '$lib/productHeadline';
 
 	let {
 		headline,
 		listingCount,
 		snapshotCount,
-		span
+		span,
+		msrpUsd = null,
+		fx = null
 	}: {
 		headline: Headline;
 		listingCount: number;
 		snapshotCount: number;
 		span: string;
+		// US launch MSRP and the AUD/USD rate, for the vs-MSRP line (Task 3).
+		msrpUsd?: number | null;
+		fx?: FxRate | null;
 	} = $props();
 
 	const retailerLabel = $derived(
@@ -41,6 +48,7 @@
 		{#if retailerLabel}
 			<p class="text-sm text-text-muted">at {retailerLabel}</p>
 		{/if}
+		<MsrpLine price={headline.currentPrice} {msrpUsd} {fx} />
 	{:else}
 		<p class="text-sm text-text-muted">No in-stock listings right now.</p>
 		{#if headline.allTimeLow !== null && headline.allTimeHigh !== null}

@@ -29,3 +29,42 @@ export function msrpExplanation(msrpUsd: number, fx: FxRate): string {
 	const year = fx.rateDate.slice(0, 4);
 	return `${formatUsd(msrpUsd)} × ${fx.audPerUsd.toFixed(4)} AUD/USD (${source}, ${formatShortDate(fx.rateDate)} ${year}) + ${Math.round(GST * 100)}% GST`;
 }
+
+// Presentation of msrpDelta (Task 3). Within 2% either way reads as "at MSRP"
+// (muted), the same neutral band the vs-average cue uses.
+export type MsrpTone = 'under' | 'near' | 'over';
+const NEAR = 0.02;
+
+export function msrpTone(delta: number): MsrpTone {
+	if (delta <= -NEAR) return 'under';
+	if (delta >= NEAR) return 'over';
+	return 'near';
+}
+
+// Existing tokens only: success when under, muted when near, warning when over.
+export const MSRP_TONE_CLASS: Record<MsrpTone, string> = {
+	under: 'text-success',
+	near: 'text-text-muted',
+	over: 'text-warning'
+};
+
+// A signed whole percent ("−3%", "+12%", "0%"), or "–" when unknown.
+export function formatMsrpDelta(delta: number | null): string {
+	if (delta === null) return '–';
+	const pct = Math.round(Math.abs(delta) * 100);
+	if (pct === 0) return '0%';
+	return `${delta < 0 ? '−' : '+'}${pct}%`;
+}
+
+// "3% under US launch MSRP", "12% over US launch MSRP", "At US launch MSRP".
+export function msrpPhrase(delta: number): string {
+	const pct = Math.round(Math.abs(delta) * 100);
+	if (pct === 0) return 'At US launch MSRP';
+	return `${pct}% ${delta < 0 ? 'under' : 'over'} US launch MSRP`;
+}
+
+// For /deals?below_msrp=1: any price under MSRP in today's AUD, however slight.
+export function isBelowMsrp(price: number | null, msrpUsd: number | null, fx: FxRate | null): boolean {
+	const delta = msrpDelta(price, msrpAud(msrpUsd, fx));
+	return delta !== null && delta < 0;
+}

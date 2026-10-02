@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import { retailerLabel } from '$lib/filters';
 	import { formatAud, formatDate } from '$lib/formats';
 	import type { LowSummary, RetailerOffer, WindowStats } from '$lib/buySignals';
@@ -90,14 +91,15 @@
 						<td class="num py-1.5 pr-3 text-right text-text-muted">{r.inStock} of {r.listings}</td>
 						<td class="py-1.5 text-right">
 							{#if r.cheapestUrl && r.cheapest !== null}
-								<!-- Link text is "Buy ↗", not "Buy at X": e2e counts offer-row
+								<!-- Link text is "Buy" plus an arrow icon, not "Buy at X": e2e counts offer-row
 								     "Buy at" links, and the aria-label carries the full name. -->
 								<a
 									href={r.cheapestUrl}
 									target="_blank"
 									rel="noopener noreferrer"
 									aria-label="Buy at {retailerLabel(r.retailer)} for {formatAud(r.cheapest)} (opens in a new tab)"
-									class="text-xs text-accent">Buy ↗</a
+									class="inline-flex items-center gap-0.5 text-xs text-accent"
+									>Buy<ArrowUpRight size={12} aria-hidden="true" /></a
 								>
 							{/if}
 						</td>

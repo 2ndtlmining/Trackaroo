@@ -5,6 +5,8 @@
 	import { formatAud, formatMonthYear, formatPct, formatTrend } from '$lib/formats';
 	import { COL } from '$lib/catalogColumns';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30 } from '$lib/offers';
+	import type { FxRate } from '$lib/models';
+	import { MSRP_TONE_CLASS, formatMsrpDelta, msrpAud, msrpDelta, msrpTone } from '$lib/msrp';
 	import type { CatalogRow } from '$lib/productIndex';
 
 	let {
@@ -14,7 +16,8 @@
 		onToggleCompare,
 		price = undefined,
 		retailer = undefined,
-		outOfStock = false
+		outOfStock = false,
+		fx = null
 	}: {
 		// neverListed: tracked in the watchlist but no retailer has ever listed
 		// it — a different statement from "listed, currently out of stock".
@@ -33,6 +36,8 @@
 		// The shown price is an out-of-stock one (a retailer view with in_stock
 		// off, final review #1): muted, labelled, and never a deal cue.
 		outOfStock?: boolean;
+		// The AUD/USD rate for the vs-MSRP column (Task 3); "–" without it.
+		fx?: FxRate | null;
 	} = $props();
 
 	const shown = $derived(price === undefined ? group.cheapestInStockPrice : price);
@@ -40,6 +45,12 @@
 	const retailerLabel = $derived(retailerSlug ? lookupRetailerLabel(retailerSlug) : null);
 
 	const deltaPct = $derived(outOfStock ? null : deltaVsAvg30(shown, group.avg30 ?? null));
+	// Same price the msrp sort ranks by (catalogView.shownPrice). An
+	// out-of-stock price is muted: it is never a deal cue.
+	const vsMsrp = $derived(msrpDelta(shown, msrpAud(group.msrpUsd ?? null, fx)));
+	const vsMsrpClass = $derived(
+		vsMsrp === null || outOfStock ? 'text-text-muted' : MSRP_TONE_CLASS[msrpTone(vsMsrp)]
+	);
 	const cpu = $derived(group.category === 'cpu');
 	const trend = $derived(formatTrend(group.sparkline ?? []));
 
@@ -160,6 +171,12 @@
 			<span class="text-text-muted">Not enough history</span>
 		{/if}
 	</span>
+
+	<span class="{COL.msrp} text-xs" role="cell" data-testid="row-msrp"
+		><span class="sr-only">{'vs MSRP: '}</span><span class="num font-medium {vsMsrpClass}"
+			>{formatMsrpDelta(vsMsrp)}</span
+		></span
+	>
 
 	<span class="{COL.retailer} text-xs text-text-muted" role="cell">{retailerLabel ?? ''}</span>
 </div>

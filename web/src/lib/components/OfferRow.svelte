@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import Badge from './Badge.svelte';
 	import BrandIcon from './BrandIcon.svelte';
 	import StockBadge from './StockBadge.svelte';
@@ -12,6 +13,7 @@
 		titleCase,
 		todayIso
 	} from '$lib/formats';
+	import { MSRP_TONE_CLASS, formatMsrpDelta, msrpTone } from '$lib/msrp';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30, type ListingDisplay } from '$lib/offers';
 
 	let {
@@ -23,7 +25,8 @@
 		avgPoints,
 		saving,
 		lowSince,
-		nearLowSince
+		nearLowSince,
+		vsMsrp
 	}: {
 		offer: ListingDisplay;
 		avg30: number | null;
@@ -47,6 +50,9 @@
 		// 28-Sep finding). Mutually exclusive with lowSince; lowSince wins if
 		// both are somehow given.
 		nearLowSince?: string | null;
+		// /deals only (Task 3): the price against US launch MSRP in today's AUD
+		// (msrpDelta). null shows "–"; undefined leaves the cell out.
+		vsMsrp?: number | null;
 	} = $props();
 
 	const retailerLabel = $derived(lookupRetailerLabel(offer.retailer));
@@ -90,6 +96,14 @@
 			{offer.brand} · {retailerLabel}
 			{#if offer.lastSeen}
 				· seen {formatSeenDate(offer.lastSeen, todayIso())}
+			{/if}
+			{#if vsMsrp !== undefined}
+				<span data-testid="deal-msrp"
+					>· vs MSRP <span
+						class="num font-medium {vsMsrp === null ? 'text-text-muted' : MSRP_TONE_CLASS[msrpTone(vsMsrp)]}"
+						data-testid="deal-msrp-value">{formatMsrpDelta(vsMsrp)}</span
+					></span
+				>
 			{/if}
 		</span>
 	</div>
@@ -143,8 +157,9 @@
 		target="_blank"
 		rel="noopener noreferrer"
 		aria-label="Buy at {retailerLabel} (opens in a new tab)"
-		class="order-6 shrink-0 text-xs text-accent"
+		class="order-6 inline-flex shrink-0 items-center gap-0.5 text-xs text-accent"
 	>
-		Buy at {retailerLabel} ↗
+		Buy at {retailerLabel}
+		<ArrowUpRight size={12} aria-hidden="true" />
 	</a>
 </div>

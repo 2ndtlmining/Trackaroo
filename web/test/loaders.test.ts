@@ -250,6 +250,16 @@ describe('MSRP data (#32)', () => {
 		for (const d of [...data.belowAverage, ...data.atAllTimeLow]) expect(d).toHaveProperty('msrpUsd');
 	});
 
+	it('/deals?below_msrp=1 keeps only rows under MSRP: none without a rate (Task 3)', async () => {
+		const { load } = await import('../src/routes/deals/+page.server');
+		const all = load({ url: new URL('http://x/deals'), setHeaders: noopSetHeaders } as any);
+		expect(all.belowMsrp).toBe(false);
+		const data = load({ url: new URL('http://x/deals?below_msrp=1'), setHeaders: noopSetHeaders } as any);
+		expect(data.belowMsrp).toBe(true);
+		expect([...data.belowAverage, ...data.atAllTimeLow]).toEqual([]);
+		expect(data.totals.category).toBe(0);
+	});
+
 	it('/product/[id] returns fx and msrpUsd', async () => {
 		const { load } = await import('../src/routes/product/[id]/+page.server');
 		const { getDb } = await import('../src/lib/server/db');
