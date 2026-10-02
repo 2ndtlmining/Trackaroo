@@ -6,27 +6,36 @@ Rewrites CHANGELOG.md (a fresh empty "## Unreleased" stays on top) and bumps
 the version in web/package.json and web/package-lock.json. web/package.json is
 the single source the site reads (footer, /changelog, /healthz `release`).
 
+All three files are written or none is: the repo lives in OneDrive, where a
+locked file is a realistic failure halfway through.
+
 It does not commit, tag or push. Afterwards: commit, merge, then tag the merge
 commit (`git tag -a vX.Y.Z -m "vX.Y.Z" <sha> && git push origin vX.Y.Z`).
 """
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import date
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
-UNRELEASED = "## Unreleased"
+UNRELEASED_RE = re.compile(r"^## Unreleased[ \t]*$", re.M)
+NEXT_RELEASE_RE = re.compile(r"^## ", re.M)
+BULLET_RE = re.compile(r"^\s*[-*] \S", re.M)
+TMP_SUFFIX = ".release-tmp"
 
 
 class ReleaseError(Exception):
     pass
 
 
-def _parse(version: str) -> Tuple[int, ...]:
+def _parse(version: str, what: str) -> Tuple[int, ...]:
+    if not SEMVER.match(version):
+        raise ReleaseError(f"{what} must be X.Y.Z, got {version!r}")
     return tuple(int(p) for p in version.split("."))
 
 
@@ -37,15 +46,12 @@ def _read(path: Path) -> Tuple[str, str]:
     return raw.replace("\r\n", "\n"), newline
 
 
-def _write(path: Path, text: str, newline: str) -> None:
-    path.write_bytes(text.replace("\n", newline).encode("utf-8"))
-
-
 def _bump_json_versions(text: str, old: str, new: str, count: int) -> str:
-    """Replace the first `count` top-level-ish "version": "<old>" entries.
+    """Replace the first `count` "version": "<old>" entries.
 
-    package.json has one; package-lock.json has the root and packages[""].
-    Dependencies further down that share the number are left alone.
+    package.json has one; package-lock.json has the root and packages[""],
+    which come first in the file. The caller has already checked both hold
+    `old`, so a dependency further down sharing the number is never reached.
     """
     pattern = re.compile(r'("version":\s*")' + re.escape(old) + '"')
     result, n = pattern.subn(r"\g<1>" + new + '"', text, count=count)
@@ -54,45 +60,80 @@ def _bump_json_versions(text: str, old: str, new: str, count: int) -> str:
     return result
 
 
-def release(version: str, root: Path = ROOT, today: Optional[date] = None) -> None:
-    if not SEMVER.match(version):
-        raise ReleaseError(f"version must be X.Y.Z, got {version!r}")
+def _write_all(files: Dict[Path, Tuple[str, str]]) -> None:
+    """Write every file or none: temp siblings first, then swap them in.
+
+    If a swap fails, the files already swapped are put back.
+    """
+    originals = {path: path.read_bytes() for path in files}
+    tmps = {}
+    try:
+        for path, (text, newline) in files.items():
+            tmp = path.with_name(path.name + TMP_SUFFIX)
+            tmp.write_bytes(text.replace("\n", newline).encode("utf-8"))
+            tmps[path] = tmp
+        done = []
+        try:
+            for path, tmp in tmps.items():
+                os.replace(tmp, path)
+                done.append(path)
+        except OSError:
+            for path in done:
+                path.write_bytes(originals[path])
+            raise
+    except OSError as e:
+        raise ReleaseError(f"could not write the release, nothing changed: {e}") from e
+    finally:
+        for tmp in tmps.values():
+            if tmp.exists():
+                tmp.unlink()
+
+
+def release(version: str, root: Optional[Path] = None, today: Optional[date] = None) -> None:
+    root = root or ROOT
+    new = _parse(version, "version")
 
     changelog_path = root / "CHANGELOG.md"
     package_path = root / "web" / "package.json"
     lock_path = root / "web" / "package-lock.json"
 
-    current = json.loads(package_path.read_text(encoding="utf-8"))["version"]
-    if _parse(version) <= _parse(current):
-        raise ReleaseError(f"version must be greater than {current}, got {version}")
-
-    changelog, cl_nl = _read(changelog_path)
-    start = changelog.find(UNRELEASED + "\n")
-    if start < 0:
-        raise ReleaseError("CHANGELOG.md has no '## Unreleased' heading")
-    body_start = start + len(UNRELEASED) + 1
-    nxt = changelog.find("\n## ", body_start)
-    body_end = nxt + 1 if nxt >= 0 else len(changelog)
-    notes = changelog[body_start:body_end].strip("\n")
-    if not notes.strip():
-        raise ReleaseError("the Unreleased section is empty: nothing to release")
-
-    stamp = (today or date.today()).isoformat()
-    new_changelog = (
-        changelog[:start]
-        + f"{UNRELEASED}\n\n## {version} — {stamp}\n\n{notes}\n\n"
-        + changelog[body_end:]
-    )
-
     package, pkg_nl = _read(package_path)
     lock, lock_nl = _read(lock_path)
-    new_package = _bump_json_versions(package, current, version, 1)
-    new_lock = _bump_json_versions(lock, current, version, 2)
+    current = json.loads(package)["version"]
+    if new <= _parse(current, "web/package.json version"):
+        raise ReleaseError(f"version must be greater than {current}, got {version}")
+    lock_json = json.loads(lock)
+    lock_versions = (lock_json.get("version"), lock_json.get("packages", {}).get("", {}).get("version"))
+    if lock_versions != (current, current):
+        raise ReleaseError(
+            f"web/package-lock.json is out of step with package.json ({current}): "
+            f"found {lock_versions}; run npm install in web/ first"
+        )
 
-    # Every check passed: write all three.
-    _write(changelog_path, new_changelog, cl_nl)
-    _write(package_path, new_package, pkg_nl)
-    _write(lock_path, new_lock, lock_nl)
+    changelog, cl_nl = _read(changelog_path)
+    heading = UNRELEASED_RE.search(changelog)
+    if not heading:
+        raise ReleaseError("CHANGELOG.md has no '## Unreleased' heading")
+    body_start = heading.end()
+    nxt = NEXT_RELEASE_RE.search(changelog, body_start)
+    body_end = nxt.start() if nxt else len(changelog)
+    notes = changelog[body_start:body_end].strip("\n")
+    if not BULLET_RE.search(notes):
+        raise ReleaseError("the Unreleased section has no bullet points: nothing to release")
+
+    stamp = (today or date.today()).isoformat()
+    rest = changelog[body_end:]
+    new_changelog = (
+        changelog[: heading.start()]
+        + f"## Unreleased\n\n## {version} — {stamp}\n\n{notes}\n"
+        + ("\n" + rest if rest else "")
+    )
+
+    _write_all({
+        changelog_path: (new_changelog, cl_nl),
+        package_path: (_bump_json_versions(package, current, version, 1), pkg_nl),
+        lock_path: (_bump_json_versions(lock, current, version, 2), lock_nl),
+    })
 
 
 def main(argv=None) -> int:
@@ -101,7 +142,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         release(args.version)
-    except ReleaseError as e:
+    except (ReleaseError, OSError, KeyError, ValueError) as e:
         print(f"release: {e}", file=sys.stderr)
         return 1
     print(f"Released {args.version} in CHANGELOG.md and web/package.json.")

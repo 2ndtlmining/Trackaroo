@@ -41,14 +41,15 @@
 	<footer class="border-t border-border">
 		<div class="mx-auto max-w-6xl px-4 py-4 text-xs text-text-muted">
 			Trackaroo — AU CPU &amp; GPU price tracker · Logos are trademarks of their respective owners
-			·
-			<a
-				href="/changelog"
-				class="underline underline-offset-2 hover:text-text"
-				data-testid="release-version"
-				title="What's new in this release">v{data.release}</a
+			· <span data-testid="version-line"
+				><a
+					href="/changelog"
+					class="underline underline-offset-2 hover:text-text"
+					data-testid="release-version"
+					aria-label="v{data.release}, what's new">v{data.release}</a
+				>
+				· <span data-testid="build-version">build {data.version}</span></span
 			>
-			<span data-testid="build-version">build {data.version}</span>
 		</div>
 	</footer>
 	<CommandPalette

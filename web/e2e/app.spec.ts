@@ -838,6 +838,7 @@ test('the footer release links to the changelog, which lists it first', async ({
 	await goto(page, '/');
 	const release = page.getByTestId('release-version');
 	await expect(release).toHaveText(`v${pkg.version}`);
+	await expect(page.getByTestId('version-line')).toHaveText(`v${pkg.version} · build dev`);
 	await release.click();
 	await expect(page).toHaveURL(/\/changelog$/);
 	await expect(page.getByRole('heading', { level: 1, name: "What's new" })).toBeVisible();

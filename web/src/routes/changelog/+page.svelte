@@ -31,6 +31,9 @@
 						</time>
 					{/if}
 				</div>
+				{#each release.intro as para, k (k)}
+					<p class="changelog-list mt-3 text-sm text-text-muted">{@html renderInline(para)}</p>
+				{/each}
 				{#each release.sections as section, i (i)}
 					{#if section.title}
 						<h3 class="mt-4 text-xs font-semibold tracking-wide text-text-muted uppercase">

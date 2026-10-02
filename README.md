@@ -66,14 +66,14 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 1224 tests via pytest |
+| **Regression tests** | ✅ Complete | 1231 tests via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines, "Deal" badges), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), product-page "since tracked" chips (all-time low/high + 30-day average), price-drop & restock alerts panel on the product page, command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 1004 vitest + 179 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 1009 vitest + 179 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -401,8 +401,11 @@ The release links to `/changelog`, which renders [`CHANGELOG.md`](CHANGELOG.md).
   4. Redeploy.
 - **Version numbers:** the minor number goes up for features, the patch number
   for fixes.
-- **Guard:** a test fails if the newest changelog release and `package.json`
-  disagree.
+- **Guards:** pytest (`test_release.py`) and vitest (`changelog.test.ts`) both
+  fail if the newest changelog release and `package.json` disagree. Vitest also
+  fails if releases are not listed newest first.
+- **Docker:** the build context must include `CHANGELOG.md`. The Dockerfile
+  copies it into the web build stage.
 
 ## Frontend (`web/`)
 
@@ -421,7 +424,7 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (1004 vitest)
+# Run frontend unit tests (1009 vitest)
 npm test
 
 # Run browser e2e regression tests (179 Playwright, against a seeded dev server)
@@ -574,8 +577,8 @@ Trackaroo/
     ├── src/lib/listingsPanel.ts # pure grouped-listings logic (search, filters, sort)
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
-    ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 1004 vitest regression tests (49 suites)
+    ├── src/routes/             # /, /products, /product/[id], /compare, /movers, /deals, /discover, /changelog, /healthz
+    ├── test/                   # 1009 vitest regression tests (49 suites)
     ├── e2e/                    # 179 Playwright regression tests (app.spec.ts, mobile.spec.ts, a11y.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json

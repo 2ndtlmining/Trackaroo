@@ -83,6 +83,73 @@ def test_rejects_an_empty_unreleased_section(repo):
     assert '"version": "0.3.0"' in (repo / "web" / "package.json").read_text(encoding="utf-8")
 
 
+def test_rejects_unreleased_with_headings_but_no_bullets(repo):
+    (repo / "CHANGELOG.md").write_text(CHANGELOG.replace("- New thing (#1)\n", ""), encoding="utf-8")
+    with pytest.raises(release.ReleaseError, match="Unreleased"):
+        release.release("0.4.0", root=repo, today=date(2026, 10, 3))
+
+
+def test_next_release_directly_under_unreleased_is_not_swallowed(repo):
+    (repo / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## Unreleased\n- New\n## 0.3.0 — 2026-10-02\n- Old\n", encoding="utf-8"
+    )
+    release.release("0.4.0", root=repo, today=date(2026, 10, 3))
+    assert (repo / "CHANGELOG.md").read_text(encoding="utf-8") == (
+        "# Changelog\n\n## Unreleased\n\n## 0.4.0 — 2026-10-03\n\n- New\n\n"
+        "## 0.3.0 — 2026-10-02\n- Old\n"
+    )
+
+
+def test_unreleased_as_the_last_section_ends_with_one_newline(repo):
+    (repo / "CHANGELOG.md").write_text("# Changelog\n\n## Unreleased\n\n- New", encoding="utf-8")
+    release.release("0.4.0", root=repo, today=date(2026, 10, 3))
+    assert (repo / "CHANGELOG.md").read_text(encoding="utf-8") == (
+        "# Changelog\n\n## Unreleased\n\n## 0.4.0 — 2026-10-03\n\n- New\n"
+    )
+
+
+def test_a_level_three_unreleased_heading_is_not_the_section(repo):
+    (repo / "CHANGELOG.md").write_text(
+        "# Changelog\n\n### Unreleased\n- nope\n\n## 0.3.0 — 2026-10-02\n- Old\n", encoding="utf-8"
+    )
+    with pytest.raises(release.ReleaseError, match="no '## Unreleased'"):
+        release.release("0.4.0", root=repo, today=date(2026, 10, 3))
+
+
+def test_rejects_a_lockfile_out_of_step_with_package_json(repo):
+    lock = repo / "web" / "package-lock.json"
+    lock.write_text(LOCK.replace('"web",\n\t"version": "0.3.0"', '"web",\n\t"version": "0.3.1"', 1), encoding="utf-8")
+    with pytest.raises(release.ReleaseError, match="package-lock.json"):
+        release.release("0.4.0", root=repo, today=date(2026, 10, 3))
+    assert json.loads(lock.read_text(encoding="utf-8"))["packages"]["node_modules/x"]["version"] == "0.3.0"
+
+
+def test_a_failed_write_leaves_every_file_untouched(repo, monkeypatch):
+    paths = [repo / "CHANGELOG.md", repo / "web" / "package.json", repo / "web" / "package-lock.json"]
+    before = {p: p.read_bytes() for p in paths}
+    real_replace = release.os.replace
+    calls = []
+
+    def flaky_replace(src, dst):
+        calls.append(dst)
+        if len(calls) == 2:
+            raise OSError("OneDrive has the file locked")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(release.os, "replace", flaky_replace)
+    with pytest.raises(release.ReleaseError, match="locked"):
+        release.release("0.4.0", root=repo, today=date(2026, 10, 3))
+    for path, data in before.items():
+        assert path.read_bytes() == data, path
+    assert not list(repo.rglob("*.release-tmp"))
+
+
+def test_main_reports_a_missing_file_without_a_traceback(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    assert release.main(["0.4.0"]) == 1
+    assert "release:" in capsys.readouterr().err
+
+
 def test_keeps_crlf_line_endings(repo):
     path = repo / "CHANGELOG.md"
     path.write_bytes(CHANGELOG.replace("\n", "\r\n").encode("utf-8"))

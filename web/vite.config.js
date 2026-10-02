@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 // The release number shown in the footer and /healthz: web/package.json is the
-// single source, bumped by release.py at the repo root.
+// single source, bumped by release.py at the repo root. Read once when the config
+// loads, so restart `vite dev` after a release to see the new number.
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
 export default defineConfig({

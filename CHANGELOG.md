@@ -5,7 +5,7 @@ footer links to it from the running version.
 
 How it works:
 - Each change adds a line under **Unreleased** in the same PR.
-- To cut a release, run `python release.py X.Y.Z` from the repo root. It moves Unreleased into a dated release and bumps `web/package.json`.
+- To cut a release, run `python release.py X.Y.Z` from the repo root. It moves Unreleased into a dated release and bumps `web/package.json` and its lockfile.
 - Commit the result. After merging, tag the merge commit `vX.Y.Z`.
 - Versions: the minor number goes up for features, the patch number for fixes.
 
