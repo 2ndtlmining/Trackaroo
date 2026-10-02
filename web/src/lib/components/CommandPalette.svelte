@@ -129,13 +129,22 @@
 		onClose();
 	}
 
+	// The listbox scrolls (max-h-80), so keyboard moves keep the active option
+	// on screen; the options' ids never change, so it is already in the DOM.
+	function revealHighlight() {
+		const row = results[highlight];
+		if (row) document.getElementById(optionId(row))?.scrollIntoView({ block: 'nearest' });
+	}
+
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'ArrowDown') {
 			event.preventDefault();
 			clampHighlight(highlight + 1);
+			revealHighlight();
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
 			clampHighlight(highlight - 1);
+			revealHighlight();
 		} else if (event.key === 'Enter') {
 			event.preventDefault();
 			activate();

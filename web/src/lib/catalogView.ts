@@ -79,7 +79,11 @@ export function parseCatalogView(params: URLSearchParams): CatalogView {
 	const dirRaw = params.get('dir');
 	const dir: SortDir = dirRaw === 'asc' || dirRaw === 'desc' ? dirRaw : sort ? DEFAULT_DIR[sort] : 'asc';
 
-	return { max, brands, gens, inStock: params.get('in_stock') === '1', retailer, sort, dir };
+	// '1' or 'true', exactly as parseFilters reads it for the server's load.
+	const inStockRaw = params.get('in_stock');
+	const inStock = inStockRaw === '1' || inStockRaw === 'true';
+
+	return { max, brands, gens, inStock, retailer, sort, dir };
 }
 
 export function catalogViewParams(view: CatalogView): Record<string, string | null> {
@@ -99,6 +103,17 @@ export function shownPrice(row: CatalogRowInput, view: CatalogView): number | nu
 	const entry = row.retailerPrices[view.retailer];
 	if (!entry) return null;
 	return view.inStock ? entry.inStock : entry.any;
+}
+
+// Whether the shown price is an in-stock one. 'out' only in a retailer view
+// with in_stock off, when that retailer lists the product but has none in
+// stock: the row then shows its any-stock price and must say so (no deal cue).
+export function shownStock(row: CatalogRowInput, view: CatalogView): 'in' | 'out' | null {
+	if (!view.retailer) return row.cheapestInStockPrice !== null ? 'in' : null;
+	const entry = row.retailerPrices[view.retailer];
+	if (!entry) return null;
+	if (entry.inStock !== null) return 'in';
+	return !view.inStock && entry.any !== null ? 'out' : null;
 }
 
 function sortValue(row: CatalogRowInput, key: CatalogSort, view: CatalogView): number | string | null {
@@ -159,6 +174,12 @@ export const ACTIVE_RETAILER_OPTIONS = RETAILER_OPTIONS.filter((o) => ACTIVE_RET
 
 export const CATALOG_BRANDS: readonly string[] = BRANDS;
 
+// The brands present in these rows plus any selected one, in canonical order:
+// like genOptions, a ticked brand keeps its checkbox even with no rows.
+export function brandOptions(rows: { brand: string }[], selected: readonly string[]): string[] {
+	return BRANDS.filter((b) => selected.includes(b) || rows.some((r) => r.brand === b));
+}
+
 interface GenSource {
 	brand: string;
 	category: string;
@@ -167,11 +188,22 @@ interface GenSource {
 
 // One option per tier present, labelled by the series it holds in this
 // category ("RTX 50 / RX 9000"): "current-1" means nothing to a buyer.
-export function genOptions(rows: GenSource[]): { value: GenerationTier; label: string }[] {
+// A tier in `selected` that no row has still gets an option (with its generic
+// label), so an active filter never loses its control (the server's in_stock
+// narrowing can leave a selected tier with no rows).
+export function genOptions(
+	rows: GenSource[],
+	selected: readonly GenerationTier[] = []
+): { value: GenerationTier; label: string }[] {
 	const out: { value: GenerationTier; label: string }[] = [];
 	for (const tier of GENS as GenerationTier[]) {
 		const inTier = rows.filter((r) => r.generationTier === tier);
-		if (!inTier.length) continue;
+		if (!inTier.length) {
+			if (selected.includes(tier)) {
+				out.push({ value: tier, label: TIER_OPTIONS.find((o) => o.value === tier)?.label ?? tier });
+			}
+			continue;
+		}
 		const names: string[] = [];
 		for (const brand of BRANDS) {
 			const r = inTier.find((x) => x.brand === brand);

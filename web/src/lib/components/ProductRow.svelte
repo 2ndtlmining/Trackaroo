@@ -13,7 +13,8 @@
 		compareDisabled = false,
 		onToggleCompare,
 		price = undefined,
-		retailer = undefined
+		retailer = undefined,
+		outOfStock = false
 	}: {
 		// neverListed: tracked in the watchlist but no retailer has ever listed
 		// it — a different statement from "listed, currently out of stock".
@@ -29,13 +30,16 @@
 		// filter on, that retailer's price rather than the cheapest anywhere.
 		price?: number | null;
 		retailer?: string | null;
+		// The shown price is an out-of-stock one (a retailer view with in_stock
+		// off, final review #1): muted, labelled, and never a deal cue.
+		outOfStock?: boolean;
 	} = $props();
 
 	const shown = $derived(price === undefined ? group.cheapestInStockPrice : price);
 	const retailerSlug = $derived(retailer === undefined ? group.cheapestInStockRetailer : retailer);
 	const retailerLabel = $derived(retailerSlug ? lookupRetailerLabel(retailerSlug) : null);
 
-	const deltaPct = $derived(deltaVsAvg30(shown, group.avg30 ?? null));
+	const deltaPct = $derived(outOfStock ? null : deltaVsAvg30(shown, group.avg30 ?? null));
 	const cpu = $derived(group.category === 'cpu');
 	const trend = $derived(formatTrend(group.sparkline ?? []));
 
@@ -86,7 +90,11 @@
 	{/if}
 
 	<span class={COL.price} role="cell" data-testid="row-price">
-		{#if shown !== null}
+		{#if shown !== null && outOfStock}
+			<span class="num text-sm text-text-muted">{formatAud(shown)}</span>
+			<span class="block text-[11px] text-text-muted" aria-hidden="true">(out of stock)</span>
+			<span class="sr-only">{', out of stock'}</span>
+		{:else if shown !== null}
 			<span class="num text-sm font-semibold text-text">{formatAud(shown)}</span>
 		{:else}
 			<span class="text-sm text-text-muted">—</span>
@@ -136,7 +144,7 @@
 		</span>
 	{/if}
 
-	<span class="{COL.delta} text-xs" role="cell">
+	<span class="{COL.delta} text-xs" role="cell" data-testid="row-delta">
 		{#if deltaPct !== null}
 			{@const d = deltaPresentation(deltaPct)}
 			<span class={d.class}
@@ -146,7 +154,7 @@
 			>
 		{:else if group.neverListed}
 			<span class="text-text-muted">Not listed</span>
-		{:else if shown === null}
+		{:else if shown === null || outOfStock}
 			<span class="text-text-muted">No stock</span>
 		{:else}
 			<span class="text-text-muted">Not enough history</span>

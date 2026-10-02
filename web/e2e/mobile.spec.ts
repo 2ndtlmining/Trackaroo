@@ -116,6 +116,23 @@ test.describe('mobile viewport', () => {
 		).toHaveAccessibleName(new RegExp(`^Show ${rows} results?$`));
 	});
 
+	// Final review #3: a modal dialog makes the rest of the page inert, and the
+	// dialog itself is md:hidden, so widening past md with it open (a tablet
+	// rotating) must close it rather than leave an inert, dialog-less page.
+	test('widening past md closes the open filter dialog (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('button', { name: /^Filters/ }).click();
+		const dialog = page.getByRole('dialog', { name: 'Filters' });
+		await expect(dialog).toBeVisible();
+		await page.setViewportSize({ width: 1024, height: 844 });
+		await expect
+			.poll(() => page.locator('dialog[aria-label="Filters"]').evaluate((d) => (d as HTMLDialogElement).open))
+			.toBe(false);
+		const form = page.getByRole('form', { name: 'Catalogue filters' });
+		await form.getByRole('checkbox', { name: 'AMD', exact: true }).click({ timeout: 2000 });
+		await expect(page).toHaveURL(/brand=AMD/);
+	});
+
 	test('the open filter dialog does not scroll horizontally (#23)', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
 		await page.getByRole('button', { name: /^Filters/ }).click();

@@ -6,7 +6,6 @@
 	import CatalogFilters from '$lib/components/CatalogFilters.svelte';
 	import { groupForIndex, type CatalogRow } from '$lib/productIndex';
 	import {
-		CATALOG_BRANDS,
 		DEFAULT_DIR,
 		activeFilterCount,
 		applyCatalogView,
@@ -14,7 +13,9 @@
 		earliestYear,
 		genOptions,
 		parseCatalogView,
+		brandOptions,
 		shownPrice,
+		shownStock,
 		type CatalogRowInput,
 		type CatalogSort,
 		type CatalogView
@@ -60,9 +61,6 @@
 	let query = $state(urlParams().get('q') ?? '');
 	let searchEl: HTMLInputElement | undefined = $state();
 
-	// Filtering happens here, not on the server: the whole category is already
-	// in the browser, so narrowing is instant and there is no debounce.
-	const matches = $derived(searchProducts(named, query));
 	const searching = $derived(query.trim().length > 0);
 
 	let compareIds = $state<Set<number>>(
@@ -84,12 +82,19 @@
 	// the identical list. The loader keeps returning the whole category.
 	let view = $state<CatalogView>(parseCatalogView(urlParams()));
 	const shown = $derived(applyCatalogView(browseItems, view));
+	// Filtering happens here, not on the server: the whole category is already
+	// in the browser, so narrowing is instant and there is no debounce. The
+	// catalogue view narrows the search results too, but search keeps its own
+	// relevance order, so the sort is left out.
+	const matches = $derived(applyCatalogView(searchProducts(named, query), { ...view, sort: null }));
 	const activeCount = $derived(activeFilterCount(view));
 	// Default order keeps the series groups; any sort flattens them.
 	const groups = $derived(searching || view.sort ? [] : groupForIndex(shown));
 
-	const brandsPresent = $derived(CATALOG_BRANDS.filter((b) => data.groups.some((g) => g.brand === b)));
-	const gens = $derived(genOptions(data.groups));
+	// A ticked brand or tier keeps its control even when no row has it (the
+	// server's in_stock narrowing can empty it), so a filter is never stuck on.
+	const brandsPresent = $derived(brandOptions(data.groups, view.brands));
+	const gens = $derived(genOptions(data.groups, view.gens));
 	const columns = $derived(
 		catalogColumns(data.category, view.retailer ? retailerLabel(view.retailer) : null)
 	);
@@ -201,7 +206,9 @@
 		// From `location`: page.url does not see replaceState's q/compare.
 		goto(`/products${withParams(location.search, { in_stock: checked ? '1' : null })}`, {
 			keepFocus: true,
-			noScroll: true
+			noScroll: true,
+			// Like every other filter: no history entry per toggle.
+			replaceState: true
 		});
 	}
 </script>
@@ -286,6 +293,9 @@
 				{#each matches as group (group.productId)}
 					<ProductRow
 						{group}
+						price={shownPrice(group, view)}
+						retailer={view.retailer ?? undefined}
+						outOfStock={shownStock(group, view) === 'out'}
 						compareSelected={compareIds.has(group.productId)}
 						compareDisabled={!compareIds.has(group.productId) && compareIds.size >= MAX_COMPARE}
 						onToggleCompare={toggleCompare}
@@ -296,7 +306,7 @@
 			<p
 				class="mt-3 rounded-lg border border-border bg-surface px-3 py-8 text-center text-sm text-text-muted"
 			>
-				No {heading} match “{query}”.
+				No {heading} match “{query}”{activeCount > 0 ? ' with these filters' : ''}.
 				<button type="button" class="ml-1 text-accent underline" onclick={() => (query = '')}>
 					Clear
 				</button>
@@ -357,6 +367,7 @@
 							group={item}
 							price={shownPrice(item, view)}
 							retailer={view.retailer ?? undefined}
+							outOfStock={shownStock(item, view) === 'out'}
 							compareSelected={compareIds.has(item.productId)}
 							compareDisabled={!compareIds.has(item.productId) && compareIds.size >= MAX_COMPARE}
 							onToggleCompare={toggleCompare}
@@ -386,6 +397,7 @@
 									group={item}
 									price={shownPrice(item, view)}
 									retailer={view.retailer ?? undefined}
+									outOfStock={shownStock(item, view) === 'out'}
 									compareSelected={compareIds.has(item.productId)}
 									compareDisabled={!compareIds.has(item.productId) && compareIds.size >= MAX_COMPARE}
 									onToggleCompare={toggleCompare}

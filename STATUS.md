@@ -28,10 +28,14 @@ backup integrity.
   value is 4.32:1 against accent-soft over bg (below the 4.5 AA minimum); the new
   value is 5.6:1 and `test/contrast.test.ts` pins accent on accent-soft for both
   themes. Catalogue `/products?category=gpu` TTFB measured about 9 ms warm (temp
-  copy of the DB). No data or schema change. Counts: pytest 1182, vitest 877,
-  Playwright 162, svelte-check 0/0, build ok.
+  copy of the DB). Final-review fixes: a retailer view marks an out-of-stock
+  price "(out of stock)" with no deal cue; search results honour the filters;
+  the phone filter dialog closes when the viewport widens past md; `in_stock=true`
+  parses like `1`; the In stock toggle no longer adds a history entry; a ticked
+  brand/generation keeps its control. No data or schema change. Counts: pytest
+  1182, vitest 886, Playwright 167, svelte-check 0/0, build ok.
 - **2026-10-02 — #30 web code health (refactor) on branch
-  `refactor/2026-10-02-web-code-health`; NOT merged, NOT deployed.** The 1,416-line
+  `refactor/2026-10-02-web-code-health`; merged as PR #48 (68cc1c6), NOT deployed.** The 1,416-line
   `web/src/lib/server/repos.ts` is split into `web/src/lib/server/queries/*`
   (repos.ts stays as the barrel) with DTO types in `$lib/models`; client code
   never imports `$lib/server` (`test/boundaries.test.ts`, `test/sql.test.ts`

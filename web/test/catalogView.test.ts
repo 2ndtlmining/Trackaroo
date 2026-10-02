@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-	ACTIVE_RETAILER_OPTIONS, activeFilterCount, applyCatalogView, catalogViewParams, earliestYear, genOptions,
-	parseCatalogView, shownPrice,
+	ACTIVE_RETAILER_OPTIONS, activeFilterCount, applyCatalogView, brandOptions, catalogViewParams, earliestYear, genOptions,
+	parseCatalogView, shownPrice, shownStock,
 	type CatalogRowInput
 } from '../src/lib/catalogView';
 
@@ -24,6 +24,12 @@ describe('parseCatalogView', () => {
 		expect(p('max=-5').max).toBeNull();
 		expect(p('max=0').max).toBeNull();
 		expect(p('max=1e9').max).toBeNull(); // only plain positive integers up to 100000
+	});
+	it('accepts in_stock=true as well as 1, like parseFilters (final review #4)', () => {
+		expect(p('in_stock=true').inStock).toBe(true);
+		expect(p('in_stock=1').inStock).toBe(true);
+		expect(p('in_stock=TRUE').inStock).toBe(false);
+		expect(p('in_stock=0').inStock).toBe(false);
 	});
 	it('sort without dir uses the key default', () => {
 		expect(p('sort=spec').dir).toBe('desc');
@@ -53,6 +59,18 @@ describe('shownPrice', () => {
 		expect(shownPrice(r, p('retailer=umart&in_stock=1'))).toBe(950);
 	});
 	it('is null for a retailer that does not list it', () => expect(shownPrice(r, p('retailer=scorptec'))).toBeNull());
+});
+
+describe('shownStock (final review #1)', () => {
+	const r = row({ productId: 1, cheapestInStockPrice: 900, retailerPrices: { pccg: { inStock: null, any: 850 }, umart: { inStock: 950, any: 950 } } });
+	it('is in for the overall cheapest in stock', () => expect(shownStock(r, p(''))).toBe('in'));
+	it('is null when nothing is in stock anywhere and no retailer is chosen', () =>
+		expect(shownStock(row({ productId: 2 }), p(''))).toBeNull());
+	it("is out when the retailer's only price is out of stock", () => expect(shownStock(r, p('retailer=pccg'))).toBe('out'));
+	it('is in when the retailer has it in stock', () => expect(shownStock(r, p('retailer=umart'))).toBe('in'));
+	it('is null for a retailer that does not list it', () => expect(shownStock(r, p('retailer=scorptec'))).toBeNull());
+	it('is null with in_stock on and no in-stock price there (no price is shown)', () =>
+		expect(shownStock(r, p('retailer=pccg&in_stock=1'))).toBeNull());
 });
 
 describe('applyCatalogView', () => {
@@ -115,6 +133,20 @@ describe('catalogue control helpers (#23)', () => {
 		expect(genOptions([{ brand: 'AMD', category: 'cpu', generationTier: 'current-2' as const }])).toEqual([
 			{ value: 'current-2', label: 'Ryzen 5000' }
 		]);
+	});
+	it('genOptions keeps a selected tier no row has, with its generic label (final review #6)', () => {
+		const rows = [{ brand: 'NVIDIA', category: 'gpu', generationTier: 'current' as const }];
+		expect(genOptions(rows, ['current-2'])).toEqual([
+			{ value: 'current', label: 'RTX 50' },
+			{ value: 'current-2', label: 'Two gens back' }
+		]);
+		expect(genOptions(rows, ['current'])).toEqual([{ value: 'current', label: 'RTX 50' }]);
+	});
+	it('brandOptions lists brands present plus any selected, in canonical order (final review #6)', () => {
+		const rows = [{ brand: 'Intel' }, { brand: 'AMD' }];
+		expect(brandOptions(rows, [])).toEqual(['AMD', 'Intel']);
+		expect(brandOptions(rows, ['NVIDIA'])).toEqual(['NVIDIA', 'AMD', 'Intel']);
+		expect(brandOptions([], ['AMD'])).toEqual(['AMD']);
 	});
 	it('earliestYear is the smallest release year, null when none', () => {
 		expect(earliestYear([{ releaseYear: 2025 }, { releaseYear: null }, { releaseYear: 2024 }])).toBe(2024);

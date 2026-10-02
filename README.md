@@ -73,7 +73,7 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 877 vitest + 162 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 886 vitest + 167 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -400,10 +400,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (877 vitest)
+# Run frontend unit tests (886 vitest)
 npm test
 
-# Run browser e2e regression tests (162 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (167 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -528,8 +528,8 @@ Trackaroo/
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 239 vitest regression tests (11 suites)
-    ├── e2e/                    # 162 Playwright regression tests (app.spec.ts, seed.mjs)
+    ├── test/                   # 886 vitest regression tests (44 suites)
+    ├── e2e/                    # 167 Playwright regression tests (app.spec.ts, mobile.spec.ts, a11y.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```

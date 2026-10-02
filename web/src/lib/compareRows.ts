@@ -201,8 +201,8 @@ export function buildCompareRows(entries: CompareEntry[]): CompareRow[] {
 		),
 		{
 			label: 'Cheapest in stock',
-		direction: 'lower',
-		numeric: (e) => e.cheapestInStock?.price ?? null,
+			direction: 'lower',
+			numeric: (e) => e.cheapestInStock?.price ?? null,
 			value: (e) =>
 				e.cheapestInStock
 					? `${formatAud(e.cheapestInStock.price)} · ${retailerLabel(e.cheapestInStock.retailer)}`

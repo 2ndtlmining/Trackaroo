@@ -70,12 +70,23 @@
 	// a field "clicks" it, and the submit handler below turns that into a
 	// no-op instead of letting a $500 preset be the button that gets clicked.
 	let hydrated = $state(false);
-	onMount(() => {
-		hydrated = true;
-	});
 
 	let dialog: HTMLDialogElement | undefined = $state();
 	let opener: HTMLButtonElement | undefined = $state();
+
+	// The dialog is md:hidden, but a modal <dialog> still makes the rest of the
+	// page inert. Widening past md with it open (a tablet rotating) would leave
+	// an inert page with no visible dialog, so close it there. 48rem is md.
+	const MD_QUERY = '(min-width: 48rem)';
+	onMount(() => {
+		hydrated = true;
+		const mq = window.matchMedia(MD_QUERY);
+		const onWide = () => {
+			if (mq.matches && dialog?.open) dialog.close();
+		};
+		mq.addEventListener('change', onWide);
+		return () => mq.removeEventListener('change', onWide);
+	});
 
 	function openDialog() {
 		dialog?.showModal();
@@ -85,9 +96,10 @@
 		dialog?.close();
 	}
 
-	// Escape, "Show N results" and close() all land here.
+	// Escape, "Show N results" and close() all land here. Above md the opener
+	// is hidden, so focus is left where the browser puts it.
 	function onDialogClose() {
-		opener?.focus();
+		if (!window.matchMedia(MD_QUERY).matches) opener?.focus();
 	}
 
 	function set(patch: Partial<CatalogView>) {
@@ -206,7 +218,9 @@
 		</div>
 	</fieldset>
 
-	{#if brands.length > 1}
+	<!-- A single brand or tier is no choice, unless it is ticked: then it is
+	     the control that clears an active filter. -->
+	{#if brands.length > 1 || view.brands.length > 0}
 		<fieldset>
 			<legend class={legend}>Brand</legend>
 			<div class="flex flex-wrap items-center gap-3">
@@ -228,7 +242,7 @@
 		</fieldset>
 	{/if}
 
-	{#if gens.length > 1}
+	{#if gens.length > 1 || view.gens.length > 0}
 		<fieldset>
 			<legend class={legend}>Generation</legend>
 			<div class="flex flex-wrap items-center gap-3">

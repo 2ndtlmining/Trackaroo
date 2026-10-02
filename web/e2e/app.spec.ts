@@ -509,31 +509,33 @@ test.describe('product index', () => {
 	// Back it writes the entry just left over the one landed on.
 	test('Back and Forward between two /products entries keep each entry\'s search', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		const box = page.getByLabel(/^Search GPUs$/);
+		const box = page.getByLabel(/^Search (GPUs|CPUs)$/);
 		await box.fill('5060');
 		await expect(page).toHaveURL(/q=5060$/);
 
-		// "In stock" is a real navigation: a second /products history entry.
-		await page.getByRole('checkbox', { name: 'In stock' }).check();
-		await expect(page).toHaveURL(/in_stock=1/);
+		// The CPUs nav link is a real navigation: a second /products history
+		// entry. (The In stock toggle replaces its entry, final review #5.)
+		await page
+			.getByRole('navigation', { name: 'Main' })
+			.getByRole('link', { name: 'CPUs', exact: true })
+			.click();
+		await expect(page).toHaveURL(/category=cpu/);
 		await page.waitForLoadState('networkidle');
-		await box.fill('5070');
-		await expect(page).toHaveURL(/q=5070/);
+		await box.fill('ryzen');
+		await expect(page).toHaveURL(/q=ryzen/);
 
 		await page.goBack();
 		await page.waitForLoadState('networkidle');
 		await expect(page).toHaveURL(/\/products\?category=gpu&q=5060$/);
 		await expect(box).toHaveValue('5060');
-		await expect(page.getByRole('checkbox', { name: 'In stock' })).not.toBeChecked();
 		// Still this entry's URL once the sync effect has had its chance to run.
 		await expect(page).toHaveURL(/\/products\?category=gpu&q=5060$/);
 
 		await page.goForward();
 		await page.waitForLoadState('networkidle');
-		await expect(page).toHaveURL(/in_stock=1/);
-		await expect(page).toHaveURL(/q=5070/);
-		await expect(box).toHaveValue('5070');
-		await expect(page.getByRole('checkbox', { name: 'In stock' })).toBeChecked();
+		await expect(page).toHaveURL(/category=cpu/);
+		await expect(page).toHaveURL(/q=ryzen/);
+		await expect(box).toHaveValue('ryzen');
 	});
 
 	test('a shared compare selection is restored, and one pick prompts for another (#26)', async ({ page }) => {
@@ -697,6 +699,94 @@ test.describe('catalogue filters and sort (#23)', () => {
 			await expect(page.getByRole('columnheader', { name: new RegExp(`^${name}`) })).toBeVisible();
 		}
 		await expect(page.getByRole('columnheader', { name: /^VRAM/ })).toHaveCount(0);
+	});
+
+	// Final review #1: a retailer view with in_stock off shows that retailer's
+	// any-stock price, so a row whose only listings there are out of stock
+	// must say so and must not show a deal cue. Read lazily from the seeded DB:
+	// the synthetic fixture has no such product, so it skips there.
+	test('a retailer view marks an out-of-stock price and drops its delta', async ({ page }) => {
+		const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+		let hit: { id: number; category: string; retailer: string } | undefined;
+		try {
+			hit = db
+				.prepare(
+					`WITH latest AS (
+						SELECT s.* FROM price_snapshots s
+						JOIN (
+							SELECT retailer_listing_id, MAX(snapshot_date) AS max_date
+							FROM price_snapshots
+							GROUP BY retailer_listing_id
+						) m ON m.retailer_listing_id = s.retailer_listing_id
+						  AND m.max_date = s.snapshot_date
+					)
+					SELECT p.id, p.category, l.retailer
+					FROM retailer_listings l
+					JOIN latest lat ON lat.retailer_listing_id = l.id
+					JOIN products p ON p.id = l.product_id
+					WHERE l.status = 'active' AND p.tracked = 1
+					  AND l.retailer IN ('scorptec', 'pccg', 'umart')
+					  AND lower(l.variant_name) NOT LIKE '%bundle%'
+					  AND lower(l.variant_name) NOT LIKE '%combo%'
+					  AND lower(l.listing_url) NOT LIKE '%bundle%'
+					  AND lower(l.listing_url) NOT LIKE '%bdl-%'
+					GROUP BY p.id, l.retailer
+					HAVING SUM(lat.stock_status = 'in_stock') = 0
+					ORDER BY p.id, l.retailer
+					LIMIT 1`
+				)
+				.get() as typeof hit;
+		} finally {
+			db.close();
+		}
+		test.skip(!hit, 'the seed has no product listed only out of stock at a retailer');
+		await goto(page, `/products?category=${hit!.category}&retailer=${hit!.retailer}`);
+		const row = page
+			.getByTestId('catalog-row')
+			.filter({ has: page.locator(`a[href="/product/${hit!.id}"]`) });
+		await expect(row).toHaveCount(1);
+		await expect(row.getByTestId('row-price')).toContainText('(out of stock)');
+		await expect(row.getByTestId('row-delta')).toHaveText('No stock');
+	});
+
+	// Final review #2: the view applies to search results too. "x" matches
+	// every GeForce RTX and Radeon RX model.
+	test('a brand filter narrows the search results', async ({ page }) => {
+		await goto(page, '/products?category=gpu&q=x');
+		const all = await rowNames(page);
+		expect(all.some((n) => /GeForce/.test(n))).toBe(true);
+		expect(all.some((n) => /Radeon/.test(n))).toBe(true);
+		await goto(page, '/products?category=gpu&brand=AMD&q=x');
+		const amd = await rowNames(page);
+		expect(amd.length).toBeGreaterThan(0);
+		for (const n of amd) expect(n).toMatch(/Radeon/);
+		await expect(page.getByTestId('index-count')).toContainText(`${amd.length} of`);
+	});
+
+	// Final review #5: the In stock toggle replaces the history entry, like
+	// every other filter.
+	test('the In stock toggle adds no history entry', async ({ page }) => {
+		await goto(page, '/');
+		await goto(page, '/products?category=gpu');
+		await page.getByRole('checkbox', { name: 'In stock' }).check();
+		await expect(page).toHaveURL(/in_stock=1/);
+		await page.waitForLoadState('networkidle');
+		await page.goBack();
+		await page.waitForLoadState('networkidle');
+		await expect(page).not.toHaveURL(/\/products/);
+	});
+
+	// Final review #6: an active filter keeps its control even when no row
+	// has that value (no CPU is an NVIDIA one, in either seed).
+	test('a selected brand no row has keeps a checked control', async ({ page }) => {
+		await goto(page, '/products?category=cpu&in_stock=1&brand=NVIDIA');
+		const box = page.getByRole('checkbox', { name: 'NVIDIA', exact: true });
+		await expect(box).toBeChecked();
+		// Unticking clears the filter; with no NVIDIA row the control then goes.
+		await box.click();
+		await expect(page).not.toHaveURL(/brand=/);
+		await expect(box).toHaveCount(0);
+		await expect(page.getByTestId('catalog-row').first()).toBeVisible();
 	});
 
 	test('each row has a 30-day trend with an accessible label', async ({ page }) => {
