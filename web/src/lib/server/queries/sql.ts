@@ -113,3 +113,48 @@ export function cheapestListingPerProduct(columns: string, where?: string): stri
 	GROUP BY p.id
 	ORDER BY p.model COLLATE NOCASE ASC`;
 }
+
+// Latest-snapshot CTE and window subqueries shared by the catalog and movers
+// (and compare) queries.
+export const LATEST_CTE = `
+	WITH latest AS (
+		SELECT s.*
+		FROM price_snapshots s
+		JOIN (
+			SELECT retailer_listing_id, MAX(snapshot_date) AS max_date
+			FROM price_snapshots
+			GROUP BY retailer_listing_id
+		) m ON m.retailer_listing_id = s.retailer_listing_id
+		  AND m.max_date = s.snapshot_date
+	)
+`;
+
+export function windowStartSubquery(reference: string): string {
+	return `(
+		SELECT MIN(ps.snapshot_date)
+		FROM price_snapshots ps
+		WHERE ps.retailer_listing_id = lat.retailer_listing_id
+		  AND ps.snapshot_date >= date(${reference}, @window)
+		  AND ps.snapshot_date < ${reference}
+	)`;
+}
+
+export function windowStartPriceSubquery(reference: string): string {
+	return `(
+		SELECT ps.price_aud
+		FROM price_snapshots ps
+		WHERE ps.retailer_listing_id = lat.retailer_listing_id
+		  AND ps.snapshot_date = ${windowStartSubquery(reference)}
+		LIMIT 1
+	)`;
+}
+
+export function pointsInWindowSubquery(reference: string): string {
+	return `(
+		SELECT COUNT(*)
+		FROM price_snapshots ps
+		WHERE ps.retailer_listing_id = lat.retailer_listing_id
+		  AND ps.snapshot_date >= date(${reference}, @window)
+		  AND ps.snapshot_date <= ${reference}
+	)`;
+}

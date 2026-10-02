@@ -27,4 +27,12 @@ describe('boundaries (#30)', () => {
 			.map((f) => path.relative(SRC, f));
 		expect(offenders).toEqual([]);
 	});
+
+	it('no server file over 350 lines', () => {
+		const big = files
+			.filter((f) => f.includes(`${path.sep}lib${path.sep}server${path.sep}`))
+			.map((f) => [path.relative(SRC, f), fs.readFileSync(f, 'utf-8').split('\n').length] as const)
+			.filter(([, n]) => n > 350);
+		expect(big).toEqual([]);
+	});
 });
