@@ -52,6 +52,19 @@ def test_constants():
         ("$0", None),
         ("$0.00 freebie", None),
         ("no price", None),
+        ("$50 off RTX 5070 Ti @ Mwave", None),
+        ("$50 off, now $899 @ X", 899.0),
+        ("Save $100: RTX 5070 $899 @ X", 899.0),
+        ("Saving $100 on RTX 5070 $899 @ X", 899.0),
+        ("$30 Cashback on Ryzen 7 9800X3D $689 @ PCCG", 689.0),
+        ("$20 gift card with RTX 5070 $899", 899.0),
+        ("RTX 5070 US$549 / A$899 @ Amazon", 899.0),
+        ("US$549 @ Newegg", None),
+        ("NZ$599 @ PB Tech", None),
+        ("A$1,099", 1099.0),
+        ("AU$1,099", 1099.0),
+        ("$1099", 1099.0),
+        ("$1,099.00", 1099.0),
     ],
 )
 def test_parse_price(title, expected):
@@ -181,3 +194,26 @@ def test_html_not_rss_raises():
     # well-formed XML that is not a feed must not silently yield "ok, zero items"
     with pytest.raises(ValueError, match="cpu"):
         parse_feed("<html>blocked</html>", "cpu", NOW)
+
+
+def test_naive_now_is_normalised_to_melbourne():
+    xml = (
+        '<rss version="2.0" xmlns:ozb="https://www.ozbargain.com.au"><channel><item>'
+        "<title>X $5 @ Y</title><link>https://www.ozbargain.com.au/node/1</link>"
+        '<ozb:meta expiry="2026-10-03T11:59:00"/></item></channel></rss>'
+    )
+    items = parse_feed(xml, "gpu", datetime(2026, 10, 3, 12, 0))
+    assert items[0].expired is True
+
+
+def test_naive_expiry_uses_melbourne_dst():
+    # DST started 2026-10-04: Melbourne is +11 on 10-10, so 00:30 local is 13:30Z the day before
+    xml = (
+        '<rss version="2.0" xmlns:ozb="https://www.ozbargain.com.au"><channel><item>'
+        "<title>X $5 @ Y</title><link>https://www.ozbargain.com.au/node/1</link>"
+        '<ozb:meta expiry="2026-10-10T00:30:00"/></item></channel></rss>'
+    )
+    from datetime import timezone as tz
+
+    now = datetime(2026, 10, 9, 13, 45, tzinfo=tz.utc)  # 00:45 Melbourne (+11)
+    assert parse_feed(xml, "gpu", now)[0].expired is True

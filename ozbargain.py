@@ -21,10 +21,18 @@ FEEDS: Tuple[Tuple[str, str], ...] = (
 USER_AGENT = "Trackaroo/1.0 (+https://github.com/2ndtlmining/Trackaroo)"
 
 NODE_URL = "https://www.ozbargain.com.au/node/{}"
-MELBOURNE = timezone(timedelta(hours=10))  # naive feed times are Melbourne local
+try:  # naive feed times are Melbourne local (DST-correct when tzdata exists)
+    from zoneinfo import ZoneInfo
+
+    MELBOURNE = ZoneInfo("Australia/Melbourne")
+except Exception:  # no tzdata (e.g. Windows without the tzdata package)
+    MELBOURNE = timezone(timedelta(hours=10))
 EXPIRED_MSGS = {"expired", "sold out", "out of stock"}
 
-_PRICE_RE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?")
+_PRICE_RE = re.compile(r"([A-Za-z]*)\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?")
+_AUD_PREFIXES = {"", "A", "AU"}
+_SAVING_AFTER_RE = re.compile(r"\s*(off|cashback|back|credit|gift|voucher|rebate)\b", re.I)
+_SAVING_BEFORE_RE = re.compile(r"\b(save|saving)\s+$", re.I)
 _NODE_RE = re.compile(r"/node/(\d+)")
 _GUID_RE = re.compile(r"^\s*(\d+)")
 
@@ -48,13 +56,25 @@ class FeedItem:
 
 
 def parse_price(title: str) -> Optional[float]:
-    """First ``$`` amount in the title; non-positive is not a price."""
-    m = _PRICE_RE.search(title or "")
-    if not m:
-        return None
-    whole = m.group(1).replace(",", "")
-    price = float(f"{whole}.{m.group(2)}" if m.group(2) else whole)
-    return price if price > 0 else None
+    """First AUD ``$`` amount that is a deal price (R4).
+
+    Skips savings/coupons ("$50 off", "Save $100", "$20 gift card") and
+    amounts with a non-AUD currency prefix (US$, NZ$); non-positive is not a
+    price.
+    """
+    title = title or ""
+    for m in _PRICE_RE.finditer(title):
+        if m.group(1).upper() not in _AUD_PREFIXES:
+            continue
+        if _SAVING_AFTER_RE.match(title, m.end()):
+            continue
+        if _SAVING_BEFORE_RE.search(title, 0, m.start()):
+            continue
+        whole = m.group(2).replace(",", "")
+        price = float(f"{whole}.{m.group(3)}" if m.group(3) else whole)
+        if price > 0:
+            return price
+    return None
 
 
 def parse_retailer(title: str) -> Optional[str]:
@@ -149,6 +169,8 @@ def _parse_item(item: ET.Element, category: str, now: datetime) -> Optional[Feed
 def parse_feed(xml_text: str, category: str, now: datetime) -> List[FeedItem]:
     """Parse one RSS feed. Raises ``ValueError`` naming the category if it is
     not a parseable RSS document (blocked page, truncated body)."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=MELBOURNE)
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as e:
