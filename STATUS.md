@@ -14,6 +14,22 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-02 — #30 web code health (refactor) on branch
+  `refactor/2026-10-02-web-code-health`; NOT merged, NOT deployed.** The 1,416-line
+  `web/src/lib/server/repos.ts` is split into `web/src/lib/server/queries/*`
+  (repos.ts stays as the barrel) with DTO types in `$lib/models`; client code
+  never imports `$lib/server` (`test/boundaries.test.ts`, `test/sql.test.ts`
+  are permanent). No data or schema change; no visible change beyond one planned
+  wording change. Proven by a temporary oracle (legacy copy of repos.ts):
+  result equivalence, 99 tests green on seeded, seeded-enriched and a
+  temp copy of the real DB (`test:equiv-real`), plus SQL-text identity. The
+  oracle is removed in this branch (it would rot); the proof is in the PR.
+  Timings (warm, temp DB copy, wire bytes / ttfb) before -> after: `/` 7894 ->
+  7900 / 4.1ms -> 2.6ms; `/deals` 8276 -> 8273 / 4.2 -> 2.8ms; `/movers?window=7d`
+  11925 -> 11983 / 7.6 -> 5.4ms; `/products?category=gpu` 8318 -> 8324 / 3.9 ->
+  2.8ms; `/product/1` 8243 -> 8241 / 5.7 -> 4.7ms. No route slower. Pre-existing
+  finding, kept as is: `getCheapestPerModel` uses a 31/91-day window; no route
+  calls it. Counts: pytest 1182, vitest 823, Playwright 119, svelte-check 0/0.
 - **2026-10-02 — #16 new-part discovery BUILT on branch
   `feat/2026-10-02-discovery`; NOT merged, NOT deployed.** Scrapers write full
   catalogues to `data/catalogue/` (`scraper/catalogue_io.py`, 30 days);

@@ -11,8 +11,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"test:e2e": "playwright test --config playwright.config.ts",
-		"test:equiv-real": "node scripts/equivalence-real-db.mjs"
+		"test:e2e": "playwright test --config playwright.config.ts"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.62.1",
