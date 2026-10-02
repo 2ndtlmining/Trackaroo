@@ -6,6 +6,31 @@ import type { Retailer } from './types';
 export interface CompareRow {
 	label: string;
 	value: (entry: CompareEntry) => string | null;
+	// Absent = neutral: the row never marks a best value.
+	direction?: 'higher' | 'lower';
+	// The comparable number behind `value`; read from the same field.
+	numeric?: (entry: CompareEntry) => number | null;
+}
+
+// Mirrors the value formatters, which treat 0 as missing.
+function positive(n: number | null | undefined): number | null {
+	return n ? n : null;
+}
+
+// Indexes of the entries holding the best value in a row. Ties mark every tied
+// entry; fewer than two numeric values, or all equal, marks none.
+export function bestIndexes(row: CompareRow, entries: CompareEntry[]): Set<number> {
+	if (!row.direction || !row.numeric) return new Set();
+	const nums = entries.map((e) => row.numeric!(e));
+	const present = nums.filter((n): n is number => n !== null && Number.isFinite(n));
+	if (present.length < 2) return new Set();
+	const best = row.direction === 'higher' ? Math.max(...present) : Math.min(...present);
+	if (present.every((n) => n === best)) return new Set();
+	const out = new Set<number>();
+	nums.forEach((n, i) => {
+		if (n === best) out.add(i);
+	});
+	return out;
 }
 
 export function clock(mhz: number | null): string | null {
@@ -38,6 +63,8 @@ const sharedSpecRows: CompareRow[] = [
 	},
 	{
 		label: 'TDP',
+		direction: 'lower',
+		numeric: (e) => positive(e.spec?.tdp_watts),
 		value: (e) => (e.spec?.tdp_watts ? `${e.spec.tdp_watts} W` : null)
 	}
 ];
@@ -49,6 +76,8 @@ const gpuSpecRows: CompareRow[] = [
 	},
 	{
 		label: 'VRAM',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.vram_gb),
 		value: (e) => (e.spec?.vram_gb ? `${e.spec.vram_gb}GB` : null)
 	},
 	{
@@ -57,10 +86,14 @@ const gpuSpecRows: CompareRow[] = [
 	},
 	{
 		label: 'Memory bus',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.memory_bus_width_bit),
 		value: (e) => (e.spec?.memory_bus_width_bit ? `${e.spec.memory_bus_width_bit}-bit` : null)
 	},
 	{
 		label: 'Bandwidth',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.memory_bandwidth_gbps),
 		value: (e) => formatBandwidth(e.spec?.memory_bandwidth_gbps ?? null)
 	},
 	{
@@ -69,18 +102,26 @@ const gpuSpecRows: CompareRow[] = [
 	},
 	{
 		label: 'Process',
+		direction: 'lower',
+		numeric: (e) => positive(e.spec?.process_nm),
 		value: (e) => formatProcess(e.spec?.process_nm ?? null, e.spec?.foundry ?? null)
 	},
 	{
 		label: 'L2 cache',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.l2_cache_mb),
 		value: (e) => formatCacheMb(e.spec?.l2_cache_mb ?? null)
 	},
 	{
 		label: 'Base clock',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.base_clock_mhz),
 		value: (e) => clock(e.spec?.base_clock_mhz ?? null)
 	},
 	{
 		label: 'Boost clock',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.boost_clock_mhz),
 		value: (e) => clock(e.spec?.boost_clock_mhz ?? null)
 	}
 ];
@@ -88,10 +129,14 @@ const gpuSpecRows: CompareRow[] = [
 const cpuSpecRows: CompareRow[] = [
 	{
 		label: 'Cores / shaders',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.core_count),
 		value: (e) => (e.spec?.core_count ? CORE_FORMAT.format(e.spec.core_count) : null)
 	},
 	{
 		label: 'Threads',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.thread_count),
 		value: (e) => (e.spec?.thread_count ? String(e.spec.thread_count) : null)
 	},
 	{
@@ -100,10 +145,14 @@ const cpuSpecRows: CompareRow[] = [
 	},
 	{
 		label: 'Base clock',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.base_clock_mhz),
 		value: (e) => clock(e.spec?.base_clock_mhz ?? null)
 	},
 	{
 		label: 'Boost clock',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.boost_clock_mhz),
 		value: (e) => clock(e.spec?.boost_clock_mhz ?? null)
 	},
 	{
@@ -116,6 +165,8 @@ const cpuSpecRows: CompareRow[] = [
 	},
 	{
 		label: 'L2 cache',
+		direction: 'higher',
+		numeric: (e) => positive(e.spec?.l2_cache_mb),
 		value: (e) => formatCacheMb(e.spec?.l2_cache_mb ?? null)
 	},
 	{
@@ -140,6 +191,8 @@ export function buildCompareRows(entries: CompareEntry[]): CompareRow[] {
 		...retailers.map(
 			(r): CompareRow => ({
 				label: `Best price — ${retailerLabel(r)}`,
+				direction: 'lower',
+				numeric: (e) => e.prices.find((x) => x.retailer === r)?.price ?? null,
 				value: (e) => {
 					const p = e.prices.find((x) => x.retailer === r);
 					return p?.price !== undefined && p.price !== null ? formatAud(p.price) : null;
@@ -148,6 +201,8 @@ export function buildCompareRows(entries: CompareEntry[]): CompareRow[] {
 		),
 		{
 			label: 'Cheapest in stock',
+		direction: 'lower',
+		numeric: (e) => e.cheapestInStock?.price ?? null,
 			value: (e) =>
 				e.cheapestInStock
 					? `${formatAud(e.cheapestInStock.price)} · ${retailerLabel(e.cheapestInStock.retailer)}`

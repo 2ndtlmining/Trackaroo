@@ -856,6 +856,25 @@ test.describe('compare', () => {
 		await expect(page.getByRole('region', { name: 'Compare bar' })).toHaveCount(0);
 	});
 
+	test('marks the best value in a spec row (#26)', async ({ page }) => {
+		const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+		const ids = db
+			.prepare(
+				"SELECT product_id AS id FROM specs WHERE category = 'gpu' AND vram_gb IS NOT NULL ORDER BY vram_gb DESC"
+			)
+			.all() as { id: number }[];
+		db.close();
+		expect(ids.length).toBeGreaterThanOrEqual(2);
+		const [high, low] = [ids[0].id, ids[ids.length - 1].id];
+
+		await goto(page, `/compare?ids=${low},${high}`);
+		const cells = page.locator('tbody tr', { has: page.getByRole('rowheader', { name: 'VRAM', exact: true }) }).locator('td');
+		await expect(cells).toHaveCount(2);
+		await expect(cells.nth(0)).not.toContainText('Best');
+		await expect(cells.nth(1)).toContainText('Best');
+		await expect(cells.nth(1)).toContainText('16GB');
+	});
+
 	test('rejects invalid compare URLs', async ({ page }) => {
 		expect((await page.request.get('/compare?ids=1')).status()).toBe(400);
 		expect((await page.request.get('/compare?ids=1,2,3,4,5')).status()).toBe(400);

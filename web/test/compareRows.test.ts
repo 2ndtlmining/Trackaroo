@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCompareRows } from '../src/lib/compareRows';
+import { bestIndexes, buildCompareRows } from '../src/lib/compareRows';
 import type { CompareEntry, ComparePrice } from '../src/lib/server/repos';
 import type { ProductRow, SpecRow } from '../src/lib/server/db';
 
@@ -201,5 +201,94 @@ describe('buildCompareRows', () => {
 		const labels = rows.map((r) => r.label);
 		expect(labels).toContain('Best price — Scorptec');
 		expect(labels).not.toContain('Best price — PCCG');
+	});
+});
+function row(entries: CompareEntry[], label: string) {
+	const r = buildCompareRows(entries).find((x) => x.label === label);
+	if (!r) throw new Error(`no row ${label}`);
+	return r;
+}
+
+function withSpec(overrides: Partial<SpecRow>, extra: Partial<CompareEntry> = {}): CompareEntry {
+	return entry({ spec: gpuSpec(overrides), ...extra });
+}
+
+describe('bestIndexes', () => {
+	it('higher-is-better marks the max; ties mark all; equal values mark none', () => {
+		const some = [
+			withSpec({ vram_gb: 16 }),
+			withSpec({ vram_gb: 12 }),
+			withSpec({ vram_gb: 16 })
+		];
+		expect(bestIndexes(row(some, 'VRAM'), some)).toEqual(new Set([0, 2]));
+
+		const all = [withSpec({ vram_gb: 16 }), withSpec({ vram_gb: 16 }), withSpec({ vram_gb: 16 })];
+		expect(bestIndexes(row(all, 'VRAM'), all)).toEqual(new Set());
+
+		const one = [withSpec({ vram_gb: 16 }), entry({ spec: null })];
+		expect(bestIndexes(row(one, 'VRAM'), one)).toEqual(new Set());
+
+		const clocks = [withSpec({ boost_clock_mhz: 2500 }), withSpec({ boost_clock_mhz: 2800 })];
+		expect(bestIndexes(row(clocks, 'Boost clock'), clocks)).toEqual(new Set([1]));
+	});
+
+	it('lower-is-better marks the min (TDP, cheapest in stock price)', () => {
+		const tdp = [withSpec({ tdp_watts: 180 }), withSpec({ tdp_watts: 140 }), withSpec({ tdp_watts: 200 })];
+		expect(bestIndexes(row(tdp, 'TDP'), tdp)).toEqual(new Set([1]));
+
+		const price = [
+			entry({ cheapestInStock: { price: 900, retailer: 'pccg' } }),
+			entry({ cheapestInStock: { price: 849, retailer: 'scorptec' } }),
+			entry({ cheapestInStock: { price: 849, retailer: 'umart' } })
+		];
+		expect(bestIndexes(row(price, 'Cheapest in stock'), price)).toEqual(new Set([1, 2]));
+
+		const retailer = [
+			entry({ prices: [{ retailer: 'scorptec', price: 900 }] }),
+			entry({ prices: [{ retailer: 'scorptec', price: 850 }] })
+		];
+		expect(bestIndexes(row(retailer, 'Best price — Scorptec'), retailer)).toEqual(new Set([1]));
+
+		const nm = [withSpec({ process_nm: 5 }), withSpec({ process_nm: 4 })];
+		expect(bestIndexes(row(nm, 'Process'), nm)).toEqual(new Set([1]));
+	});
+
+	it('neutral rows never mark (socket, launch date, MSRP, architecture)', () => {
+		const gpus = [
+			withSpec({ launch_msrp_usd: 299, launch_date: '2025-04-16', architecture: 'Blackwell', gpu_die: 'GB206' }),
+			withSpec({ launch_msrp_usd: 399, launch_date: '2024-01-01', architecture: 'Ada', gpu_die: 'AD106' })
+		];
+		for (const label of ['US launch MSRP', 'Launch date', 'Architecture', 'Generation', 'GPU die', 'Memory type', 'Bus interface']) {
+			expect(bestIndexes(row(gpus, label), gpus), label).toEqual(new Set());
+		}
+		const cpuProduct = { ...entry().product, category: 'cpu' as const };
+		const cpus = [
+			entry({ product: cpuProduct, spec: cpuSpec({ socket: 'LGA1851', cache_l3_mb: 24 }) }),
+			entry({ product: cpuProduct, spec: cpuSpec({ socket: 'AM5', cache_l3_mb: 32 }) })
+		];
+		for (const label of ['Socket', 'Codename', 'L3 cache', 'Max memory speed']) {
+			expect(bestIndexes(row(cpus, label), cpus), label).toEqual(new Set());
+		}
+		// A CPU's higher-better rows still mark.
+		const threads = [
+			entry({ product: cpuProduct, spec: cpuSpec({ thread_count: 10 }) }),
+			entry({ product: cpuProduct, spec: cpuSpec({ thread_count: 16 }) })
+		];
+		expect(bestIndexes(row(threads, 'Threads'), threads)).toEqual(new Set([1]));
+	});
+
+	it('null values are ignored, not treated as 0', () => {
+		// Lower-is-better: a null TDP must not win as 0.
+		const tdp = [withSpec({ tdp_watts: null }), withSpec({ tdp_watts: 180 }), withSpec({ tdp_watts: 220 })];
+		expect(bestIndexes(row(tdp, 'TDP'), tdp)).toEqual(new Set([1]));
+
+		const noSpec = [entry({ spec: null }), withSpec({ vram_gb: 8 }), withSpec({ vram_gb: 16 })];
+		expect(bestIndexes(row(noSpec, 'VRAM'), noSpec)).toEqual(new Set([2]));
+
+		const noPrice = [
+			entry({ cheapestInStock: null }),
+			entry({ cheapestInStock: { price: 800, retailer: 'pccg' } })
+		];
+		expect(bestIndexes(row(noPrice, 'Cheapest in stock'), noPrice)).toEqual(new Set());
 	});
 });

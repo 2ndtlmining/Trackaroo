@@ -446,6 +446,17 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		);
 	}
 
+	// A second GPU with a smaller VRAM so /compare has a best value to mark (#26).
+	const smallGpu = db
+		.prepare("SELECT id FROM products WHERE category = 'gpu' AND model = 'GeForce RTX 5060'")
+		.get();
+	if (smallGpu) {
+		db.prepare(
+			`INSERT INTO specs (product_id, source, source_record_key, category, vram_gb, raw_json, last_synced_at)
+			 VALUES (?, 'rightnow-gpu-db', 'GeForce RTX 5060', 'gpu', 8, '{}', '2026-08-15T00:00:00Z')`
+		).run(smallGpu.id);
+	}
+
 	// Catalog columns and the never-listed toggle (#23), and a memory-size
 	// sibling for the VRAM display label (Task 12). The watchlist fills vram_gb
 	// and cores in real DBs; this seed builds products from snapshot JSON,
