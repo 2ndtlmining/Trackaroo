@@ -14,6 +14,18 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-02 (end of day) — RESUME HERE (3-Oct): execute the buying-signals plan.**
+  Branch `feat/2026-10-02-buying-signals` holds the approved spec
+  (`docs/superpowers/specs/2026-10-02-buying-signals-design.md`) and plan
+  (`docs/superpowers/plans/2026-10-02-buying-signals.md`), 6 tasks, owner chose
+  subagent-driven execution. No code written yet. Owner rules: no emojis (icons
+  via `@lucide/svelte`), MSRP converted at today's RBA rate inc. GST, "make it
+  look as good as you can". Open items: PR #50 (buyable price) green, awaiting
+  merge; #48/#49/#50 not yet redeployed (`deploy/redeploy.sh` outside 04:00-09:59);
+  first discovery run lands with the 3-Oct 04:00 scrape -- check /discover,
+  /healthz and the Discord message, then close #16. After this sub-project:
+  4 OzBargain (#34), 5 visual refresh (#22), 6 price-to-performance (#33).
+
 - **2026-10-02 — finish the pages (#23 #26 #27 #29) on branch
   `feat/2026-10-02-finish-pages`; NOT merged, NOT deployed.** #23: `/products`
   gets catalogue filters (max price, brand, generation, in stock, retailer) and
