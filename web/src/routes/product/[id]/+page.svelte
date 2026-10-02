@@ -174,6 +174,7 @@ label:
 						: null
 				}
 				lowMarker={low?.low ?? null}
+				avg30={headline.avg30 ?? null}
 				summary={chartSummary(lows, headline.currentPrice)}
 				height={360}
 			/>

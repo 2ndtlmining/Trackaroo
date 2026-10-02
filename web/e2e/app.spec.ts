@@ -1214,6 +1214,12 @@ test.describe('product detail offer list', () => {
 		await expect(page.getByRole('table').filter({ hasText: 'Dearest in stock' })).toBeVisible();
 	});
 
+	test('the chart shows the 30-day average and the axis note (#27)', async ({ page }) => {
+		await goto(page, '/product/1');
+		await expect(page.getByRole('list', { name: 'Chart legend' })).toContainText('30-day avg');
+		await expect(page.getByText("Axis doesn't start at $0.")).toBeVisible();
+	});
+
 	test('re-renders the chart when navigating between products', async ({ page }) => {
 		await openGpuProduct(page);
 		await expect(page.getByLabel('Price history chart')).toBeVisible();
