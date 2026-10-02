@@ -548,6 +548,27 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		today, `${today}T00:00:00Z`
 	);
 
+	// OzBargain deals (#34) for E2E Deal Demo GPU, whose best in-stock price
+	// today is A$100: one live deal below it, one live above it, and one that
+	// expired today. Timestamps are relative to now so "live" and the 30-day
+	// expired window always hold.
+	const ozbAt = (hoursAgo) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+	const ozb = db.prepare(
+		`INSERT INTO ozb_deals (node_id, category, title, url, price_aud, retailer, votes_pos, votes_neg,
+		   comment_count, posted_at, expired, product_id, first_seen_at, last_seen_at)
+		 SELECT ?, 'gpu', ?, ?, ?, ?, ?, ?, 0, ?, ?, id, ?, ?
+		 FROM products WHERE category = 'gpu' AND model = 'E2E Deal Demo GPU'`
+	);
+	for (const [node, title, price, retailer, pos, neg, hoursAgo, expired] of [
+		[910001, 'E2E Deal Demo GPU $89 @ Amazon AU', 89, 'Amazon AU', 42, 1, 3, 0],
+		[910002, 'E2E Deal Demo GPU $1,099 @ Mwave', 1099, 'Mwave', 5, 2, 26, 0],
+		[910003, 'E2E Deal Demo GPU $79 @ eBay', 79, 'eBay', 12, 0, 120, 1]
+	]) {
+		const at = ozbAt(hoursAgo);
+		ozb.run(node, title, `https://www.ozbargain.com.au/node/${node}`, price, retailer, pos, neg, at, expired, at,
+			expired ? ozbAt(1) : at);
+	}
+
 	db.close();
 	return dbPath;
 }

@@ -328,3 +328,17 @@ export interface FxRate {
 	audPerUsd: number;
 	source: string;
 }
+
+// One OzBargain deal matched to a product (ozb_deals, #34). url is always the
+// /node/<id> page, never a /goto/ redirect.
+export interface OzbDeal {
+	nodeId: number;
+	title: string;
+	url: string;
+	priceAud: number | null;
+	retailer: string | null;
+	votesPos: number;
+	votesNeg: number;
+	postedAt: string | null;
+	expired: boolean;
+}

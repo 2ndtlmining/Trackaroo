@@ -108,6 +108,7 @@
 						lowSince={deal.earnedLow && deal.atNewLow ? deal.historyStart : null}
 						nearLowSince={deal.earnedLow && !deal.atNewLow ? deal.historyStart : null}
 						vsMsrp={vsMsrp(deal)}
+						ozb={deal.ozb}
 					/>
 				{/each}
 			</div>
@@ -143,6 +144,7 @@
 						lowSince={deal.earnedLow && deal.atNewLow ? deal.historyStart : null}
 						nearLowSince={deal.earnedLow && !deal.atNewLow ? deal.historyStart : null}
 						vsMsrp={vsMsrp(deal)}
+						ozb={deal.ozb}
 					/>
 				{/each}
 			</div>
