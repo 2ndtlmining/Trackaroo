@@ -217,3 +217,210 @@ def test_naive_expiry_uses_melbourne_dst():
 
     now = datetime(2026, 10, 9, 13, 45, tzinfo=tz.utc)  # 00:45 Melbourne (+11)
     assert parse_feed(xml, "gpu", now)[0].expired is True
+
+
+# ---------------------------------------------------------------- Task 2: poll
+import dataclasses  # noqa: E402
+import logging  # noqa: E402
+import sqlite3  # noqa: E402
+from datetime import timedelta  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
+
+TRACKED = [
+    ("gpu", "NVIDIA", "RTX 5070 Ti", 16), ("gpu", "NVIDIA", "RTX 5060 Ti", 8),
+    ("gpu", "NVIDIA", "RTX 5060 Ti", 16), ("gpu", "NVIDIA", "RTX 5080", 16),
+    ("gpu", "NVIDIA", "RTX 5070", 12), ("gpu", "AMD", "RX 9060 XT", 16),
+    ("cpu", "AMD", "Ryzen 7 9800X3D", None),
+]
+
+
+def _mk_db(path=":memory:"):
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.executescript((Path(__file__).parent.parent / "db" / "schema.sql").read_text(encoding="utf-8"))
+    for cat, brand, model, vram in TRACKED:
+        conn.execute("INSERT INTO products (category, brand, model, vram_gb) VALUES (?,?,?,?)", (cat, brand, model, vram))
+    conn.execute("INSERT INTO products (category, brand, model, vram_gb, tracked) VALUES ('gpu','NVIDIA','RTX 5050',8,0)")
+    conn.commit()
+    return conn
+
+
+def _pid(conn, model):
+    return conn.execute("SELECT id FROM products WHERE model=?", (model,)).fetchone()[0]
+
+
+@pytest.fixture
+def mdb():
+    return _mk_db()
+
+
+def test_match_items(mdb, gpu_items, cpu_items):
+    m = ozbargain.build_matchers(mdb)
+    assert set(m) == {"gpu", "cpu"}
+    assert ozbargain.match_item(gpu_items[912001], m) == _pid(mdb, "RTX 5070 Ti")
+    assert ozbargain.match_item(gpu_items[912002], m) is None  # 8GB vs 16GB ambiguous
+    assert ozbargain.match_item(gpu_items[912004], m) is None  # prebuilt
+    assert ozbargain.match_item(gpu_items[912008], m) == _pid(mdb, "RTX 5080")
+    assert ozbargain.match_item(gpu_items[912009], m) is None  # untracked RTX 5050
+    assert ozbargain.match_item(cpu_items[0], m) == _pid(mdb, "Ryzen 7 9800X3D")
+
+
+def test_match_slug_fallback(mdb, gpu_items):
+    m = ozbargain.build_matchers(mdb)
+    item = dataclasses.replace(gpu_items[912001], title="ASUS Prime 16GB $1,099 @ Mwave",
+                               product_slugs=["nvidia-geforce-rtx-5070-ti"])
+    assert ozbargain.match_item(item, m) == _pid(mdb, "RTX 5070 Ti")
+
+
+def _deals(conn):
+    return {r["node_id"]: r for r in conn.execute("SELECT * FROM ozb_deals")}
+
+
+def test_upsert_idempotent_and_keeps(mdb, gpu_items):
+    item = gpu_items[912001]
+    pid = _pid(mdb, "RTX 5070 Ti")
+    ozbargain.upsert_items(mdb, [item], [pid], "2026-10-03T10:00:00")
+    mdb.execute("UPDATE ozb_deals SET alerted_at='2026-10-03T10:01:00'")
+    newer = dataclasses.replace(item, votes_pos=99, votes_neg=3, expired=True)
+    ozbargain.upsert_items(mdb, [newer], [None], "2026-10-03T12:00:00")
+    rows = _deals(mdb)
+    assert len(rows) == 1
+    r = rows[912001]
+    assert (r["votes_pos"], r["votes_neg"], r["expired"]) == (99, 3, 1)
+    assert r["first_seen_at"] == "2026-10-03T10:00:00"
+    assert r["last_seen_at"] == "2026-10-03T12:00:00"
+    assert r["alerted_at"] == "2026-10-03T10:01:00"
+    assert r["product_id"] == pid
+
+
+def test_prune(mdb, gpu_items):
+    iso = lambda d: (NOW - timedelta(days=d)).isoformat(timespec="seconds")  # noqa: E731
+    ozbargain.upsert_items(mdb, [gpu_items[912001]], [None], iso(181))
+    ozbargain.upsert_items(mdb, [gpu_items[912008]], [None], iso(179))
+    mdb.execute("INSERT INTO ozb_polls VALUES (?,1,0,NULL)", (iso(31),))
+    mdb.execute("INSERT INTO ozb_polls VALUES (?,1,0,NULL)", (iso(29),))
+    ozbargain.prune(mdb, NOW)
+    assert set(_deals(mdb)) == {912008}
+    assert mdb.execute("SELECT COUNT(*) FROM ozb_polls").fetchone()[0] == 1
+
+
+# --- run()
+def _resp(text="", status=200):
+    r = MagicMock()
+    r.status_code = status
+    r.text = text
+    if status >= 400:
+        r.raise_for_status.side_effect = RuntimeError(f"HTTP {status}")
+    return r
+
+
+def _ok_gpu():
+    return _resp((FIX / "ozbargain_video_card_feed.xml").read_text(encoding="utf-8"))
+
+
+def _ok_cpu():
+    return _resp((FIX / "ozbargain_cpu_feed.xml").read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def run_env(tmp_path, monkeypatch):
+    path = tmp_path / "run.db"
+    _mk_db(path).close()
+    calls = []
+
+    def install(gpu, cpu):
+        def fake_get(url, **kw):
+            calls.append((url, kw))
+            out = gpu if url == FEEDS[0][1] else cpu
+            if isinstance(out, Exception):
+                raise out
+            return out
+        monkeypatch.setattr(ozbargain.requests, "get", fake_get)
+    return path, calls, install
+
+
+def _polls(path):
+    c = sqlite3.connect(str(path))
+    c.row_factory = sqlite3.Row
+    try:
+        return c.execute("SELECT * FROM ozb_polls").fetchall(), c.execute("SELECT COUNT(*) FROM ozb_deals").fetchone()[0]
+    finally:
+        c.close()
+
+
+def test_run_both_ok_and_budget(run_env):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+    res = ozbargain.run(db_path=path, now=NOW)
+    assert [c[0] for c in calls] == [u for _, u in FEEDS]
+    for _, kw in calls:
+        assert kw["timeout"] == 10
+        assert kw["headers"]["User-Agent"] == USER_AGENT
+    assert res["ok"] and res["items"] == 12 and res["matched"] == 5 and res["errors"] == []
+    polls, n = _polls(path)
+    assert n == 12 and len(polls) == 1 and polls[0]["ok"] == 1 and polls[0]["items"] == 12
+
+
+@pytest.mark.parametrize("bad", [RuntimeError("boom"), _resp(status=403), _resp("<html><body>blocked</body></html>")])
+def test_run_one_feed_down(run_env, bad, caplog):
+    path, calls, install = run_env
+    install(_ok_gpu(), bad)
+    with caplog.at_level(logging.WARNING):
+        res = ozbargain.run(db_path=path, now=NOW)
+    assert res["ok"] and res["items"] == 9 and len(res["errors"]) == 1
+    assert any(r.levelno == logging.WARNING and "cpu" in r.getMessage() for r in caplog.records)
+    polls, n = _polls(path)
+    assert polls[0]["ok"] == 1 and n == 9
+
+
+def test_run_both_fail(run_env):
+    path, calls, install = run_env
+    install(RuntimeError("a"), _resp(status=403))
+    res = ozbargain.run(db_path=path, now=NOW)
+    assert not res["ok"] and res["items"] == 0 and len(res["errors"]) == 2
+    polls, n = _polls(path)
+    assert polls[0]["ok"] == 0 and polls[0]["error"] and n == 0
+
+
+def test_run_dry_run_writes_nothing(run_env):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+    res = ozbargain.run(db_path=path, dry_run=True, now=NOW)
+    assert res["ok"] and res["matched"] == 5
+    assert _polls(path) == ([], 0)
+
+
+def test_cli_dry_run_prints_matches(run_env, monkeypatch, capsys):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+    monkeypatch.setattr(ozbargain, "DB_PATH", path)
+    monkeypatch.setattr("config.setup_logging", lambda *a, **k: None)
+    ozbargain.main(["--dry-run"])
+    out = capsys.readouterr().out
+    assert "912001" in out and "913001" in out and "912004" not in out
+    assert _polls(path) == ([], 0)
+
+
+def test_run_dry_run_creates_no_tables(tmp_path, monkeypatch):
+    path = tmp_path / "bare.db"
+    c = _mk_db(path)
+    c.execute("DROP TABLE ozb_polls")
+    c.execute("DROP TABLE ozb_deals")
+    c.commit()
+    c.close()
+    monkeypatch.setattr(ozbargain.requests, "get",
+                        lambda url, **kw: _ok_gpu() if url == FEEDS[0][1] else _ok_cpu())
+    ozbargain.run(db_path=path, dry_run=True, now=NOW)
+    c = sqlite3.connect(str(path))
+    assert not list(c.execute("SELECT name FROM sqlite_master WHERE name LIKE 'ozb_%'"))
+    c.close()
+
+
+def test_run_resolves_db_path_at_call_time(tmp_path, monkeypatch):
+    path = tmp_path / "late.db"
+    _mk_db(path).close()
+    monkeypatch.setattr(ozbargain, "DB_PATH", path)
+    monkeypatch.setattr(ozbargain.requests, "get",
+                        lambda url, **kw: _ok_gpu() if url == FEEDS[0][1] else _ok_cpu())
+    ozbargain.run(now=NOW)
+    assert _polls(path)[1] == 12

@@ -872,3 +872,34 @@ class TestFxRatesTable:
         migrate.migrate_add_fx_rates_table(conn)
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute("INSERT INTO fx_rates VALUES ('2026-10-01', 0, 'rba', 'x')")
+
+
+class TestOzbargainTables:
+    def _tables(self, conn):
+        return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+    def test_creates_and_is_idempotent(self):
+        import sqlite3
+        import migrate
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_ozbargain_tables(conn)
+        migrate.migrate_add_ozbargain_tables(conn)
+        assert {"ozb_deals", "ozb_polls"} <= self._tables(conn)
+        idx = {r[1] for r in conn.execute("PRAGMA index_list(ozb_deals)")}
+        assert "idx_ozb_deals_product" in idx
+
+    def test_dry_run_creates_nothing(self):
+        import sqlite3
+        import migrate
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_ozbargain_tables(conn, dry_run=True)
+        assert not ({"ozb_deals", "ozb_polls"} & self._tables(conn))
+
+    def test_schema_sql_creates_both_with_spec_columns(self, db):
+        assert {"ozb_deals", "ozb_polls"} <= self._tables(db)
+        cols = [r[1] for r in db.execute("PRAGMA table_info(ozb_deals)")]
+        assert cols == ["node_id", "category", "title", "url", "price_aud", "retailer", "votes_pos",
+                        "votes_neg", "comment_count", "posted_at", "starts_at", "expires_at", "expired",
+                        "product_id", "first_seen_at", "last_seen_at", "alerted_at"]
+        assert [r[1] for r in db.execute("PRAGMA table_info(ozb_polls)")] == ["polled_at", "ok", "items", "error"]
+        assert "idx_ozb_deals_product" in {r[1] for r in db.execute("PRAGMA index_list(ozb_deals)")}

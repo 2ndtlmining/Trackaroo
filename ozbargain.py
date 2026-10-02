@@ -4,15 +4,39 @@ Pure parsing of the tag feeds (video-card, cpu). Best effort: odd or missing
 fields become None/0 and never raise; only an unparseable feed raises
 ``ValueError``. The ``/goto/`` redirect URL is never read or stored; the deal
 URL is always the ``/node/<id>`` page.
+
+``run()`` makes one poll: two GETs (one per tag feed), match each item to a
+tracked product, upsert into ``ozb_deals`` and log an ``ozb_polls`` row.
 """
 from __future__ import annotations
 
+import argparse
+import logging
 import re
+import sqlite3
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+import requests
+
+from config import DB_PATH
+from discover_rules import is_excluded_title
+from migrate import migrate_add_ozbargain_tables
+from scraper.chip_key import Matcher
+
+LOGGER = logging.getLogger(__name__)
+TIMEOUT = 10
+DEALS_RETENTION_DAYS = 180
+POLLS_RETENTION_DAYS = 30
+# discover_rules.is_excluded_title misses prebuilt PCs ("Gaming PC with RTX 5070"):
+# a whole-PC deal is not a card or CPU price, so it is never matched.
+_PREBUILT_RE = re.compile(
+    r"\b(?:gaming|desktop|custom|office)\s+(?:pc|computer|desktop|system)s?\b"
+    r"|\bpre-?built\b|\ball[ -]in[ -]one\b|\bmini pc\b|\bpc with\b", re.I)
 
 FEEDS: Tuple[Tuple[str, str], ...] = (
     ("gpu", "https://www.ozbargain.com.au/tag/video-card/feed"),
@@ -183,3 +207,135 @@ def parse_feed(xml_text: str, category: str, now: datetime) -> List[FeedItem]:
         if parsed is not None:
             items.append(parsed)
     return items
+
+
+# ------------------------------------------------------------------ matching
+def build_matchers(conn: sqlite3.Connection) -> Dict[str, Tuple[Matcher, List[dict]]]:
+    """One Matcher per category over the tracked products; rows[i] maps back to an id."""
+    rows: Dict[str, List[dict]] = {}
+    for r in conn.execute("SELECT id, category, brand, model, vram_gb FROM products WHERE tracked = 1"):
+        d = {"id": r[0], "category": r[1], "brand": r[2], "model": r[3], "vram_gb": r[4]}
+        rows.setdefault(d["category"], []).append(d)
+    return {cat: (Matcher(lst), lst) for cat, lst in rows.items()}
+
+
+def match_item(item: FeedItem, matchers: Dict[str, Tuple[Matcher, List[dict]]]) -> Optional[int]:
+    """Tracked product id for a feed item, or None (bundles, ambiguous VRAM, untracked)."""
+    if item.category not in matchers or is_excluded_title(item.title) or _PREBUILT_RE.search(item.title):
+        return None
+    matcher, rows = matchers[item.category]
+    idx = matcher.resolve(item.title, item.category)
+    for slug in item.product_slugs:
+        if idx is not None:
+            break
+        idx = matcher.resolve(slug.replace("-", " "), item.category, extra_text=item.title)
+    return rows[idx]["id"] if idx is not None else None
+
+
+# ------------------------------------------------------------------- storage
+_UPSERT_SQL = """
+INSERT INTO ozb_deals (node_id, category, title, url, price_aud, retailer, votes_pos, votes_neg,
+    comment_count, posted_at, starts_at, expires_at, expired, product_id, first_seen_at, last_seen_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(node_id) DO UPDATE SET
+    category = excluded.category, title = excluded.title, url = excluded.url,
+    price_aud = excluded.price_aud, retailer = excluded.retailer,
+    votes_pos = excluded.votes_pos, votes_neg = excluded.votes_neg,
+    comment_count = excluded.comment_count, posted_at = excluded.posted_at,
+    starts_at = excluded.starts_at, expires_at = excluded.expires_at, expired = excluded.expired,
+    product_id = COALESCE(ozb_deals.product_id, excluded.product_id),
+    last_seen_at = excluded.last_seen_at
+"""
+
+
+def upsert_items(conn: sqlite3.Connection, items: Sequence[FeedItem],
+                 product_ids: Sequence[Optional[int]], seen_at: str) -> None:
+    """Upsert on node_id. first_seen_at, alerted_at and a non-null product_id are kept."""
+    conn.executemany(_UPSERT_SQL, [
+        (i.node_id, i.category, i.title, i.url, i.price_aud, i.retailer, i.votes_pos, i.votes_neg,
+         i.comment_count, i.posted_at, i.starts_at, i.expires_at, int(i.expired), pid, seen_at, seen_at)
+        for i, pid in zip(items, product_ids)
+    ])
+    conn.commit()
+
+
+def prune(conn: sqlite3.Connection, now: datetime) -> None:
+    """Drop deals not seen for 180 days and poll log rows older than 30 days."""
+    deals_cut = (now - timedelta(days=DEALS_RETENTION_DAYS)).isoformat(timespec="seconds")
+    polls_cut = (now - timedelta(days=POLLS_RETENTION_DAYS)).isoformat(timespec="seconds")
+    conn.execute("DELETE FROM ozb_deals WHERE last_seen_at < ?", (deals_cut,))
+    conn.execute("DELETE FROM ozb_polls WHERE polled_at < ?", (polls_cut,))
+    conn.commit()
+
+
+# ---------------------------------------------------------------------- poll
+def _fetch(category: str, url: str, now: datetime) -> List[FeedItem]:
+    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return parse_feed(resp.text, category, now)
+
+
+def poll(conn: sqlite3.Connection, now: datetime, dry_run: bool = False) -> Dict[str, Any]:
+    """Fetch both feeds, match and store. ok when at least one feed parsed."""
+    items: List[FeedItem] = []
+    errors: List[str] = []
+    for category, url in FEEDS:
+        try:
+            items.extend(_fetch(category, url, now))
+        except Exception as e:  # noqa: BLE001 - one feed down must not stop the other
+            LOGGER.warning("OzBargain %s feed failed: %s", category, e)
+            errors.append(f"{category}: {e}")
+    result: Dict[str, Any] = {"ok": len(errors) < len(FEEDS), "items": len(items), "matched": 0,
+                              "errors": errors, "matches": []}
+    if not result["ok"]:
+        return result
+    matchers = build_matchers(conn)
+    pids = [match_item(i, matchers) for i in items]
+    result["matched"] = sum(p is not None for p in pids)
+    result["matches"] = [(i, p) for i, p in zip(items, pids) if p is not None]
+    if not dry_run:
+        upsert_items(conn, items, pids, now.isoformat(timespec="seconds"))
+    return result
+
+
+def run(db_path: Optional[Path] = None, dry_run: bool = False,
+        now: Optional[datetime] = None) -> Dict[str, Any]:
+    """One poll against the DB. A dry run writes nothing (no tables, no poll row)."""
+    db_path = Path(db_path) if db_path is not None else DB_PATH
+    now = now or datetime.now(MELBOURNE)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        if not dry_run:
+            migrate_add_ozbargain_tables(conn)
+        result = poll(conn, now, dry_run=dry_run)
+        if not dry_run:
+            prune(conn, now)
+            conn.execute(
+                "INSERT OR REPLACE INTO ozb_polls (polled_at, ok, items, error) VALUES (?, ?, ?, ?)",
+                (now.isoformat(timespec="seconds"), int(result["ok"]), result["items"],
+                 "; ".join(result["errors"]) or None),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+    LOGGER.info("OzBargain poll: ok=%s items=%d matched=%d errors=%d",
+                result["ok"], result["items"], result["matched"], len(result["errors"]))
+    return result
+
+
+def main(argv: Optional[List[str]] = None) -> None:
+    parser = argparse.ArgumentParser(description="Poll the OzBargain GPU/CPU deal feeds")
+    parser.add_argument("--dry-run", action="store_true", help="Parse and match, write nothing")
+    args = parser.parse_args(argv)
+    import config
+    config.setup_logging()
+    result = run(dry_run=args.dry_run)
+    if args.dry_run:
+        for item, pid in result["matches"]:
+            price = f"${item.price_aud:,.2f}" if item.price_aud is not None else "-"
+            print(f"{item.node_id} {pid} {item.title} {price}")
+    print({k: v for k, v in result.items() if k != "matches"})
+
+
+if __name__ == "__main__":
+    main()
