@@ -81,6 +81,19 @@ def test_best_ignores_bundles(db, variant, url):
     assert oa.best_in_stock(db, 1) == (1250.0, "scorptec")
 
 
+def test_best_ignores_delisted(db):
+    snap(db, price=900, retailer="umart")
+    db.execute("UPDATE retailer_listings SET status='delisted'")
+    snap(db, price=1250, retailer="pccg")
+    assert oa.best_in_stock(db, 1) == (1250.0, "pccg")
+
+
+def test_best_none_when_product_older_than_global_latest(db):
+    snap(db, pid=1, price=1000, date=YESTERDAY)
+    snap(db, pid=2, price=500, date=TODAY)
+    assert oa.best_in_stock(db, 1) is None
+
+
 def test_best_none_when_nothing_in_stock(db):
     snap(db, stock="out_of_stock")
     assert oa.best_in_stock(db, 1) is None
@@ -122,6 +135,22 @@ def test_exclusions(db, kw):
     snap(db)
     deal(db, **kw)
     assert ids(db) == []
+
+
+@pytest.mark.parametrize("starts,included", [
+    ("2026-10-03T13:00:00", False),            # no tz = Melbourne, future
+    ("2026-10-03T11:00:00", True),
+    ("2026-10-03T03:00:00Z", False),           # 13:00 +10, future
+    ("2026-10-03T01:00:00Z", True),
+    ("2026-10-03T13:00:00+11:00", True),       # == 12:00 +10 == now, not future
+    ("2026-10-03T14:00:00+11:00", False),      # 13:00 +10, one hour ahead
+    ("2026-10-03T12:00:00+11:00", True),       # 11:00 +10, past
+    ("garbage", True),
+])
+def test_starts_at_offsets(db, starts, included):
+    snap(db)
+    n = deal(db, starts_at=starts)
+    assert (ids(db) == [n]) is included
 
 
 def test_past_start_included(db):

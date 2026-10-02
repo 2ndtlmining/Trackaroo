@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 
 import notify_discord
+import ozbargain
 
 LOGGER = logging.getLogger(__name__)
 MAX_ALERTS_PER_POLL = 5
@@ -21,12 +22,9 @@ MAX_ALERTS_PER_POLL = 5
 _BEST_SQL = """
 SELECT ps.price_aud, l.retailer
 FROM price_snapshots ps
-JOIN retailer_listings l ON l.id = ps.retailer_listing_id
+JOIN retailer_listings l ON l.id = ps.retailer_listing_id AND l.status = 'active'
 WHERE l.product_id = :pid
-  AND ps.snapshot_date = (
-      SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
-      JOIN retailer_listings l2 ON l2.id = ps2.retailer_listing_id
-      WHERE l2.product_id = :pid)
+  AND ps.snapshot_date = (SELECT MAX(snapshot_date) FROM price_snapshots)
   AND ps.stock_status = 'in_stock'
   AND lower(l.variant_name) NOT LIKE '%bundle%'
   AND lower(l.variant_name) NOT LIKE '%combo%'
@@ -38,7 +36,8 @@ LIMIT 1
 
 
 def best_in_stock(conn: sqlite3.Connection, product_id: int) -> Optional[Tuple[float, str]]:
-    """(price, retailer) of the cheapest in-stock non-bundle listing today, or None."""
+    """(price, retailer) of the cheapest active, in-stock, non-bundle listing on the
+    GLOBAL latest snapshot date (as the web's cheapestListingPerProduct), or None."""
     row = conn.execute(_BEST_SQL, {"pid": product_id}).fetchone()
     return (row[0], row[1]) if row else None
 
@@ -57,7 +56,8 @@ def _product_name(conn: sqlite3.Connection, product_id: int) -> str:
 
 def alert_candidates(conn: sqlite3.Connection, now: datetime) -> List[dict]:
     """Deals due an alert, best value first (price / best asc, no-best last), capped."""
-    now_iso = now.isoformat(timespec="seconds")
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=ozbargain.MELBOURNE)
     prev = conn.row_factory
     conn.row_factory = sqlite3.Row
     try:
@@ -71,7 +71,8 @@ def alert_candidates(conn: sqlite3.Connection, now: datetime) -> List[dict]:
         conn.row_factory = prev
     out: List[dict] = []
     for d in deals:
-        if d["starts_at"] and d["starts_at"] > now_iso:
+        start = ozbargain._aware(d["starts_at"]) if d["starts_at"] else None
+        if start is not None and start > now:
             continue
         best = best_in_stock(conn, d["product_id"])
         if best is not None and not d["price_aud"] < best[0]:
