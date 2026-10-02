@@ -14,7 +14,7 @@ import { DEAL_MIN_AUD, DEAL_MIN_PCT, EARNED_LOW_RISE_PCT, MIN_HISTORY_POINTS } f
 import { CATEGORY_OPTIONS } from './filters';
 import type { FacetOption } from './offers';
 import type { ListingDisplay } from './listingsPanel';
-import type { DealCandidate } from './server/repos';
+import type { DealCandidate } from './models';
 
 export type { DealCandidate };
 

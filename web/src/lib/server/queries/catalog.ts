@@ -190,7 +190,7 @@ export function getAvailableCounts(db: DB): Map<Category, number> {
 
 export function getLatestListings(
 	db: DB,
-	filters: ListingFilters = {},
+	filters: Pick<ListingFilters, 'category' | 'inStock'> = {},
 	windowDays = DEFAULT_WINDOW_DAYS
 ): LatestListing[] {
 	const { clause, params } = filtersToParams(filters);

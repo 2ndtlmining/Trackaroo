@@ -20,10 +20,23 @@ const isServerSide = (f: string) =>
 	/hooks\.server\.ts$/.test(f);
 
 describe('boundaries (#30)', () => {
-	it('no client file imports $lib/server', () => {
+	it('no client file imports $lib/server (alias or relative)', () => {
+		const serverDir = path.join(SRC, 'lib', 'server');
+		const specRe = /(?:\bfrom\s+|\bimport\s+|\bimport\s*\(\s*)['"]([^'"]+)['"]/g;
+		const underServer = (p: string) => p === serverDir || p.startsWith(serverDir + path.sep);
 		const offenders = files
 			.filter((f) => !isServerSide(f))
-			.filter((f) => /from\s+['"]\$lib\/server/.test(fs.readFileSync(f, 'utf-8')))
+			.filter((f) => {
+				const text = fs.readFileSync(f, 'utf-8');
+				for (const m of text.matchAll(specRe)) {
+					const spec = m[1];
+					let resolved: string | null = null;
+					if (spec.startsWith('$lib/') || spec === '$lib') resolved = path.join(SRC, 'lib', spec.slice(5));
+					else if (spec.startsWith('.')) resolved = path.resolve(path.dirname(f), spec);
+					if (resolved && underServer(path.normalize(resolved))) return true;
+				}
+				return false;
+			})
 			.map((f) => path.relative(SRC, f));
 		expect(offenders).toEqual([]);
 	});

@@ -2,7 +2,7 @@
 // tests rather than by how the page happens to render.
 import { GENERIC_TIER_LABELS, generationTierLabel } from './tiers';
 import type { Category, GenerationTier } from './types';
-import type { ProductGroup } from './server/repos';
+import type { ProductGroup } from './models';
 
 // One /products row: a product group without its listings (#28), plus the
 // catalog columns (#23).
