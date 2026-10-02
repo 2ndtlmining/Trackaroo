@@ -1,14 +1,33 @@
 import {
+	getCpuSpecs,
 	getLatestListings,
 	getLaunchDates,
 	getProductDealStats,
+	getProductSparklines,
 	getTrackedProducts,
 	groupListingsByProduct
 } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 import { memo } from '$lib/server/cache';
 import { parseFilters } from '$lib/filters';
-import type { Category, ListingFilters } from '$lib/types';
+import type { Category, ListingFilters, Retailer } from '$lib/types';
+import type { LatestListing } from '$lib/models';
+
+type RetailerPrices = Partial<Record<Retailer, { inStock: number | null; any: number | null }>>;
+
+// Cheapest latest price per retailer, overall and in stock. Computed from the
+// whole listing set, never the in-stock-filtered one, so `any` stays honest.
+function retailerPricesOf(listings: LatestListing[]): RetailerPrices {
+	const out: RetailerPrices = {};
+	for (const l of listings) {
+		const cell = (out[l.retailer] ??= { inStock: null, any: null });
+		if (cell.any === null || l.latestPrice < cell.any) cell.any = l.latestPrice;
+		if (l.latestStock === 'in_stock' && (cell.inStock === null || l.latestPrice < cell.inStock)) {
+			cell.inStock = l.latestPrice;
+		}
+	}
+	return out;
+}
 
 // The index ships the whole category to the browser and filters there, so this
 // load deliberately does less than it used to: no text search, no sort, no
@@ -32,15 +51,26 @@ export function load({
 	const inStockOnly = parsed.inStock ?? false;
 	setHeaders({ 'cache-control': 'public, max-age=60, stale-while-revalidate=300' });
 
-	const { trackedCount, listedCount, groups: visible } = memo(
+	// The memo is per category only: the listings are fetched unfiltered so
+	// retailerPrices.any and listingCount do not shrink when "in stock" is on;
+	// the in-stock narrowing happens after the memo.
+	const base = memo(
 		db,
-		`products:${category}:${inStockOnly}`,
+		`products:${category}`,
 		() => {
-			const listings = getLatestListings(db, { category, inStock: parsed.inStock });
+			const listings = getLatestListings(db, { category });
 			const withListings = groupListingsByProduct(listings);
 			const dealStats = getProductDealStats(db, withListings.map((g) => g.productId));
 			const byProduct = new Map(withListings.map((g) => [g.productId, g]));
 			const launchDates = getLaunchDates(db, category);
+			const cpuSpecs = getCpuSpecs(db, category);
+			const sparklines = getProductSparklines(db, category, 30);
+			const extras = (productId: number, launchDate: string | null) => ({
+				sparkline: (sparklines.get(productId) ?? []).map((p) => p.price),
+				socket: cpuSpecs.get(productId)?.socket ?? null,
+				threads: cpuSpecs.get(productId)?.threads ?? null,
+				releaseYear: launchDate ? Number(launchDate.slice(0, 4)) : null
+			});
 
 			// Start from the watchlist, not from what has been scraped. Around 39%
 			// of tracked products have never matched a listing; dropping them would
@@ -53,6 +83,8 @@ export function load({
 					return {
 						...product,
 						launchDate,
+						...extras(product.productId, launchDate),
+						retailerPrices: {} as RetailerPrices,
 						listingCount: 0,
 						cheapestInStockPrice: null,
 						cheapestInStockRetailer: null,
@@ -66,6 +98,8 @@ export function load({
 				const { listings, ...rest } = group;
 				return {
 					...rest,
+					...extras(group.productId, launchDate),
+					retailerPrices: retailerPricesOf(listings),
 					vramGb: product.vramGb,
 					cores: product.cores,
 					launchDate,
@@ -77,17 +111,19 @@ export function load({
 				};
 			});
 
-			const visible = inStockOnly ? groups.filter((g) => g.cheapestInStockPrice !== null) : groups;
-
 			return {
-				// Always the whole category, so the header does not restate the
-				// filtered count back as though it were the catalogue size.
 				trackedCount: groups.length,
 				listedCount: withListings.length,
-				groups: visible
+				listedInStockCount: withListings.filter((g) => g.inStockCount > 0).length,
+				groups
 			};
 		}
 	);
+	const visible = inStockOnly ? base.groups.filter((g) => g.cheapestInStockPrice !== null) : base.groups;
+	// Always the whole category, so the header does not restate the filtered
+	// count back as though it were the catalogue size.
+	const trackedCount = base.trackedCount;
+	const listedCount = inStockOnly ? base.listedInStockCount : base.listedCount;
 
 	return {
 		category,
