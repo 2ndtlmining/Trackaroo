@@ -152,6 +152,8 @@ export function activeFilterCount(view: CatalogView): number {
 // The retailer picker offers only the retailers the pipeline still scrapes
 // (config.ACTIVE_RETAILERS). The parser accepts all six slugs so an old link
 // still parses; it just narrows to a retailer with no current prices.
+// KEEP IN STEP with ACTIVE_RETAILERS in config.py (repo root): when a
+// retailer is added or retired there, change this list too.
 const ACTIVE_RETAILERS: readonly Retailer[] = ['scorptec', 'pccg', 'umart'];
 export const ACTIVE_RETAILER_OPTIONS = RETAILER_OPTIONS.filter((o) => ACTIVE_RETAILERS.includes(o.value));
 

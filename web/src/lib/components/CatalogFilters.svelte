@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { formatAud } from '$lib/formats';
+	import { retailerLabel } from '$lib/filters';
 	import {
 		ACTIVE_RETAILER_OPTIONS,
 		DEFAULT_DIR,
@@ -11,10 +12,14 @@
 	} from '$lib/catalogView';
 	import type { Category, GenerationTier, Retailer } from '$lib/types';
 
-	// The catalogue's controls (#23, spec §4). One set of controls in one
-	// native <dialog>: above md it is forced open inline by CSS; on a phone it
-	// is a modal opened by the "Filters (N active)" button. Rendering them once
-	// keeps one id, one label and one tab stop per control.
+	// The catalogue's controls (#23, spec §4), rendered from one snippet into
+	// two forms: inline above md (a form landmark, "Catalogue filters"), and
+	// on a phone inside a native modal <dialog> opened by "Filters (N
+	// active)". Only one is ever displayed, and the controls carry no ids, so
+	// the copy is invisible to the accessibility tree and to tests. With
+	// scripting off (Tailwind's noscript: variant, @media (scripting: none))
+	// the inline form shows at every width and the opener hides, so a phone
+	// without JS still gets the filters, with no hydration layout shift.
 	//
 	// Without JS this is a plain GET form. With JS every control writes the
 	// view straight back through onChange (the page syncs the URL with
@@ -137,6 +142,15 @@
 		set({ sort, dir: sort ? DEFAULT_DIR[sort] : 'asc' });
 	}
 
+	// A link can name a retailer the pipeline no longer scrapes; the select
+	// must still show what the URL says, rather than silently reading "Any".
+	const staleRetailer = $derived(
+		view.retailer && !ACTIVE_RETAILER_OPTIONS.some((o) => o.value === view.retailer)
+			? view.retailer
+			: null
+	);
+
+	const formClass = 'flex-col gap-3 md:flex-row md:flex-wrap md:items-end md:gap-x-4';
 	const control =
 		'h-9 rounded-md border border-border-input bg-surface px-2 text-sm text-text focus:border-accent focus:outline-none';
 	const chip =
@@ -144,190 +158,201 @@
 	const legend = 'mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted';
 </script>
 
+{#snippet controls()}
+	<!-- First in the tree so it is the default button (see `hydrated`);
+	     shown last. -->
+	<button
+		type="submit"
+		class="order-last h-9 self-start rounded-md border border-border bg-surface px-3 text-sm text-text md:self-end"
+		class:hidden={hydrated}
+	>
+		Apply filters
+	</button>
+	{#each Object.entries(hidden) as [name, value] (name)}
+		<input type="hidden" {name} {value} />
+	{/each}
+
+	<fieldset>
+		<legend class={legend}>Max price</legend>
+		<div class="flex flex-wrap items-center gap-1.5">
+			<!-- Submit buttons named "max" so a preset works as a plain GET
+			     form; they precede the number box, so the clicked preset's
+			     value is the first "max" the parser reads. -->
+			{#each PRESETS as p (p.label)}
+				<button
+					type="submit"
+					name="max"
+					value={p.value ?? ''}
+					aria-pressed={view.max === p.value}
+					onclick={(e) => preset(e, p.value)}
+					class={chip}
+				>
+					{p.label}
+				</button>
+			{/each}
+			<input
+				type="number"
+				name="max"
+				min="1"
+				step="1"
+				inputmode="numeric"
+				placeholder="Max $"
+				aria-label="Max price"
+				value={maxText}
+				oninput={onMaxInput}
+				onblur={() => maxTimer !== undefined && commitMax()}
+				class="{control} w-24"
+			/>
+		</div>
+	</fieldset>
+
+	{#if brands.length > 1}
+		<fieldset>
+			<legend class={legend}>Brand</legend>
+			<div class="flex flex-wrap items-center gap-3">
+				{#each brands as b (b)}
+					<label class="flex h-9 cursor-pointer select-none items-center gap-1.5 text-sm text-text">
+						<input
+							type="checkbox"
+							name="brand"
+							value={b}
+							class="size-4 accent-accent"
+							checked={view.brands.includes(b)}
+							onchange={(e) =>
+								set({ brands: toggle(view.brands, b, (e.target as HTMLInputElement).checked) })}
+						/>
+						{b}
+					</label>
+				{/each}
+			</div>
+		</fieldset>
+	{/if}
+
+	{#if gens.length > 1}
+		<fieldset>
+			<legend class={legend}>Generation</legend>
+			<div class="flex flex-wrap items-center gap-3">
+				{#each gens as g (g.value)}
+					<label class="flex h-9 cursor-pointer select-none items-center gap-1.5 text-sm text-text">
+						<input
+							type="checkbox"
+							name="gen"
+							value={g.value}
+							class="size-4 accent-accent"
+							checked={view.gens.includes(g.value)}
+							onchange={(e) =>
+								set({ gens: toggle(view.gens, g.value, (e.target as HTMLInputElement).checked) })}
+						/>
+						{g.label}
+					</label>
+				{/each}
+			</div>
+		</fieldset>
+	{/if}
+
+	<label
+		class="flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 self-start rounded-md border border-border bg-surface px-2.5 text-sm text-text md:self-end"
+	>
+		<input
+			type="checkbox"
+			name="in_stock"
+			value="1"
+			class="accent-accent"
+			checked={view.inStock}
+			onchange={(e) => onInStock((e.target as HTMLInputElement).checked)}
+		/>
+		In stock
+	</label>
+
+	<label class="flex flex-col text-sm text-text">
+		<span class={legend}>Retailer</span>
+		<select
+			name="retailer"
+			class={control}
+			value={view.retailer ?? ''}
+			onchange={(e) =>
+				set({ retailer: ((e.target as HTMLSelectElement).value || null) as Retailer | null })}
+		>
+			<option value="">Any</option>
+			{#each ACTIVE_RETAILER_OPTIONS as r (r.value)}
+				<option value={r.value}>{r.label}</option>
+			{/each}
+			{#if staleRetailer}
+				<option value={staleRetailer}>{retailerLabel(staleRetailer)} (no longer tracked)</option>
+			{/if}
+		</select>
+	</label>
+
+	<!-- The column headers sort too; these are for a phone (the header row
+	     is hidden there) and for the no-JS form. -->
+	<div class="flex items-end gap-2">
+		<label class="flex flex-col text-sm text-text">
+			<span class={legend}>Sort</span>
+			<select
+				name="sort"
+				class={control}
+				value={view.sort ?? ''}
+				onchange={(e) => onSort((e.target as HTMLSelectElement).value)}
+			>
+				<option value="">By series</option>
+				{#each Object.entries(SORT_LABELS) as [value, label] (value)}
+					<option {value}>{label}</option>
+				{/each}
+			</select>
+		</label>
+		<label class="flex flex-col text-sm text-text">
+			<span class={legend}>Order</span>
+			<select
+				name="dir"
+				class={control}
+				value={view.dir}
+				disabled={view.sort === null}
+				onchange={(e) => set({ dir: (e.target as HTMLSelectElement).value as SortDir })}
+			>
+				<option value="asc">Ascending</option>
+				<option value="desc">Descending</option>
+			</select>
+		</label>
+	</div>
+
+	{#if activeCount > 0}
+		<a href={clearHref} class="self-start text-sm text-accent underline md:self-end md:pb-2">
+			Clear filters
+		</a>
+	{/if}
+{/snippet}
+
 <button
 	type="button"
 	bind:this={opener}
 	onclick={openDialog}
-	class="h-9 shrink-0 rounded-md border border-border bg-surface px-2.5 text-sm text-text md:hidden"
+	class="h-9 shrink-0 rounded-md border border-border bg-surface px-2.5 text-sm text-text md:hidden noscript:hidden"
 >
 	Filters ({activeCount} active)
 </button>
+
+<form
+	method="get"
+	action="/products"
+	aria-label="Catalogue filters"
+	onsubmit={onSubmit}
+	class="hidden w-full md:flex noscript:flex {formClass}"
+>
+	{@render controls()}
+</form>
 
 <dialog
 	bind:this={dialog}
 	onclose={onDialogClose}
 	aria-label="Filters"
-	class="m-auto w-[calc(100%-2rem)] max-w-md rounded-lg border border-border bg-surface p-4 text-text backdrop:bg-bg/80 md:static md:m-0 md:block md:w-full md:max-w-none md:border-0 md:bg-transparent md:p-0"
+	class="m-auto w-[calc(100%-2rem)] max-w-md rounded-lg border border-border bg-surface p-4 text-text backdrop:bg-bg/80 md:hidden"
 >
-	<form
-		method="get"
-		action="/products"
-		onsubmit={onSubmit}
-		class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end md:gap-x-4"
-	>
-		<!-- First in the tree so it is the default button (see `hydrated`);
-		     shown last. -->
-		<button
-			type="submit"
-			class="order-last h-9 self-start rounded-md border border-border bg-surface px-3 text-sm text-text md:self-end"
-			class:hidden={hydrated}
-		>
-			Apply filters
-		</button>
-		{#each Object.entries(hidden) as [name, value] (name)}
-			<input type="hidden" {name} {value} />
-		{/each}
-
-		<fieldset>
-			<legend class={legend}>Max price</legend>
-			<div class="flex flex-wrap items-center gap-1.5">
-				<!-- Submit buttons named "max" so a preset works as a plain GET
-				     form; they precede the number box, so the clicked preset's
-				     value is the first "max" the parser reads. -->
-				{#each PRESETS as p (p.label)}
-					<button
-						type="submit"
-						name="max"
-						value={p.value ?? ''}
-						aria-pressed={view.max === p.value}
-						onclick={(e) => preset(e, p.value)}
-						class={chip}
-					>
-						{p.label}
-					</button>
-				{/each}
-				<input
-					type="number"
-					name="max"
-					min="1"
-					step="1"
-					inputmode="numeric"
-					placeholder="Max $"
-					aria-label="Max price"
-					value={maxText}
-					oninput={onMaxInput}
-					onblur={() => maxTimer !== undefined && commitMax()}
-					class="{control} w-24"
-				/>
-			</div>
-		</fieldset>
-
-		{#if brands.length > 1}
-			<fieldset>
-				<legend class={legend}>Brand</legend>
-				<div class="flex flex-wrap items-center gap-3">
-					{#each brands as b (b)}
-						<label class="flex h-9 cursor-pointer select-none items-center gap-1.5 text-sm text-text">
-							<input
-								type="checkbox"
-								name="brand"
-								value={b}
-								class="size-4 accent-accent"
-								checked={view.brands.includes(b)}
-								onchange={(e) =>
-									set({ brands: toggle(view.brands, b, (e.target as HTMLInputElement).checked) })}
-							/>
-							{b}
-						</label>
-					{/each}
-				</div>
-			</fieldset>
-		{/if}
-
-		{#if gens.length > 1}
-			<fieldset>
-				<legend class={legend}>Generation</legend>
-				<div class="flex flex-wrap items-center gap-3">
-					{#each gens as g (g.value)}
-						<label class="flex h-9 cursor-pointer select-none items-center gap-1.5 text-sm text-text">
-							<input
-								type="checkbox"
-								name="gen"
-								value={g.value}
-								class="size-4 accent-accent"
-								checked={view.gens.includes(g.value)}
-								onchange={(e) =>
-									set({ gens: toggle(view.gens, g.value, (e.target as HTMLInputElement).checked) })}
-							/>
-							{g.label}
-						</label>
-					{/each}
-				</div>
-			</fieldset>
-		{/if}
-
-		<label
-			class="flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 self-start rounded-md border border-border bg-surface px-2.5 text-sm text-text md:self-end"
-		>
-			<input
-				type="checkbox"
-				name="in_stock"
-				value="1"
-				class="accent-accent"
-				checked={view.inStock}
-				onchange={(e) => onInStock((e.target as HTMLInputElement).checked)}
-			/>
-			In stock
-		</label>
-
-		<label class="flex flex-col text-sm text-text">
-			<span class={legend}>Retailer</span>
-			<select
-				name="retailer"
-				class={control}
-				value={view.retailer ?? ''}
-				onchange={(e) =>
-					set({ retailer: ((e.target as HTMLSelectElement).value || null) as Retailer | null })}
-			>
-				<option value="">Any</option>
-				{#each ACTIVE_RETAILER_OPTIONS as r (r.value)}
-					<option value={r.value}>{r.label}</option>
-				{/each}
-			</select>
-		</label>
-
-		<!-- The column headers sort too; these are for a phone (the header row
-		     is hidden there) and for the no-JS form. -->
-		<div class="flex items-end gap-2">
-			<label class="flex flex-col text-sm text-text">
-				<span class={legend}>Sort</span>
-				<select
-					name="sort"
-					class={control}
-					value={view.sort ?? ''}
-					onchange={(e) => onSort((e.target as HTMLSelectElement).value)}
-				>
-					<option value="">By series</option>
-					{#each Object.entries(SORT_LABELS) as [value, label] (value)}
-						<option {value}>{label}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="flex flex-col text-sm text-text">
-				<span class={legend}>Order</span>
-				<select
-					name="dir"
-					class={control}
-					value={view.dir}
-					disabled={view.sort === null}
-					onchange={(e) => set({ dir: (e.target as HTMLSelectElement).value as SortDir })}
-				>
-					<option value="asc">Ascending</option>
-					<option value="desc">Descending</option>
-				</select>
-			</label>
-		</div>
-
-		{#if activeCount > 0}
-			<a href={clearHref} class="self-start text-sm text-accent underline md:self-end md:pb-2">
-				Clear filters
-			</a>
-		{/if}
-
+	<form method="get" action="/products" onsubmit={onSubmit} class="flex {formClass}">
+		{@render controls()}
 		<button
 			type="button"
 			onclick={closeDialog}
-			class="h-10 rounded-md border border-accent bg-accent-soft px-3 text-sm font-medium text-accent md:hidden"
+			class="h-10 rounded-md border border-accent bg-accent-soft px-3 text-sm font-medium text-accent"
 		>
 			Show {resultCount}
 			{resultCount === 1 ? 'result' : 'results'}

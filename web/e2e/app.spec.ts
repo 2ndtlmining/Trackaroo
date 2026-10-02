@@ -584,9 +584,35 @@ test.describe('catalogue filters and sort (#23)', () => {
 
 	test('the max price box applies after a pause, not per keystroke', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
-		await page.getByRole('spinbutton', { name: 'Max price' }).fill('800');
+		// Record every URL the page writes, so a per-keystroke max=8 / max=80
+		// would show up even though the address bar settles on max=800.
+		await page.evaluate(() => {
+			const seen: string[] = [];
+			(window as unknown as { __urls: string[] }).__urls = seen;
+			const original = history.replaceState.bind(history);
+			history.replaceState = (data, unused, url) => {
+				if (url) seen.push(String(url));
+				return original(data, unused, url);
+			};
+		});
+		await page.getByRole('spinbutton', { name: 'Max price' }).pressSequentially('800', { delay: 50 });
 		await expect(page).toHaveURL(/max=800/);
+		const urls = await page.evaluate(() => (window as unknown as { __urls: string[] }).__urls);
+		expect(urls.some((u) => /max=800\b/.test(u))).toBe(true);
+		expect(urls.filter((u) => /max=(8|80)(&|$)/.test(u))).toEqual([]);
 		for (const p of await rowPrices(page)) expect(p!).toBeLessThanOrEqual(800);
+	});
+
+	test('a retailer that is no longer tracked still shows in the picker', async ({ page }) => {
+		await goto(page, '/products?category=gpu&retailer=mwave');
+		const select = page.getByRole('combobox', { name: 'Retailer' });
+		await expect(select).toHaveValue('mwave');
+		await expect(select.getByRole('option', { name: 'MWave (no longer tracked)' })).toHaveCount(1);
+	});
+
+	test('default order keeps series groups headed by their release year', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await expect(page.getByRole('heading', { level: 2 }).first()).toHaveText(/· \d{4}/);
 	});
 
 	test('brand + gen + retailer combine and survive reload', async ({ page }) => {
@@ -696,6 +722,16 @@ test.describe('catalogue without JavaScript (#23)', () => {
 		await expect(page.getByRole('columnheader', { name: /^Price/ })).toHaveAttribute('aria-sort', 'ascending');
 		// The controls are a plain GET form with a visible submit button.
 		await expect(page.getByRole('button', { name: 'Apply filters' })).toBeVisible();
+	});
+
+	test('the filter form submits as a plain GET form', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const form = page.getByRole('form', { name: 'Catalogue filters' });
+		await form.getByRole('checkbox', { name: 'NVIDIA', exact: true }).check();
+		await form.getByRole('button', { name: 'Apply filters' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveURL(/brand=NVIDIA/);
+		await expect(page.getByRole('checkbox', { name: 'NVIDIA', exact: true })).toBeChecked();
 	});
 });
 

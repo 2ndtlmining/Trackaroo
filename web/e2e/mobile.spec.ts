@@ -106,6 +106,16 @@ test.describe('mobile viewport', () => {
 		await expect(open).toHaveText(/Filters \(1 active\)/);
 	});
 
+	test('while searching, the panel counts the search results (#23)', async ({ page }) => {
+		await goto(page, '/products?category=gpu&q=5060');
+		const rows = await page.getByTestId('catalog-row').count();
+		await page.getByRole('button', { name: /^Filters/ }).click();
+		expect(rows).toBeGreaterThan(0);
+		await expect(
+			page.getByRole('dialog', { name: 'Filters' }).getByRole('button', { name: /^Show \d+ results?$/ })
+		).toHaveAccessibleName(new RegExp(`^Show ${rows} results?$`));
+	});
+
 	test('the open filter dialog does not scroll horizontally (#23)', async ({ page }) => {
 		await goto(page, '/products?category=gpu');
 		await page.getByRole('button', { name: /^Filters/ }).click();
@@ -152,6 +162,20 @@ test.describe('mobile viewport', () => {
 		await page.mouse.click(box!.x + 2, box!.y + box!.height / 2);
 
 		await expect(checkbox).toBeChecked();
+	});
+});
+
+test.describe('phone without JavaScript (#23)', () => {
+	test.use({ viewport: PHONE, javaScriptEnabled: false });
+
+	test('the filters show inline and the dialog opener hides', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		await expect(page.getByRole('button', { name: /^Filters/ })).toBeHidden();
+		const form = page.getByRole('form', { name: 'Catalogue filters' });
+		await expect(form).toBeVisible();
+		await expect(form.getByRole('button', { name: 'Apply filters' })).toBeVisible();
+		const { viewport, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
 	});
 });
 

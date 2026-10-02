@@ -255,7 +255,7 @@
 			category={data.category}
 			brands={brandsPresent}
 			{gens}
-			resultCount={shown.length}
+			resultCount={searching ? matches.length : shown.length}
 			{activeCount}
 			{clearHref}
 			hidden={formHidden}
