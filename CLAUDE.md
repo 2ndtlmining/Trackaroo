@@ -18,11 +18,11 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 1211 tests.
+**Backend** (repo root): `python -m pytest -q` — 1213 tests.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 982 tests, ~15s)
+- **Unit tests**: `npm test` (Vitest, 983 tests, ~15s)
 - **Watch mode**: `npm run test:watch`
 - **E2E tests**: `npm run test:e2e` (Playwright, 176 tests, Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
@@ -103,7 +103,7 @@ Never delete price or product data. Products that roll out of scope get
 
 ## Pipeline conventions
 
-- `fx.py` (daily AUD per USD rate, RBA F11.1 with a Frankfurter fallback, into `fx_rates`) is a best-effort `run_daily` step after ingest; `check_fx_rate` is WARNING-only (rate older than 7 days or table empty). Until a rate exists the web shows "–" for MSRP in AUD.
+- `fx.py` (daily AUD per USD rate, RBA F11.1 with a Frankfurter fallback, into `fx_rates`) is a best-effort `run_daily` step after ingest; `check_fx_rate` is WARNING-only (rate older than 7 days or table empty). Until a rate exists the product page shows no MSRP line, the catalogue column shows "–", and /deals hides the Below MSRP toggle and ignores `?below_msrp=1`. One MSRP rule everywhere: the lowest positive `launch_msrp_usd` across a product's spec rows.
 - Steps after ingest (delisted check, JSON mirror, alerts, digest) are
   **best-effort**: route them through `run_daily.best_effort()` (or a
   `try/except` that logs). Health checks go through `guarded_check()`, so a

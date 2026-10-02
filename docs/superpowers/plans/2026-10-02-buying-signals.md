@@ -6,7 +6,7 @@
 
 **Architecture:** A best-effort daily step (`fx.py`) caches the AUD/USD rate in a new `fx_rates` table (RBA primary, Frankfurter fallback). The web reads the latest cached rate and computes the MSRP comparison with pure functions (`msrp.ts`). Signals are pure functions in `buySignals.ts`, `saleEvents.ts` and `successors.ts`, rendered by a redesigned BuyPanel with `@lucide/svelte` icons.
 
-**Tech Stack:** Python 3.12 (requests, sqlite3, pytest); SvelteKit 2 / Svelte 5, TypeScript, better-sqlite3, uPlot, vitest, Playwright + axe; `@lucide/svelte` (new, MIT).
+**Tech Stack:** Python 3.12 (requests, sqlite3, pytest); SvelteKit 2 / Svelte 5, TypeScript, better-sqlite3, uPlot, vitest, Playwright + axe; `@lucide/svelte` (new, ISC).
 
 **Spec:** `docs/superpowers/specs/2026-10-02-buying-signals-design.md`
 

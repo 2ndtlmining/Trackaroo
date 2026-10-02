@@ -20,7 +20,7 @@ Help the owner answer "is this a good price, and is now a good time to buy?" on 
 - The product page shows the signal checklist with an icon per badge. Each badge states its evidence window. Products under the history gate show "Gathering history (N days)".
 - The price chart shows AU sale events as dashed vertical markers with labels, with no new hue.
 - The four suites are green, the axe checks stay green, and a test forbids emoji in web sources.
-- New runtime dependency: `@lucide/svelte` (MIT). It is the only one.
+- New runtime dependency: `@lucide/svelte` (ISC). It is the only one.
 
 ## 2. Data safety
 - **One additive table**, `fx_rates`, created by `migrate.py` (and `db/schema.sql`) on startup like previous bookkeeping tables. No change to price tables, scraping, snapshots or backups.
@@ -99,7 +99,7 @@ Pure functions live in `web/src/lib/buySignals.ts`, which already has `dailyLows
 
 ## 9. Icons, look, and no emojis
 **Icon set:** **Lucide** via `@lucide/svelte`.
-- MIT licence, tree-shaken (only the imported icons ship), and consistent 24px line icons with a configurable stroke.
+- ISC licence, tree-shaken (only the imported icons ship), and consistent 24px line icons with a configurable stroke.
 - The owner already uses Lucide in other Svelte projects (the Brewery app uses `lucide-svelte`). `@lucide/svelte` is the current Svelte 5 package of the same icon set.
 - game-icons.net was considered and not used. Its illustrative style suits games, not a price dashboard, and its CC BY 3.0 licence needs a visible attribution.
 - Icons used: `CircleCheck`, `Minus`, `TrendingDown`, `TrendingUp`, `CalendarClock`, `TriangleAlert`, `Info`, and `BadgeDollarSign` for the MSRP line.

@@ -66,14 +66,14 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 1211 tests via pytest |
+| **Regression tests** | ✅ Complete | 1213 tests via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines, "Deal" badges), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), product-page "since tracked" chips (all-time low/high + 30-day average), price-drop & restock alerts panel on the product page, command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 982 vitest + 176 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 983 vitest + 176 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -400,7 +400,7 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (982 vitest)
+# Run frontend unit tests (983 vitest)
 npm test
 
 # Run browser e2e regression tests (176 Playwright, against a seeded dev server)
@@ -426,14 +426,14 @@ Every product page has a "good time to buy" checklist built from the price histo
 
 The stats strip shows the 30, 90 and 180-day low, median and high, and the chart marks sale events with dashed lines.
 
-**MSRP in AUD.** `msrpAud = launch_msrp_usd x aud_per_usd x 1.10` (the 10% is GST), shown as "N% under/over US launch MSRP (about A$X inc. GST)". The catalogue has a "vs MSRP" column (`sort=msrp`) and `/deals` has a "Below MSRP" toggle (`?below_msrp=1`). The rate comes from `fx.py`, a best-effort step in `run_daily.py` after ingest: it reads the latest RBA F11.1 rate (FXRUSD, inverted), falls back to Frankfurter (the ECB rate), accepts only 1.0 to 2.5 AUD per USD, and stores it in `fx_rates`. Until the first rate exists every MSRP figure shows "–". `check_fx_rate` only warns when the rate is more than 7 days old or missing. To fetch a rate now:
+**MSRP in AUD.** `msrpAud = launch_msrp_usd x aud_per_usd x 1.10` (the 10% is GST), shown as "N% under/over US launch MSRP (about A$X inc. GST)". The catalogue has a "vs MSRP" column (`sort=msrp`) and `/deals` has a "Below MSRP" toggle (`?below_msrp=1`). The rate comes from `fx.py`, a best-effort step in `run_daily.py` after ingest: it reads the latest RBA F11.1 rate (FXRUSD, inverted), falls back to Frankfurter (the ECB rate), accepts only 1.0 to 2.5 AUD per USD, and stores it in `fx_rates`. Until the first rate exists the product page shows no MSRP line, the catalogue column shows "–", and `/deals` hides the Below MSRP toggle (and ignores `?below_msrp=1`). `check_fx_rate` only warns when the rate is more than 7 days old or missing. To fetch a rate now:
 
 ```bash
 docker compose exec trackaroo python fx.py   # production
 python fx.py                                  # native
 ```
 
-**Sale events** (`web/src/lib/saleEvents.ts`). EOFY, Singles Day, Black Friday to Cyber Monday and Boxing Day are rule-based and need no upkeep. Click Frenzy and Prime Day are curated per year in the `CURATED` table, and the current entries are estimates (`estimated: true`), shown to users as "estimated dates". When a retailer announces the real dates, edit that year's entry and drop the `true` flag. Add next year's entries and its year to `CURATED_YEARS` before the year turns: a test fails when next year has no entry. "Today" for sale badges is the Australia/Melbourne date.
+**Sale events** (`web/src/lib/saleEvents.ts`). EOFY, Singles Day, Black Friday to Cyber Monday and Boxing Day are rule-based and need no upkeep. Click Frenzy and Prime Day are curated per year in the `CURATED` table, and the current entries are estimates (the tuple's last element is `true`), shown to users as "estimated dates". When a retailer announces the real dates, edit that year's entry and set the last element of its tuple (`[name, start, end, estimated]`) to `false`. Add next year's entries and its year to `CURATED_YEARS` before the year turns: a test fails when next year has no entry. "Today" for sale badges is the Australia/Melbourne date.
 
 **Successors** (`web/src/lib/successors.ts`). `SUCCESSORS` maps a product's specs `generation` string to the successor label and starts empty. The key is the spec value, for example `"GeForce 40"` (not `"RTX 40"`); the badge appears for every product in that generation. Example once the next series is announced: `"GeForce 50": "GeForce 60"`.
 
@@ -554,7 +554,7 @@ Trackaroo/
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 982 vitest regression tests (44 suites)
+    ├── test/                   # 983 vitest regression tests (48 suites)
     ├── e2e/                    # 176 Playwright regression tests (app.spec.ts, mobile.spec.ts, a11y.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
