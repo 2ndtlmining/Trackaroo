@@ -151,6 +151,37 @@ describe('repos equivalence (#30)', () => {
 		});
 	}
 
+	// SQL-text identity (#30 Task 4 ruling): result equality alone missed a
+	// one-day window change the seeded data never exercises. Every SQL string
+	// handed to db.prepare must match legacy, in order, whitespace-normalised
+	// (whitespace runs collapsed, and dropped next to ( ) , =). One target is
+	// enough: the text does not depend on the data.
+	const normSql = (s: string) => s.replace(/\s+/g, ' ').replace(/\s*([(),=])\s*/g, '$1').trim();
+	function preparedSql(db: AnyDb, run: (db: AnyDb) => unknown): string[] {
+		const seen: string[] = [];
+		const proxy = new Proxy(db, {
+			get(target, prop) {
+				if (prop === 'prepare') {
+					return (sql: string) => {
+						seen.push(normSql(sql));
+						return target.prepare(sql);
+					};
+				}
+				const v = Reflect.get(target, prop, target);
+				return typeof v === 'function' ? v.bind(target) : v;
+			}
+		});
+		run(proxy);
+		return seen;
+	}
+	for (const [name, call] of CASES) {
+		it(`${name}: prepares the same SQL text`, () => {
+			const db = targets[0].db;
+			const ids = sampleIds(db);
+			expect(preparedSql(db, (d) => call(current, d, ids)), name).toEqual(preparedSql(db, (d) => call(legacy, d, ids)));
+		});
+	}
+
 	it('exports the same names as legacy (minus the deliberately deleted)', () => {
 		// Deliberately deleted in Task 2 (#30): dead code, still in the frozen legacy copy.
 		const DELETED = ['getBrands', 'getProductSparklines'];
