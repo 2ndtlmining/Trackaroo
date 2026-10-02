@@ -30,14 +30,11 @@ async function scan(page: Page, theme: 'light' | 'dark', route: string) {
 	await page.addInitScript((t) => localStorage.setItem('trackaroo-theme', t), theme);
 	await goto(page, route);
 	await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-	const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 	const results = await new AxeBuilder({ page }).disableRules(DISABLED_RULES).analyze();
 	const bad = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
 	expect(bad.map((v) => `${v.id}: ${v.nodes.length} node(s) - ${v.help}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([]);
-	return bg;
 }
 
-const [A, B] = compareIds();
 const PAGES = [
 	'/',
 	'/products?category=gpu',
@@ -46,7 +43,7 @@ const PAGES = [
 	'/deals',
 	'/movers',
 	'/discover',
-	`/compare?ids=${A},${B}`,
+	'/compare',
 	'/product/999999'
 ];
 
@@ -67,7 +64,14 @@ for (const theme of ['light', 'dark'] as const) {
 	test.describe(`axe (${theme})`, () => {
 		for (const route of PAGES) {
 			test(`${route} has no serious or critical violations`, async ({ page }) => {
-				await scan(page, theme, route);
+				// Seed ids are read here, not at module load: Playwright collects
+				// tests before the webServer runs seed.mjs, so e2e.db may not exist yet.
+				let target = route;
+				if (route === '/compare') {
+					const [a, b] = compareIds();
+					target = `/compare?ids=${a},${b}`;
+				}
+				await scan(page, theme, target);
 			});
 		}
 
