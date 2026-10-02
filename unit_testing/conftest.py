@@ -72,6 +72,13 @@ def _no_real_discovery_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(discover, "DATA_DIR", tmp_path / "discover-guard-data")
 
 
+# fx.run() defaults to the real DB (it creates fx_rates and upserts rows).
+@pytest.fixture(autouse=True)
+def _no_real_fx_path(monkeypatch, tmp_path):
+    import fx
+    monkeypatch.setattr(fx, "DB_PATH", tmp_path / "fx-guard.db")
+
+
 def _make_connection(use_memory: bool = True) -> sqlite3.Connection:
     """Create a fresh connection with the schema applied."""
     if use_memory:
@@ -164,7 +171,7 @@ def isolated_pipeline(monkeypatch, tmp_path):
     import run_daily
 
     calls = types.SimpleNamespace(
-        alerts=[], discovery_runs=[], digests=0, price_alert_runs=0, backups=0, delisted_runs=0, heartbeats=0,
+        alerts=[], discovery_runs=[], digests=0, price_alert_runs=0, backups=0, delisted_runs=0, heartbeats=0, fx_runs=[],
         db_path=tmp_path / "pipeline.db", data_dir=tmp_path / "data",
     )
     calls.data_dir.mkdir()
@@ -208,6 +215,7 @@ def isolated_pipeline(monkeypatch, tmp_path):
     monkeypatch.setattr("check_alerts.run", fake_price_alerts)
     monkeypatch.setattr("discover.run", lambda **k: calls.discovery_runs.append(k) or {})
     monkeypatch.setattr("backup_db.backup_database", fake_backup)
+    monkeypatch.setattr("fx.run", lambda *a, **k: calls.fx_runs.append(a) or None)
 
     def fake_ping(*a, **k):
         calls.heartbeats += 1

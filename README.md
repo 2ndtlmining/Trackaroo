@@ -66,14 +66,14 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 566 tests across 22 modules via pytest |
+| **Regression tests** | ✅ Complete | 1231 tests via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines, "Deal" badges), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), product-page "since tracked" chips (all-time low/high + 30-day average), price-drop & restock alerts panel on the product page, command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 886 vitest + 167 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 1009 vitest + 179 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -383,6 +383,30 @@ container. That is the whole point of mapping them.
 See [DEPLOYMENT.md](DEPLOYMENT.md) for host scheduling, reverse-proxy notes,
 and monitoring.
 
+### Releases and the version in the footer
+
+The footer shows the release and the build, e.g. `v0.4.0 · build 328073f`.
+The release links to `/changelog`, which renders [`CHANGELOG.md`](CHANGELOG.md).
+`/healthz` reports both: `release` and `version` (the git SHA).
+
+- **Release number:** `web/package.json` `version` is the single source. It is
+  baked in at build time.
+- **Changelog:** each PR adds its lines under `## Unreleased` in `CHANGELOG.md`.
+- **Cutting a release:**
+  1. Run `python release.py X.Y.Z` from the repo root. It moves Unreleased into
+     `## X.Y.Z — <today>` and bumps `web/package.json` and its lockfile.
+  2. Commit, and merge.
+  3. Tag the merge commit and push the tag:
+     `git tag -a vX.Y.Z -m vX.Y.Z <sha> && git push origin vX.Y.Z`.
+  4. Redeploy.
+- **Version numbers:** the minor number goes up for features, the patch number
+  for fixes.
+- **Guards:** pytest (`test_release.py`) and vitest (`changelog.test.ts`) both
+  fail if the newest changelog release and `package.json` disagree. Vitest also
+  fails if releases are not listed newest first.
+- **Docker:** the build context must include `CHANGELOG.md`. The Dockerfile
+  copies it into the web build stage.
+
 ## Frontend (`web/`)
 
 SvelteKit dashboard that reads `db/trackaroo.db` directly (read-only, WAL-safe). Routes: `/` dashboard (sortable table — click a column header for ▲/▼ price/change/freshness sorting), `/products` (card grid grouped by product — each card shows a cheapest-in-stock trend sparkline, expandable variant listings with inline 7-day trend sparklines, compare checkboxes), `/compare?ids=` (side-by-side specs + per-retailer best prices for 2–4 same-category products), `/movers` (24h/7d/30d, sortable by window/abs-pct/price *and* clickable ▲/▼ column headers, per-row trend sparklines), `/product/[id]` (meta + uPlot history chart with low/high band and all-time/30d-avg chips + brand-grouped listings panel + spec panel + a **price alerts** panel to arm "tell me under $X" / restock alerts). A global **command palette** (Ctrl/Cmd+K) searches the tracked products from any page and jumps straight to a product (or offers a quick "Compare A vs B" when exactly two match); each result shows its snapshot-count badge. Retailer variant names are display-cased (`titleCase()` — e.g. `rtx`→`RTX`, `5600x`→`5600X`) at render time; the stored data stays raw.
@@ -400,10 +424,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (886 vitest)
+# Run frontend unit tests (1009 vitest)
 npm test
 
-# Run browser e2e regression tests (167 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (179 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -412,6 +436,32 @@ Point it at a different DB file with `TRACKAROO_DB=/path/to/trackaroo.db`. The d
 ### Browsing the catalogue
 
 `/products?category=gpu` (or `cpu`) filters and sorts the catalogue, and the whole view lives in the URL, so any filtered list can be bookmarked or shared as a link. Filters: a maximum price (presets of $500, $1000, $2000, or any amount), brand, GPU/CPU generation, in stock only, and a retailer. Sort by price, model, VRAM (GPU) or cores (CPU), release date or number of listings; click a column header, or use the sort control, and click again to reverse. The controls are an inline form on desktop. On a phone they sit behind a "Filters (N active)" button that opens a dialog, and with JavaScript off they stay inline as a plain GET form, so the filters still work. "Clear filters" resets the URL. The compare page marks the best value in each spec row, and the product-page chart can show the 30-day average line.
+
+## Buying signals
+
+Every product page has a "good time to buy" checklist built from the price history (`web/src/lib/buySignals.ts`). Each badge states its evidence.
+
+- **Percentile**: "As cheap as or cheaper than N% of days". It counts the days whose lowest price was at or above today's price.
+- **Lowest in N days** and **vs 30-day average**: how today's price sits against recent history.
+- **7-day trend**: falling, flat or rising.
+- **Sale event**: a named sale that is on now or coming up (below).
+- **Successor**: the next generation has been announced (below).
+- **Gathering history (N days)**: shown instead of the history badges until the product has enough days of data.
+
+The stats strip shows the 30, 90 and 180-day low, median and high, and the chart marks sale events with dashed lines.
+
+**MSRP in AUD.** `msrpAud = launch_msrp_usd x aud_per_usd x 1.10` (the 10% is GST), shown as "N% under/over US launch MSRP (about A$X inc. GST)". The catalogue has a "vs MSRP" column (`sort=msrp`) and `/deals` has a "Below MSRP" toggle (`?below_msrp=1`). The rate comes from `fx.py`, a best-effort step in `run_daily.py` after ingest: it reads the latest RBA F11.1 rate (FXRUSD, inverted), falls back to Frankfurter (the ECB rate), accepts only 1.0 to 2.5 AUD per USD, and stores it in `fx_rates`. Until the first rate exists the product page shows no MSRP line, the catalogue column shows "–", and `/deals` hides the Below MSRP toggle (and ignores `?below_msrp=1`). `check_fx_rate` only warns when the rate is more than 7 days old or missing. To fetch a rate now:
+
+```bash
+docker compose exec trackaroo python fx.py   # production
+python fx.py                                  # native
+```
+
+**Sale events** (`web/src/lib/saleEvents.ts`). EOFY, Singles Day, Black Friday to Cyber Monday and Boxing Day are rule-based and need no upkeep. Click Frenzy and Prime Day are curated per year in the `CURATED` table, and the current entries are estimates (the tuple's last element is `true`), shown to users as "estimated dates". When a retailer announces the real dates, edit that year's entry and set the last element of its tuple (`[name, start, end, estimated]`) to `false`. Add next year's entries and its year to `CURATED_YEARS` before the year turns: a test fails when next year has no entry. "Today" for sale badges is the Australia/Melbourne date.
+
+**Successors** (`web/src/lib/successors.ts`). `SUCCESSORS` maps a product's specs `generation` string to the successor label and starts empty. The key is the spec value, for example `"GeForce 40"` (not `"RTX 40"`); the badge appears for every product in that generation. Example once the next series is announced: `"GeForce 50": "GeForce 60"`.
+
+Icons are Lucide (`@lucide/svelte`); `web/test/noEmoji.test.ts` fails if an emoji appears in `web/src`.
 
 ## Data model
 
@@ -527,9 +577,9 @@ Trackaroo/
     ├── src/lib/listingsPanel.ts # pure grouped-listings logic (search, filters, sort)
     ├── src/lib/tableSort.ts     # pure tri-state column-sort logic (dashboard + movers)
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
-    ├── src/routes/             # /, /products, /compare, /movers, /product/[id]
-    ├── test/                   # 886 vitest regression tests (44 suites)
-    ├── e2e/                    # 167 Playwright regression tests (app.spec.ts, mobile.spec.ts, a11y.spec.ts, seed.mjs)
+    ├── src/routes/             # /, /products, /product/[id], /compare, /movers, /deals, /discover, /changelog, /healthz
+    ├── test/                   # 1009 vitest regression tests (49 suites)
+    ├── e2e/                    # 179 Playwright regression tests (app.spec.ts, mobile.spec.ts, a11y.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```

@@ -8,7 +8,7 @@ import {
 const p = (q: string) => parseCatalogView(new URLSearchParams(q));
 const row = (o: Partial<CatalogRowInput> & { productId: number }): CatalogRowInput => ({
 	brand: 'NVIDIA', model: `M${o.productId}`, generationTier: 'current', cheapestInStockPrice: null,
-	retailerPrices: {}, vramGb: null, cores: null, launchDate: null, listingCount: 0, neverListed: false, ...o
+	retailerPrices: {}, vramGb: null, cores: null, launchDate: null, msrpUsd: null, listingCount: 0, neverListed: false, ...o
 });
 
 describe('parseCatalogView', () => {
@@ -160,5 +160,25 @@ describe('catalogue control helpers (#23)', () => {
 	});
 	it('the retailer picker offers only the active retailers', () => {
 		expect(ACTIVE_RETAILER_OPTIONS.map((o) => o.value)).toEqual(['scorptec', 'pccg', 'umart']);
+	});
+});
+
+describe('sort=msrp', () => {
+	const fx = { rateDate: '2026-10-01', audPerUsd: 1.5, source: 'rba' };
+	// MSRP in AUD = 1000 * 1.5 * 1.1 = 1650.
+	const rows = [
+		row({ productId: 1, cheapestInStockPrice: 1815, msrpUsd: 1000 }), // +10%
+		row({ productId: 2, cheapestInStockPrice: 1485, msrpUsd: 1000 }), // -10%
+		row({ productId: 3, cheapestInStockPrice: 900, msrpUsd: null }), // no MSRP
+		row({ productId: 4, cheapestInStockPrice: null, msrpUsd: 1000 }), // no price
+		row({ productId: 5, cheapestInStockPrice: 1650, msrpUsd: 1000 }) // 0%
+	];
+	const ids = (q: string, ctx?: { fx: typeof fx | null }) => applyCatalogView(rows, p(q), ctx).map((r) => r.productId);
+	it('defaults to ascending', () => expect(p('sort=msrp').dir).toBe('asc'));
+	it('orders by delta ascending, unknowns last', () => expect(ids('sort=msrp', { fx })).toEqual([2, 5, 1, 3, 4]));
+	it('descending keeps unknowns last', () => expect(ids('sort=msrp&dir=desc', { fx })).toEqual([1, 5, 2, 3, 4]));
+	it('without a rate every row is unknown and falls back to model order', () => {
+		expect(ids('sort=msrp', { fx: null })).toEqual([1, 2, 3, 4, 5]);
+		expect(ids('sort=msrp')).toEqual([1, 2, 3, 4, 5]);
 	});
 });

@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildVersion } from '../src/lib/server/version';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { buildVersion, releaseVersion } from '../src/lib/server/version';
+
+describe('releaseVersion', () => {
+	it('is web/package.json version, baked in at build time', () => {
+		const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
+		expect(releaseVersion()).toBe(pkg.version);
+	});
+});
 
 describe('buildVersion (#3)', () => {
 	afterEach(() => {

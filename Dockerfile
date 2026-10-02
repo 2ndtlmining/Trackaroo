@@ -33,6 +33,8 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 
 COPY web/ ./
+# The /changelog page bundles the repo-root CHANGELOG.md (web/src/lib/server/changelog.ts).
+COPY CHANGELOG.md /app/CHANGELOG.md
 RUN npm run build
 # Drop dev deps so the runtime image stays lean (better-sqlite3 native module
 # must remain in node_modules).

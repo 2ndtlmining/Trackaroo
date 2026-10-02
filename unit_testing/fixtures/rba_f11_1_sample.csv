@@ -1,0 +1,17 @@
+F11.1  EXCHANGE RATES,,,,
+Title,A$1=USD,Trade-weighted Index May 1970 = 100,A$1=CNY,A$1=JPY
+Description,Australian dollar trade-weighted index,Trade-weighted index,Chinese renminbi,Japanese yen
+Frequency,Daily,Daily,Daily,Daily
+Type,Indicative,Indicative,Indicative,Indicative
+Units,USD,Index,CNY,JPY
+,,,,
+,,,,
+Source,RBA,RBA,RBA,RBA
+Publication date,01-Oct-2026,01-Oct-2026,01-Oct-2026,01-Oct-2026
+Series ID,FXRUSD,FXRTWI,FXRCR,FXRJY
+24-Sep-2026,0.6510,61.0,4.6300,96.50
+25-Sep-2026,0.6495,60.9,4.6200,96.10
+28-Sep-2026,0.6500,61.0,4.6250,96.30
+29-Sep-2026,0.6490,60.8,4.6150,96.00
+30-Sep-2026,0.6480,60.7,4.6100,95.90
+01-Oct-2026,,,,

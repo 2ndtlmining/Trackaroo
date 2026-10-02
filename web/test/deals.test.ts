@@ -32,6 +32,7 @@ function candidate(over: Partial<DealCandidate> = {}): DealCandidate {
 		avg30Points: 10,
 		windowHigh: null,
 		historyStart: null,
+		msrpUsd: null,
 		...over
 	};
 }

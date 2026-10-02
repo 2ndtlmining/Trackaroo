@@ -138,3 +138,16 @@ export function getProductHistory(
 		retailerLatest: retailerLatest ?? getRetailerLatest(db)
 	};
 }
+
+// One product's MSRP by the same rule as getLaunchMsrps (lowest positive value
+// across its spec rows), for the product page.
+export function getProductMsrp(db: DB, productId: number): number | null {
+	const row = db
+		.prepare(
+			`SELECT MIN(launch_msrp_usd) AS msrpUsd FROM specs
+			 WHERE product_id = ? AND launch_msrp_usd > 0`
+		)
+		.get(productId) as { msrpUsd: number | null } | undefined;
+	return row?.msrpUsd ?? null;
+}
+

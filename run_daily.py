@@ -47,6 +47,7 @@ from health_checks import (
     check_backups,
     check_db_freshness,
     check_discovery,
+    check_fx_rate,
     check_json_db_parity,
     check_json_files,
     check_match_count_anomalies,
@@ -364,6 +365,7 @@ def _db_checks() -> List[Tuple[str, Callable[[], List[CheckResult]]]]:
         ("check_missing_days", lambda: check_missing_days(DB_PATH)),
         ("check_scraper_cooldown", lambda: check_scraper_cooldown()),
         ("check_discovery", lambda: check_discovery(DB_PATH)),
+        ("check_fx_rate", lambda: check_fx_rate(DB_PATH)),
         ("check_backups", lambda: check_backups()),
     ]
 
@@ -730,6 +732,13 @@ def run(args: argparse.Namespace) -> int:
                 return discover.run(notify=notify_enabled(args))
 
             best_effort("Discovery", _run_discovery)
+
+            # ── AUD/USD rate cache (#32): one request a day, best-effort ──
+            def _run_fx() -> Any:
+                import fx
+                return fx.run(DB_PATH)
+
+            best_effort("FX rate", _run_fx)
 
         # ── Health check: validate DB state after ingestion ───
         if not args.no_health:

@@ -111,6 +111,17 @@ export function formatSeenDate(isoDate: string, today: string): string {
 	return formatShortDate(isoDate);
 }
 
+// The calendar date in Melbourne, whatever the server's or browser's timezone:
+// sale-event badges flip at AU midnight, not UTC midnight.
+export function melbourneTodayIso(now: Date = new Date()): string {
+	return new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Australia/Melbourne',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).format(now);
+}
+
 export function todayIso(now: Date = new Date()): string {
 	const y = now.getFullYear();
 	const m = String(now.getMonth() + 1).padStart(2, '0');

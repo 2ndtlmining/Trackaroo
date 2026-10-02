@@ -1,7 +1,9 @@
 ﻿import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { saleEventsInRange } from '../src/lib/saleEvents';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -831,6 +833,25 @@ test('the footer names the running build (#3)', async ({ page }) => {
 	await expect(page.getByTestId('build-version')).toHaveText('build dev');
 });
 
+test('the footer release links to the changelog, which lists it first', async ({ page }) => {
+	const pkg = JSON.parse(readFileSync(path.join(here, '..', 'package.json'), 'utf8'));
+	await goto(page, '/');
+	const release = page.getByTestId('release-version');
+	await expect(release).toHaveText(`v${pkg.version}`);
+	await expect(page.getByTestId('version-line')).toHaveText(`v${pkg.version} · build dev`);
+	await release.click();
+	await expect(page).toHaveURL(/\/changelog$/);
+	await expect(page.getByRole('heading', { level: 1, name: "What's new" })).toBeVisible();
+	await expect(page.getByTestId('release').first().getByRole('heading', { level: 2 })).toHaveText(
+		`v${pkg.version}`
+	);
+	// Issue references become links to GitHub.
+	await expect(page.getByRole('link', { name: '#16' })).toHaveAttribute(
+		'href',
+		'https://github.com/2ndtlmining/Trackaroo/issues/16'
+	);
+});
+
 test('error page is styled and offers retry (#29)', async ({ page }) => {
 	await goto(page, '/product/999999');
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
@@ -1447,7 +1468,7 @@ test.describe('product detail specs', () => {
 	});
 
 	test('renders no spec panel when the product has no specs', async ({ page }) => {
-		await goto(page, '/product/2');
+		await goto(page, `/product/${productIdByModel('E2E Thin History GPU')}`);
 		await expect(page.getByRole('heading', { name: 'Specs' })).toHaveCount(0);
 	});
 
@@ -1596,8 +1617,12 @@ test.describe('is now a good time to buy? (#31)', () => {
 		await expect(panel).toBeVisible();
 		await expect(panel.getByTestId('low-summary')).toContainText(/Lowest since|Today is the lowest price since/);
 		await expect(panel).not.toContainText('all-time');
-		await expect(panel.getByRole('rowheader', { name: '30 days' })).toBeVisible();
-		await expect(panel.getByRole('rowheader', { name: '90 days' })).toBeVisible();
+		// The stats strip puts the windows across the top (Task 5): 30 / 90 / 180.
+		const strip = panel.getByRole('table', { name: /low, median and high/ });
+		await expect(strip.getByRole('columnheader', { name: '30 days' })).toBeVisible();
+		await expect(strip.getByRole('columnheader', { name: '90 days' })).toBeVisible();
+		await expect(strip.getByRole('columnheader', { name: '180 days' })).toBeVisible();
+		await expect(strip.getByRole('rowheader', { name: 'Median' })).toBeVisible();
 		// The RTX 5060 Ti is seeded at both retailers.
 		await expect(panel.getByRole('rowheader', { name: 'Scorptec' })).toBeVisible();
 		await expect(panel.getByRole('rowheader', { name: 'PCCG' })).toBeVisible();
@@ -1618,6 +1643,65 @@ test.describe('is now a good time to buy? (#31)', () => {
 		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
 		await expect(panel.getByText('Gathering history (2 days)').first()).toBeVisible();
 		await expect(panel).not.toContainText('NaN');
+		// Under the gate the history badges collapse into one gathering badge.
+		const gathering = panel.getByTestId('signal').filter({ hasText: 'Gathering history (2 days)' });
+		await expect(gathering).toHaveCount(1);
+		await expect(gathering).toContainText('at least 3 days');
+	});
+
+	test('the checklist shows each signal with its evidence and a decorative Lucide icon (Task 5)', async ({
+		page
+	}) => {
+		await goto(page, `/product/${productIdByModel('E2E New Low GPU')}`);
+		const panel = page.getByRole('region', { name: 'Is now a good time to buy?' });
+		await expect(panel.getByRole('heading', { name: 'Is now a good time to buy?' })).toBeVisible();
+		const badges = panel.getByTestId('signal');
+		// 5 daily lows 520 -> 500, today 500: percentile, lowest, vs avg and trend.
+		expect(await badges.count()).toBeGreaterThanOrEqual(4);
+		const lowest = badges.filter({ hasText: 'Lowest since tracking began' });
+		await expect(lowest).toContainText('No lower price in 5 tracked days.');
+		// avg30 507.40: today is 1.5% under it, inside the neutral +-2% band.
+		await expect(badges.filter({ hasText: 'Within 2% of its 30-day average' })).toContainText(
+			/against a 30-day average of \$507/
+		);
+		await expect(badges.filter({ hasText: '7-day trend: falling' })).toContainText('flat is within 1%');
+		for (const badge of await badges.all()) {
+			await expect(badge.getByTestId('signal-claim')).not.toBeEmpty();
+			await expect(badge.getByTestId('signal-evidence')).not.toBeEmpty();
+			await expect(badge.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+		}
+	});
+
+	// The expected events are derived from each fixture's actual snapshot dates,
+	// which are anchored to the latest scraped date, so neither test depends on
+	// where data/ happens to end (CLAUDE.md determinism).
+	test('the chart names the AU sale events inside its date range (Task 5)', async ({ page }) => {
+		// The fixture has a day inside EOFY (15-30 June) and recent days, so the
+		// plotted range always includes EOFY; the canvas itself cannot be asserted.
+		const expected = saleEventsInRange(...productDateRange('E2E Sale Window GPU'));
+		expect(expected.map((e) => e.name)).toContain('EOFY');
+		await goto(page, `/product/${productIdByModel('E2E Sale Window GPU')}`);
+		const legend = page.getByRole('list', { name: 'Chart legend' });
+		const hidden = page.getByTestId('chart-sale-events');
+		await expect(hidden).toContainText(/Sale events shown: EOFY \(15 Jun/);
+		for (const e of expected) {
+			// Curated dates not yet announced are marked as estimates (R9).
+			const label = e.estimated ? `${e.name} (estimated)` : e.name;
+			await expect(legend).toContainText(label);
+			await expect(hidden).toContainText(e.estimated ? `${e.name} (estimated, ` : `${e.name} (`);
+		}
+	});
+
+	test('the chart lists exactly the sale events its range covers (Task 5)', async ({ page }) => {
+		const expected = saleEventsInRange(...productDateRange('E2E New Low GPU'));
+		await goto(page, `/product/${productIdByModel('E2E New Low GPU')}`);
+		const legend = page.getByRole('list', { name: 'Chart legend' });
+		if (expected.length === 0) {
+			await expect(legend).not.toContainText('Sale events');
+			await expect(page.getByTestId('chart-sale-events')).toHaveCount(0);
+		} else {
+			await expect(legend).toContainText(`Sale events: ${expected.map((e) => (e.estimated ? `${e.name} (estimated)` : e.name)).join(', ')}`);
+		}
 	});
 });
 
@@ -1657,5 +1741,98 @@ test.describe.serial('/discover (#16)', () => {
 		await requested.locator('li', { hasText: 'GeForce RTX 5050 8GB' }).getByRole('button', { name: 'Undo' }).click();
 		await page.waitForLoadState('networkidle');
 		await expect(page.getByTestId('discover-untracked').getByText('GeForce RTX 5050 8GB')).toBeVisible();
+	});
+});
+
+// Task 3 (#32): the seed pins two deal fixtures against a 1.5 AUD/USD rate, so
+// MSRP in AUD = USD x 1.65: E2E Deal Demo GPU A$100 vs US$399 (85% under),
+// E2E New Low GPU A$500 vs US$279 (9% over).
+function productDateRange(model: string): [string, string] {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		const row = db
+			.prepare(
+				`SELECT MIN(s.snapshot_date) AS lo, MAX(s.snapshot_date) AS hi
+				 FROM price_snapshots s JOIN retailer_listings l ON l.id = s.retailer_listing_id
+				 JOIN products p ON p.id = l.product_id WHERE p.model = ?`
+			)
+			.get(model) as { lo: string; hi: string };
+		return [row.lo, row.hi];
+	} finally {
+		db.close();
+	}
+}
+
+function productIdByModel(model: string): number {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		const row = db.prepare('SELECT id FROM products WHERE model = ?').get(model) as { id: number };
+		return row.id;
+	} finally {
+		db.close();
+	}
+}
+
+test.describe('MSRP cues (Task 3)', () => {
+	test('the product page states the gap to US launch MSRP and explains it', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E Deal Demo GPU')}`);
+		const line = page.getByTestId('msrp-line');
+		await expect(line).toContainText('85% under US launch MSRP');
+		await expect(line).toContainText('≈A$658 inc. GST');
+		const info = line.getByRole('button', { name: 'How the MSRP is converted' });
+		await expect(info).toHaveAttribute('aria-expanded', 'false');
+		await info.click();
+		await expect(info).toHaveAttribute('aria-expanded', 'true');
+		const panel = page.locator(`#${await info.getAttribute('aria-controls')}`);
+		await expect(panel).toBeVisible();
+		await expect(panel).toContainText('US$399');
+		await expect(panel).toContainText('AUD/USD');
+		await expect(panel).toContainText('GST');
+		await page.keyboard.press('Escape');
+		await expect(info).toHaveAttribute('aria-expanded', 'false');
+		await expect(panel).toBeHidden();
+	});
+
+	test('a price above MSRP reads "over"', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E New Low GPU')}`);
+		await expect(page.getByTestId('msrp-line')).toContainText('9% over US launch MSRP');
+	});
+
+	test('a product without an MSRP shows no MSRP line', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E Thin History GPU')}`);
+		await expect(page.getByTestId('msrp-line')).toHaveCount(0);
+	});
+
+	test('the catalogue sorts by vs MSRP, cheapest against MSRP first', async ({ page }) => {
+		await goto(page, '/products?category=gpu&sort=msrp');
+		const header = page.getByRole('columnheader', { name: /^vs MSRP/ });
+		await expect(header).toHaveAttribute('aria-sort', 'ascending');
+		const first = page.getByTestId('catalog-row').first();
+		await expect(first.getByRole('link')).toHaveText('E2E Deal Demo GPU 16GB');
+		await expect(first.getByTestId('row-msrp')).toContainText('−85%');
+		await expect(page.locator('select[name="sort"] option[value="msrp"]').first()).toHaveText('vs MSRP');
+	});
+
+	test('/deals?below_msrp=1 lists only deals under MSRP', async ({ page }) => {
+		await goto(page, '/deals?below_msrp=1');
+		await expect(page.getByRole('button', { name: 'Below MSRP' })).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('link', { name: 'E2E Deal Demo GPU', exact: true })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'E2E New Low GPU', exact: true })).toHaveCount(0);
+		const values = await page.getByTestId('deal-msrp-value').allTextContents();
+		expect(values.length).toBeGreaterThan(0);
+		for (const v of values) expect(v.trim()).toMatch(/^−/);
+	});
+
+	test('the Below MSRP toggle writes ?below_msrp=1 and every deal row shows vs MSRP', async ({ page }) => {
+		await goto(page, '/deals');
+		const rows = page.getByTestId('deal-row');
+		await expect(rows.first().getByTestId('deal-msrp-value')).toBeVisible();
+		expect(await page.getByTestId('deal-msrp-value').count()).toBe(await rows.count());
+		const toggle = page.getByRole('button', { name: 'Below MSRP' });
+		await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+		await toggle.click();
+		await expect(page).toHaveURL(/below_msrp=1/);
+		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByRole('link', { name: 'E2E New Low GPU', exact: true })).toHaveCount(0);
 	});
 });

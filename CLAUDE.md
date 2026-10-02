@@ -12,19 +12,20 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 | [`README.md`](README.md) | Setup, commands, repo layout |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Spec (Part 1), watchlist scope rules + **how to add a product (Part 2 §7)**, decision log (Part 3) |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Running it — Docker and native |
-| [`STATUS.md`](STATUS.md) | Current state + changelog |
+| [`STATUS.md`](STATUS.md) | Current state + working log |
+| [`CHANGELOG.md`](CHANGELOG.md) | User-facing release notes, shown at `/changelog`; add a line under **Unreleased** in every PR, cut with `python release.py X.Y.Z` |
 | `docs/archive/` | Implemented/declined plans, kept for rationale |
 | `docs/proposals/` | Not-yet-built work (e.g. RAM tracking) |
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 1182 tests.
+**Backend** (repo root): `python -m pytest -q` — 1231 tests.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 887 tests, ~15s)
+- **Unit tests**: `npm test` (Vitest, 1009 tests, ~15s)
 - **Watch mode**: `npm run test:watch`
-- **E2E tests**: `npm run test:e2e` (Playwright, 167 tests, Chromium only, must be kept fast)
+- **E2E tests**: `npm run test:e2e` (Playwright, 179 tests, Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
   - `e2e.db`, `test-results/`, and `playwright-report/` are gitignored and regenerated on each run.
 - **Type + Svelte check**: `npm run check` (svelte-check, must report 0 errors)
@@ -103,6 +104,7 @@ Never delete price or product data. Products that roll out of scope get
 
 ## Pipeline conventions
 
+- `fx.py` (daily AUD per USD rate, RBA F11.1 with a Frankfurter fallback, into `fx_rates`) is a best-effort `run_daily` step after ingest; `check_fx_rate` is WARNING-only (rate older than 7 days or table empty). Until a rate exists the product page shows no MSRP line, the catalogue column shows "–", and /deals hides the Below MSRP toggle and ignores `?below_msrp=1`. One MSRP rule everywhere: the lowest positive `launch_msrp_usd` across a product's spec rows.
 - Steps after ingest (delisted check, JSON mirror, alerts, digest) are
   **best-effort**: route them through `run_daily.best_effort()` (or a
   `try/except` that logs). Health checks go through `guarded_check()`, so a

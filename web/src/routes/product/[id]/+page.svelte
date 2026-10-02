@@ -18,15 +18,21 @@
 	import { generationTierLabel } from '$lib/tiers';
 	import { buildHeadline } from '$lib/productHeadline';
 	import { toListingDisplays } from '$lib/listingsPanel';
-	import { asOfDate, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
+	import { asOfDate, buildSignals, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import { type ProductHistory, type AlertRow, type ProductIndexEntry } from '$lib/models';
+	import { type ProductHistory, type AlertRow, type FxRate, type ProductIndexEntry } from '$lib/models';
 
 	let {
 		data,
 		form
 	}: {
-		data: ProductHistory & { alerts: AlertRow[]; productIndex: ProductIndexEntry[] };
+		data: ProductHistory & {
+			alerts: AlertRow[];
+			productIndex: ProductIndexEntry[];
+			fx: FxRate | null;
+			msrpUsd: number | null;
+			today: string;
+		};
 		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
 	} = $props();
 
@@ -94,7 +100,19 @@ label:
 	const lows = $derived(dailyLows(data.band));
 	const asOf = $derived(asOfDate(data.retailerLatest, lows));
 	const low = $derived(lowSummary(lows, headline.currentPrice));
-	const buyWindows = $derived(asOf ? [windowStats(lows, asOf, 30), windowStats(lows, asOf, 90)] : []);
+	const buyWindows = $derived(asOf ? [30, 90, 180].map((d) => windowStats(lows, asOf, d)) : []);
+	// The successor map is keyed by the spec's series ("GeForce 50"); the sale
+	// lookahead reads today's date in Melbourne inside buildSignals.
+	const signals = $derived(
+		buildSignals({
+			lows,
+			today: headline.currentPrice,
+			asOf,
+			avg30: headline.avg30 ?? null,
+			series: data.specs?.generation ?? null,
+			todayIso: data.today
+		})
+	);
 	const where = $derived(whereToBuy(offers));
 	// Memory / cores in the headline: "RTX 5060 Ti" alone does not say which card
 	// this is when an 8GB sibling exists (#31 core; Phase 1 #2 split them).
@@ -152,6 +170,8 @@ label:
 				listingCount={series.length}
 				snapshotCount={totalPoints}
 				{span}
+				msrpUsd={data.msrpUsd}
+				fx={data.fx}
 			/>
 		</div>
 		{#if product.last_snapshot_at}
@@ -161,7 +181,7 @@ label:
 		{/if}
 	</div>
 
-	<BuyPanel {low} windows={buyWindows} {where} />
+	<BuyPanel {low} windows={buyWindows} {where} {signals} />
 
 	{#if hasChartData}
 		<div class="space-y-4">

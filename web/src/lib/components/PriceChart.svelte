@@ -2,7 +2,8 @@
 	import { onDestroy } from 'svelte';
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
-	import { formatAud, formatChartTick } from '$lib/formats';
+	import { formatAud, formatChartTick, formatDate, formatShortDate } from '$lib/formats';
+	import { saleEventsInRange, type SaleEvent } from '$lib/saleEvents';
 	import { renderTooltip, type TooltipRow } from '$lib/chartTooltip';
 	import { axisStartsAtZero, gapSegments } from '$lib/chartExtras';
 
@@ -53,6 +54,31 @@
 	let themeObserver: MutationObserver | null = null;
 
 	const LINE_STYLES: number[][] = [[], [5, 4], [1, 3]];
+
+	// AU sale events inside the plotted date range (#31): dashed vertical
+	// markers in the muted text colour, no new hue. The same list is written
+	// out in the caption, since the canvas itself says nothing to a reader.
+	const plotted = $derived.by(() => {
+		const dates: string[] = [];
+		if (band) dates.push(...band.dates);
+		for (const s of series) for (const p of s.points) dates.push(p.date);
+		if (cheapestInStock) dates.push(cheapestInStock.date);
+		dates.sort();
+		return dates.length ? { from: dates[0], to: dates[dates.length - 1] } : null;
+	});
+	const saleEvents = $derived<SaleEvent[]>(plotted ? saleEventsInRange(plotted.from, plotted.to) : []);
+
+	function eventSpan(e: SaleEvent): string {
+		return e.start === e.end ? formatDate(e.start) : `${formatShortDate(e.start)} – ${formatDate(e.end)}`;
+	}
+	// Curated dates not yet announced are marked in the legend and the
+	// screen-reader list (R9); the canvas label stays short.
+	const eventName = (e: SaleEvent) => (e.estimated ? `${e.name} (estimated)` : e.name);
+	const eventDetail = (e: SaleEvent) =>
+		`${e.name} (${e.estimated ? 'estimated, ' : ''}${eventSpan(e)})`;
+	// At most this many label rows; further labels are skipped (the line stays)
+	// so labels never cover more of the plot.
+	const MAX_LABEL_ROWS = 2;
 
 	function cssVar(name: string): string {
 		return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -256,6 +282,55 @@
 		ctx.restore();
 	}
 
+	// One dashed line where each event starts (or at the left edge when it was
+	// already running), labelled at the top of the plot. Labels that would
+	// collide drop to the next row.
+	function drawSales(uInstance: uPlot) {
+		if (saleEvents.length === 0) return;
+		const ctx = uInstance.ctx;
+		const dpr = devicePixelRatio;
+		const { left, top, width, height: h } = uInstance.bbox;
+		const xMin = uInstance.scales.x.min ?? 0;
+		const muted = cssVar('--text-muted');
+		const surface = cssVar('--surface');
+		const fontFamily = getComputedStyle(document.body).fontFamily || 'sans-serif';
+		ctx.save();
+		ctx.strokeStyle = muted;
+		ctx.fillStyle = muted;
+		ctx.lineWidth = dpr;
+		ctx.font = `${11 * dpr}px ${fontFamily}`;
+		ctx.textBaseline = 'top';
+		ctx.textAlign = 'left';
+		// saleEvents arrive in date order (saleEventsInRange), so label rows pack left to right.
+		const rowEnds: number[] = [];
+		for (const e of saleEvents) {
+			const ts = Math.max(new Date(`${e.start}T00:00:00Z`).getTime(), xMin);
+			const x = Math.round(uInstance.valToPos(ts, 'x', true)) + 0.5;
+			if (x < left - 1 || x > left + width + 1) continue;
+			ctx.setLineDash([3 * dpr, 3 * dpr]);
+			ctx.beginPath();
+			ctx.moveTo(x, top);
+			ctx.lineTo(x, top + h);
+			ctx.stroke();
+			const textW = ctx.measureText(e.name).width;
+			const pad = 4 * dpr;
+			// Flip the label to the left of the line near the right edge.
+			const x0 = x + pad + textW > left + width ? x - pad - textW : x + pad;
+			let row = rowEnds.findIndex((end) => x0 > end + pad);
+			if (row === -1) row = rowEnds.length;
+			if (row >= MAX_LABEL_ROWS) continue;
+			rowEnds[row] = x0 + textW;
+			ctx.setLineDash([]);
+			// Knock the gridlines out behind the label so it reads cleanly.
+			const y0 = top + 6 * dpr + row * 15 * dpr;
+			ctx.fillStyle = surface;
+			ctx.fillRect(x0 - 2 * dpr, y0 - dpr, textW + 4 * dpr, 13 * dpr);
+			ctx.fillStyle = muted;
+			ctx.fillText(e.name, x0, y0);
+		}
+		ctx.restore();
+	}
+
 	function mount() {
 		if (!chartEl) return;
 		if (!tooltipEl || !chartEl.contains(tooltipEl)) {
@@ -285,7 +360,7 @@
 				cursor: { y: false },
 				focus: { alpha: 0.25 },
 				hooks: {
-					draw: [drawGaps],
+					draw: [drawGaps, drawSales],
 					setScale: [
 						(uInstance, key) => {
 							if (key === 'y') yMin = uInstance.scales.y.min ?? null;
@@ -338,6 +413,7 @@
 	$effect(() => {
 		void buildData();
 		void buildSeries();
+		void saleEvents;
 		if (!chartEl) return;
 		destroy();
 		mount();
@@ -421,6 +497,22 @@
 					Today <span class="num">{formatAud(cheapestInStock.price)}</span>
 				</li>
 			{/if}
+			{#if saleEvents.length > 0}
+				<li class="flex items-center gap-1.5">
+					<svg width="10" height="12" aria-hidden="true">
+						<line
+							x1="5"
+							y1="0"
+							x2="5"
+							y2="12"
+							stroke="var(--text-muted)"
+							stroke-width="1"
+							stroke-dasharray="3 3"
+						/>
+					</svg>
+					Sale events: {saleEvents.map(eventName).join(', ')}
+				</li>
+			{/if}
 			{#if series.length > 0}
 				<li class="flex items-center gap-1.5">
 					<svg width="18" height="10" aria-hidden="true">
@@ -438,6 +530,11 @@
 				</li>
 			{/if}
 		</ul>
+		{#if saleEvents.length > 0}
+			<p class="sr-only" data-testid="chart-sale-events">
+				Sale events shown: {saleEvents.map(eventDetail).join('; ')}.
+			</p>
+		{/if}
 		{#if yMin !== null && !axisStartsAtZero(yMin)}
 			<p class="mt-1 text-xs text-text-muted">Axis doesn't start at $0.</p>
 		{/if}

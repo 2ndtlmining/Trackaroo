@@ -355,6 +355,20 @@ export function seedE2eDb(dbPath = DB_PATH) {
 			[1, 502],
 			[0, 500]
 		]);
+		// E2E Sale Window GPU (Task 5): a flat price with one extra day inside
+		// the most recent EOFY sale (20 June), so the chart's date range covers a
+		// sale event whatever data/ holds. Flat, so it is never a deal or a mover.
+		const latestYear = Number(latestRow.d.slice(0, 4));
+		const eofyYear = latestRow.d >= `${latestYear}-07-01` ? latestYear : latestYear - 1;
+		const eofyDaysAgo = db
+			.prepare('SELECT CAST(julianday(?) - julianday(?) AS INTEGER) AS n')
+			.get(latestRow.d, `${eofyYear}-06-20`).n;
+		addDealFixture('E2E Sale Window GPU', '/p/e2e-sale-window', [
+			[eofyDaysAgo, 800],
+			[2, 800],
+			[1, 800],
+			[0, 800]
+		]);
 	}
 
 	// Deterministic spec rows so the product page spec panel is testable:
@@ -457,6 +471,20 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		).run(smallGpu.id);
 	}
 
+	// US launch MSRPs for the vs-MSRP cues (Task 3, #32). Only on two pinned
+	// deal fixtures whose prices never change (never on real products, whose
+	// prices come from data/ and could land near 0%):
+	// at the seeded 1.5 AUD/USD, MSRP in AUD = USD x 1.65, so
+	//   E2E Deal Demo GPU  A$100 vs US$399 (A$658.35) -> 85% under
+	//   E2E New Low GPU    A$500 vs US$279 (A$460.35) -> 9% over
+	const msrpFixture = db.prepare(
+		`INSERT INTO specs (product_id, source, source_record_key, category, launch_msrp_usd, raw_json, last_synced_at)
+		 SELECT id, 'rightnow-gpu-db', model, 'gpu', ?, '{}', '2026-08-15T00:00:00Z'
+		 FROM products WHERE category = 'gpu' AND model = ?`
+	);
+	msrpFixture.run(399, 'E2E Deal Demo GPU');
+	msrpFixture.run(279, 'E2E New Low GPU');
+
 	// Catalog columns and the never-listed toggle (#23), and a memory-size
 	// sibling for the VRAM display label (Task 12). The watchlist fills vram_gb
 	// and cores in real DBs; this seed builds products from snapshot JSON,
@@ -514,6 +542,11 @@ export function seedE2eDb(dbPath = DB_PATH) {
 			'Sapphire Pulse RX 9070 GRE 12GB', today
 		);
 	}
+
+	// One cached AUD/USD rate so the MSRP cues have a value to show.
+	db.prepare(`INSERT INTO fx_rates (rate_date, aud_per_usd, source, fetched_at) VALUES (?, 1.5, 'rba', ?)`).run(
+		today, `${today}T00:00:00Z`
+	);
 
 	db.close();
 	return dbPath;

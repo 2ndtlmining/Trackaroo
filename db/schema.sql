@@ -105,7 +105,7 @@ CREATE TABLE specs (
     source_record_key TEXT    NOT NULL,               -- identifying name from the source dataset, kept for traceability
     category          TEXT    NOT NULL CHECK (category IN ('cpu', 'gpu')),   -- matches products.category
     architecture      TEXT,                           -- e.g. 'Blackwell', 'RDNA 4', 'Zen 5', 'Arrow Lake'
-    generation        TEXT,                           -- e.g. 'RTX 50', 'Ryzen 9000'
+    generation        TEXT,                           -- e.g. 'GeForce 50', 'Ryzen 9000'
     launch_date       TEXT,                           -- ISO date, nullable if unknown
     launch_msrp_usd   REAL,                           -- as published in source; convert currency at display time
     -- GPU-specific (nullable for CPU rows)
@@ -255,4 +255,16 @@ CREATE TABLE discovery_runs (
     missing               TEXT    NOT NULL DEFAULT '[]',  -- JSON ['umart/gpu', ...]
     unrecognised_count    INTEGER NOT NULL DEFAULT 0,
     unrecognised_samples  TEXT    NOT NULL DEFAULT '[]'   -- JSON, at most 20 titles
+);
+
+-- ─────────────────────────────────────────────────────────────
+-- AUD/USD rate cache (#32): one row per rate date, written by fx.py
+-- (best-effort, after ingest) and read by the web app to convert US MSRPs.
+-- Keep in step with migrate.FX_RATES_TABLE_SQL.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS fx_rates (
+    rate_date    TEXT PRIMARY KEY,                 -- YYYY-MM-DD
+    aud_per_usd  REAL NOT NULL CHECK (aud_per_usd > 0),
+    source       TEXT NOT NULL,                    -- 'rba' or 'frankfurter'
+    fetched_at   TEXT NOT NULL                     -- UTC 'YYYY-MM-DDTHH:MM:SSZ'
 );

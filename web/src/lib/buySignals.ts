@@ -6,6 +6,9 @@
 import { MIN_HISTORY_POINTS } from './constants';
 import type { ListingDisplay } from './listingsPanel';
 import type { PriceBandPoint } from './models';
+import { formatAud } from './formats';
+import { daysBetween, upcomingSaleEvent } from './saleEvents';
+import { successorFor } from './successors';
 
 export interface DailyLow {
 	date: string;
@@ -126,4 +129,191 @@ export function whereToBuy(offers: ListingDisplay[]): RetailerOffer[] {
 		if (b.cheapest === null) return -1;
 		return a.cheapest - b.cheapest || a.retailer.localeCompare(b.retailer);
 	});
+}
+
+export type SignalTone = 'good' | 'neutral' | 'warn' | 'bad';
+export type SignalIcon = 'check' | 'dash' | 'down' | 'up' | 'calendar' | 'alert';
+export interface Signal {
+	key: 'percentile' | 'lowest' | 'avg' | 'trend' | 'sale' | 'successor' | 'gathering';
+	tone: SignalTone;
+	icon: SignalIcon;
+	claim: string;
+	evidence: string;
+}
+
+const MAX_WINDOW_DAYS = 180;
+const MINUS = '−'; // same sign as $lib/formats
+
+// Share (0-100) of days in the window whose low was AT OR ABOVE today's price:
+// ties count in today's favour (R7), so a flat price reads 100%, never a
+// contradiction of "Lowest since tracking began".
+// `days` is the calendar span the window covers (first tracked day in the
+// window .. asOf), capped at maxDays. Null under the history gate.
+export function pricePercentile(
+	lows: DailyLow[],
+	today: number,
+	asOf: string,
+	maxDays = MAX_WINDOW_DAYS
+): { pct: number; days: number } | null {
+	const from = addDays(asOf, -(maxDays - 1));
+	const win = lows.filter((p) => p.date >= from && p.date <= asOf);
+	if (win.length < MIN_HISTORY_POINTS) return null;
+	const atOrAbove = win.filter((p) => p.price >= today).length;
+	return { pct: (atOrAbove / win.length) * 100, days: daysBetween(win[0].date, asOf) + 1 };
+}
+
+// `lows` is date-ascending (getPriceBand orders by snapshot_date).
+// How long since the price was last strictly lower than today's. When it never
+// was, `sinceStart` is true and `days` is how long tracking has run.
+export function lowestInDays(
+	lows: DailyLow[],
+	today: number,
+	asOf: string
+): { days: number; sinceStart: boolean } | null {
+	const upto = lows.filter((p) => p.date <= asOf);
+	if (upto.length === 0) return null;
+	for (let i = upto.length - 1; i >= 0; i--) {
+		if (upto[i].price < today) return { days: daysBetween(upto[i].date, asOf), sinceStart: false };
+	}
+	return { days: daysBetween(upto[0].date, asOf) + 1, sinceStart: true };
+}
+
+// `lows` is date-ascending (getPriceBand orders by snapshot_date).
+// First-to-last change over the daily lows of the 7 days ending asOf; flat
+// within +-1%.
+export function trend7(
+	lows: DailyLow[],
+	asOf: string
+): { change: number; dir: 'falling' | 'flat' | 'rising' } | null {
+	const from = addDays(asOf, -6);
+	const win = lows.filter((p) => p.date >= from && p.date <= asOf);
+	if (win.length < 2 || win[0].price <= 0) return null;
+	const change = ((win[win.length - 1].price - win[0].price) / win[0].price) * 100;
+	return { change, dir: change < -1 ? 'falling' : change > 1 ? 'rising' : 'flat' };
+}
+
+// '−4%', '+0.5%': one decimal only when it is not a whole number.
+function signedPct(value: number): string {
+	const r = Math.round(value * 10) / 10;
+	return `${r > 0 ? '+' : r < 0 ? MINUS : ''}${Math.abs(r)}%`;
+}
+
+function plural(n: number, unit: string): string {
+	return `${n} ${unit}${n === 1 ? '' : 's'}`;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function shortDate(isoDate: string): string {
+	return `${Number(isoDate.slice(8))} ${MONTHS[Number(isoDate.slice(5, 7)) - 1]}`;
+}
+
+// Below the history gate only the gathering signal stands in for the
+// history-based badges. Sale and successor signals do not depend on history, so
+// they are still added (none exist by default, so the gated output is usually
+// just [gathering]).
+export function buildSignals(input: {
+	lows: DailyLow[];
+	today: number | null;
+	asOf: string | null;
+	avg30: number | null;
+	series: string | null;
+	// Melbourne 'YYYY-MM-DD', supplied by the server load (hydration-safe).
+	todayIso: string;
+}): Signal[] {
+	const { lows, today, asOf, avg30, series, todayIso } = input;
+	const out: Signal[] = [];
+
+	if (lows.length < MIN_HISTORY_POINTS || asOf === null) {
+		out.push({
+			key: 'gathering',
+			tone: 'neutral',
+			icon: 'dash',
+			claim: `Gathering history (${plural(lows.length, 'day')})`,
+			evidence: `Price signals need at least ${MIN_HISTORY_POINTS} days of tracked prices.`
+		});
+	} else if (today !== null) {
+		const pc = pricePercentile(lows, today, asOf);
+		if (pc) {
+			// Decided on the rounded figure the claim prints, so 69.6 ("70%") is good.
+			const good = Math.round(pc.pct) >= 70;
+			out.push({
+				key: 'percentile',
+				tone: good ? 'good' : 'neutral',
+				icon: good ? 'check' : 'dash',
+				claim: `As cheap as or cheaper than ${Math.round(pc.pct)}% of days (last ${plural(pc.days, 'day')})`,
+				evidence: 'Share of tracked in-stock days in that window whose lowest price was the same as or higher than today’s.'
+			});
+		}
+		const lo = lowestInDays(lows, today, asOf);
+		if (lo) {
+			const good = lo.days >= 30;
+			out.push({
+				key: 'lowest',
+				tone: good ? 'good' : 'neutral',
+				icon: good ? 'check' : 'dash',
+				claim: lo.sinceStart
+					? 'Lowest since tracking began'
+					: lo.days === 0
+						? 'Above the most recent low'
+						: `Lowest in ${plural(lo.days, 'day')}`,
+				evidence: lo.sinceStart
+					? `No lower price in ${plural(lo.days, 'tracked day')}.`
+					: lo.days === 0
+						? "Today's price is above the lowest price on the latest tracked day."
+						: `The price was last lower ${plural(lo.days, 'day')} ago.`
+			});
+		}
+		if (avg30 !== null && avg30 > 0) {
+			const diff = ((today - avg30) / avg30) * 100;
+			const mag = `${Math.round(Math.abs(diff) * 10) / 10}%`;
+			const evidence = `Today ${formatAud(today)} against a 30-day average of ${formatAud(avg30)}.`;
+			if (diff <= -2) {
+				out.push({ key: 'avg', tone: 'good', icon: 'check', claim: `${mag} below its 30-day average`, evidence });
+			} else if (diff >= 2) {
+				out.push({ key: 'avg', tone: 'bad', icon: 'alert', claim: `${mag} above its 30-day average`, evidence });
+			} else {
+				out.push({ key: 'avg', tone: 'neutral', icon: 'dash', claim: 'Within 2% of its 30-day average', evidence });
+			}
+		}
+		const tr = trend7(lows, asOf);
+		if (tr) {
+			out.push({
+				key: 'trend',
+				tone: tr.dir === 'falling' ? 'good' : tr.dir === 'rising' ? 'warn' : 'neutral',
+				icon: tr.dir === 'falling' ? 'down' : tr.dir === 'rising' ? 'up' : 'dash',
+				claim: `7-day trend: ${tr.dir} (${signedPct(tr.change)})`,
+				evidence: 'Change in the lowest in-stock price over the last 7 days; flat is within 1%.'
+			});
+		}
+	}
+
+	const sale = upcomingSaleEvent(todayIso);
+	if (sale) {
+		const { event, startsInDays, running } = sale;
+		const when =
+			event.start === event.end
+				? `Runs ${shortDate(event.start)}.`
+				: `Runs ${shortDate(event.start)} to ${shortDate(event.end)}.`;
+		out.push({
+			key: 'sale',
+			tone: 'warn',
+			icon: 'calendar',
+			claim: running
+				? `${event.name} sale on now`
+				: `${event.name} starts ${startsInDays === 1 ? 'tomorrow' : `in ${plural(startsInDays, 'day')}`}`,
+			evidence: `${when}${event.estimated ? ' These are estimated dates.' : ''} Retailers often change prices around sale events.`
+		});
+	}
+
+	const successor = successorFor(series);
+	if (successor) {
+		out.push({
+			key: 'successor',
+			tone: 'warn',
+			icon: 'alert',
+			claim: `Successor announced (${successor})`,
+			evidence: 'A newer generation has been announced; stock of this one may clear or dry up.'
+		});
+	}
+	return out;
 }

@@ -9,3 +9,4 @@ export * from './queries/movers';
 export * from './queries/compare';
 export * from './queries/alerts';
 export * from './queries/health';
+export * from './queries/fx';

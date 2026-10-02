@@ -19,6 +19,8 @@ export type CatalogRow = Omit<ProductGroup, 'listings'> & {
 	socket?: string | null;
 	threads?: number | null;
 	releaseYear?: number | null;
+	// US launch MSRP in USD, for the vs-MSRP column (Task 3).
+	msrpUsd?: number | null;
 };
 
 export interface IndexGroup<T> {
