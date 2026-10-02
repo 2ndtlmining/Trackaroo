@@ -9,7 +9,7 @@
 		formatRelative,
 		formatUsd
 	} from '$lib/formats';
-	import type { SpecRow } from '$lib/server/db';
+	import type { SpecRow } from '$lib/models';
 
 	let { spec }: { spec: SpecRow } = $props();
 

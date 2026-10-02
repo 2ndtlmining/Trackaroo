@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import Badge from './Badge.svelte';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import type { ProductIndexEntry } from '$lib/server/repos';
+	import type { ProductIndexEntry } from '$lib/models';
 
 	let {
 		items,

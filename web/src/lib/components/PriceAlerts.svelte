@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatAud } from '$lib/formats';
-	import type { AlertRow } from '$lib/server/repos';
+	import type { AlertRow } from '$lib/models';
 	import type { AlertChannel } from '$lib/types';
 
 	let {

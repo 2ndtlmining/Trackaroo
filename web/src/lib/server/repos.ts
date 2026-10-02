@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs';
-import type { DB, ListingRow, ProductRow, SpecRow, SnapshotRow } from './db';
+import type { DB, ListingRow, ProductRow, SnapshotRow } from './db';
 import type {
 	AlertChannel,
 	Category,
@@ -10,62 +10,29 @@ import type {
 	StockStatus
 } from '../types';
 import { MIN_HISTORY_POINTS } from '../constants';
+import type {
+	AlertRow,
+	CheapestListing,
+	CompareEntry,
+	ComparePrice,
+	DealCandidate,
+	HeaderStats,
+	LatestListing,
+	Mover,
+	PriceBandPoint,
+	ProductGroup,
+	ProductHistory,
+	ProductIndexEntry,
+	ProductMove,
+	ProductStats,
+	RetailerFreshness,
+	SparklinePoint,
+	SpecRow,
+	TrackedProduct
+} from '../models';
+export type * from '../models';
 
 export const DEFAULT_WINDOW_DAYS = 7;
-
-export interface SparklinePoint {
-	listingId: number;
-	date: string;
-	price: number;
-}
-
-// A dated price point; the shape Sparkline.svelte draws.
-export interface PricePoint {
-	date: string;
-	price: number;
-}
-
-export interface LatestListing {
-	listingId: number;
-	productId: number;
-	category: Category;
-	brand: string;
-	model: string;
-	productVariant: string | null;
-	generationTier: GenerationTier | null;
-	retailer: Retailer;
-	variantName: string | null;
-	listingUrl: string;
-	status: ListingStatus;
-	lastSnapshotAt: string | null;
-	latestDate: string;
-	latestPrice: number;
-	latestStock: StockStatus;
-	latestScrapedAt: string;
-	windowStartDate: string | null;
-	windowStartPrice: number | null;
-	pointsInWindow: number;
-	sparkline?: SparklinePoint[];
-}
-
-export interface ProductGroup {
-	productId: number;
-	category: Category;
-	brand: string;
-	model: string;
-	productVariant: string | null;
-	generationTier: GenerationTier | null;
-	listings: LatestListing[];
-	cheapestInStockPrice: number | null;
-	cheapestInStockRetailer: Retailer | null;
-	inStockCount: number;
-	// Average of the per-day cheapest in-stock price over the trailing 30 days
-	// (null when no in-stock history in the window).
-	avg30?: number | null;
-	// Days that actually contributed to avg30. The window is 30 days but a
-	// young dataset has fewer, and the UI labels the real number.
-	avg30Points?: number;
-}
 
 // Groups per-listing rows into one entry per product (for the Products card
 // grid), keeping the row order the SQL produced (category, model).
@@ -99,52 +66,6 @@ export function groupListingsByProduct(listings: LatestListing[]): ProductGroup[
 	}
 
 	return [...byProduct.values()];
-}
-
-export interface Mover {
-	listingId: number;
-	productId: number;
-	category: Category;
-	brand: string;
-	model: string;
-	retailer: Retailer;
-	variantName: string | null;
-	listingUrl: string;
-	oldPrice: number | null;
-	newPrice: number;
-	change: number | null;
-	pctChange: number | null;
-	pointsInWindow: number;
-	historyPoints: number;
-	notEnoughHistory: boolean;
-	windowStart: string | null;
-	windowEnd: string;
-	sparkline?: SparklinePoint[];
-}
-
-export interface Series {
-	listing: ListingRow;
-	points: SnapshotRow[];
-}
-
-export interface PriceBandPoint {
-	date: string;
-	low: number | null; // MIN price among in-stock snapshots that day
-	high: number | null; // MAX price among in-stock snapshots that day
-	cheapestInStock: number | null; // cheapest in-stock price at the latest snapshot (single point)
-}
-
-export interface ProductHistory {
-	product: ProductRow;
-	series: Series[];
-	specs: SpecRow | null;
-	band: PriceBandPoint[];
-	// Trailing-30-day stats for the detail page's "30d avg" chip.
-	stats: ProductStats;
-	// Latest snapshot_date per retailer, across all products -- lets the display
-	// layer tell "this listing's own retailer hasn't been scraped in days"
-	// (not stale) apart from "everyone else moved on and this one didn't" (#4).
-	retailerLatest: Record<string, string>;
 }
 
 // Canonical display names for AIB/GPU partner brands, keyed by the lowercase
@@ -243,17 +164,6 @@ function filtersToParams(filters: ListingFilters): { clause: string; params: Rec
 	return { clause: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', params };
 }
 
-export interface TrackedProduct {
-	productId: number;
-	category: Category;
-	brand: string;
-	model: string;
-	productVariant: string | null;
-	generationTier: GenerationTier | null;
-	vramGb: number | null;
-	cores: number | null;
-}
-
 // Every tracked product in a category, whether or not a retailer has ever
 // listed it. The index needs these: ~39% of the watchlist has never matched a
 // listing, and silently omitting them makes a search for a genuinely tracked
@@ -303,19 +213,6 @@ export function getLaunchDates(db: DB, category: Category): Map<number, string> 
 	return new Map(rows.map((r) => [r.productId, r.launchDate]));
 }
 
-export interface ProductIndexEntry {
-	id: number;
-	category: Category;
-	brand: string;
-	model: string;
-	productVariant: string | null;
-	// For the display-name rule (displayName.ts).
-	vramGb: number | null;
-	// Total price snapshots across the product's listings — lets the palette
-	// show which products actually have price history yet.
-	snapshotCount: number;
-}
-
 export function getProductIndex(db: DB): ProductIndexEntry[] {
 	return db
 		.prepare(
@@ -329,14 +226,6 @@ export function getProductIndex(db: DB): ProductIndexEntry[] {
 			 ORDER BY p.category, p.model`
 		)
 		.all() as ProductIndexEntry[];
-}
-
-export interface HeaderStats {
-	latestSnapshotDate: string | null;
-	earliestSnapshotDate: string | null;
-	snapshotCount: number;
-	snapshotDays: number;
-	dbSizeBytes: number;
 }
 
 function dbFileSize(db: DB): number {
@@ -373,17 +262,6 @@ export function getHeaderStats(db: DB): HeaderStats {
 		snapshotDays: snapDays.n,
 		dbSizeBytes: dbFileSize(db)
 	};
-}
-
-export interface RetailerFreshness {
-	retailer: Retailer;
-	latestSnapshotDate: string | null;
-	// Latest scrape_runs row (R3): local wall-clock 'YYYY-MM-DDTHH:MM:SS', its
-	// status, and the products it matched. Optional so callers building rows by
-	// hand (tests, older data) need not supply them.
-	lastRunAt?: string | null;
-	lastRunStatus?: string | null;
-	lastRunMatched?: number | null;
 }
 
 // True when `name` is a table in this DB. The dashboard must keep rendering on a
@@ -562,15 +440,6 @@ export function getSparklines(
 		byListing.set(row.listingId, arr);
 	}
 	return byListing;
-}
-
-// Average of the per-day cheapest in-stock price over the trailing window
-// (the same series the sparklines draw), plus the number of days that series
-// has — the point count gates the "30d avg" chip and the deal badge so a
-// product with 1-2 days of history is never shown a misleading average.
-export interface ProductStats {
-	avg30: number | null;
-	avg30Points: number;
 }
 
 export function getProductStats(db: DB, productId: number, days = 30): ProductStats {
@@ -774,22 +643,6 @@ export function getProductHistory(
 	};
 }
 
-export interface CheapestListing {
-	productId: number;
-	model: string;
-	brand: string;
-	variantName: string | null;
-	retailer: Retailer;
-	price: number;
-	snapshotDate: string;
-	ninetyDayLow: number | null;
-	ninetyDayHigh: number | null;
-	// Average of the per-day cheapest in-stock price over the trailing 30
-	// days (null when no in-stock history in the window) + day count.
-	avg30: number | null;
-	avg30Points: number;
-}
-
 export function getCheapestPerModel(db: DB, category: Category): CheapestListing[] {
 	const rows = db
 		.prepare(
@@ -886,29 +739,6 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 		avg30: r.avg30,
 		avg30Points: r.avg30_points
 	}));
-}
-
-export interface DealCandidate {
-	productId: number;
-	category: Category;
-	model: string;
-	brand: string;
-	listingId: number;
-	variantName: string | null;
-	retailer: Retailer;
-	listingUrl: string;
-	price: number;
-	snapshotDate: string;
-	allTimeLow: number | null;
-	avg30: number | null;
-	avg30Points: number;
-	// Highest daily-cheapest in-stock price within the avg30 window -- an
-	// earned all-time low needs the price to have actually come DOWN from
-	// somewhere, not just sat flat at the low (#6).
-	windowHigh: number | null;
-	// The product's first in-stock snapshot date across all history, for
-	// labelling how far back "all-time" actually reaches (#6).
-	historyStart: string | null;
 }
 
 // One row per tracked product: its cheapest in-stock listing on the latest
@@ -1113,22 +943,6 @@ ${LATEST_CTE}
 		});
 }
 
-export interface ProductMove {
-	productId: number;
-	category: Category;
-	brand: string;
-	model: string;
-	oldPrice: number;
-	newPrice: number;
-	change: number;
-	pctChange: number;
-	fromDate: string;
-	toDate: string;
-	// Today's cheapest in-stock listing: where the new price actually is.
-	retailer: Retailer;
-	variantName: string | null;
-}
-
 // Product-level moves for the homepage (D7): the cheapest in-stock price per
 // day, on the first day inside the window vs the latest snapshot day. The
 // per-listing movers let one premium SKU rising headline "Biggest rises" while
@@ -1210,25 +1024,6 @@ export function getProductMoves(db: DB, windowDays: number): ProductMove[] {
 	}));
 }
 
-export interface ComparePrice {
-	retailer: Retailer;
-	// Best in-stock price on the product's latest snapshot day per listing
-	// (null if nothing in stock).
-	price: number | null;
-}
-
-export interface CompareEntry {
-	product: ProductRow;
-	spec: SpecRow | null;
-	// One entry per retailer that had any in-stock snapshot for the product.
-	// Uses each listing's own latest snapshot (LATEST_CTE), not a single
-	// global date — a retailer that skipped a day (e.g. PCCG cooldown) still
-	// reports its most recent real price instead of vanishing.
-	prices: ComparePrice[];
-	// Cheapest in-stock price across all retailers' latest snapshots.
-	cheapestInStock: { price: number; retailer: Retailer } | null;
-}
-
 // Read-only view powering the /compare route: joins products + specs + each
 // listing's latest in-stock price (per-listing, so a retailer that missed the
 // latest day still contributes its real price). No schema changes required.
@@ -1270,18 +1065,6 @@ export function getComparisonData(db: DB, productIds: number[]): CompareEntry[] 
 			return { product, spec, prices, cheapestInStock: cheapest };
 		})
 		.filter((e): e is CompareEntry => e !== null);
-}
-
-export interface AlertRow {
-	id: number;
-	product_id: number;
-	target_price: number;
-	channel: AlertChannel;
-	notify_on_restock: number;
-	active: number;
-	last_notified_at: string | null;
-	last_notified_price: number | null;
-	created_at: string;
 }
 
 // One alert per (product, channel). Re-arming an existing (product, channel)

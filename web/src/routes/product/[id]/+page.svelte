@@ -20,7 +20,7 @@
 	import { toListingDisplays } from '$lib/listingsPanel';
 	import { asOfDate, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import { type ProductHistory, type AlertRow, type ProductIndexEntry } from '$lib/server/repos';
+	import { type ProductHistory, type AlertRow, type ProductIndexEntry } from '$lib/models';
 
 	let {
 		data,
