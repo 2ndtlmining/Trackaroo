@@ -37,7 +37,7 @@
 			{#if cheapestPrice !== null}
 				· cheapest <span class="num">{formatAud(cheapestPrice)}</span>
 			{/if}
-			· <a {href} class="text-accent no-underline hover:underline">All {title} →</a>
+			· <a {href} class="text-accent underline">All {title} →</a>
 		</p>
 	</header>
 
