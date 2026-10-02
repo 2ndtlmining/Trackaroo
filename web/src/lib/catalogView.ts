@@ -102,7 +102,10 @@ export function shownPrice(row: CatalogRowInput, view: CatalogView): number | nu
 	if (!view.retailer) return row.cheapestInStockPrice;
 	const entry = row.retailerPrices[view.retailer];
 	if (!entry) return null;
-	return view.inStock ? entry.inStock : entry.any;
+	// Without in_stock, show the buyable price when there is one: a cheaper
+	// sold-out listing must not pose as a deal. Fall back to the sold-out
+	// price (shownStock says 'out', so it is labelled) only when nothing is.
+	return view.inStock ? entry.inStock : (entry.inStock ?? entry.any);
 }
 
 // Whether the shown price is an in-stock one. 'out' only in a retailer view

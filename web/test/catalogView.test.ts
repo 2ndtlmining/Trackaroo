@@ -59,6 +59,12 @@ describe('shownPrice', () => {
 		expect(shownPrice(r, p('retailer=umart&in_stock=1'))).toBe(950);
 	});
 	it('is null for a retailer that does not list it', () => expect(shownPrice(r, p('retailer=scorptec'))).toBeNull());
+	it('prefers the buyable price when a cheaper listing at that retailer is out of stock', () => {
+		const mixed = row({ productId: 9, retailerPrices: { pccg: { inStock: 900, any: 800 } } });
+		expect(shownPrice(mixed, p('retailer=pccg'))).toBe(900);
+		expect(shownStock(mixed, p('retailer=pccg'))).toBe('in');
+		expect(applyCatalogView([mixed], p('retailer=pccg&max=850'))).toEqual([]);
+	});
 });
 
 describe('shownStock (final review #1)', () => {
