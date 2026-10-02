@@ -34,6 +34,11 @@ export function formatPct(value: number): string {
 	return `${sign}${Math.abs(value).toFixed(1)}%`;
 }
 
+// How old is it? One rule (#30):
+//  - date-only values ('YYYY-MM-DD'): daysBehindToday + stalenessLabel
+//  - true timestamps: formatRelative
+//  - the product page's "Updated ..." stamp: updatedLabel, which agrees with
+//    the stale banner's day count.
 export function formatRelative(iso: string | null, now: Date = new Date()): string {
 	if (!iso) return 'never';
 	const then = new Date(iso).getTime();
@@ -206,4 +211,20 @@ export function daysBehindToday(snapshotDate: string | null, now: Date = new Dat
 /** Human phrasing for a staleness gap, e.g. "1 day behind" / "3 days behind". */
 export function stalenessLabel(days: number): string {
 	return days === 1 ? '1 day behind' : `${days} days behind`;
+}
+
+/**
+ * The product page's "Updated ..." stamp (#30). Same local day: relative time
+ * ("Updated 25m ago"). Earlier: whole calendar days, the same count the stale
+ * banner uses (daysBehindToday), so the page never says "2w ago" next to
+ * "20 days behind".
+ */
+export function updatedLabel(lastSnapshotAt: string | null, now: Date = new Date()): string {
+	if (!lastSnapshotAt) return 'Never updated';
+	const then = new Date(lastSnapshotAt);
+	if (Number.isNaN(then.getTime())) return 'Never updated';
+	const localDate = `${then.getFullYear()}-${String(then.getMonth() + 1).padStart(2, '0')}-${String(then.getDate()).padStart(2, '0')}`;
+	const days = daysBehindToday(localDate, now) ?? 0;
+	if (days === 0) return `Updated ${formatRelative(lastSnapshotAt, now)}`;
+	return days === 1 ? 'Updated 1 day ago' : `Updated ${days} days ago`;
 }

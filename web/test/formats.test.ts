@@ -17,7 +17,8 @@ import {
 	formatSignedAud,
 	formatUsd,
 	stockLabel,
-	titleCase
+	titleCase,
+	updatedLabel
 } from '../src/lib/formats';
 
 describe('formatAud', () => {
@@ -238,5 +239,18 @@ describe('titleCase', () => {
 	it('handles non-letter words and empty strings', () => {
 		expect(titleCase('')).toBe('');
 		expect(titleCase('16gb gddr7')).toBe('16GB GDDR7');
+	});
+});
+describe('updatedLabel (#30)', () => {
+	const now = new Date(2026, 9, 21, 14, 0); // 21 Oct 2026 14:00 local
+	it('same local day: relative time', () => {
+		expect(updatedLabel(new Date(2026, 9, 21, 13, 35).toISOString(), now)).toBe('Updated 25m ago');
+	});
+	it('earlier days: calendar days, matching the stale banner count', () => {
+		expect(updatedLabel(new Date(2026, 9, 20, 23, 50).toISOString(), now)).toBe('Updated 1 day ago');
+		expect(updatedLabel(new Date(2026, 9, 1, 4, 30).toISOString(), now)).toBe('Updated 20 days ago');
+	});
+	it('missing: never', () => {
+		expect(updatedLabel(null, now)).toBe('Never updated');
 	});
 });
