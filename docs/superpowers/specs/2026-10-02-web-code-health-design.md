@@ -43,6 +43,9 @@ This work only changes **how the website reads** data. Hard rules:
 ## 6. Design
 
 ### 6.1 Safety net first
+
+> **Amended during planning:** the net is a **frozen legacy copy** of `repos.ts`. Every exported query is called on the legacy copy and on the new code against the same DB, and the results are deep-compared: the seeded test DB in CI, plus a read-only temp copy of the real local DB. This pins exactly what a query refactor can break, and it does so on real data. Unlike committed snapshots, it has no time or date flakiness. The write paths are compared on two fresh DB copies. The oracle is removed at the end, and its final run is recorded in the PR. The bullets below are the original idea, superseded by this.
+
 - **Golden HTML.** A vitest suite renders the loaders and pages to HTML against the seeded test DB and compares them with committed snapshots. Pages: home, `/products?category=gpu`, `/products?category=cpu`, one product page, `/deals`, `/movers`, `/compare` with two ids, `/discover`. Snapshot generation must be deterministic: fixed "today", no timestamps. If server-rendering pages under vitest proves impractical, snapshot the **loader data** (JSON) of each route instead. That pins every value the page shows, which is what a query refactor can break.
 - **Query equivalence harness.** A small test helper runs an old and a new function against a DB and deep-compares their output. It is used for every query whose SQL changes (§6.3).
 
