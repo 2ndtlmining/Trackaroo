@@ -1,7 +1,9 @@
 import {
 	getCpuSpecs,
 	getLatestListings,
+	getLatestFxRate,
 	getLaunchDates,
+	getLaunchMsrps,
 	getProductDealStats,
 	getProductSparklines,
 	getTrackedProducts,
@@ -64,9 +66,11 @@ export function load({
 			const byProduct = new Map(withListings.map((g) => [g.productId, g]));
 			const launchDates = getLaunchDates(db, category);
 			const cpuSpecs = getCpuSpecs(db, category);
+			const msrps = getLaunchMsrps(db, category);
 			const sparklines = getProductSparklines(db, category, 30);
 			const extras = (productId: number, launchDate: string | null) => ({
 				sparkline: (sparklines.get(productId) ?? []).map((p) => p.price),
+				msrpUsd: msrps.get(productId) ?? null,
 				socket: cpuSpecs.get(productId)?.socket ?? null,
 				threads: cpuSpecs.get(productId)?.threads ?? null,
 				releaseYear: launchDate ? Number(launchDate.slice(0, 4)) : null
@@ -130,6 +134,7 @@ export function load({
 		inStockOnly,
 		trackedCount,
 		listedCount,
+		fx: getLatestFxRate(db),
 		groups: visible
 	};
 }

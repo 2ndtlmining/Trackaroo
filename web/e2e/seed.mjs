@@ -515,6 +515,11 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		);
 	}
 
+	// One cached AUD/USD rate so the MSRP cues have a value to show.
+	db.prepare(`INSERT INTO fx_rates (rate_date, aud_per_usd, source, fetched_at) VALUES (?, 1.5, 'rba', ?)`).run(
+		today, `${today}T00:00:00Z`
+	);
+
 	db.close();
 	return dbPath;
 }

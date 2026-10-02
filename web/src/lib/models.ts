@@ -271,6 +271,8 @@ export interface DealCandidate {
 	// The product's first in-stock snapshot date across all history, for
 	// labelling how far back "all-time" actually reaches (#6).
 	historyStart: string | null;
+	// US launch MSRP in USD (specs.launch_msrp_usd), for the vs-MSRP cue.
+	msrpUsd: number | null;
 }
 
 export interface ProductMove {
@@ -318,4 +320,11 @@ export interface AlertRow {
 	last_notified_at: string | null;
 	last_notified_price: number | null;
 	created_at: string;
+}
+
+// Newest cached AUD per 1 USD (fx_rates), for converting launch MSRPs.
+export interface FxRate {
+	rateDate: string;
+	audPerUsd: number;
+	source: string;
 }

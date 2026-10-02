@@ -1,8 +1,10 @@
 import { RETAILER_OPTIONS, TIER_OPTIONS } from './filters';
+import type { FxRate } from './models';
+import { msrpAud, msrpDelta } from './msrp';
 import { generationTierLabel } from './tiers';
 import type { GenerationTier, Retailer } from './types';
 
-export type CatalogSort = 'price' | 'name' | 'spec' | 'released' | 'listings';
+export type CatalogSort = 'price' | 'name' | 'spec' | 'released' | 'listings' | 'msrp';
 export type SortDir = 'asc' | 'desc';
 
 export interface CatalogView {
@@ -25,6 +27,7 @@ export interface CatalogRowInput {
 	vramGb: number | null;
 	cores: number | null;
 	launchDate: string | null;
+	msrpUsd: number | null;
 	listingCount: number;
 	neverListed: boolean;
 }
@@ -34,7 +37,8 @@ export const DEFAULT_DIR: Record<CatalogSort, SortDir> = {
 	name: 'asc',
 	spec: 'desc',
 	released: 'desc',
-	listings: 'desc'
+	listings: 'desc',
+	msrp: 'asc'
 };
 
 const BRANDS = ['NVIDIA', 'AMD', 'Intel'];
@@ -119,19 +123,34 @@ export function shownStock(row: CatalogRowInput, view: CatalogView): 'in' | 'out
 	return !view.inStock && entry.any !== null ? 'out' : null;
 }
 
-function sortValue(row: CatalogRowInput, key: CatalogSort, view: CatalogView): number | string | null {
+// Context the view itself cannot carry: the AUD/USD rate for sort=msrp.
+export interface CatalogContext {
+	fx: FxRate | null;
+}
+
+function sortValue(
+	row: CatalogRowInput,
+	key: CatalogSort,
+	view: CatalogView,
+	ctx: CatalogContext
+): number | string | null {
 	switch (key) {
 		case 'price': return shownPrice(row, view);
 		case 'name': return row.model;
 		case 'spec': return row.vramGb ?? row.cores;
 		case 'released': return row.launchDate;
 		case 'listings': return row.listingCount;
+		case 'msrp': return msrpDelta(shownPrice(row, view), msrpAud(row.msrpUsd, ctx.fx));
 	}
 }
 
 const cmp = (a: number | string, b: number | string) => (a < b ? -1 : a > b ? 1 : 0);
 
-export function applyCatalogView<T extends CatalogRowInput>(rows: T[], view: CatalogView): T[] {
+export function applyCatalogView<T extends CatalogRowInput>(
+	rows: T[],
+	view: CatalogView,
+	ctx: CatalogContext = { fx: null }
+): T[] {
 	const kept = rows.filter((r) => {
 		if (view.brands.length && !view.brands.includes(r.brand)) return false;
 		if (view.gens.length && (!r.generationTier || !view.gens.includes(r.generationTier))) return false;
@@ -145,8 +164,8 @@ export function applyCatalogView<T extends CatalogRowInput>(rows: T[], view: Cat
 	if (!key) return kept;
 	const sign = view.dir === 'desc' ? -1 : 1;
 	return kept.sort((a, b) => {
-		const va = sortValue(a, key, view);
-		const vb = sortValue(b, key, view);
+		const va = sortValue(a, key, view, ctx);
+		const vb = sortValue(b, key, view, ctx);
 		if (va === null && vb !== null) return 1;
 		if (vb === null && va !== null) return -1;
 		if (va !== null && vb !== null) {

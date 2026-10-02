@@ -27,7 +27,7 @@
 	import { urlParams } from '$lib/urlParams';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import type { Category } from '$lib/types';
-	import type { ProductIndexEntry } from '$lib/models';
+	import type { FxRate, ProductIndexEntry } from '$lib/models';
 
 	let {
 		data
@@ -37,6 +37,7 @@
 			inStockOnly: boolean;
 			trackedCount: number;
 			listedCount: number;
+			fx: FxRate | null;
 			groups: (CatalogRow & CatalogRowInput)[];
 			// From the root layout's load (merged into page data).
 			productIndex: ProductIndexEntry[];
@@ -81,12 +82,12 @@
 	// loader, so a shared link renders filtered without JS and hydrates to
 	// the identical list. The loader keeps returning the whole category.
 	let view = $state<CatalogView>(parseCatalogView(urlParams()));
-	const shown = $derived(applyCatalogView(browseItems, view));
+	const shown = $derived(applyCatalogView(browseItems, view, { fx: data.fx }));
 	// Filtering happens here, not on the server: the whole category is already
 	// in the browser, so narrowing is instant and there is no debounce. The
 	// catalogue view narrows the search results too, but search keeps its own
 	// relevance order, so the sort is left out.
-	const matches = $derived(applyCatalogView(searchProducts(named, query), { ...view, sort: null }));
+	const matches = $derived(applyCatalogView(searchProducts(named, query), { ...view, sort: null }, { fx: data.fx }));
 	const activeCount = $derived(activeFilterCount(view));
 	// Default order keeps the series groups; any sort flattens them.
 	const groups = $derived(searching || view.sort ? [] : groupForIndex(shown));

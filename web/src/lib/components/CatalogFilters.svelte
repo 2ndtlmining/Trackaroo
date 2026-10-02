@@ -62,7 +62,8 @@
 		name: 'Model',
 		spec: category === 'cpu' ? 'Cores' : 'VRAM',
 		released: 'Released',
-		listings: 'Listings'
+		listings: 'Listings',
+		msrp: 'vs MSRP'
 	});
 
 	// The submit button exists for the no-JS form only. It stays in the DOM

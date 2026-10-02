@@ -142,6 +142,22 @@ export function getLaunchDates(db: DB, category: Category): Map<number, string> 
 	return new Map(rows.map((r) => [r.productId, r.launchDate]));
 }
 
+// US launch MSRP per product (USD), for the catalogue's vs-MSRP column and the
+// deals list. Same shape as getLaunchDates: one per-category read, never a
+// JOIN into a list query. Omit the category for every product.
+export function getLaunchMsrps(db: DB, category?: Category): Map<number, number> {
+	const rows = db
+		.prepare(
+			`SELECT product_id AS productId, MIN(launch_msrp_usd) AS msrpUsd
+			 FROM specs
+			 WHERE launch_msrp_usd IS NOT NULL AND launch_msrp_usd > 0
+			   AND (@category IS NULL OR category = @category)
+			 GROUP BY product_id`
+		)
+		.all({ category: category ?? null }) as Array<{ productId: number; msrpUsd: number }>;
+	return new Map(rows.map((r) => [r.productId, r.msrpUsd]));
+}
+
 // CPU-only spec columns for the catalogue's Socket / Threads columns. Same
 // shape as getLaunchDates: one memoisable per-category read, never a JOIN into
 // the list query. GPU rows simply have no entry.

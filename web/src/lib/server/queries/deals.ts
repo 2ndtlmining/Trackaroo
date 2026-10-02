@@ -112,7 +112,10 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 				 JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
 				 WHERE l3.product_id = p.id
 				   AND ps3.stock_status = 'in_stock'
-				   AND ${notBundle('l3')}) AS history_start`
+				   AND ${notBundle('l3')}) AS history_start,
+				(SELECT MIN(sp.launch_msrp_usd)
+				 FROM specs sp
+				 WHERE sp.product_id = p.id AND sp.launch_msrp_usd > 0) AS msrp_usd`
 			)
 		)
 		// -(days - 1): see getProductStats (#6/D4).
@@ -132,6 +135,7 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 		avg30_points: number;
 		window_high: number | null;
 		history_start: string | null;
+		msrp_usd: number | null;
 	}>;
 
 	return rows.map((r) => ({
@@ -149,6 +153,7 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 		avg30: r.avg30,
 		avg30Points: r.avg30_points,
 		windowHigh: r.window_high,
-		historyStart: r.history_start
+		historyStart: r.history_start,
+		msrpUsd: r.msrp_usd
 	}));
 }

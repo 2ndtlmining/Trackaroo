@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import {
+	getLatestFxRate,
 	getProductAlerts,
 	getProductHistory,
 	getRetailerLatest,
@@ -28,7 +29,12 @@ export function load({ params }: { params: { id: string } }) {
 	if (!data) {
 		error(404, 'Product not found');
 	}
-	return { ...data, alerts: getProductAlerts(db, id) };
+	return {
+		...data,
+		alerts: getProductAlerts(db, id),
+		fx: getLatestFxRate(db),
+		msrpUsd: data.specs?.launch_msrp_usd ?? null
+	};
 }
 
 export const actions = {

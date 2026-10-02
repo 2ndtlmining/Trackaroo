@@ -234,3 +234,52 @@ describe('/products catalogue controls data (#23)', () => {
 		expect(size).toBeLessThan(40 * 1024);
 	});
 });
+
+describe('MSRP data (#32)', () => {
+	it('/products rows carry msrpUsd and fx is null without a rate', async () => {
+		const { load } = await import('../src/routes/products/+page.server');
+		const data = load({ url: new URL('http://x/products?category=gpu'), setHeaders: noopSetHeaders } as any);
+		expect(data.fx).toBeNull();
+		for (const g of data.groups as any[]) expect(g).toHaveProperty('msrpUsd');
+	});
+
+	it('/deals returns fx and msrpUsd per row', async () => {
+		const { load } = await import('../src/routes/deals/+page.server');
+		const data = load({ url: new URL('http://x/deals'), setHeaders: noopSetHeaders } as any);
+		expect(data.fx).toBeNull();
+		for (const d of [...data.belowAverage, ...data.atAllTimeLow]) expect(d).toHaveProperty('msrpUsd');
+	});
+
+	it('/product/[id] returns fx and msrpUsd', async () => {
+		const { load } = await import('../src/routes/product/[id]/+page.server');
+		const { getDb } = await import('../src/lib/server/db');
+		const id = (getDb().prepare('SELECT id FROM products WHERE tracked = 1 ORDER BY id LIMIT 1').get() as { id: number }).id;
+		const data = load({ params: { id: String(id) } } as any);
+		expect(data.fx).toBeNull();
+		expect(data).toHaveProperty('msrpUsd');
+	});
+
+	it('getLaunchMsrps reads positive MSRPs per category', async () => {
+		const { getLaunchMsrps } = await import('../src/lib/server/repos');
+		const db = new Database(':memory:');
+		db.exec(`CREATE TABLE specs (product_id INTEGER, category TEXT, launch_msrp_usd REAL);
+			INSERT INTO specs VALUES (1,'gpu',999),(2,'cpu',299),(3,'gpu',NULL),(4,'gpu',0);`);
+		expect([...getLaunchMsrps(db as any, 'gpu')]).toEqual([[1, 999]]);
+		expect([...getLaunchMsrps(db as any)].sort()).toEqual([[1, 999], [2, 299]]);
+		db.close();
+	});
+});
+
+describe('getLatestFxRate (#32)', () => {
+	it('is null without the table, null when empty, else the newest row', async () => {
+		const { getLatestFxRate } = await import('../src/lib/server/repos');
+		const db = new Database(':memory:');
+		expect(getLatestFxRate(db as any)).toBeNull();
+		db.exec(`CREATE TABLE fx_rates (rate_date TEXT PRIMARY KEY, aud_per_usd REAL NOT NULL CHECK (aud_per_usd > 0),
+			source TEXT NOT NULL, fetched_at TEXT NOT NULL)`);
+		expect(getLatestFxRate(db as any)).toBeNull();
+		db.exec(`INSERT INTO fx_rates VALUES ('2026-09-30', 1.51, 'rba', 'x'), ('2026-10-01', 1.54, 'frankfurter', 'y')`);
+		expect(getLatestFxRate(db as any)).toEqual({ rateDate: '2026-10-01', audPerUsd: 1.54, source: 'frankfurter' });
+		db.close();
+	});
+});

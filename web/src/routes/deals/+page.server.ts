@@ -1,4 +1,4 @@
-import { getDealCandidates } from '$lib/server/repos';
+import { getDealCandidates, getLatestFxRate } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 import { memo } from '$lib/server/cache';
 import {
@@ -56,6 +56,7 @@ export function load({
 	const visible = filterDeals(deals, filters);
 
 	return {
+		fx: getLatestFxRate(db),
 		belowAverage: belowAverage(visible),
 		atAllTimeLow: atAllTimeLow(visible),
 		filters,
