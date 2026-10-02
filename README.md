@@ -461,7 +461,7 @@ npm run build
 # Run frontend unit tests (1028 vitest)
 npm test
 
-# Run browser e2e regression tests (179 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (184 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -613,7 +613,7 @@ Trackaroo/
     ├── src/lib/server/         # db.ts (better-sqlite3), repos.ts
     ├── src/routes/             # /, /products, /product/[id], /compare, /movers, /deals, /discover, /changelog, /healthz
     ├── test/                   # 1028 vitest regression tests (50 suites)
-    ├── e2e/                    # 179 Playwright regression tests (app.spec.ts, mobile.spec.ts, a11y.spec.ts, seed.mjs)
+    ├── e2e/                    # 184 Playwright regression tests (app.spec.ts, mobile.spec.ts, a11y.spec.ts, seed.mjs)
     ├── vite.config.js          # sveltekit + tailwind + vitest (client runtime alias for component tests)
     └── package.json
 ```
