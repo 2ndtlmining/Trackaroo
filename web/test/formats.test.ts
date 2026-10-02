@@ -16,7 +16,6 @@ import {
 	formatRelative,
 	formatSignedAud,
 	formatUsd,
-	freshnessLabel,
 	stockLabel,
 	titleCase
 } from '../src/lib/formats';
@@ -166,27 +165,6 @@ describe('formatSeenDate', () => {
 		['2026-09-24', '4 days ago'],
 		['2026-09-12', '12 Sep']
 	])('%s -> %s', (d, out) => expect(formatSeenDate(d, '2026-09-28')).toBe(out));
-});
-
-describe('freshnessLabel', () => {
-	const now = new Date('2026-08-15T12:00:00Z');
-	const ts = (d: string) => new Date(`${d}T00:00:00Z`).toISOString();
-
-	it('returns no data for null', () => {
-		expect(freshnessLabel(null, now)).toBe('no data');
-	});
-
-	it('today for the same day', () => {
-		expect(freshnessLabel(ts('2026-08-15'), now)).toBe('today');
-	});
-
-	it('yesterday for one day back', () => {
-		expect(freshnessLabel(ts('2026-08-14'), now)).toBe('yesterday');
-	});
-
-	it('n days ago beyond', () => {
-		expect(freshnessLabel(ts('2026-08-10'), now)).toBe('5d ago');
-	});
 });
 
 describe('stockLabel', () => {

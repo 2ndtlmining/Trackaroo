@@ -3,11 +3,9 @@ import { mount, tick, unmount } from 'svelte';
 import Badge from '../src/lib/components/Badge.svelte';
 import BrandIcon from '../src/lib/components/BrandIcon.svelte';
 import CommandPalette from '../src/lib/components/CommandPalette.svelte';
-import StatTile from '../src/lib/components/StatTile.svelte';
 import PriceChange from '../src/lib/components/PriceChange.svelte';
 import StockBadge from '../src/lib/components/StockBadge.svelte';
 import Chip from '../src/lib/components/Chip.svelte';
-import LatestListingTable from '../src/lib/components/LatestListingTable.svelte';
 import SpecPanel from '../src/lib/components/SpecPanel.svelte';
 import Sparkline from '../src/lib/components/Sparkline.svelte';
 import OfferRow from '../src/lib/components/OfferRow.svelte';
@@ -112,21 +110,6 @@ describe('BrandIcon', () => {
 	});
 });
 
-describe('StatTile', () => {
-	it('renders label and value', () => {
-		const body = renderComponent(StatTile, { label: 'Listings', value: '315' });
-		expect(body).toContain('Listings');
-		expect(body).toContain('315');
-	});
-
-	it('renders sub when provided and omits it otherwise', () => {
-		expect(renderComponent(StatTile, { label: 'L', value: '1', sub: '13 Aug' })).toContain(
-			'13 Aug'
-		);
-		expect(renderComponent(StatTile, { label: 'L', value: '1' })).not.toContain('13 Aug');
-	});
-});
-
 describe('PriceChange', () => {
 	it('maps insufficient direction to the stale tone', () => {
 		const body = renderComponent(PriceChange, { direction: 'insufficient', label: 'New listing' });
@@ -154,57 +137,6 @@ describe('Chip', () => {
 		const body = renderComponent(Chip, { label: 'Category', value: 'gpu' });
 		expect(body).toContain('Category');
 		expect(body).toContain('gpu');
-	});
-});
-
-describe('LatestListingTable', () => {
-	it('shows an empty state when there are no rows', () => {
-		const body = renderComponent(LatestListingTable, { rows: [] });
-		expect(body).toContain('No listings match the current filters.');
-	});
-
-	it('renders model, price and stock for a populated row', () => {
-		const body = renderComponent(LatestListingTable, { rows: [latestListing()] });
-		expect(body).toContain('Ryzen 5 7600');
-		expect(body).toContain('AMD');
-		expect(body).toContain('scorptec');
-		expect(body).toContain('299');
-		expect(body).toContain('In stock');
-	});
-
-	it('truncates comma-separated variant names to the first segment', () => {
-		const body = renderComponent(LatestListingTable, { rows: [latestListing()] });
-		expect(body).toContain('>Ryzen 5 7600</td>');
-		expect(body).toContain('title="Ryzen 5 7600, Tray, 65W"');
-	});
-
-	it('labels a brand-NEW listing rather than stale', () => {
-		const row = latestListing({
-			windowStartPrice: null,
-			pointsInWindow: 1,
-			lastSnapshotAt: null
-		});
-		const body = renderComponent(LatestListingTable, { rows: [row] });
-		expect(body).toContain('New listing');
-		expect(body).not.toContain('No data in window');
-	});
-
-	it('labels an old listing as stale with "last seen" freshness wording', () => {
-		const row = latestListing({
-			windowStartPrice: 300,
-			lastSnapshotAt: '2026-08-05T08:00:00Z'
-		});
-		const body = renderComponent(LatestListingTable, { rows: [row] });
-		expect(body).toContain('Stale');
-		expect(body).toContain('last seen');
-	});
-
-	it('hides the model and category columns in compact mode', () => {
-		const body = renderComponent(LatestListingTable, { rows: [latestListing()], compact: true });
-		expect(body).not.toContain('>Model</th>');
-		expect(body).not.toContain('>Category</th>');
-		expect(body).toContain('>Retailer</th>');
-		expect(body).toContain('scorptec');
 	});
 });
 

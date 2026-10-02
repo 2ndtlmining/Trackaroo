@@ -20,7 +20,6 @@ import {
 	getProductHistory,
 	getProductIndex,
 	getProductMoves,
-	getProductSparklines,
 	getProductStats,
 	getRetailerFreshness,
 	getSparklines,
@@ -82,29 +81,6 @@ describe('getLatestListings', () => {
 		expect(cpu.every((r) => r.category === 'cpu')).toBe(true);
 	});
 
-	it('filters by retailer', () => {
-		const scorptec = getLatestListings(db, { retailer: 'scorptec' });
-		expect(scorptec.length).toBeGreaterThan(0);
-		expect(scorptec.every((r) => r.retailer === 'scorptec')).toBe(true);
-	});
-
-	it('filters by brand', () => {
-		const nvidia = getLatestListings(db, { brand: 'NVIDIA' });
-		expect(nvidia.length).toBeGreaterThan(0);
-		expect(nvidia.every((r) => r.brand === 'NVIDIA')).toBe(true);
-	});
-
-	it('filters by a case-insensitive model search', () => {
-		const sample = getLatestListings(db)[0];
-		const needle = sample.model.toLowerCase().slice(0, 6);
-		const results = getLatestListings(db, { query: needle });
-		expect(results.length).toBeGreaterThan(0);
-		for (const row of results) {
-			const haystack = `${row.brand} ${row.model} ${row.productVariant ?? ''} ${row.variantName ?? ''}`.toLowerCase();
-			expect(haystack).toContain(needle);
-		}
-	});
-
 	it('filters to in-stock listings only', () => {
 		const all = getLatestListings(db);
 		const inStock = getLatestListings(db, { inStock: true });
@@ -115,32 +91,9 @@ describe('getLatestListings', () => {
 		}
 	});
 
-	it('returns no results for a nonsense search', () => {
-		expect(getLatestListings(db, { query: 'zzz-zzz-nonsense' })).toEqual([]);
-	});
-
-	it('sorts by price ascending and descending', () => {
-		const asc = getLatestListings(db, { sort: 'price-asc' });
-		const desc = getLatestListings(db, { sort: 'price-desc' });
-		expect(asc.length).toBeGreaterThan(0);
-		expect(desc.length).toBe(asc.length);
-		const ascPrices = asc.map((r) => r.latestPrice);
-		const descPrices = desc.map((r) => r.latestPrice);
-		for (let i = 1; i < ascPrices.length; i += 1) {
-			expect(ascPrices[i]).toBeGreaterThanOrEqual(ascPrices[i - 1]);
-			expect(descPrices[i]).toBeLessThanOrEqual(descPrices[i - 1]);
-		}
-	});
-
-	it('filters by generation tier', () => {
-		const current = getLatestListings(db, { generation_tier: 'current' });
-		expect(current.length).toBeGreaterThan(0);
-		expect(current.every((r) => r.generationTier === 'current')).toBe(true);
-	});
-
 	it('combines filters with AND', () => {
-		const rows = getLatestListings(db, { category: 'gpu', retailer: 'scorptec' });
-		expect(rows.every((r) => r.category === 'gpu' && r.retailer === 'scorptec')).toBe(true);
+		const rows = getLatestListings(db, { category: 'gpu', inStock: true });
+		expect(rows.every((r) => r.category === 'gpu' && r.latestStock === 'in_stock')).toBe(true);
 	});
 
 	it('produces a window start price and point count per listing', () => {
@@ -192,30 +145,6 @@ describe('groupListingsByProduct', () => {
 		}
 	});
 
-	it('keeps category/model order by default and sorts by price on request', () => {
-		const rows = getLatestListings(db);
-		const asc = groupListingsByProduct(rows, 'price-asc');
-		const desc = groupListingsByProduct(rows, 'price-desc');
-
-		const priced = (gs: typeof asc) =>
-			gs.filter((g) => g.cheapestInStockPrice !== null).map((g) => g.cheapestInStockPrice!);
-		for (let i = 1; i < priced(asc).length; i += 1) {
-			expect(priced(asc)[i]).toBeGreaterThanOrEqual(priced(asc)[i - 1]);
-		}
-		for (let i = 1; i < priced(desc).length; i += 1) {
-			expect(priced(desc)[i]).toBeLessThanOrEqual(priced(desc)[i - 1]);
-		}
-
-		// Products with nothing in stock sink to the end for both price sorts.
-		for (const gs of [asc, desc]) {
-			const firstUnpriced = gs.findIndex((g) => g.cheapestInStockPrice === null);
-			if (firstUnpriced !== -1) {
-				for (let i = firstUnpriced; i < gs.length; i += 1) {
-					expect(gs[i].cheapestInStockPrice).toBeNull();
-				}
-			}
-		}
-	});
 });
 
 describe('getCheapestPerModel', () => {
@@ -954,58 +883,6 @@ describe('getSparklines', () => {
 		const windowStart = new Date(`${maxDate.d}T00:00:00Z`);
 		windowStart.setUTCDate(windowStart.getUTCDate() - 7);
 		const sparklines = getSparklines(db, ids, 7);
-		for (const points of sparklines.values()) {
-			for (const p of points) {
-				expect(p.date >= windowStart.toISOString().slice(0, 10)).toBe(true);
-			}
-		}
-	});
-});
-
-describe('getProductSparklines', () => {
-	it('returns an empty map for no product ids', () => {
-		expect(getProductSparklines(db, []).size).toBe(0);
-	});
-
-	it('returns the cheapest in-stock price per day per product, ascending', () => {
-		const rows = db
-			.prepare('SELECT DISTINCT product_id AS id FROM retailer_listings LIMIT 4')
-			.all() as Array<{ id: number }>;
-		const ids = rows.map((r) => r.id);
-		const sparklines = getProductSparklines(db, ids);
-
-		expect(sparklines.size).toBeGreaterThan(0);
-		const cheapestStmt = db.prepare(
-			`SELECT MIN(s.price_aud) AS mn
-			 FROM retailer_listings l
-			 JOIN price_snapshots s ON s.retailer_listing_id = l.id
-			 WHERE l.product_id = ? AND s.snapshot_date = ? AND s.stock_status = 'in_stock'`
-		);
-		for (const [productId, points] of sparklines) {
-			expect(ids).toContain(productId);
-			expect(points.length).toBeGreaterThanOrEqual(1);
-			const dates = points.map((p) => p.date);
-			expect(dates).toEqual([...dates].sort());
-			for (const p of points) {
-				expect(p.price).toBeGreaterThan(0);
-				const row = cheapestStmt.get(productId, p.date) as { mn: number | null };
-				expect(row.mn).not.toBeNull();
-				expect(p.price).toBeCloseTo(row.mn as number, 2);
-			}
-		}
-	});
-
-	it('only returns points inside the requested window', () => {
-		const rows = db
-			.prepare('SELECT DISTINCT product_id AS id FROM retailer_listings LIMIT 3')
-			.all() as Array<{ id: number }>;
-		const ids = rows.map((r) => r.id);
-		const maxDate = db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get() as {
-			d: string;
-		};
-		const windowStart = new Date(`${maxDate.d}T00:00:00Z`);
-		windowStart.setUTCDate(windowStart.getUTCDate() - 7);
-		const sparklines = getProductSparklines(db, ids, 7);
 		for (const points of sparklines.values()) {
 			for (const p of points) {
 				expect(p.date >= windowStart.toISOString().slice(0, 10)).toBe(true);

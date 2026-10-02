@@ -104,14 +104,6 @@ export function todayIso(now: Date = new Date()): string {
 	return `${y}-${m}-${d}`;
 }
 
-export function freshnessLabel(lastSnapshotAt: string | null, now: Date = new Date()): string {
-	if (!lastSnapshotAt) return 'no data';
-	const ageDays = Math.floor((now.getTime() - new Date(lastSnapshotAt).getTime()) / 86_400_000);
-	if (ageDays <= 0) return 'today';
-	if (ageDays === 1) return 'yesterday';
-	return `${ageDays}d ago`;
-}
-
 export function stockLabel(stock: string): string {
 	switch (stock) {
 		case 'in_stock':

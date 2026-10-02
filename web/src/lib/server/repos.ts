@@ -5,7 +5,6 @@ import type {
 	Category,
 	GenerationTier,
 	ListingFilters,
-	ListingSort,
 	ListingStatus,
 	Retailer,
 	StockStatus
@@ -20,7 +19,7 @@ export interface SparklinePoint {
 	price: number;
 }
 
-// Product-level price series (cheapest in-stock per day) for card sparklines.
+// A dated price point; the shape Sparkline.svelte draws.
 export interface PricePoint {
 	date: string;
 	price: number;
@@ -60,28 +59,17 @@ export interface ProductGroup {
 	cheapestInStockPrice: number | null;
 	cheapestInStockRetailer: Retailer | null;
 	inStockCount: number;
-	// Cheapest in-stock price per day across the product's listings (for the
-	// unexpanded card sparkline); empty when no in-stock history in the window.
-	sparkline?: PricePoint[];
 	// Average of the per-day cheapest in-stock price over the trailing 30 days
 	// (null when no in-stock history in the window).
 	avg30?: number | null;
 	// Days that actually contributed to avg30. The window is 30 days but a
 	// young dataset has fewer, and the UI labels the real number.
 	avg30Points?: number;
-	// True when the current cheapest in-stock price is below the 30-day
-	// average (and there is enough history to trust the average).
-	deal?: boolean;
 }
 
 // Groups per-listing rows into one entry per product (for the Products card
-// grid). `sort` reorders the groups: price sorts order by cheapest in-stock
-// price (products with nothing in stock always sink to the end); the default
-// keeps the row order the SQL produced (category, model).
-export function groupListingsByProduct(
-	listings: LatestListing[],
-	sort: ListingSort | undefined = undefined
-): ProductGroup[] {
+// grid), keeping the row order the SQL produced (category, model).
+export function groupListingsByProduct(listings: LatestListing[]): ProductGroup[] {
 	const byProduct = new Map<number, ProductGroup>();
 	for (const row of listings) {
 		let group = byProduct.get(row.productId);
@@ -110,19 +98,7 @@ export function groupListingsByProduct(
 		}
 	}
 
-	const groups = [...byProduct.values()];
-	if (sort === 'price-asc' || sort === 'price-desc') {
-		const dir = sort === 'price-asc' ? 1 : -1;
-		groups.sort((a, b) => {
-			if (a.cheapestInStockPrice === null && b.cheapestInStockPrice === null) {
-				return a.model.localeCompare(b.model);
-			}
-			if (a.cheapestInStockPrice === null) return 1;
-			if (b.cheapestInStockPrice === null) return -1;
-			return dir * (a.cheapestInStockPrice - b.cheapestInStockPrice) || a.model.localeCompare(b.model);
-		});
-	}
-	return groups;
+	return [...byProduct.values()];
 }
 
 export interface Mover {
@@ -261,37 +237,10 @@ function filtersToParams(filters: ListingFilters): { clause: string; params: Rec
 		clauses.push('p.category = @category');
 		params.category = filters.category;
 	}
-	if (filters.retailer) {
-		clauses.push('l.retailer = @retailer');
-		params.retailer = filters.retailer;
-	}
-	if (filters.brand) {
-		clauses.push('p.brand = @brand');
-		params.brand = filters.brand;
-	}
-	if (filters.generation_tier) {
-		clauses.push('p.generation_tier = @tier');
-		params.tier = filters.generation_tier;
-	}
-	if (filters.query) {
-		clauses.push('(p.model LIKE @q OR p.brand LIKE @q OR p.variant LIKE @q OR l.variant_name LIKE @q)');
-		params.q = `%${filters.query}%`;
-	}
 	if (filters.inStock) {
 		clauses.push("lat.stock_status = 'in_stock'");
 	}
 	return { clause: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', params };
-}
-
-function sortClause(sort: ListingSort | undefined): string {
-	switch (sort) {
-		case 'price-asc':
-			return 'ORDER BY lat.price_aud ASC, p.category, p.model, l.retailer';
-		case 'price-desc':
-			return 'ORDER BY lat.price_aud DESC, p.category, p.model, l.retailer';
-		default:
-			return 'ORDER BY p.category, p.model, l.retailer, lat.price_aud';
-	}
 }
 
 export interface TrackedProduct {
@@ -352,13 +301,6 @@ export function getLaunchDates(db: DB, category: Category): Map<number, string> 
 		)
 		.all(category) as Array<{ productId: number; launchDate: string }>;
 	return new Map(rows.map((r) => [r.productId, r.launchDate]));
-}
-
-export function getBrands(db: DB): string[] {
-	const rows = db
-		.prepare('SELECT DISTINCT brand FROM products WHERE tracked = 1 ORDER BY brand ASC')
-		.all() as Array<{ brand: string }>;
-	return rows.map((r) => r.brand);
 }
 
 export interface ProductIndexEntry {
@@ -568,7 +510,7 @@ ${LATEST_CTE}
 		JOIN retailer_listings l ON l.id = lat.retailer_listing_id
 		JOIN products p ON p.id = l.product_id
 		WHERE l.status = 'active' AND p.tracked = 1 AND ${notBundle('l')}${clause}
-		${sortClause(filters.sort)}
+		ORDER BY p.category, p.model, l.retailer, lat.price_aud
 	`;
 
 	const rows = db.prepare(sql).all({ window: `-${windowDays} days`, ...params }) as LatestRow[];
@@ -622,43 +564,6 @@ export function getSparklines(
 	return byListing;
 }
 
-// Cheapest in-stock price per day for each product (single query, windowed on
-// the DB max date like getSparklines). Powers the unexpanded card sparkline so
-// the card grid shows the tracked price trend at a glance.
-export function getProductSparklines(
-	db: DB,
-	productIds: number[],
-	days = DEFAULT_WINDOW_DAYS
-): Map<number, PricePoint[]> {
-	if (productIds.length === 0) return new Map();
-	const placeholders = productIds.map(() => '?').join(',');
-	const rows = db
-		.prepare(
-			`SELECT l.product_id AS productId, s.snapshot_date AS date, MIN(s.price_aud) AS price
-			 FROM retailer_listings l
-			 JOIN price_snapshots s ON s.retailer_listing_id = l.id
-			 WHERE l.product_id IN (${placeholders})
-			   AND s.stock_status = 'in_stock'
-			   AND ${notBundle('l')}
-			   AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)
-			 GROUP BY l.product_id, s.snapshot_date
-			 ORDER BY l.product_id, s.snapshot_date ASC`
-		)
-		.all(...productIds, `-${days} days`) as Array<{
-		productId: number;
-		date: string;
-		price: number;
-	}>;
-
-	const byProduct = new Map<number, PricePoint[]>();
-	for (const row of rows) {
-		const arr = byProduct.get(row.productId) ?? [];
-		arr.push({ date: row.date, price: row.price });
-		byProduct.set(row.productId, arr);
-	}
-	return byProduct;
-}
-
 // Average of the per-day cheapest in-stock price over the trailing window
 // (the same series the sparklines draw), plus the number of days that series
 // has — the point count gates the "30d avg" chip and the deal badge so a
@@ -690,8 +595,7 @@ export function getProductStats(db: DB, productId: number, days = 30): ProductSt
 	return { avg30: row.avg, avg30Points: row.points };
 }
 
-// Per-product 30-day stats for a list of products (single query, like
-// getProductSparklines) — powers the deal badges on the products grid.
+// Per-product 30-day stats for a list of products (single query) — powers the deal badges on the products grid.
 export function getProductDealStats(
 	db: DB,
 	productIds: number[],

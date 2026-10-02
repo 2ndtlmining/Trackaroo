@@ -94,7 +94,6 @@ const CASES: Array<[string, (r: any, db: AnyDb, ids: ReturnType<typeof sampleIds
 	['getTrackedProducts cpu', (r, db) => r.getTrackedProducts(db, 'cpu')],
 	['getLaunchDates gpu', (r, db) => r.getLaunchDates(db, 'gpu')],
 	['getLaunchDates cpu', (r, db) => r.getLaunchDates(db, 'cpu')],
-	['getBrands', (r, db) => r.getBrands(db)],
 	['getProductIndex', (r, db) => r.getProductIndex(db)],
 	['getHeaderStats', (r, db) => r.getHeaderStats(db)],
 	['getRetailerFreshness', (r, db) => r.getRetailerFreshness(db)],
@@ -105,24 +104,13 @@ const CASES: Array<[string, (r: any, db: AnyDb, ids: ReturnType<typeof sampleIds
 	['getLatestListings cpu', (r, db) => r.getLatestListings(db, { category: 'cpu' })],
 	['getLatestListings gpu inStock (products route)', (r, db) => r.getLatestListings(db, { category: 'gpu', inStock: true })],
 	['getLatestListings cpu inStock (products route)', (r, db) => r.getLatestListings(db, { category: 'cpu', inStock: true })],
-	['getLatestListings retailer', (r, db) => r.getLatestListings(db, { retailer: 'pccg' })],
-	['getLatestListings brand', (r, db) => r.getLatestListings(db, { brand: 'NVIDIA' })],
-	['getLatestListings tier', (r, db) => r.getLatestListings(db, { generation_tier: 'current' })],
-	['getLatestListings query', (r, db) => r.getLatestListings(db, { query: 'rtx' })],
-	['getLatestListings sort asc', (r, db) => r.getLatestListings(db, { category: 'gpu', sort: 'price-asc' })],
-	['getLatestListings sort desc', (r, db) => r.getLatestListings(db, { category: 'gpu', sort: 'price-desc' })],
 	['getLatestListings window 30', (r, db) => r.getLatestListings(db, { category: 'gpu' }, 30)],
 	['groupListingsByProduct gpu', (r, db) => r.groupListingsByProduct(r.getLatestListings(db, { category: 'gpu', inStock: true }))],
 	['groupListingsByProduct cpu', (r, db) => r.groupListingsByProduct(r.getLatestListings(db, { category: 'cpu' }))],
-	['groupListingsByProduct price-asc', (r, db) => r.groupListingsByProduct(r.getLatestListings(db, { category: 'gpu' }), 'price-asc')],
-	['groupListingsByProduct price-desc', (r, db) => r.groupListingsByProduct(r.getLatestListings(db, { category: 'gpu' }), 'price-desc')],
 	['getSparklines', (r, db, ids) => r.getSparklines(db, ids.listings)],
 	['getSparklines 30', (r, db, ids) => r.getSparklines(db, ids.listings, 30)],
 	['getSparklines 1', (r, db, ids) => r.getSparklines(db, ids.listings, 1)],
 	['getSparklines empty', (r, db) => r.getSparklines(db, [])],
-	['getProductSparklines', (r, db, ids) => r.getProductSparklines(db, ids.all)],
-	['getProductSparklines 30', (r, db, ids) => r.getProductSparklines(db, ids.all, 30)],
-	['getProductSparklines empty', (r, db) => r.getProductSparklines(db, [])],
 	['getProductStats 30', (r, db, ids) => ids.some.map((id: number) => r.getProductStats(db, id))],
 	['getProductStats 90', (r, db, ids) => ids.some.map((id: number) => r.getProductStats(db, id, 90))],
 	['getProductDealStats', (r, db, ids) => r.getProductDealStats(db, ids.all)],
@@ -163,8 +151,11 @@ describe('repos equivalence (#30)', () => {
 		});
 	}
 
-	it('exports the same names as legacy', () => {
-		expect(Object.keys(current).sort()).toEqual(Object.keys(legacy).sort());
+	it('exports the same names as legacy (minus the deliberately deleted)', () => {
+		// Deliberately deleted in Task 2 (#30): dead code, still in the frozen legacy copy.
+		const DELETED = ['getBrands', 'getProductSparklines'];
+		expect(Object.keys(current).sort()).toEqual(Object.keys(legacy).filter((k) => !DELETED.includes(k)).sort());
+		for (const k of DELETED) expect(Object.keys(current)).not.toContain(k);
 	});
 
 	it('exported non-function values are equal', () => {
