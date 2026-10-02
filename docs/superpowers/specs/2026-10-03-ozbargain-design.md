@@ -101,7 +101,7 @@ Rules for sending:
 
 The embed:
 - **Title:** "OzBargain: <product name> $<price> at <retailer>".
-- **Body:** "Our best today: $<price> at <retailer>" (or "not in stock at our retailers"), "+<pos>/−<neg> votes", and links to the deal node and the Trackaroo product page (`TRACKAROO_PUBLIC_URL`, as the digest uses).
+- **Body:** "Our best today: $<price> at <retailer>" (or "not in stock at our retailers"), "+<pos>/−<neg> votes", and links to the deal node and the Trackaroo product page (`TRACKAROO_PUBLIC_BASE_URL`, as the digest uses).
 - No emojis.
 
 ## 8. Scheduling
