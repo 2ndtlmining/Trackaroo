@@ -6,22 +6,26 @@ export interface SaleEvent {
 	name: string;
 	start: string; // inclusive ISO date
 	end: string; // inclusive ISO date
+	// Curated dates not yet announced (R9): the badge and the chart say so.
+	estimated?: true;
 }
 
 export const CURATED_YEARS = [2026, 2027];
 
-const CURATED: Record<number, Array<[string, string, string]>> = {
+// [name, start, end, estimated]. Set estimated to false once the retailer
+// announces the real dates.
+const CURATED: Record<number, Array<[string, string, string, boolean]>> = {
 	2026: [
 		// estimate — replace when announced
-		['Prime Day', '2026-07-14', '2026-07-15'],
+		['Prime Day', '2026-07-14', '2026-07-15', true],
 		// estimate — replace when announced
-		['Click Frenzy', '2026-11-10', '2026-11-11']
+		['Click Frenzy', '2026-11-10', '2026-11-11', true]
 	],
 	2027: [
 		// estimate — replace when announced
-		['Prime Day', '2027-07-13', '2027-07-14'],
+		['Prime Day', '2027-07-13', '2027-07-14', true],
 		// estimate — replace when announced
-		['Click Frenzy', '2027-11-09', '2027-11-10']
+		['Click Frenzy', '2027-11-09', '2027-11-10', true]
 	]
 };
 
@@ -54,7 +58,9 @@ export function saleEventsFor(year: number): SaleEvent[] {
 		{ name: 'Black Friday', start: bf, end: iso(year, 11, Number(bf.slice(8)) + 3) },
 		{ name: 'Boxing Day', start: iso(year, 12, 26), end: iso(year, 12, 31) }
 	];
-	for (const [name, start, end] of CURATED[year] ?? []) events.push({ name, start, end });
+	for (const [name, start, end, estimated] of CURATED[year] ?? []) {
+		events.push(estimated ? { name, start, end, estimated: true } : { name, start, end });
+	}
 	return events.sort((a, b) => a.start.localeCompare(b.start) || a.name.localeCompare(b.name));
 }
 

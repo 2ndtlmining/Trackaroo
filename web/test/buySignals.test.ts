@@ -159,9 +159,15 @@ const ten = lows(
 const QUIET = new Date('2026-09-10T00:00:00Z');
 
 describe('pricePercentile', () => {
-	it('is the share of window days with a higher low, and the span', () => {
+	it('is the share of window days with a low at or above today, and the span', () => {
 		expect(pricePercentile(ten, 55, '2026-09-10')).toEqual({ pct: 50, days: 10 });
 		expect(pricePercentile(ten, 5, '2026-09-10')).toEqual({ pct: 100, days: 10 });
+	});
+	it('counts ties in today’s favour (R7)', () => {
+		// 100..50 are >= 50: six of ten days.
+		expect(pricePercentile(ten, 50, '2026-09-10')).toEqual({ pct: 60, days: 10 });
+		const flat = lows([['2026-09-06', 100], ['2026-09-07', 100], ['2026-09-08', 100], ['2026-09-09', 100], ['2026-09-10', 100]]);
+		expect(pricePercentile(flat, 100, '2026-09-10')).toEqual({ pct: 100, days: 5 });
 	});
 	it('caps the window at 180 days', () => {
 		const long: DailyLow[] = [];
@@ -247,11 +253,28 @@ describe('buildSignals', () => {
 	});
 	it('states the window in the percentile claim and wording for a zero-day low', () => {
 		const s = buildSignals({ ...base, lows: ten, today: 55 });
-		expect(s.find((x) => x.key === 'percentile')?.claim).toBe('Cheaper than 50% of days (last 10 days)');
+		expect(s.find((x) => x.key === 'percentile')?.claim).toBe('As cheap as or cheaper than 50% of days (last 10 days)');
 		const z = buildSignals({ ...base, lows: lows([['2026-09-08', 90], ['2026-09-09', 80], ['2026-09-10', 50]]), today: 60 });
 		const lo = z.find((x) => x.key === 'lowest')!;
 		expect(lo.claim).toBe('Above the most recent low');
 		expect(lo.evidence).not.toMatch(/0 days/);
+	});
+	it('a flat price reads 100% next to "Lowest since tracking began", never a contradiction (R7)', () => {
+		const flat = lows([['2026-09-06', 100], ['2026-09-07', 100], ['2026-09-08', 100], ['2026-09-09', 100], ['2026-09-10', 100]]);
+		const s = buildSignals({ ...base, lows: flat, today: 100 });
+		expect(s.find((x) => x.key === 'percentile')).toMatchObject({
+			tone: 'good',
+			claim: 'As cheap as or cheaper than 100% of days (last 5 days)'
+		});
+		expect(s.find((x) => x.key === 'lowest')?.claim).toBe('Lowest since tracking began');
+	});
+	it('says when a sale event’s dates are estimated (R9)', () => {
+		const cf = buildSignals({ ...base, lows: ten, today: 10, now: new Date('2026-11-01T00:00:00Z') });
+		const sale = cf.find((x) => x.key === 'sale')!;
+		expect(sale.claim).toBe('Click Frenzy starts in 9 days');
+		expect(sale.evidence).toContain('estimated dates');
+		const bf = buildSignals({ ...base, lows: ten, today: 10, now: new Date('2026-11-27T00:00:00Z') });
+		expect(bf.find((x) => x.key === 'sale')?.evidence).not.toContain('estimated');
 	});
 	it('adds a sale signal near an event and a successor signal when mapped', () => {
 		const now = new Date('2026-12-14T00:00:00Z');

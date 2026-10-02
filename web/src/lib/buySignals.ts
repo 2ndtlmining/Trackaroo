@@ -144,7 +144,9 @@ export interface Signal {
 const MAX_WINDOW_DAYS = 180;
 const MINUS = '−'; // same sign as $lib/formats
 
-// Share (0-100) of days in the window whose low was HIGHER than today's price.
+// Share (0-100) of days in the window whose low was AT OR ABOVE today's price:
+// ties count in today's favour (R7), so a flat price reads 100%, never a
+// contradiction of "Lowest since tracking began".
 // `days` is the calendar span the window covers (first tracked day in the
 // window .. asOf), capped at maxDays. Null under the history gate.
 export function pricePercentile(
@@ -156,8 +158,8 @@ export function pricePercentile(
 	const from = addDays(asOf, -(maxDays - 1));
 	const win = lows.filter((p) => p.date >= from && p.date <= asOf);
 	if (win.length < MIN_HISTORY_POINTS) return null;
-	const higher = win.filter((p) => p.price > today).length;
-	return { pct: (higher / win.length) * 100, days: daysBetween(win[0].date, asOf) + 1 };
+	const atOrAbove = win.filter((p) => p.price >= today).length;
+	return { pct: (atOrAbove / win.length) * 100, days: daysBetween(win[0].date, asOf) + 1 };
 }
 
 // How long since the price was last strictly lower than today's. When it never
@@ -234,8 +236,8 @@ export function buildSignals(input: {
 				key: 'percentile',
 				tone: good ? 'good' : 'neutral',
 				icon: good ? 'check' : 'dash',
-				claim: `Cheaper than ${Math.round(pc.pct)}% of days (last ${plural(pc.days, 'day')})`,
-				evidence: 'Share of tracked in-stock days in that window with a higher lowest price than today.'
+				claim: `As cheap as or cheaper than ${Math.round(pc.pct)}% of days (last ${plural(pc.days, 'day')})`,
+				evidence: 'Share of tracked in-stock days in that window whose lowest price was the same as or higher than today’s.'
 			});
 		}
 		const lo = lowestInDays(lows, today, asOf);
@@ -295,7 +297,7 @@ export function buildSignals(input: {
 			claim: running
 				? `${event.name} sale on now`
 				: `${event.name} starts ${startsInDays === 1 ? 'tomorrow' : `in ${plural(startsInDays, 'day')}`}`,
-			evidence: `${when} Retailers often change prices around sale events.`
+			evidence: `${when}${event.estimated ? ' These are estimated dates.' : ''} Retailers often change prices around sale events.`
 		});
 	}
 

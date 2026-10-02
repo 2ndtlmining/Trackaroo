@@ -57,6 +57,12 @@ const ON_SOFT: Array<[string, string]> = [
 	['text-muted', 'warning-soft'],
 	['text-muted', 'danger-soft']
 ];
+const ICON_DISCS: Array<[string, string]> = [
+	['success', 'success-soft'],
+	['warning', 'warning-soft'],
+	['danger', 'danger-soft'],
+	['text-muted', 'surface-hover']
+];
 const CONTROL_BORDERS: Array<[string, string]> = [
 	['border-input', 'bg'],
 	['border-input', 'surface']
@@ -79,6 +85,12 @@ describe.each([
 
 	it.each(ON_SOFT)('%s on %s is at least 4.5:1', (fg, bg) =>
 		expect(contrast(t[fg], t[bg])).toBeGreaterThanOrEqual(4.5)
+	);
+
+	// SignalBadge icon discs (#31): a 14px icon on its tinted disc is a
+	// non-text graphic, so WCAG 1.4.11 asks 3:1.
+	it.each(ICON_DISCS)('signal icon %s on disc %s is at least 3:1 (WCAG 1.4.11)', (fg, bg) =>
+		expect(contrast(t[fg], t[bg])).toBeGreaterThanOrEqual(3)
 	);
 
 	it.each(CONTROL_BORDERS)('control border %s on %s is at least 3:1 (WCAG 1.4.11)', (fg, bg) =>

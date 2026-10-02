@@ -71,6 +71,14 @@
 	function eventSpan(e: SaleEvent): string {
 		return e.start === e.end ? formatDate(e.start) : `${formatShortDate(e.start)} – ${formatDate(e.end)}`;
 	}
+	// Curated dates not yet announced are marked in the legend and the
+	// screen-reader list (R9); the canvas label stays short.
+	const eventName = (e: SaleEvent) => (e.estimated ? `${e.name} (estimated)` : e.name);
+	const eventDetail = (e: SaleEvent) =>
+		`${e.name} (${e.estimated ? 'estimated, ' : ''}${eventSpan(e)})`;
+	// At most this many label rows; further labels are skipped (the line stays)
+	// so labels never cover more of the plot.
+	const MAX_LABEL_ROWS = 2;
 
 	function cssVar(name: string): string {
 		return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -309,6 +317,7 @@
 			const x0 = x + pad + textW > left + width ? x - pad - textW : x + pad;
 			let row = rowEnds.findIndex((end) => x0 > end + pad);
 			if (row === -1) row = rowEnds.length;
+			if (row >= MAX_LABEL_ROWS) continue;
 			rowEnds[row] = x0 + textW;
 			ctx.setLineDash([]);
 			// Knock the gridlines out behind the label so it reads cleanly.
@@ -500,7 +509,7 @@
 							stroke-dasharray="3 3"
 						/>
 					</svg>
-					Sale events: {saleEvents.map((e) => e.name).join(', ')}
+					Sale events: {saleEvents.map(eventName).join(', ')}
 				</li>
 			{/if}
 			{#if series.length > 0}
@@ -522,7 +531,7 @@
 		</ul>
 		{#if saleEvents.length > 0}
 			<p class="sr-only" data-testid="chart-sale-events">
-				Sale events shown: {saleEvents.map((e) => `${e.name} (${eventSpan(e)})`).join('; ')}.
+				Sale events shown: {saleEvents.map(eventDetail).join('; ')}.
 			</p>
 		{/if}
 		{#if yMin !== null && !axisStartsAtZero(yMin)}

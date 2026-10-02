@@ -74,3 +74,13 @@ describe('saleEventsInRange (chart markers)', () => {
 		expect(saleEventsInRange('2026-07-31', '2026-06-01')).toEqual([]);
 	});
 });
+
+describe('estimated curated dates (R9)', () => {
+	it('flags curated estimates and leaves rule-based events unflagged', () => {
+		expect(ev(2026, 'Prime Day').estimated).toBe(true);
+		expect(ev(2026, 'Click Frenzy').estimated).toBe(true);
+		for (const name of ['EOFY', 'Singles Day', 'Black Friday', 'Boxing Day']) {
+			expect(ev(2026, name).estimated).toBeUndefined();
+		}
+	});
+});

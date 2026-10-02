@@ -2,6 +2,7 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { saleEventsInRange } from '../src/lib/saleEvents';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1651,19 +1652,36 @@ test.describe('is now a good time to buy? (#31)', () => {
 		}
 	});
 
+	// The expected events are derived from each fixture's actual snapshot dates,
+	// which are anchored to the latest scraped date, so neither test depends on
+	// where data/ happens to end (CLAUDE.md determinism).
 	test('the chart names the AU sale events inside its date range (Task 5)', async ({ page }) => {
 		// The fixture has a day inside EOFY (15-30 June) and recent days, so the
-		// plotted range includes EOFY; the canvas itself cannot be asserted.
+		// plotted range always includes EOFY; the canvas itself cannot be asserted.
+		const expected = saleEventsInRange(...productDateRange('E2E Sale Window GPU'));
+		expect(expected.map((e) => e.name)).toContain('EOFY');
 		await goto(page, `/product/${productIdByModel('E2E Sale Window GPU')}`);
 		const legend = page.getByRole('list', { name: 'Chart legend' });
-		await expect(legend).toContainText('Sale events');
-		await expect(page.getByTestId('chart-sale-events')).toContainText(/Sale events shown: EOFY \(15 Jun/);
+		const hidden = page.getByTestId('chart-sale-events');
+		await expect(hidden).toContainText(/Sale events shown: EOFY \(15 Jun/);
+		for (const e of expected) {
+			// Curated dates not yet announced are marked as estimates (R9).
+			const label = e.estimated ? `${e.name} (estimated)` : e.name;
+			await expect(legend).toContainText(label);
+			await expect(hidden).toContainText(e.estimated ? `${e.name} (estimated, ` : `${e.name} (`);
+		}
 	});
 
-	test('a chart range with no sale event names none', async ({ page }) => {
+	test('the chart lists exactly the sale events its range covers (Task 5)', async ({ page }) => {
+		const expected = saleEventsInRange(...productDateRange('E2E New Low GPU'));
 		await goto(page, `/product/${productIdByModel('E2E New Low GPU')}`);
-		await expect(page.getByRole('list', { name: 'Chart legend' })).not.toContainText('Sale events');
-		await expect(page.getByTestId('chart-sale-events')).toHaveCount(0);
+		const legend = page.getByRole('list', { name: 'Chart legend' });
+		if (expected.length === 0) {
+			await expect(legend).not.toContainText('Sale events');
+			await expect(page.getByTestId('chart-sale-events')).toHaveCount(0);
+		} else {
+			await expect(legend).toContainText(`Sale events: ${expected.map((e) => (e.estimated ? `${e.name} (estimated)` : e.name)).join(', ')}`);
+		}
 	});
 });
 
@@ -1709,6 +1727,22 @@ test.describe.serial('/discover (#16)', () => {
 // Task 3 (#32): the seed pins two deal fixtures against a 1.5 AUD/USD rate, so
 // MSRP in AUD = USD x 1.65: E2E Deal Demo GPU A$100 vs US$399 (85% under),
 // E2E New Low GPU A$500 vs US$279 (9% over).
+function productDateRange(model: string): [string, string] {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		const row = db
+			.prepare(
+				`SELECT MIN(s.snapshot_date) AS lo, MAX(s.snapshot_date) AS hi
+				 FROM price_snapshots s JOIN retailer_listings l ON l.id = s.retailer_listing_id
+				 JOIN products p ON p.id = l.product_id WHERE p.model = ?`
+			)
+			.get(model) as { lo: string; hi: string };
+		return [row.lo, row.hi];
+	} finally {
+		db.close();
+	}
+}
+
 function productIdByModel(model: string): number {
 	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
 	try {
