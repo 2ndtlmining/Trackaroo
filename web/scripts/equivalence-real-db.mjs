@@ -15,6 +15,7 @@ if (!fs.existsSync(src)) {
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackaroo-equiv-'));
 const copy = path.join(dir, 'trackaroo.db');
 fs.copyFileSync(src, copy);
+// The -wal/-shm copy is non-atomic (not a snapshot); that is fine for a local oracle.
 for (const ext of ['-wal', '-shm']) if (fs.existsSync(src + ext)) fs.copyFileSync(src + ext, copy + ext);
 try {
 	execSync('npx vitest run test/equivalence.test.ts', {
