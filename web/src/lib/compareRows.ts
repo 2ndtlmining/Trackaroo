@@ -1,6 +1,6 @@
 import { formatAud, formatBandwidth, formatCacheMb, formatDate, formatProcess, formatUsd } from './formats';
 import { retailerLabel } from './filters';
-import type { CompareEntry } from './server/repos';
+import type { CompareEntry } from './models';
 import type { Retailer } from './types';
 
 export interface CompareRow {

@@ -5,7 +5,7 @@
 // composite score (17-Aug "deal score declined" decision).
 import { MIN_HISTORY_POINTS } from './constants';
 import type { ListingDisplay } from './listingsPanel';
-import type { PriceBandPoint } from './server/repos';
+import type { PriceBandPoint } from './models';
 
 export interface DailyLow {
 	date: string;

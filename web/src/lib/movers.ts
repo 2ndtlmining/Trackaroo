@@ -1,7 +1,7 @@
 // Shaping of mover rows. /movers ranks, groups and sorts the per-LISTING rows
 // from getMovers (it has a Variant column to tell SKUs apart). The homepage's
 // three-row summary is product-level instead: see topProductMoves (D7).
-import type { Mover, ProductMove } from './server/repos';
+import type { Mover, ProductMove } from './models';
 import type { Category } from './types';
 
 export type MoverDirection = 'up' | 'down';

@@ -3,7 +3,7 @@
 	import OfferRow from './OfferRow.svelte';
 	import { toListingDisplays } from '$lib/listingsPanel';
 	import { applyStockFilter, buildOfferView, facetCounts, type OfferFilters } from '$lib/offers';
-	import type { Series } from '$lib/server/repos';
+	import type { Series } from '$lib/models';
 
 	let {
 		series,

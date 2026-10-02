@@ -4,7 +4,7 @@
 	import PageHead from '$lib/components/PageHead.svelte';
 	import { buildCompareRows } from '$lib/compareRows';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import type { CompareEntry, ProductIndexEntry } from '$lib/server/repos';
+	import type { CompareEntry, ProductIndexEntry } from '$lib/models';
 	import type { Category } from '$lib/types';
 
 	// productIndex arrives from the root layout's load (merged into page data).

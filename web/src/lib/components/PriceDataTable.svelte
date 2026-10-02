@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatAud, formatDate } from '$lib/formats';
-	import type { PriceBandPoint } from '$lib/server/repos';
+	import type { PriceBandPoint } from '$lib/models';
 
 	// The chart's numbers, reachable by keyboard and screen reader and easy to
 	// copy (#27). Collapsed by default so the page does not grow.

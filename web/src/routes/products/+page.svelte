@@ -9,7 +9,7 @@
 	import { urlParams } from '$lib/urlParams';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import type { Category } from '$lib/types';
-	import type { ProductIndexEntry } from '$lib/server/repos';
+	import type { ProductIndexEntry } from '$lib/models';
 
 	let {
 		data

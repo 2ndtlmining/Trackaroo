@@ -875,7 +875,7 @@ await goto(page, '/product/1');
 	test('shows when the product was last updated', async ({ page }) => {
 		await goto(page, '/product/1');
 		await expect(page.getByText(/^Updated /)).toBeVisible();
-		await expect(page.getByText(/^Updated (just now|\d+[mhdw]o? ago|never)$/)).toBeVisible();
+		await expect(page.getByText(/^Updated (just now|\d+[mh] ago|1 day ago|\d+ days ago)$/)).toBeVisible();
 	});
 
 	test('404 for an unknown product id', async ({ page }) => {

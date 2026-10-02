@@ -3,7 +3,7 @@
 // which decides which rows to show.
 import { MIN_HISTORY_POINTS } from './constants';
 import { deltaVsAvg30, type ListingDisplay } from './offers';
-import type { PriceBandPoint, ProductStats } from './server/repos';
+import type { PriceBandPoint, ProductStats } from './models';
 
 export interface Headline {
 	currentPrice: number | null;

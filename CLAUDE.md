@@ -18,11 +18,11 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 1168 tests.
+**Backend** (repo root): `python -m pytest -q` — 1182 tests.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 806 tests, ~15s)
+- **Unit tests**: `npm test` (Vitest, 823 tests, ~15s)
 - **Watch mode**: `npm run test:watch`
 - **E2E tests**: `npm run test:e2e` (Playwright, 119 tests, Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
@@ -173,6 +173,7 @@ Never delete price or product data. Products that roll out of scope get
   a committed default.
 - Generated/regenerable files (`web/e2e/e2e.db`, Playwright artifacts, `logs/`) must stay gitignored.
 - Client Svelte components must not import **runtime values** from `$lib/server/...` (server-only modules) — it breaks client hydration ("An impossible situation occurred"). Shared constants live in `web/src/lib/constants.ts`.
+- Server queries live in `web/src/lib/server/queries/*` (barrel: `$lib/server/repos`); DTO types in `$lib/models`; client code never imports `$lib/server` (`test/boundaries.test.ts`).
 - `web/src/lib/server/db.ts` `getDb()` is read-only; write paths (e.g. alert create/delete) use `getWriteDb()`.
 - Update `STATUS.md` before ending a work session — add a dated bullet under
   **Recent changes**. Do not start a nested "Prior update" chain; that is what

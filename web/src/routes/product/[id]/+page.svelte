@@ -12,7 +12,7 @@
 	import { productBreadcrumbs } from '$lib/breadcrumbs';
 	import { chartSummary } from '$lib/chartSummary';
 	import type { AlertChannel } from '$lib/types';
-	import { formatDate, formatRelative, titleCase } from '$lib/formats';
+	import { formatDate, titleCase, updatedLabel } from '$lib/formats';
 	import { retailerLabel } from '$lib/filters';
 	import { productPageTitle } from '$lib/head';
 	import { generationTierLabel } from '$lib/tiers';
@@ -20,7 +20,7 @@
 	import { toListingDisplays } from '$lib/listingsPanel';
 	import { asOfDate, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import { type ProductHistory, type AlertRow, type ProductIndexEntry } from '$lib/server/repos';
+	import { type ProductHistory, type AlertRow, type ProductIndexEntry } from '$lib/models';
 
 	let {
 		data,
@@ -156,7 +156,7 @@ label:
 		</div>
 		{#if product.last_snapshot_at}
 			<p class="mt-2 text-xs text-text-muted">
-				Updated {formatRelative(product.last_snapshot_at)}
+				{updatedLabel(product.last_snapshot_at)}
 			</p>
 		{/if}
 	</div>

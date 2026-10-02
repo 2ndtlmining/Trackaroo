@@ -2,7 +2,7 @@
 // boundaries are pinned by tests rather than by how a pill happens to render.
 import { daysBehindToday, stalenessLabel } from './formats';
 import { retailerLabel } from './filters';
-import type { RetailerFreshness } from './server/repos';
+import type { RetailerFreshness } from './models';
 
 export type FreshnessState = 'fresh' | 'recent' | 'stale' | 'never' | 'incomplete';
 

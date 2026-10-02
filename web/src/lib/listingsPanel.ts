@@ -1,4 +1,4 @@
-import type { Series } from './server/repos';
+import type { Series } from './models';
 import { deriveListingBrand } from './branding';
 import type { StockStatus } from './types';
 import { STALE_LISTING_DAYS } from './constants';

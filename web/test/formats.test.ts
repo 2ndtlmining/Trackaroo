@@ -16,9 +16,9 @@ import {
 	formatRelative,
 	formatSignedAud,
 	formatUsd,
-	freshnessLabel,
 	stockLabel,
-	titleCase
+	titleCase,
+	updatedLabel
 } from '../src/lib/formats';
 
 describe('formatAud', () => {
@@ -168,27 +168,6 @@ describe('formatSeenDate', () => {
 	])('%s -> %s', (d, out) => expect(formatSeenDate(d, '2026-09-28')).toBe(out));
 });
 
-describe('freshnessLabel', () => {
-	const now = new Date('2026-08-15T12:00:00Z');
-	const ts = (d: string) => new Date(`${d}T00:00:00Z`).toISOString();
-
-	it('returns no data for null', () => {
-		expect(freshnessLabel(null, now)).toBe('no data');
-	});
-
-	it('today for the same day', () => {
-		expect(freshnessLabel(ts('2026-08-15'), now)).toBe('today');
-	});
-
-	it('yesterday for one day back', () => {
-		expect(freshnessLabel(ts('2026-08-14'), now)).toBe('yesterday');
-	});
-
-	it('n days ago beyond', () => {
-		expect(freshnessLabel(ts('2026-08-10'), now)).toBe('5d ago');
-	});
-});
-
 describe('stockLabel', () => {
 	it('maps known statuses', () => {
 		expect(stockLabel('in_stock')).toBe('In stock');
@@ -260,5 +239,18 @@ describe('titleCase', () => {
 	it('handles non-letter words and empty strings', () => {
 		expect(titleCase('')).toBe('');
 		expect(titleCase('16gb gddr7')).toBe('16GB GDDR7');
+	});
+});
+describe('updatedLabel (#30)', () => {
+	const now = new Date(2026, 9, 21, 14, 0); // 21 Oct 2026 14:00 local
+	it('same local day: relative time', () => {
+		expect(updatedLabel(new Date(2026, 9, 21, 13, 35).toISOString(), now)).toBe('Updated 25m ago');
+	});
+	it('earlier days: calendar days, matching the stale banner count', () => {
+		expect(updatedLabel(new Date(2026, 9, 20, 23, 50).toISOString(), now)).toBe('Updated 1 day ago');
+		expect(updatedLabel(new Date(2026, 9, 1, 4, 30).toISOString(), now)).toBe('Updated 20 days ago');
+	});
+	it('missing: never', () => {
+		expect(updatedLabel(null, now)).toBe('Never updated');
 	});
 });

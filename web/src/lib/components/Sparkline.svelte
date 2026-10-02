@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatAud } from '$lib/formats';
-	import type { PricePoint } from '$lib/server/repos';
+	import type { PricePoint } from '$lib/models';
 
 	let { points }: { points: PricePoint[] | undefined } = $props();
 

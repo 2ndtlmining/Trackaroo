@@ -20,7 +20,7 @@
 		type MoverSortKey,
 		type MoverView
 	} from '$lib/movers';
-	import type { Mover } from '$lib/server/repos';
+	import type { Mover } from '$lib/models';
 	import type { ChangeDirection } from '$lib/types';
 	import { nextSortDir, sortRows, type SortDir } from '$lib/tableSort';
 	import { urlParams } from '$lib/urlParams';
