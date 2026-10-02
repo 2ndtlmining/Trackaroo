@@ -9,7 +9,7 @@ describe('saleEventsFor', () => {
 		expect(ev(2026, 'Black Friday').start).toBe('2026-11-27');
 	});
 	it('has the fixed-date events', () => {
-		expect(ev(2026, 'EOFY sales')).toMatchObject({ start: '2026-06-15', end: '2026-06-30' });
+		expect(ev(2026, 'EOFY')).toMatchObject({ start: '2026-06-15', end: '2026-06-30' });
 		expect(ev(2026, 'Boxing Day')).toMatchObject({ start: '2026-12-26', end: '2026-12-31' });
 		expect(ev(2026, 'Singles Day')).toMatchObject({ start: '2026-11-11', end: '2026-11-11' });
 	});

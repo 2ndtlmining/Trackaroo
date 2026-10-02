@@ -6,7 +6,7 @@
 import { MIN_HISTORY_POINTS } from './constants';
 import type { ListingDisplay } from './listingsPanel';
 import type { PriceBandPoint } from './models';
-import { formatAud } from './formats';
+import { formatAud, melbourneTodayIso } from './formats';
 import { daysBetween, upcomingSaleEvent } from './saleEvents';
 import { successorFor } from './successors';
 
@@ -234,8 +234,8 @@ export function buildSignals(input: {
 				key: 'percentile',
 				tone: good ? 'good' : 'neutral',
 				icon: good ? 'check' : 'dash',
-				claim: `Cheaper than ${Math.round(pc.pct)}% of days`,
-				evidence: `Share of the last ${plural(pc.days, 'day')} with a higher lowest price than today.`
+				claim: `Cheaper than ${Math.round(pc.pct)}% of days (last ${plural(pc.days, 'day')})`,
+				evidence: 'Share of tracked in-stock days in that window with a higher lowest price than today.'
 			});
 		}
 		const lo = lowestInDays(lows, today, asOf);
@@ -248,11 +248,13 @@ export function buildSignals(input: {
 				claim: lo.sinceStart
 					? 'Lowest since tracking began'
 					: lo.days === 0
-						? 'Above the latest low'
+						? 'Above the most recent low'
 						: `Lowest in ${plural(lo.days, 'day')}`,
 				evidence: lo.sinceStart
 					? `No lower price in ${plural(lo.days, 'tracked day')}.`
-					: `The price was last lower ${plural(lo.days, 'day')} ago.`
+					: lo.days === 0
+						? "Today's price is above the lowest price on the latest tracked day."
+						: `The price was last lower ${plural(lo.days, 'day')} ago.`
 			});
 		}
 		if (avg30 !== null && avg30 > 0) {
@@ -279,7 +281,7 @@ export function buildSignals(input: {
 		}
 	}
 
-	const sale = upcomingSaleEvent(now.toISOString().slice(0, 10));
+	const sale = upcomingSaleEvent(melbourneTodayIso(now));
 	if (sale) {
 		const { event, startsInDays, running } = sale;
 		const when =

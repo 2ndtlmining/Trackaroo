@@ -240,6 +240,19 @@ describe('buildSignals', () => {
 		expect(buildSignals({ ...base, lows: flat, today: 100.5 }).find((x) => x.key === 'trend'))
 			.toMatchObject({ tone: 'neutral', icon: 'dash' });
 	});
+	it('uses the Melbourne date for event badges', () => {
+		// 14:30Z on 26 Nov is already 27 Nov (Black Friday) in Melbourne.
+		const s = buildSignals({ ...base, lows: ten, today: 10, now: new Date('2026-11-26T14:30:00Z') });
+		expect(s.find((x) => x.key === 'sale')?.claim).toBe('Black Friday sale on now');
+	});
+	it('states the window in the percentile claim and wording for a zero-day low', () => {
+		const s = buildSignals({ ...base, lows: ten, today: 55 });
+		expect(s.find((x) => x.key === 'percentile')?.claim).toBe('Cheaper than 50% of days (last 10 days)');
+		const z = buildSignals({ ...base, lows: lows([['2026-09-08', 90], ['2026-09-09', 80], ['2026-09-10', 50]]), today: 60 });
+		const lo = z.find((x) => x.key === 'lowest')!;
+		expect(lo.claim).toBe('Above the most recent low');
+		expect(lo.evidence).not.toMatch(/0 days/);
+	});
 	it('adds a sale signal near an event and a successor signal when mapped', () => {
 		const now = new Date('2026-12-14T00:00:00Z');
 		const s = buildSignals({ ...base, asOf: '2026-12-14', lows: ten, today: 10, now });

@@ -48,7 +48,7 @@ function blackFriday(year: number): string {
 export function saleEventsFor(year: number): SaleEvent[] {
 	const bf = blackFriday(year);
 	const events: SaleEvent[] = [
-		{ name: 'EOFY sales', start: iso(year, 6, 15), end: iso(year, 6, 30) },
+		{ name: 'EOFY', start: iso(year, 6, 15), end: iso(year, 6, 30) },
 		{ name: 'Singles Day', start: iso(year, 11, 11), end: iso(year, 11, 11) },
 		// Black Friday through Cyber Monday.
 		{ name: 'Black Friday', start: bf, end: iso(year, 11, Number(bf.slice(8)) + 3) },
