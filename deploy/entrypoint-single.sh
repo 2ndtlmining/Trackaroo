@@ -196,7 +196,7 @@ fi
 # Weekly spec sync runs in its own background loop (see spec_sync_loop).
 spec_sync_loop &
 staleness_loop &
-[ "$OZB_ENABLED" = "1" ] && ozb_loop &
+[ "$OZB_ENABLED" != "0" ] && ozb_loop &
 
 # Catch-up: if the container was down over the run hour, whatever today is
 # still missing would be lost permanently (retailers only expose current

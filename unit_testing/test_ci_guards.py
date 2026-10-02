@@ -65,7 +65,7 @@ def test_ozb_loop_is_scheduled_only_past_the_skip_pipeline_exit():
     start = text.index("ozb_loop &")
     assert start > knob
     assert text.index("ozb_loop() {") < knob  # defined early, only started late
-    assert '[ "$OZB_ENABLED" = "1" ] && ozb_loop &' in text
+    assert '[ "$OZB_ENABLED" != "0" ] && ozb_loop &' in text
     assert ': "${OZB_ENABLED:=1}"' in text
     assert ': "${OZB_POLL_HOURS:=07,09,11,13,15,17,19,21,23}"' in text
     assert "python ozbargain.py" in text
