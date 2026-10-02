@@ -424,3 +424,32 @@ def test_run_resolves_db_path_at_call_time(tmp_path, monkeypatch):
                         lambda url, **kw: _ok_gpu() if url == FEEDS[0][1] else _ok_cpu())
     ozbargain.run(now=NOW)
     assert _polls(path)[1] == 12
+
+
+# --- alerts wiring (#34 task 3)
+def test_run_calls_send_alerts_on_ok(run_env, monkeypatch):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+    seen = []
+    monkeypatch.setattr("ozbargain_alerts.send_alerts", lambda conn, now: seen.append(now))
+    ozbargain.run(db_path=path, now=NOW)
+    assert seen == [NOW]
+
+
+def test_run_no_alerts_on_failed_poll_or_dry_run(run_env, monkeypatch):
+    path, calls, install = run_env
+    monkeypatch.setattr("ozbargain_alerts.send_alerts", lambda *a: pytest.fail("alerted"))
+    install(RuntimeError("a"), _resp(status=403))
+    ozbargain.run(db_path=path, now=NOW)
+    install(_ok_gpu(), _ok_cpu())
+    ozbargain.run(db_path=path, dry_run=True, now=NOW)
+
+
+def test_run_survives_alert_failure(run_env, monkeypatch):
+    path, calls, install = run_env
+    install(_ok_gpu(), _ok_cpu())
+
+    def boom(*a):
+        raise RuntimeError("x")
+    monkeypatch.setattr("ozbargain_alerts.send_alerts", boom)
+    assert ozbargain.run(db_path=path, now=NOW)["ok"]

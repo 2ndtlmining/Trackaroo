@@ -316,6 +316,12 @@ def run(db_path: Optional[Path] = None, dry_run: bool = False,
                  "; ".join(result["errors"]) or None),
             )
             conn.commit()
+            if result["ok"]:
+                try:
+                    import ozbargain_alerts
+                    ozbargain_alerts.send_alerts(conn, now)
+                except Exception as e:  # noqa: BLE001 - alerts never fail the poll
+                    LOGGER.warning("OzBargain alerts failed: %s", type(e).__name__)
     finally:
         conn.close()
     LOGGER.info("OzBargain poll: ok=%s items=%d matched=%d errors=%d",
