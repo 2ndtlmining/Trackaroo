@@ -35,16 +35,19 @@ export interface DailyCheapestOpts {
 	 * (`snapshot_date = anchor`) instead of a trailing window.
 	 */
 	window: '?' | '@window' | `'-${number} days'` | null;
-	/** Right-hand side of the `product_id` test (e.g. '= ?', '= p.id', 'IN (?,?)'); omit for every product. */
-	product?: string;
+	/**
+	 * Right-hand side of the `product_id` test; omit for every product. Spliced
+	 * into SQL verbatim: constants and placeholder lists only, never user input.
+	 */
+	product?: '= ?' | '= p.id' | `IN (${string})`;
 	/** Also select and group by `product_id` (one row per product per day). */
 	perProduct?: boolean;
 	/** Output name of the date column; default keeps `snapshot_date`. */
 	dateAs?: 'date';
 	/** Select the date only, no MIN(price) column (for COUNT(*) of days). */
 	dateOnly?: boolean;
-	/** Anchor date expression; default MAX_SNAPSHOT_DATE. */
-	anchor?: string;
+	/** Anchor date expression; default MAX_SNAPSHOT_DATE. Constants only, never user input. */
+	anchor?: typeof MAX_SNAPSHOT_DATE | '(SELECT d FROM maxd)';
 }
 
 // Per day (per product with perProduct), the cheapest in-stock non-bundle

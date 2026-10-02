@@ -156,6 +156,9 @@ describe('repos equivalence (#30)', () => {
 	// handed to db.prepare must match legacy, in order, whitespace-normalised
 	// (whitespace runs collapsed, and dropped next to ( ) , =). One target is
 	// enough: the text does not depend on the data.
+	// NOTE: this collapses whitespace runs everywhere, including inside string
+	// literals, and drops spaces next to ( ) , =. It is a near-identity check,
+	// not byte identity.
 	const normSql = (s: string) => s.replace(/\s+/g, ' ').replace(/\s*([(),=])\s*/g, '$1').trim();
 	function preparedSql(db: AnyDb, run: (db: AnyDb) => unknown): string[] {
 		const seen: string[] = [];
@@ -174,11 +177,21 @@ describe('repos equivalence (#30)', () => {
 		run(proxy);
 		return seen;
 	}
+	// Cases that legitimately prepare no SQL (empty input short-circuits before
+	// the db is touched). Every other case must capture at least one statement,
+	// otherwise a function that bypassed the Proxy would compare [] to [].
+	const PREPARES_NOTHING = new Set([
+		'getSparklines empty',
+		'getProductDealStats empty',
+		'getComparisonData empty'
+	]);
 	for (const [name, call] of CASES) {
 		it(`${name}: prepares the same SQL text`, () => {
 			const db = targets[0].db;
 			const ids = sampleIds(db);
-			expect(preparedSql(db, (d) => call(current, d, ids)), name).toEqual(preparedSql(db, (d) => call(legacy, d, ids)));
+			const got = preparedSql(db, (d) => call(current, d, ids));
+			if (!PREPARES_NOTHING.has(name)) expect(got.length, `${name} captured no SQL`).toBeGreaterThan(0);
+			expect(got, name).toEqual(preparedSql(db, (d) => call(legacy, d, ids)));
 		});
 	}
 
