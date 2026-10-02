@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,22 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-10-03 -- buying signals and MSRP in AUD (#31 #32) built on branch
+  `feat/2026-10-02-buying-signals`; NOT merged, NOT deployed.** New `fx.py`
+  (RBA F11.1 rate with Frankfurter fallback into `fx_rates`; best-effort
+  `run_daily` step, WARNING-only `check_fx_rate`; `docker compose exec
+  trackaroo python fx.py` fetches now). Launch MSRP shows in AUD inc. GST with a
+  "vs MSRP" catalogue column and a /deals "Below MSRP" toggle ("-" until the
+  first rate exists). Product page gets a signals checklist
+  (`web/src/lib/buySignals.ts`), 30/90/180-day stats, dashed sale markers on
+  the chart, sale events (`saleEvents.ts`; Click Frenzy and Prime Day are
+  estimated dates until announced) and successors (`successors.ts`, empty,
+  keyed by specs generation e.g. "GeForce 40"). Lucide icons replace "↗" and
+  `noEmoji.test.ts` bans emoji in `web/src`. Prod check: the 3-Oct morning run
+  was ok for all three retailers (04:44-04:45) and the first discovery run
+  listed 27 untracked parts, 0 conflicts. Counts: pytest 1211, vitest 982,
+  Playwright 176, svelte-check 0/0, build ok.
 
 - **2026-10-02 (end of day) — RESUME HERE (3-Oct): execute the buying-signals plan.**
   Branch `feat/2026-10-02-buying-signals` holds the approved spec
