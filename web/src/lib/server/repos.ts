@@ -10,6 +10,7 @@ import type {
 	StockStatus
 } from '../types';
 import { MIN_HISTORY_POINTS } from '../constants';
+import { dailyCheapestInStock, cheapestListingPerProduct, notBundle } from './queries/sql';
 import type {
 	AlertRow,
 	CheapestListing,
@@ -73,18 +74,6 @@ export function groupListingsByProduct(listings: LatestListing[]): ProductGroup[
 // Windforce OC GDDR7 8GB" -> "Gigabyte"). Used to group the per-product
 // listings panel by brand. Unknown prefixes fall back to the product brand.
 export { AIB_BRAND_ALIASES, deriveListingBrand } from '$lib/branding';
-
-// Excludes CPU+motherboard bundle listings (e.g. Scorptec "... power bundle")
-// from product pricing. Bundles price the whole combo, not the component alone,
-// so they'd throw off CPU-only price listings, movers, and history.
-function notBundle(alias: string): string {
-	return `
-	lower(${alias}.variant_name) NOT LIKE '%bundle%'
-	AND lower(${alias}.variant_name) NOT LIKE '%combo%'
-	AND lower(${alias}.listing_url) NOT LIKE '%bundle%'
-	AND lower(${alias}.listing_url) NOT LIKE '%bdl-%'
-`;
-}
 
 const LATEST_CTE = `
 	WITH latest AS (
@@ -447,14 +436,7 @@ export function getProductStats(db: DB, productId: number, days = 30): ProductSt
 		.prepare(
 			`SELECT AVG(day_min.price) AS avg, COUNT(*) AS points
 			 FROM (
-				SELECT s.snapshot_date, MIN(s.price_aud) AS price
-				FROM retailer_listings l
-				JOIN price_snapshots s ON s.retailer_listing_id = l.id
-				WHERE l.product_id = ?
-				  AND s.stock_status = 'in_stock'
-				  AND ${notBundle('l')}
-				  AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)
-				GROUP BY s.snapshot_date
+				${dailyCheapestInStock({ form: 'standalone', product: '= ?', window: '?' })}
 			 ) day_min`
 		)
 		// -(days - 1): an N-day window covers N dates inclusive of today, not
@@ -476,14 +458,7 @@ export function getProductDealStats(
 		.prepare(
 			`SELECT day_min.product_id AS productId, AVG(day_min.price) AS avg, COUNT(*) AS points
 			 FROM (
-				SELECT l.product_id, s.snapshot_date, MIN(s.price_aud) AS price
-				FROM retailer_listings l
-				JOIN price_snapshots s ON s.retailer_listing_id = l.id
-				WHERE l.product_id IN (${placeholders})
-				  AND s.stock_status = 'in_stock'
-				  AND ${notBundle('l')}
-				  AND s.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), ?)
-				GROUP BY l.product_id, s.snapshot_date
+				${dailyCheapestInStock({ form: 'standalone', product: `IN (${placeholders})`, perProduct: true, window: '?' })}
 			 ) day_min
 			 GROUP BY day_min.product_id`
 		)
@@ -517,14 +492,7 @@ export function getPriceBand(db: DB, productId: number): PriceBandPoint[] {
 		.all(productId) as Array<{ date: string; low: number | null; high: number | null }>;
 
 	const latest = db
-		.prepare(
-			`SELECT s.snapshot_date AS date, MIN(s.price_aud) AS price
-			FROM retailer_listings l
-			JOIN price_snapshots s ON s.retailer_listing_id = l.id
-			WHERE l.product_id = ? AND s.stock_status = 'in_stock' AND ${notBundle('l')}
-			  AND s.snapshot_date = (SELECT MAX(snapshot_date) FROM price_snapshots)
-			GROUP BY s.snapshot_date`
-		)
+		.prepare(dailyCheapestInStock({ form: 'standalone', product: '= ?', window: null, dateAs: 'date' }))
 		.get(productId) as { date: string; price: number } | undefined;
 
 	return rows.map((r) => ({
@@ -644,10 +612,12 @@ export function getProductHistory(
 }
 
 export function getCheapestPerModel(db: DB, category: Category): CheapestListing[] {
+	// Fixed 30-day literal here, unlike getDealCandidates' bound -(days - 1) window.
+	const daily30 = { form: 'correlated', product: '= p.id', window: "'-30 days'" } as const;
 	const rows = db
 		.prepare(
-			`SELECT
-				p.id AS product_id,
+			cheapestListingPerProduct(
+				`p.id AS product_id,
 				p.model,
 				p.brand,
 				l.variant_name,
@@ -670,47 +640,14 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 				   AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-90 days')) AS high90,
 				(SELECT AVG(dm.price)
 				 FROM (
-					SELECT ps3.snapshot_date, MIN(ps3.price_aud) AS price
-					FROM price_snapshots ps3
-					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
-					WHERE l3.product_id = p.id
-					  AND ps3.stock_status = 'in_stock'
-					  AND ${notBundle('l3')}
-					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-30 days')
-					GROUP BY ps3.snapshot_date
+					${dailyCheapestInStock(daily30)}
 				 ) dm) AS avg30,
 				(SELECT COUNT(*)
 				 FROM (
-					SELECT ps3.snapshot_date
-					FROM price_snapshots ps3
-					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
-					WHERE l3.product_id = p.id
-					  AND ps3.stock_status = 'in_stock'
-					  AND ${notBundle('l3')}
-					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), '-30 days')
-					GROUP BY ps3.snapshot_date
-				 ) dm) AS avg30_points
-			FROM products p
-			JOIN retailer_listings l ON l.product_id = p.id AND l.status = 'active'
-			JOIN price_snapshots ps
-			  ON ps.retailer_listing_id = l.id
-			  AND ps.snapshot_date = (SELECT MAX(snapshot_date) FROM price_snapshots)
-			  AND ps.stock_status = 'in_stock'
-			WHERE p.category = @category
-			  AND p.tracked = 1
-			  AND ${notBundle('l')}
-			  AND ps.price_aud = (
-				SELECT MIN(ps2.price_aud)
-				FROM price_snapshots ps2
-				JOIN retailer_listings l2 ON l2.id = ps2.retailer_listing_id
-				WHERE l2.product_id = p.id
-				  AND l2.status = 'active'
-				  AND ${notBundle('l2')}
-				  AND ps2.snapshot_date = ps.snapshot_date
-				  AND ps2.stock_status = 'in_stock'
-			  )
-			GROUP BY p.id
-			ORDER BY p.model COLLATE NOCASE ASC`
+					${dailyCheapestInStock({ ...daily30, dateOnly: true })}
+				 ) dm) AS avg30_points`,
+				'p.category = @category'
+			)
 		)
 		.all({ category }) as Array<{
 		product_id: number;
@@ -746,10 +683,11 @@ export function getCheapestPerModel(db: DB, category: Category): CheapestListing
 // categories in a single query — the page facets by category from the URL, so
 // splitting it per category would just double the work.
 export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
+	const daily = { form: 'correlated', product: '= p.id', window: '@window' } as const;
 	const rows = db
 		.prepare(
-			`SELECT
-				p.id AS product_id,
+			cheapestListingPerProduct(
+				`p.id AS product_id,
 				p.category,
 				p.model,
 				p.brand,
@@ -767,63 +705,23 @@ export function getDealCandidates(db: DB, days = 30): DealCandidate[] {
 				   AND ${notBundle('l3')}) AS all_time_low,
 				(SELECT AVG(dm.price)
 				 FROM (
-					SELECT ps3.snapshot_date, MIN(ps3.price_aud) AS price
-					FROM price_snapshots ps3
-					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
-					WHERE l3.product_id = p.id
-					  AND ps3.stock_status = 'in_stock'
-					  AND ${notBundle('l3')}
-					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), @window)
-					GROUP BY ps3.snapshot_date
+					${dailyCheapestInStock(daily)}
 				 ) dm) AS avg30,
 				(SELECT COUNT(*)
 				 FROM (
-					SELECT ps3.snapshot_date
-					FROM price_snapshots ps3
-					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
-					WHERE l3.product_id = p.id
-					  AND ps3.stock_status = 'in_stock'
-					  AND ${notBundle('l3')}
-					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), @window)
-					GROUP BY ps3.snapshot_date
+					${dailyCheapestInStock({ ...daily, dateOnly: true })}
 				 ) dm) AS avg30_points,
 				(SELECT MAX(dm.price)
 				 FROM (
-					SELECT ps3.snapshot_date, MIN(ps3.price_aud) AS price
-					FROM price_snapshots ps3
-					JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
-					WHERE l3.product_id = p.id
-					  AND ps3.stock_status = 'in_stock'
-					  AND ${notBundle('l3')}
-					  AND ps3.snapshot_date >= date((SELECT MAX(snapshot_date) FROM price_snapshots), @window)
-					GROUP BY ps3.snapshot_date
+					${dailyCheapestInStock(daily)}
 				 ) dm) AS window_high,
 				(SELECT MIN(ps3.snapshot_date)
 				 FROM price_snapshots ps3
 				 JOIN retailer_listings l3 ON l3.id = ps3.retailer_listing_id
 				 WHERE l3.product_id = p.id
 				   AND ps3.stock_status = 'in_stock'
-				   AND ${notBundle('l3')}) AS history_start
-			FROM products p
-			JOIN retailer_listings l ON l.product_id = p.id AND l.status = 'active'
-			JOIN price_snapshots ps
-			  ON ps.retailer_listing_id = l.id
-			  AND ps.snapshot_date = (SELECT MAX(snapshot_date) FROM price_snapshots)
-			  AND ps.stock_status = 'in_stock'
-			WHERE p.tracked = 1
-			  AND ${notBundle('l')}
-			  AND ps.price_aud = (
-				SELECT MIN(ps2.price_aud)
-				FROM price_snapshots ps2
-				JOIN retailer_listings l2 ON l2.id = ps2.retailer_listing_id
-				WHERE l2.product_id = p.id
-				  AND l2.status = 'active'
-				  AND ${notBundle('l2')}
-				  AND ps2.snapshot_date = ps.snapshot_date
-				  AND ps2.stock_status = 'in_stock'
-			  )
-			GROUP BY p.id
-			ORDER BY p.model COLLATE NOCASE ASC`
+				   AND ${notBundle('l3')}) AS history_start`
+			)
 		)
 		// -(days - 1): see getProductStats (#6/D4).
 		.all({ window: `-${days - 1} days` }) as Array<{
@@ -955,13 +853,7 @@ export function getProductMoves(db: DB, windowDays: number): ProductMove[] {
 		.prepare(
 			`WITH maxd AS (SELECT MAX(snapshot_date) AS d FROM price_snapshots),
 			day_min AS (
-				SELECT l.product_id, s.snapshot_date AS date, MIN(s.price_aud) AS price
-				FROM retailer_listings l
-				JOIN price_snapshots s ON s.retailer_listing_id = l.id
-				WHERE s.stock_status = 'in_stock'
-				  AND ${notBundle('l')}
-				  AND s.snapshot_date >= date((SELECT d FROM maxd), @window)
-				GROUP BY l.product_id, s.snapshot_date
+				${dailyCheapestInStock({ form: 'standalone', perProduct: true, window: '@window', dateAs: 'date', anchor: '(SELECT d FROM maxd)' })}
 			),
 			ends AS (
 				SELECT product_id, MIN(date) AS first, MAX(date) AS last
