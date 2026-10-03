@@ -249,10 +249,10 @@ export function updatedLabel(lastSnapshotAt: string | null, now: Date = new Date
 	return days === 1 ? 'Updated 1 day ago' : `Updated ${days} days ago`;
 }
 
-// AUD amounts as they appear in generated sentences ("$459", "$1,099",
-// "$465.67", "A$949"). A trailing comma or full stop is never part of the
-// amount.
-const PRICE_IN_TEXT = /A?\$(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
+// Amounts as they appear in generated sentences ("$459", "$1,099",
+// "$465.67", "A$949", "US$549"): a one- or two-letter currency prefix is
+// part of the amount. A trailing comma or full stop never is.
+const PRICE_IN_TEXT = /(?:[A-Z]{1,2})?\$(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
 
 export interface TextPart {
 	text: string;

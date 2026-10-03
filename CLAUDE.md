@@ -23,7 +23,7 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 1198 tests, ~15s)
+- **Unit tests**: `npm test` (Vitest, 1200 tests, ~15s)
 - **Watch mode**: `npm run test:watch`
 - **E2E tests**: `npm run test:e2e` (Playwright, 225 tests (+1 skipped), Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.

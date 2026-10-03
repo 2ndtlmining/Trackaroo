@@ -90,6 +90,23 @@ describe('font caching (#63)', () => {
 		}
 	});
 
+	it('also marks a 304 revalidation and a HEAD request', async () => {
+		const notModified = await start((_req, res) => {
+			res.writeHead(304);
+			res.end();
+		});
+		const r304 = await fetch(`${notModified}/fonts/x.woff2`);
+		expect(r304.status).toBe(304);
+		expect(r304.headers.get('cache-control')).toBe(IMMUTABLE);
+		server.close();
+		const head = await start((_req, res) => {
+			res.writeHead(200, { 'Cache-Control': 'no-cache', 'Content-Type': 'font/woff2' });
+			res.end();
+		});
+		const rHead = await fetch(`${head}/fonts/x.woff2?v=1`, { method: 'HEAD' });
+		expect(rHead.headers.get('cache-control')).toBe(IMMUTABLE);
+	});
+
 	it('does not cache error responses', async () => {
 		const base = await start((_req, res) => {
 			res.writeHead(404, { 'Content-Type': 'text/plain' });

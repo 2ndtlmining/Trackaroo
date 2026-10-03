@@ -290,6 +290,19 @@ describe('splitPrices (#62)', () => {
 		expect(splitPrices('Flat is within 1%.')).toEqual([{ text: 'Flat is within 1%.', price: false }]);
 		expect(splitPrices('')).toEqual([]);
 	});
+	it('keeps punctuation out of the amount and takes a currency prefix whole', () => {
+		expect(splitPrices('$499, then').map((p) => [p.text, p.price])).toEqual([
+			['$499', true],
+			[', then', false]
+		]);
+		expect(splitPrices('$5 off')[0]).toEqual({ text: '$5', price: true });
+		expect(splitPrices('US$549 or A$899')).toEqual([
+			{ text: 'US$549', price: true },
+			{ text: ' or ', price: false },
+			{ text: 'A$899', price: true }
+		]);
+	});
+
 	it('keeps the text identical when joined back', () => {
 		const s = 'A$949 vs $1,199.50, then $0.';
 		expect(
