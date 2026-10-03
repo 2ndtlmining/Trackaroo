@@ -342,3 +342,25 @@ export interface OzbDeal {
 	postedAt: string | null;
 	expired: boolean;
 }
+
+// Tracked product with its cheapest in-stock price on the latest snapshot
+// date (null when nothing is in stock). Feeds the value maths (#33).
+export interface ValueRow {
+	id: number;
+	name: string;
+	model: string;
+	vramGb: number | null;
+	/** generation_tier: 'current', 'current-1', 'current-2' or null. */
+	tier: string | null;
+	price: number | null;
+}
+
+// How many tracked products have performance data and a price (#33 R6).
+export interface ValueCoverage {
+	tracked: number;
+	withPerf: number;
+	withoutPerf: number;
+	withPerfAndPrice: number;
+	/** Has performance data but no in-stock price today: left off the charts. */
+	noPrice: number;
+}

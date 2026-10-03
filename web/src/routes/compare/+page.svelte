@@ -5,6 +5,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { bestIndexes, buildCompareRows } from '$lib/compareRows';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
+	import { METRICS, defaultMetric, sourceCitation } from '$lib/perfIndex';
 	import type { CompareEntry, ProductIndexEntry } from '$lib/models';
 	import type { Category } from '$lib/types';
 
@@ -24,6 +25,7 @@
 	const rows = $derived(
 		buildCompareRows(entries).map((d) => ({
 			label: d.label,
+			hint: d.hint,
 			mono: d.mono === true || d.numeric !== undefined,
 			values: entries.map(d.value),
 			best: bestIndexes(d, entries)
@@ -36,6 +38,8 @@
 	);
 	// The base card carries its VRAM where a memory sibling exists (display only).
 	const names = $derived(buildDisplayNames(data.productIndex));
+	const hasPerf = $derived(rows.some((r) => r.label === 'Perf / A$1k'));
+	const perfMetric = $derived(defaultMetric(data.pickerCategory));
 	const categoryLabel = $derived(data.pickerCategory === 'cpu' ? 'CPUs' : 'GPUs');
 </script>
 
@@ -127,7 +131,8 @@
 						<th
 							class="border-r border-border bg-surface px-3 py-2 text-left text-xs font-medium text-text-muted"
 						>
-							{row.label}
+							<span title={row.hint}>{row.label}</span>
+							{#if row.hint}<span class="sr-only">{`, ${row.hint}`}</span>{/if}
 						</th>
 						{#each row.values as value, i}
 							<td class="px-3 py-2 text-text {row.mono ? 'num' : ''}">
@@ -150,5 +155,11 @@
 			</tbody>
 		</table>
 		</div>
+		{#if hasPerf}
+			<p class="text-xs text-text-muted" data-testid="perf-source">
+				Perf / A$1k is per A$1,000 at the cheapest in-stock price, on {METRICS[perfMetric].label}:
+				<a href={METRICS[perfMetric].source_url} class="underline underline-offset-2 hover:text-text">{sourceCitation(perfMetric)}</a>.
+			</p>
+		{/if}
 	{/if}
 </div>

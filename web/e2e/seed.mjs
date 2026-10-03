@@ -185,6 +185,81 @@ function loadSources() {
 	return buildSyntheticSources();
 }
 
+// /value fixtures (#33). Deterministic whatever data/ holds, so the specs never
+// depend on the scraped data.
+//  1. vram_gb from db/watchlist.csv for every GPU that has none, as seed.py
+//     does in a real DB. The performance index is keyed "<model> <vram>GB", so
+//     without it only the two hand-set cards above resolve to an entry.
+//  2. Five products whose model names are real index keys, with pinned prices
+//     and stock, always created: two CPUs in stock, one CPU out of stock only
+//     ("N without an in-stock price are not shown" has a member) and two 8 GB
+//     GPUs in stock at A$299 and A$199 (best under A$400 on both seeds, so excluding 8 GB
+//     cards always changes a budget card). If a scraped row for the same
+//     product exists its listings are delisted, so the pinned listing is the
+//     only price the value pages can see.
+function seedValueFixtures(db) {
+	const watchlist = fs.readFileSync(path.resolve(webRoot, '..', 'db', 'watchlist.csv'), 'utf-8');
+	const setVram = db.prepare(
+		"UPDATE products SET vram_gb = ? WHERE category = 'gpu' AND model = ? AND vram_gb IS NULL"
+	);
+	for (const line of watchlist.split(/\r?\n/)) {
+		if (!line.trim() || line.startsWith('#')) continue;
+		const [category, , model, spec] = line.split(',');
+		const gb = /^(\d+)GB$/i.exec(spec ?? '');
+		if (category === 'gpu' && gb) setVram.run(Number(gb[1]), model);
+	}
+
+	const latest = db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get()?.d;
+	if (!latest) return;
+	const fixtures = [
+		['cpu', 'AMD', 'Ryzen 7 9800X3D', null, 749, 'in_stock'],
+		['cpu', 'AMD', 'Ryzen 5 9600X', null, 349, 'in_stock'],
+		['cpu', 'Intel', 'Core Ultra 7 265K', null, 529, 'out_of_stock'],
+		['gpu', 'AMD', 'Radeon RX 9060 XT 8GB', 8, 299, 'in_stock'],
+		['gpu', 'AMD', 'Radeon RX 7600', 8, 199, 'in_stock']
+	];
+	for (const [category, brand, model, vram, price, stock] of fixtures) {
+		const found = db
+			.prepare(
+				`SELECT id FROM products WHERE category = ? AND model = ?
+				   AND (? IS NULL OR vram_gb = ?) ORDER BY id LIMIT 1`
+			)
+			.get(category, model, vram, vram);
+		let productId;
+		if (found) {
+			productId = found.id;
+			db.prepare("UPDATE retailer_listings SET status = 'delisted' WHERE product_id = ?").run(productId);
+			db.prepare("UPDATE products SET tracked = 1, generation_tier = 'current' WHERE id = ?").run(productId);
+		} else {
+			productId = Number(
+				db
+					.prepare(
+						`INSERT INTO products (category, brand, model, generation_tier, tracked, vram_gb)
+						 VALUES (?, ?, ?, 'current', 1, ?)`
+					)
+					.run(category, brand, model, vram).lastInsertRowid
+			);
+		}
+		const slug = `${model}-${vram ?? ''}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+		const listingId = Number(
+			db
+				.prepare(
+					`INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status)
+					 VALUES (?, 'scorptec', ?, ?, 'active')`
+				)
+				.run(productId, `${brand} ${model} Fixture`, `/p/e2e-value-${slug}`).lastInsertRowid
+		);
+		// Flat for three days: never a deal, a mover or a new low.
+		for (const n of [2, 1, 0]) {
+			const date = db.prepare('SELECT date(?, ?) AS d').get(latest, `-${n} days`).d;
+			db.prepare(
+				`INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at)
+				 VALUES (?, ?, ?, ?, ?)`
+			).run(listingId, date, price, stock, `${date}T04:00:00.000Z`);
+		}
+	}
+}
+
 export function seedE2eDb(dbPath = DB_PATH) {
 	if (fs.existsSync(dbPath)) fs.rmSync(dbPath);
 	const db = new Database(dbPath);
@@ -510,6 +585,7 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		`INSERT INTO products (category, brand, model, generation_tier, tracked, vram_gb)
 		 VALUES ('gpu', 'NVIDIA', 'E2E Deal Demo GPU 8GB', 'current', 1, 8)`
 	).run();
+	seedValueFixtures(db);
 
 	// The pipeline mirrors config.ACTIVE_RETAILERS into this table (R1). MWave is
 	// declared active here with no rows on purpose: the health strip must list

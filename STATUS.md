@@ -14,6 +14,15 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-03 -- Price to performance (#33) built on branch `feat/2026-10-03-price-performance`.**
+  `db/perf_index.json` (GPU raster/RT 1440p from the TechPowerUp RTX 5090 Matrix review, CPU
+  1080p gaming from the 7700X3D review; `not_in_source` for gaps), "Perf/A$1k" column on
+  /products (xl, `sort=value`) and /compare, `/value` scatter with log price axis, Pareto
+  frontier and best per budget (400/700/1000/1500/2500). CPU coverage is partial (follow-up
+  for a wider source). No schema or pipeline change; Dockerfile copies the JSON. Deploy with
+  `deploy/redeploy.sh` outside 04:00-09:59. Gate: pytest **1377 passed**, vitest **1187 passed**,
+  Playwright **225 passed, 1 skipped**, svelte-check **0 errors, 0 warnings**, `npm run build` ok.
+
 - **2026-10-03 -- Visual refresh (#22) built on branch `feat/2026-10-03-visual-refresh`.**
   Self-hosted fonts, type and surface tokens, terminal wordmark and icons, `PageHeader`
   on every route, wide table pages, 6-segment `PriceRangeBar` (catalogue rows from xl),

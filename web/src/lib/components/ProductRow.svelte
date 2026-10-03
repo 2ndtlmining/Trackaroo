@@ -6,6 +6,8 @@
 	import { formatAud, formatMonthYear, formatPct, formatTrend } from '$lib/formats';
 	import { COL } from '$lib/catalogColumns';
 	import { rangePosition } from '$lib/rangeBar';
+	import { METRICS, defaultMetric, sourceNote } from '$lib/perfIndex';
+	import { perfPerKilo } from '$lib/value';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30 } from '$lib/offers';
 	import type { FxRate } from '$lib/models';
 	import { MSRP_TONE_CLASS, formatMsrpDelta, msrpAud, msrpDelta, msrpTone } from '$lib/msrp';
@@ -60,6 +62,11 @@
 		range && shown !== null && !outOfStock ? rangePosition(shown, range.low, range.high) : null
 	);
 	const cpu = $derived(group.category === 'cpu');
+	// Performance per A$1,000 at the shown price, so a retailer view compares
+	// that retailer (#33). An out-of-stock shown price gets no figure (R7), the
+	// same rule the value sort applies.
+	const metric = $derived(group.metric ?? defaultMetric(cpu ? 'cpu' : 'gpu'));
+	const value = $derived(outOfStock ? null : perfPerKilo(shown, group.perf ?? null));
 	const trend = $derived(formatTrend(group.sparkline ?? []));
 
 	const specHeader = $derived(group.category === 'gpu' ? 'VRAM' : 'Cores');
@@ -81,7 +88,7 @@
      phone, which a native <tr> cannot, so the table semantics are explicit.
      Every child is a cell; cells hidden at a breakpoint simply drop out. -->
 <div
-	class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-surface-hover"
+	class="flex flex-wrap items-center gap-x-3 xl:gap-x-2 gap-y-1 px-3 py-2 hover:bg-surface-hover"
 	role="row"
 	data-testid="catalog-row"
 >
@@ -169,6 +176,12 @@
 		{/if}
 	</span>
 
+	<span class="{COL.value} text-xs text-text-muted" role="cell" data-testid="row-value" title={sourceNote(metric)}
+		><span class="sr-only">{`per A$1,000, ${METRICS[metric].label}: `}</span><span class="num font-medium"
+			>{value === null ? '–' : Math.round(value)}</span
+		></span
+	>
+
 	{#if !cpu}
 		<span class="{COL.brand} items-center gap-1.5 text-xs text-text-muted" role="cell">
 			<BrandIcon brand={group.brand} size={12} />
@@ -199,5 +212,9 @@
 		></span
 	>
 
-	<span class="{COL.retailer} text-xs text-text-muted" role="cell">{retailerLabel ?? ''}</span>
+	<span
+		class="{COL.retailer} text-xs text-text-muted"
+		role="cell"
+		title={retailerLabel ?? undefined}>{retailerLabel ?? ''}</span
+	>
 </div>

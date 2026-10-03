@@ -1,0 +1,297 @@
+{
+  "metrics": {
+    "gpu_raster_1440p": {
+      "label": "1440p raster",
+      "unit": "relative %",
+      "source": "TechPowerUp, ASUS GeForce RTX 5090 Matrix Platinum Review - 800 W Powerhouse (Relative Performance, 2560x1440)",
+      "source_url": "https://www.techpowerup.com/review/asus-geforce-rtx-5090-matrix/31.html",
+      "as_of": "2026-04",
+      "baseline": "ASUS RTX 5090 Matrix 32 GB / 800 W (100%)"
+    },
+    "gpu_rt_1440p": {
+      "label": "1440p ray tracing",
+      "unit": "relative %",
+      "source": "TechPowerUp, ASUS GeForce RTX 5090 Matrix Platinum Review - 800 W Powerhouse (Relative Performance RT, 2560x1440)",
+      "source_url": "https://www.techpowerup.com/review/asus-geforce-rtx-5090-matrix/33.html",
+      "as_of": "2026-04",
+      "baseline": "ASUS RTX 5090 Matrix 32 GB / 800 W (100%)"
+    },
+    "cpu_gaming_1080p": {
+      "label": "1080p gaming",
+      "unit": "relative %",
+      "source": "TechPowerUp, AMD Ryzen 7 7700X3D Review (Relative Performance, Games 1920x1080, RTX 5090)",
+      "source_url": "https://www.techpowerup.com/review/amd-ryzen-7-7700x3d/24.html",
+      "as_of": "2026-07",
+      "baseline": "Ryzen 7 7700X3D (100%)"
+    }
+  },
+  "products": {
+    "GeForce RTX 3050 8GB": {
+      "gpu_raster_1440p": 15,
+      "gpu_rt_1440p": 11
+    },
+    "GeForce RTX 3060 12GB": {
+      "gpu_raster_1440p": 21,
+      "gpu_rt_1440p": 21
+    },
+    "GeForce RTX 3060 Ti 8GB": {
+      "gpu_raster_1440p": 27,
+      "gpu_rt_1440p": 20
+    },
+    "GeForce RTX 3070 8GB": {
+      "gpu_raster_1440p": 32,
+      "gpu_rt_1440p": 28
+    },
+    "GeForce RTX 3080 10GB": {
+      "gpu_raster_1440p": 41,
+      "gpu_rt_1440p": 41
+    },
+    "GeForce RTX 3090 Ti 24GB": {
+      "gpu_raster_1440p": 51,
+      "gpu_rt_1440p": 51
+    },
+    "GeForce RTX 4060 8GB": {
+      "gpu_raster_1440p": 23,
+      "gpu_rt_1440p": 19
+    },
+    "GeForce RTX 4060 Ti 8GB": {
+      "gpu_raster_1440p": 31,
+      "gpu_rt_1440p": 22
+    },
+    "GeForce RTX 4070 12GB": {
+      "gpu_raster_1440p": 41,
+      "gpu_rt_1440p": 41
+    },
+    "GeForce RTX 4070 Super 12GB": {
+      "gpu_raster_1440p": 47,
+      "gpu_rt_1440p": 46
+    },
+    "GeForce RTX 4070 Ti 12GB": {
+      "gpu_raster_1440p": 50,
+      "gpu_rt_1440p": 49
+    },
+    "GeForce RTX 4070 Ti Super 16GB": {
+      "gpu_raster_1440p": 54,
+      "gpu_rt_1440p": 54
+    },
+    "GeForce RTX 4080 16GB": {
+      "gpu_raster_1440p": 62,
+      "gpu_rt_1440p": 61
+    },
+    "GeForce RTX 4080 Super 16GB": {
+      "gpu_raster_1440p": 63,
+      "gpu_rt_1440p": 62
+    },
+    "GeForce RTX 4090 24GB": {
+      "gpu_raster_1440p": 78,
+      "gpu_rt_1440p": 77
+    },
+    "GeForce RTX 5060 8GB": {
+      "gpu_raster_1440p": 31,
+      "gpu_rt_1440p": 22
+    },
+    "GeForce RTX 5060 Ti 16GB": {
+      "gpu_raster_1440p": 35,
+      "gpu_rt_1440p": 35
+    },
+    "GeForce RTX 5060 Ti 8GB": {
+      "gpu_raster_1440p": 35,
+      "gpu_rt_1440p": 25
+    },
+    "GeForce RTX 5070 12GB": {
+      "gpu_raster_1440p": 49,
+      "gpu_rt_1440p": 45
+    },
+    "GeForce RTX 5070 Ti 16GB": {
+      "gpu_raster_1440p": 60,
+      "gpu_rt_1440p": 58
+    },
+    "GeForce RTX 5080 16GB": {
+      "gpu_raster_1440p": 67,
+      "gpu_rt_1440p": 65
+    },
+    "GeForce RTX 5090 32GB": {
+      "gpu_raster_1440p": 93,
+      "gpu_rt_1440p": 93
+    },
+    "Radeon RX 6800 XT 16GB": {
+      "gpu_raster_1440p": 39,
+      "gpu_rt_1440p": 30
+    },
+    "Radeon RX 6900 XT 16GB": {
+      "gpu_raster_1440p": 42,
+      "gpu_rt_1440p": 32
+    },
+    "Radeon RX 7600 8GB": {
+      "gpu_raster_1440p": 22,
+      "gpu_rt_1440p": 11
+    },
+    "Radeon RX 7700 XT 12GB": {
+      "gpu_raster_1440p": 35,
+      "gpu_rt_1440p": 28
+    },
+    "Radeon RX 7800 XT 16GB": {
+      "gpu_raster_1440p": 41,
+      "gpu_rt_1440p": 33
+    },
+    "Radeon RX 7900 GRE 16GB": {
+      "gpu_raster_1440p": 45,
+      "gpu_rt_1440p": 36
+    },
+    "Radeon RX 7900 XT 20GB": {
+      "gpu_raster_1440p": 53,
+      "gpu_rt_1440p": 43
+    },
+    "Radeon RX 7900 XTX 24GB": {
+      "gpu_raster_1440p": 61,
+      "gpu_rt_1440p": 49
+    },
+    "Radeon RX 9060 XT 16GB": {
+      "gpu_raster_1440p": 33,
+      "gpu_rt_1440p": 33
+    },
+    "Radeon RX 9060 XT 8GB": {
+      "gpu_raster_1440p": 32,
+      "gpu_rt_1440p": 30
+    },
+    "Radeon RX 9070 16GB": {
+      "gpu_raster_1440p": 53,
+      "gpu_rt_1440p": 50
+    },
+    "Radeon RX 9070 XT 16GB": {
+      "gpu_raster_1440p": 57,
+      "gpu_rt_1440p": 54
+    },
+    "Arc A770 16GB": {
+      "gpu_raster_1440p": 23,
+      "gpu_rt_1440p": 22
+    },
+    "Arc B580 12GB": {
+      "gpu_raster_1440p": 26,
+      "gpu_rt_1440p": 25
+    },
+    "Ryzen 7 5800X3D": {
+      "cpu_gaming_1080p": 92.8
+    },
+    "Ryzen 5 7600X": {
+      "cpu_gaming_1080p": 89.7
+    },
+    "Ryzen 7 7700": {
+      "cpu_gaming_1080p": 91.8
+    },
+    "Ryzen 7 7700X": {
+      "cpu_gaming_1080p": 92.3
+    },
+    "Ryzen 7 7800X3D": {
+      "cpu_gaming_1080p": 103.2
+    },
+    "Ryzen 9 7950X": {
+      "cpu_gaming_1080p": 93.5
+    },
+    "Ryzen 5 9600X": {
+      "cpu_gaming_1080p": 93.2
+    },
+    "Ryzen 7 9700X": {
+      "cpu_gaming_1080p": 96.6
+    },
+    "Ryzen 7 9800X3D": {
+      "cpu_gaming_1080p": 112.7
+    },
+    "Ryzen 9 9950X": {
+      "cpu_gaming_1080p": 97.9
+    },
+    "Ryzen 9 9950X3D": {
+      "cpu_gaming_1080p": 107.8
+    },
+    "Core i7-14700K": {
+      "cpu_gaming_1080p": 95.9
+    },
+    "Core i9-14900K": {
+      "cpu_gaming_1080p": 97.6
+    },
+    "Core Ultra 5 245K": {
+      "cpu_gaming_1080p": 90.3
+    },
+    "Core Ultra 7 265K": {
+      "cpu_gaming_1080p": 94.5
+    },
+    "Core Ultra 9 285K": {
+      "cpu_gaming_1080p": 96.9
+    }
+  },
+  "not_in_source": {
+    "gpu_raster_1440p": [
+      "GeForce RTX 3050 6GB",
+      "GeForce RTX 3070 Ti 8GB",
+      "GeForce RTX 3080 Ti 12GB",
+      "GeForce RTX 3090 24GB",
+      "Radeon RX 6600 8GB",
+      "Radeon RX 6650 XT 8GB",
+      "Radeon RX 6700 XT 12GB",
+      "Radeon RX 6750 XT 12GB",
+      "Radeon RX 6800 16GB",
+      "Radeon RX 6950 XT 16GB",
+      "Radeon RX 9070 GRE 12GB",
+      "Arc A380 6GB",
+      "Arc A750 8GB",
+      "Arc B570 10GB"
+    ],
+    "gpu_rt_1440p": [
+      "GeForce RTX 3050 6GB",
+      "GeForce RTX 3070 Ti 8GB",
+      "GeForce RTX 3080 Ti 12GB",
+      "GeForce RTX 3090 24GB",
+      "Radeon RX 6600 8GB",
+      "Radeon RX 6650 XT 8GB",
+      "Radeon RX 6700 XT 12GB",
+      "Radeon RX 6750 XT 12GB",
+      "Radeon RX 6800 16GB",
+      "Radeon RX 6950 XT 16GB",
+      "Radeon RX 9070 GRE 12GB",
+      "Arc A380 6GB",
+      "Arc A750 8GB",
+      "Arc B570 10GB"
+    ],
+    "cpu_gaming_1080p": [
+      "Ryzen 5 5500",
+      "Ryzen 5 5600",
+      "Ryzen 5 5600X",
+      "Ryzen 7 5700X",
+      "Ryzen 7 5800X",
+      "Ryzen 9 5900X",
+      "Ryzen 9 5950X",
+      "Ryzen 5 7600",
+      "Ryzen 5 7600X3D",
+      "Ryzen 5 8600G",
+      "Ryzen 9 7900",
+      "Ryzen 9 7900X",
+      "Ryzen 9 7900X3D",
+      "Ryzen 9 7950X3D",
+      "Ryzen 9 9900",
+      "Ryzen 9 9900X",
+      "Ryzen 9 9900X3D",
+      "Core i5-13400",
+      "Core i5-13400F",
+      "Core i5-13600K",
+      "Core i5-13600KF",
+      "Core i7-13700K",
+      "Core i7-13700KF",
+      "Core i9-13900K",
+      "Core i9-13900KF",
+      "Core i9-13900F",
+      "Core i5-14400",
+      "Core i5-14400F",
+      "Core i5-14500",
+      "Core i5-14600K",
+      "Core i5-14600KF",
+      "Core i7-14700KF",
+      "Core i9-14900",
+      "Core i9-14900KF",
+      "Core i9-14900F",
+      "Core i9-14900KS",
+      "Core Ultra 5 245",
+      "Core Ultra 5 245KF",
+      "Core Ultra 7 265KF"
+    ]
+  }
+}

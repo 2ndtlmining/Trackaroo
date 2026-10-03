@@ -17,6 +17,7 @@ export const NAV_LINKS: NavLink[] = [
 	{ href: '/products?category=cpu', label: 'CPUs' },
 	{ href: '/movers', label: 'Movers' },
 	{ href: '/compare', label: 'Compare' },
+	{ href: '/value', label: 'Value' },
 	{ href: '/discover', label: 'Discover' }
 ];
 

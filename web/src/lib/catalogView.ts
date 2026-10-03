@@ -1,10 +1,11 @@
 import { RETAILER_OPTIONS, TIER_OPTIONS } from './filters';
 import type { FxRate } from './models';
 import { msrpAud, msrpDelta } from './msrp';
+import { perfPerKilo } from './value';
 import { generationTierLabel } from './tiers';
 import type { GenerationTier, Retailer } from './types';
 
-export type CatalogSort = 'price' | 'name' | 'spec' | 'released' | 'listings' | 'msrp';
+export type CatalogSort = 'price' | 'name' | 'spec' | 'released' | 'listings' | 'msrp' | 'value';
 export type SortDir = 'asc' | 'desc';
 
 export interface CatalogView {
@@ -30,6 +31,8 @@ export interface CatalogRowInput {
 	msrpUsd: number | null;
 	listingCount: number;
 	neverListed: boolean;
+	// Index performance for the category's metric (#33); absent or null = no figure.
+	perf?: number | null;
 }
 
 export const DEFAULT_DIR: Record<CatalogSort, SortDir> = {
@@ -38,7 +41,8 @@ export const DEFAULT_DIR: Record<CatalogSort, SortDir> = {
 	spec: 'desc',
 	released: 'desc',
 	listings: 'desc',
-	msrp: 'asc'
+	msrp: 'asc',
+	value: 'desc'
 };
 
 const BRANDS = ['NVIDIA', 'AMD', 'Intel'];
@@ -140,6 +144,8 @@ function sortValue(
 		case 'spec': return row.vramGb ?? row.cores;
 		case 'released': return row.launchDate;
 		case 'listings': return row.listingCount;
+		// R7: an out-of-stock shown price has no figure, so it sorts last.
+		case 'value': return shownStock(row, view) === 'out' ? null : perfPerKilo(shownPrice(row, view), row.perf ?? null);
 		case 'msrp': return msrpDelta(shownPrice(row, view), msrpAud(row.msrpUsd, ctx.fx));
 	}
 }

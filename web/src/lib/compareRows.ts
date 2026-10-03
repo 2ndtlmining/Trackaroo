@@ -1,7 +1,9 @@
 import { formatAud, formatBandwidth, formatCacheMb, formatDate, formatProcess, formatUsd } from './formats';
 import { retailerLabel } from './filters';
 import type { CompareEntry } from './models';
+import { METRICS, defaultMetric, perfFor, sourceNote } from './perfIndex';
 import type { Retailer } from './types';
+import { perfPerKilo } from './value';
 
 export interface CompareRow {
 	label: string;
@@ -12,6 +14,8 @@ export interface CompareRow {
 	numeric?: (entry: CompareEntry) => number | null;
 	// Set in the mono tabular face (#22); rows with `numeric` always are.
 	mono?: boolean;
+	// What the figure means, shown on hover and read by screen readers.
+	hint?: string;
 }
 
 // Mirrors the value formatters, which treat 0 as missing.
@@ -182,6 +186,27 @@ const cpuSpecRows: CompareRow[] = [
 	}
 ];
 
+// Performance per A$1,000 at the cheapest in-stock price (#33), on the
+// category's default metric; a dash when either figure is missing.
+function perPerfRow(category: 'gpu' | 'cpu'): CompareRow {
+	const metric = defaultMetric(category);
+	const numeric = (e: CompareEntry) =>
+		perfPerKilo(
+			e.cheapestInStock?.price ?? null,
+			perfFor({ category, model: e.product.model, vramGb: e.product.vram_gb }, metric)
+		);
+	return {
+		label: 'Perf / A$1k',
+		direction: 'higher',
+		hint: `per A$1,000, ${METRICS[metric].label}. ${sourceNote(metric)}`,
+		numeric,
+		value: (e) => {
+			const n = numeric(e);
+			return n === null ? '–' : String(Math.round(n));
+		}
+	};
+}
+
 // Compare rows are category-aware: the server route guarantees all entries are
 // the same category, so a single category check decides which spec fields make
 // sense. GPU-only and CPU-only rows never show for the wrong category.
@@ -214,8 +239,10 @@ export function buildCompareRows(entries: CompareEntry[]): CompareRow[] {
 	];
 
 	const category = entries[0]?.product.category;
+	const perfRows: CompareRow[] =
+		category === 'gpu' || category === 'cpu' ? [perPerfRow(category)] : [];
 	const specRows =
 		category === 'gpu' ? gpuSpecRows : category === 'cpu' ? cpuSpecRows : sharedSpecRows;
 
-	return [...priceRows, ...sharedSpecRows, ...specRows];
+	return [...priceRows, ...perfRows, ...sharedSpecRows, ...specRows];
 }

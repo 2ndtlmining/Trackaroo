@@ -27,6 +27,7 @@
 	import { MAX_COMPARE, parseCompareIds, withParams } from '$lib/urlState';
 	import { urlParams } from '$lib/urlParams';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
+	import { METRICS, defaultMetric, sourceCitation } from '$lib/perfIndex';
 	import type { Category } from '$lib/types';
 	import type { FxRate, ProductIndexEntry } from '$lib/models';
 
@@ -38,6 +39,7 @@
 			inStockOnly: boolean;
 			trackedCount: number;
 			listedCount: number;
+			perfCoverage: { withPerf: number; tracked: number; requiredWithPerf: number; requiredTracked: number };
 			fx: FxRate | null;
 			groups: (CatalogRow & CatalogRowInput)[];
 			// From the root layout's load (merged into page data).
@@ -46,6 +48,7 @@
 	} = $props();
 
 	const heading = $derived(data.category === 'cpu' ? 'CPUs' : 'GPUs');
+	const perfMetric = $derived(defaultMetric(data.category));
 
 	// The base card carries its VRAM where a "<model> <N>GB" sibling exists
 	// (display only). Search and rows both use the display name, so
@@ -277,6 +280,16 @@
 		{/if}
 	</p>
 
+	<!-- R6: the performance figures cover only part of the watchlist. -->
+	<p class="mt-1 text-xs text-text-muted" data-testid="perf-coverage">
+		Performance data for <span class="num">{data.perfCoverage.withPerf}</span> of
+		<span class="num">{data.perfCoverage.tracked}</span> {heading}
+		(<span class="num">{data.perfCoverage.requiredWithPerf}</span> of
+		<span class="num">{data.perfCoverage.requiredTracked}</span> current and previous generation)
+		<span data-testid="perf-source" class="block sm:inline"><span class="hidden sm:inline"> · </span>Perf/A$1k: {METRICS[perfMetric].label},
+			<a href={METRICS[perfMetric].source_url} class="text-text-muted underline underline-offset-2 hover:text-text">{sourceCitation(perfMetric)}</a></span>
+	</p>
+
 	{#if searching}
 		{#if matches.length > 0}
 			<div
@@ -328,7 +341,7 @@
 			>
 				<div
 					role="row"
-					class="flex items-center gap-x-3 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-muted"
+					class="flex items-center gap-x-3 xl:gap-x-2 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-muted"
 				>
 					{#each columns as col (col.key)}
 						{#if col.sort}

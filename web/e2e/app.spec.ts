@@ -1914,6 +1914,56 @@ test.describe('MSRP cues (Task 3)', () => {
 		});
 	}
 
+	test('the value column shows perf per A$1,000, a dash without data, and sorts (#33)', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await goto(page, '/products?category=gpu&sort=value');
+		const header = page.getByRole('columnheader', { name: /^Perf\/A\$1k/ });
+		await expect(header).toBeVisible();
+		await expect(header).toHaveAttribute('aria-sort', 'descending');
+		// The seed's pinned in-stock 8 GB fixture (seedValueFixtures), not a scraped row.
+		const fixtureId = productIdByModel('Radeon RX 9060 XT 8GB');
+		const withPerf = page
+			.getByTestId('catalog-row')
+			.filter({ has: page.locator(`a[href="/product/${fixtureId}"]`) })
+			.getByTestId('row-value');
+		await expect(withPerf).toHaveCount(1);
+		await expect(withPerf).toContainText(/\d+$/);
+		await expect(withPerf).toHaveAttribute('title', /1440p raster, TechPowerUp/);
+		const without = page.getByTestId('catalog-row').filter({ hasText: 'E2E New Low GPU' }).getByTestId('row-value');
+		await expect(without).toContainText('–');
+		// Rows without a figure sort last.
+		const last = page.getByTestId('catalog-row').last().getByTestId('row-value');
+		await expect(last).toContainText('–');
+		await expect(page.getByTestId('perf-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs\s+\(\d+ of \d+ current and previous generation\)/);
+		// The source is reachable without a mouse: a visible, focusable citation link.
+		const source = page.getByTestId('perf-source');
+		await expect(source).toBeVisible();
+		await expect(source).toContainText('1440p raster');
+		const link = source.getByRole('link', { name: /TechPowerUp/ });
+		await expect(link).toBeVisible();
+		await expect(link).toHaveAttribute('href', /^https:\/\/www\.techpowerup\.com\//);
+		await link.focus();
+		await expect(link).toBeFocused();
+	});
+
+	test('/compare shows a Perf / A$1k row (#33)', async ({ page }) => {
+		const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+		const ids = db
+			.prepare("SELECT id FROM products WHERE category = 'gpu' AND model IN ('Radeon RX 9060 XT 8GB', 'Radeon RX 7600') ORDER BY id")
+			.all() as { id: number }[];
+		db.close();
+		expect(ids.length).toBe(2);
+		await goto(page, `/compare?ids=${ids[0].id},${ids[1].id}`);
+		const cells = page.locator('tbody tr', { has: page.getByRole('rowheader', { name: /^Perf \/ A\$1k/ }) }).locator('td');
+		await expect(cells).toHaveCount(2);
+		await expect(cells.nth(0)).toContainText(/\d+/);
+		await expect(cells.nth(1)).toContainText(/\d+/);
+		const source = page.getByTestId('perf-source');
+		await expect(source).toBeVisible();
+		await expect(source).toContainText('1440p raster');
+		await expect(source.getByRole('link', { name: /TechPowerUp/ })).toHaveAttribute('href', /^https:\/\/www\.techpowerup\.com\//);
+	});
+
 	test('the catalogue sorts by vs MSRP, cheapest against MSRP first', async ({ page }) => {
 		await goto(page, '/products?category=gpu&sort=msrp');
 		const header = page.getByRole('columnheader', { name: /^vs MSRP/ });
@@ -2018,5 +2068,95 @@ test.describe('PageHeader on every route (#22)', () => {
 		const sub = page.getByTestId('page-header').locator('p').first();
 		await expect(sub).toContainText(/at least \d+% and at least \$\d+ below/);
 		await expect(sub.locator('strong')).toHaveText('and');
+	});
+});
+
+test.describe('/value (#33)', () => {
+	test('charts one focusable point per priced product, with the frontier and a matching table', async ({ page }) => {
+		await goto(page, '/value');
+		await expect(page.getByTestId('page-header').getByRole('heading', { name: 'Value', level: 1 })).toBeVisible();
+		const points = page.getByTestId('value-point');
+		const n = await points.count();
+		// Both seeds chart at least the RTX 5060 and 5060 Ti (and the B580 and RX 7800 XT).
+		expect(n).toBeGreaterThanOrEqual(2);
+		await expect(page.getByTestId('value-table').locator('tbody tr')).toHaveCount(n);
+		expect(await page.locator('[data-testid="value-point"][data-frontier="true"]').count()).toBeGreaterThan(0);
+		for (const href of await points.evaluateAll((els) => els.map((e) => e.getAttribute('href')))) {
+			expect(href).toMatch(/^\/product\/\d+$/);
+		}
+		const first = points.first();
+		await expect(first).toHaveAttribute('aria-label', /: \$[\d,.]+, 1440p raster \d+(\.\d+)?, \d+ per A\$1,000/);
+		await first.focus();
+		await expect(page.getByTestId('value-tooltip')).toBeVisible();
+		// R9: the zoom note appears exactly when the axis is zoomed. That depends on the data (the
+		// default seed starts at 0, the CI synthetic data does not), so check the two agree.
+		const zoomed = /axis doesn't start at 0/.test((await page.locator('figure').first().getAttribute('aria-label')) ?? '');
+		await expect(page.getByTestId('value-axis-note')).toHaveCount(zoomed ? 1 : 0);
+		await expect(page.getByTestId('value-source')).toContainText('Performance: TechPowerUp');
+		await expect(page.getByTestId('value-source')).toContainText('Prices: cheapest in stock today across');
+		await expect(page.getByTestId('value-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs/);
+	});
+
+	test('switching to CPUs updates the URL, the metric and the points', async ({ page }) => {
+		await goto(page, '/value');
+		const gpuHrefs = await page.getByTestId('value-point').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+		await page.getByRole('group', { name: 'Category' }).getByRole('button', { name: 'CPUs' }).click();
+		await expect(page).toHaveURL(/\/value\?category=cpu$/);
+		await expect(page.getByRole('group', { name: 'Metric' })).toHaveCount(0);
+		await expect(page.getByTestId('value-metric-label')).toHaveText('1080p gaming');
+		const cpuHrefs = await page.getByTestId('value-point').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+		expect(cpuHrefs.length).toBeGreaterThanOrEqual(2);
+		expect(cpuHrefs.some((h) => gpuHrefs.includes(h))).toBe(false);
+		await expect(page.getByTestId('value-table').locator('tbody tr')).toHaveCount(cpuHrefs.length);
+		// The seed's out-of-stock-only Core Ultra 7 265K (or the live data's) is counted, never plotted.
+		await expect(page.getByTestId('value-excluded')).toContainText(/\d+ products? without an in-stock price/);
+		await expect(page.getByRole('button', { name: 'Exclude 8 GB cards' })).toHaveCount(0);
+		// R9: the CPU perf axis is zoomed (scores cluster near 100), and says so.
+		await expect(page.getByTestId('value-axis-note')).toContainText("Axis doesn't start at 0");
+		await expect(page.locator('figure').first()).toHaveAttribute('aria-label', /axis doesn't start at 0/);
+	});
+
+	test('the GPU metric toggle switches to ray tracing in the URL', async ({ page }) => {
+		await goto(page, '/value');
+		await page.getByRole('group', { name: 'Metric' }).getByRole('button', { name: 'Ray tracing' }).click();
+		await expect(page).toHaveURL(/metric=gpu_rt_1440p/);
+		await expect(page.getByRole('heading', { name: /Price against 1440p ray tracing/i })).toBeVisible();
+	});
+
+	test('budget cards show winners, and excluding 8 GB cards changes them', async ({ page }) => {
+		await goto(page, '/value');
+		await expect(page.getByTestId('budget-card')).toHaveCount(5);
+		expect(await page.getByTestId('budget-winner').count()).toBeGreaterThan(0);
+		// The seed pins an in-stock 8 GB card at A$299 (best under A$400), so some card changes.
+		const before = await page.getByTestId('budget-winners').innerText();
+		const toggle = page.getByRole('button', { name: 'Exclude 8 GB cards' });
+		await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+		await toggle.click();
+		await expect(page).toHaveURL(/no8gb=1/);
+		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByTestId('budget-winners')).not.toHaveText(before);
+	});
+
+	test('a focused point keeps its ring while another is hovered (WCAG 2.4.7)', async ({ page }) => {
+		await goto(page, '/value');
+		const points = page.getByTestId('value-point');
+		const ring = (i: number) => points.nth(i).getByTestId('value-point-ring');
+		await points.first().focus();
+		await expect(ring(0)).toHaveCSS('opacity', '1');
+		const last = (await points.count()) - 1;
+		await points.last().hover();
+		await expect(ring(last)).toHaveCSS('opacity', '1');
+		await expect(ring(0)).toHaveCSS('opacity', '1');
+		await expect(points.first()).toBeFocused();
+	});
+
+	test('Tab walks the points cheapest first', async ({ page }) => {
+		await goto(page, '/value');
+		const labels = await page.getByTestId('value-point').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? ''));
+		const prices = labels.map((l) => Number(/: \$([\d,.]+),/.exec(l)![1].replace(/,/g, '')));
+		expect(prices).toEqual([...prices].sort((a, b) => a - b));
+		await page.getByTestId('value-point').first().focus();
+		await page.keyboard.press('Tab');
+		await expect(page.getByTestId('value-point').nth(1)).toBeFocused();
 	});
 });

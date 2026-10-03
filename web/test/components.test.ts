@@ -1494,6 +1494,40 @@ describe('ProductRow catalog columns (#23, U5)', () => {
 	});
 });
 
+describe('ProductRow value column (#33)', () => {
+	const row = {
+		productId: 7, category: 'gpu' as const, brand: 'NVIDIA', model: 'GeForce RTX 5060', productVariant: null,
+		generationTier: 'current' as const, cheapestInStockPrice: 549, cheapestInStockRetailer: 'scorptec' as const,
+		inStockCount: 3, avg30: 560, avg30Points: 20, neverListed: false, vramGb: 8, cores: null,
+		launchDate: '2025-03-05', listingCount: 5, perf: 31, metric: 'gpu_raster_1440p' as const
+	};
+
+	it('shows a whole number with the metric and source on hover and for screen readers', () => {
+		const html = renderComponent(ProductRow, { group: row });
+		// 31 / 549 * 1000 = 56.46
+		expect(html).toMatch(/data-testid="row-value"[^>]*title="1440p raster, TechPowerUp[^"]*"[^>]*>/);
+		expect(html).toMatch(/>56</);
+		expect(html).toContain('per A$1,000, 1440p raster');
+	});
+	it('uses the price it is shown, not the cheapest anywhere', () => {
+		expect(renderComponent(ProductRow, { group: row, price: 620 })).toMatch(/>50</);
+	});
+	it('shows no figure for an out-of-stock shown price (R7)', () => {
+		const html = renderComponent(ProductRow, { group: row, price: 100, outOfStock: true });
+		expect(html).toMatch(/row-value".*?<span class="num font-medium">–<\/span>/s);
+	});
+	it('keeps a long retailer name on one line with the full name on hover', () => {
+		const html = renderComponent(ProductRow, { group: { ...row, cheapestInStockRetailer: 'centrecom' as const } });
+		expect(html).toMatch(/title="Centre Com"/);
+		expect(html).toMatch(/whitespace-nowrap/);
+		expect(html).toContain('xl:w-16');
+	});
+	it('shows a dash without a figure or a price', () => {
+		expect(renderComponent(ProductRow, { group: { ...row, perf: null } })).toMatch(/row-value".*?<span class="num font-medium">–<\/span>/s);
+		expect(renderComponent(ProductRow, { group: row, price: null })).toMatch(/row-value".*?<span class="num font-medium">–<\/span>/s);
+	});
+});
+
 describe('MsrpLine (Task 3)', () => {
 	const fx = { rateDate: '2026-10-01', audPerUsd: 1.5, source: 'rba' };
 

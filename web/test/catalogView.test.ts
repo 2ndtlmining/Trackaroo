@@ -182,3 +182,37 @@ describe('sort=msrp', () => {
 		expect(ids('sort=msrp')).toEqual([1, 2, 3, 4, 5]);
 	});
 });
+
+describe('sort=value (#33)', () => {
+	// perf per A$1k = perf / shown price * 1000: 50, 100, 20; the last two have no figure.
+	const rows = [
+		row({ productId: 1, cheapestInStockPrice: 600, perf: 30 }),
+		row({ productId: 2, cheapestInStockPrice: 300, perf: 30 }),
+		row({ productId: 3, cheapestInStockPrice: 1500, perf: 30 }),
+		row({ productId: 4, cheapestInStockPrice: 500, perf: null }),
+		row({ productId: 5, cheapestInStockPrice: null, perf: 30 })
+	];
+	const ids = (q: string) => applyCatalogView(rows, p(q)).map((r) => r.productId);
+	it('defaults to descending', () => expect(p('sort=value').dir).toBe('desc'));
+	it('best value first, rows without a figure last', () => expect(ids('sort=value')).toEqual([2, 1, 3, 4, 5]));
+	it('ascending still keeps rows without a figure last', () => expect(ids('sort=value&dir=asc')).toEqual([3, 1, 2, 4, 5]));
+	it('uses the retailer price in a retailer view', () => {
+		const r = [
+			row({ productId: 1, cheapestInStockPrice: 300, perf: 30, retailerPrices: { pccg: { inStock: 1000, any: 1000 } } }),
+			row({ productId: 2, cheapestInStockPrice: 900, perf: 30, retailerPrices: { pccg: { inStock: 500, any: 500 } } })
+		];
+		expect(applyCatalogView(r, p('retailer=pccg&sort=value')).map((x) => x.productId)).toEqual([2, 1]);
+	});
+});
+
+describe('sort=value and out-of-stock prices (R7)', () => {
+	const rows = [
+		row({ productId: 1, cheapestInStockPrice: 900, perf: 30, retailerPrices: { pccg: { inStock: null, any: 100 } } }),
+		row({ productId: 2, cheapestInStockPrice: 900, perf: 30, retailerPrices: { pccg: { inStock: 900, any: 900 } } })
+	];
+	for (const dir of ['desc', 'asc']) {
+		it(`a sold-out retailer price sorts last (${dir})`, () => {
+			expect(applyCatalogView(rows, p(`retailer=pccg&sort=value&dir=${dir}`)).map((r) => r.productId)).toEqual([2, 1]);
+		});
+	}
+});

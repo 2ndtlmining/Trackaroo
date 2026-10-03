@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 const PHONE = { width: 390, height: 844 };
 const NARROW = { width: 320, height: 844 };
 
-const ROUTES = ['/', '/products?category=gpu', '/products?category=cpu', '/deals', '/movers', '/compare', '/product/1'];
+const ROUTES = ['/', '/products?category=gpu', '/products?category=cpu', '/deals', '/movers', '/compare', '/product/1', '/value'];
 
 async function goto(page: Page, path: string) {
 	await page.goto(path);
@@ -201,6 +201,22 @@ test.describe('phone without JavaScript (#23)', () => {
 
 test.describe('very narrow viewport', () => {
 	test.use({ viewport: NARROW });
+
+	test('/value scales its scatter down to 320px (#33)', async ({ page }) => {
+		for (const route of ['/value', '/value?category=cpu']) {
+			await goto(page, route);
+			const svg = page.locator('figure svg').first();
+			const box = await svg.boundingBox();
+			expect(box!.x).toBeGreaterThanOrEqual(0);
+			expect(box!.x + box!.width).toBeLessThanOrEqual(NARROW.width);
+			const { viewport, scrollWidth } = await horizontalOverflow(page);
+			expect(scrollWidth, `${route} overflows at 320px`).toBeLessThanOrEqual(viewport + 1);
+			// The table keeps every point reachable without the chart.
+			await expect(page.getByTestId('value-table').locator('tbody tr')).toHaveCount(
+				await page.getByTestId('value-point').count()
+			);
+		}
+	});
 
 	test('products index survives 320px', async ({ page }) => {
 		await goto(page, '/products');

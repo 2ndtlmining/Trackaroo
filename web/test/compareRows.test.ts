@@ -292,3 +292,28 @@ describe('bestIndexes', () => {
 		expect(bestIndexes(row(noPrice, 'Cheapest in stock'), noPrice)).toEqual(new Set());
 	});
 });
+
+describe('Perf / A$1k row (#33)', () => {
+	const row = () => buildCompareRows([entry()]).find((r) => r.label === 'Perf / A$1k')!;
+	const gpu = (model: string, vram: number | null, price: number | null) =>
+		entry({
+			product: { ...entry().product, model, vram_gb: vram },
+			cheapestInStock: price === null ? null : { price, retailer: 'scorptec' }
+		});
+
+	it('is a higher-is-better row with a whole-number value', () => {
+		// RTX 5060 Ti 16GB is 35 on the raster chart: 35 / 700 * 1000 = 50.
+		const e = gpu('GeForce RTX 5060 Ti', 16, 700);
+		expect(row().direction).toBe('higher');
+		expect(row().value(e)).toBe('50');
+		expect(row().numeric!(e)).toBeCloseTo(50);
+	});
+	it('falls back to a dash without a figure or a price', () => {
+		expect(row().value(gpu('GeForce RTX 9999', 16, 700))).toBe('–');
+		expect(row().value(gpu('GeForce RTX 5060 Ti', 16, null))).toBe('–');
+		expect(row().numeric!(gpu('GeForce RTX 9999', 16, 700))).toBeNull();
+	});
+	it('states its metric and source', () => {
+		expect(row().hint).toContain('1440p raster');
+	});
+});

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 import { createSeededDb, type SeededDb } from './helpers/seed';
+import { BUDGETS } from '$lib/value';
 
 // getDb() caches its connection in module scope (src/lib/server/db.ts), so
 // TRACKAROO_DB must be set before anything first calls it. The loaders below
@@ -159,6 +160,63 @@ describe('/compare loader (#26)', () => {
 		).map((r) => r.id);
 		const data = load({ url: new URL(`http://x/compare?id=${ids[0]}&id=${ids[1]}`) } as any);
 		expect(data.entries.map((e) => e.product.id)).toEqual(ids);
+	});
+});
+
+describe('/value loader (#33)', () => {
+	async function loadValue(qs: string) {
+		const { load } = await import('../src/routes/value/+page.server');
+		return load({ url: new URL(`http://x/value${qs}`), setHeaders: noopSetHeaders } as any);
+	}
+
+	it('defaults to GPUs and raster, on the wide layout', async () => {
+		const data = await loadValue('');
+		expect(data.wide).toBe(true);
+		expect(data.category).toBe('gpu');
+		expect(data.metric).toBe('gpu_raster_1440p');
+		expect(data.metrics).toEqual(['gpu_raster_1440p', 'gpu_rt_1440p']);
+		expect(data.metricInfo.label).toBe('1440p raster');
+		expect(data.exclude8gb).toBe(false);
+		// Shown only when an 8 GB card could sit in a budget card.
+		expect(data.show8gbToggle).toBe(
+			data.points.some((p) => p.vramGb != null && p.vramGb <= 8 && p.price <= BUDGETS.at(-1)!)
+		);
+	});
+
+	it('plots only priced points, with a frontier drawn from them and five budgets', async () => {
+		const data = await loadValue('?category=cpu');
+		expect(data.category).toBe('cpu');
+		expect(data.metric).toBe('cpu_gaming_1080p');
+		for (const p of data.points) {
+			expect(p.price).toBeGreaterThan(0);
+			expect(p.perf).toBeGreaterThan(0);
+			expect(p.perKilo).toBeCloseTo((p.perf / p.price) * 1000);
+		}
+		const ids = new Set(data.points.map((p) => p.id));
+		for (const id of data.frontier) expect(ids.has(id)).toBe(true);
+		if (data.points.length > 0) expect(data.frontier.length).toBeGreaterThan(0);
+		expect(data.budgets.map((b) => b.max)).toEqual([400, 700, 1000, 1500, 2500]);
+		expect(data.excluded).toBe(data.coverage.noPrice);
+		expect(data.coverage.withPerfAndPrice).toBe(data.points.length);
+	});
+
+	it('ignores a foreign metric and no8gb outside GPUs', async () => {
+		const data = await loadValue('?category=cpu&metric=gpu_rt_1440p&no8gb=1');
+		expect(data.metric).toBe('cpu_gaming_1080p');
+		expect(data.metrics).toEqual(['cpu_gaming_1080p']);
+		expect(data.exclude8gb).toBe(false);
+		expect(data.show8gbToggle).toBe(false);
+	});
+
+	it('reads the GPU metric and the 8 GB toggle from the URL', async () => {
+		const data = await loadValue('?category=gpu&metric=gpu_rt_1440p&no8gb=1');
+		expect(data.metric).toBe('gpu_rt_1440p');
+		expect(data.exclude8gb).toBe(true);
+		// On, so it stays visible and can be turned off.
+		expect(data.show8gbToggle).toBe(true);
+		for (const b of data.budgets) {
+			for (const p of [b.winner, b.runnerUp]) if (p) expect(p.vramGb == null || p.vramGb > 8).toBe(true);
+		}
 	});
 });
 

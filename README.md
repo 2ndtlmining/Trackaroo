@@ -66,14 +66,14 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Daily runner** | ✅ Complete | One command to scrape both retailers + ingest |
 | **Spec sync** | ✅ Complete | `sync_specs.py` — weekly best-effort spec fetch + match (GPU/Intel/AMD); separate from the price pipeline |
 | **Spec panel** | ✅ Complete | Product-page spec panel below the price chart; hidden when a product has no specs |
-| **Regression tests** | ✅ Complete | 1354 tests via pytest |
+| **Regression tests** | ✅ Complete | 1377 tests via pytest |
 | **Health checks** | ✅ Complete | JSON validation, DB freshness, match anomalies, price anomalies, spec coverage + staleness |
 | **Concurrent DB access** | ✅ Complete | WAL mode active — safe reads while cron writes |
 | **Frontend** | ✅ Complete | SvelteKit dashboard (`web/`) — dashboard, products (card grid with per-card trend sparklines, expandable per-variant listings, compare selection, inline 7-day trend sparklines, "Deal" badges), compare (`/compare?ids=` side-by-side specs + prices), movers (dense table + trend sparklines), price-history charts (low/high band + togglable listing lines + brand-grouped listings panel), product-page "since tracked" chips (all-time low/high + 30-day average), price-drop & restock alerts panel on the product page, command palette (Ctrl+K quick search → product/compare, with snapshot-count badges), sortable column headers on the dashboard + movers tables, display-cased variant names; reads the DB directly via better-sqlite3 |
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 1108 vitest + 209 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 1187 vitest + 225 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -458,10 +458,10 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (1108 vitest)
+# Run frontend unit tests (1187 vitest)
 npm test
 
-# Run browser e2e regression tests (209 Playwright, against a seeded dev server)
+# Run browser e2e regression tests (225 Playwright, against a seeded dev server)
 npm run test:e2e
 ```
 
@@ -508,6 +508,36 @@ python fx.py                                  # native
 
 Icons are Lucide (`@lucide/svelte`); `web/test/noEmoji.test.ts` fails if an emoji appears in `web/src`.
 
+## Value (price to performance)
+
+`/value` and the "Perf / A$1k" column answer "which part gives the most performance per Australian dollar today?". They use separate, sourced metrics. There is no blended score. Full source notes are in [`docs/perf-index-sources.md`](docs/perf-index-sources.md).
+
+**Metrics and sources** (`db/perf_index.json`, bundled into the web build by a static import):
+
+- GPU 1440p raster and GPU 1440p ray tracing: TechPowerUp, ASUS RTX 5090 Matrix review (Apr 2026), relative to that card.
+- CPU 1080p gaming: TechPowerUp, Ryzen 7 7700X3D review (Jul 2026), relative to the 7700X3D.
+- One chart per metric, so every value of a metric shares one baseline. A tracked product the chart does not list goes to `not_in_source` and is never estimated.
+- CPU coverage is partial, so the UI says "Performance data for N of M (X of Y current and previous generation)".
+- Product key: the watchlist model alone when it already ends with its VRAM spec (`GeForce RTX 5060 Ti 8GB`), else `<model> <spec>` (`GeForce RTX 5060 Ti 16GB`). CPUs use the model.
+
+**Columns.** "Perf/A$1k" is `performance / shown price x 1000` (raster for GPUs, gaming for CPUs). It is on `/products` from the xl breakpoint (sortable with `sort=value`) and on `/compare`. A product with no data, or whose shown price is out of stock, shows "–" and sorts last.
+
+**`/value` page.**
+
+- Scatter of price against performance with a log price axis (labelled "log scale"). A y axis that does not start at 0 says so on the chart.
+- Frontier rule: a point is on the frontier unless another point has a price at or below and performance at or above, with at least one strictly better. Ties are kept.
+- Best per budget: brackets of A$400, 700, 1000, 1500 and 2500. The winner is the highest performance at or under the bracket price. Ties go to the lower price. The runner-up and the gap are shown. "Exclude 8 GB cards" applies to GPUs. The toggle appears only when it can change something (an 8 GB card sits in a budget card) and stays visible while it is on, so it can always be switched off.
+- Accessibility: every point is focusable, tab order follows price, and a visually hidden table carries the same rows.
+- Price source differs by page: `/value` uses the global latest scrape date, while `/products` and `/compare` use each listing's latest price. They can disagree on a failed-scrape day or during the morning retry window.
+
+**Refreshing the index.**
+
+1. Pick one chart per metric: the recent TechPowerUp chart that lists the most tracked products of that category. Record it in `docs/perf-index-sources.md` and in `metrics` in `db/perf_index.json`.
+2. Transcribe every value for that metric from that chart. Never mix old and new values.
+3. List each tracked current and previous generation product the chart lacks under `not_in_source`. Coverage rule: GPU raster and CPU gaming are required for current and current-1 products. Ray tracing is required only where the RT chart lists the card; otherwise the card goes to `not_in_source.gpu_rt_1440p`.
+4. Update the pinned VRAM-variant values in the tests (`unit_testing/test_perf_index.py`, `web/test/value.test.ts`, `web/test/compareRows.test.ts`).
+5. Run `python -m pytest unit_testing/test_perf_index.py` and the web watchlist coverage test (`cd web && npm test`).
+
 ## Data model
 
 ```
@@ -553,6 +583,7 @@ Trackaroo/
 │   ├── archive/        # implemented or declined plans, kept for rationale
 │   └── proposals/      # not-yet-built work (RAM tracking)
 │
+├── db/perf_index.json  # sourced performance index behind /value (see docs/perf-index-sources.md)
 ├── run_daily.py        # one-command daily scraper + ingest runner (health checks + Discord digest + price alerts + delisted check)
 ├── notify_discord.py   # daily Discord digest of biggest CPU/GPU moves (top 3 up/down per category)
 ├── check_alerts.py     # price-drop & restock alerts (Discord/SMTP/webhook delivery, best-effort)

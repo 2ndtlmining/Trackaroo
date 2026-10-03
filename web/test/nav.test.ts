@@ -9,7 +9,7 @@ describe('NAV_LINKS', () => {
 	});
 
 	it('replaces Products with GPUs and CPUs, and includes Compare', () => {
-		expect(NAV_LINKS.map((l) => l.label)).toEqual(['Deals', 'GPUs', 'CPUs', 'Movers', 'Compare', 'Discover']);
+		expect(NAV_LINKS.map((l) => l.label)).toEqual(['Deals', 'GPUs', 'CPUs', 'Movers', 'Compare', 'Value', 'Discover']);
 	});
 });
 
