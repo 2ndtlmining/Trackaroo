@@ -202,7 +202,7 @@
 					aria-activedescendant={activeId}
 					autocomplete="off"
 				/>
-				<kbd class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[10px] text-text-muted">esc</kbd>
+				<kbd class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-meta text-text-muted">esc</kbd>
 			</div>
 			{#if results.length === 0}
 				<p class="mx-3 my-2 rounded-md border border-border bg-surface px-3 py-6 text-center text-sm text-text-muted">

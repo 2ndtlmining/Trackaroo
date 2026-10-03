@@ -237,3 +237,23 @@ test.describe('PageHeader with the longest product name (#22)', () => {
 		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
 	});
 });
+
+// #22 R5: the phone header nav wraps to a second row instead of scrolling, so
+// no link is cut mid-word and the Discover pending badge stays visible.
+for (const viewport of [PHONE, NARROW]) {
+	test(`every header nav link is fully on screen at ${viewport.width}px`, async ({ page }) => {
+		await page.setViewportSize(viewport);
+		await goto(page, '/');
+		const links = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
+		const n = await links.count();
+		expect(n).toBeGreaterThan(0);
+		for (let i = 0; i < n; i++) {
+			const box = await links.nth(i).boundingBox();
+			expect(box, `nav link ${i} has a box`).not.toBeNull();
+			expect(box!.x, `nav link ${i} starts off screen`).toBeGreaterThanOrEqual(0);
+			expect(box!.x + box!.width, `nav link ${i} runs past the viewport`).toBeLessThanOrEqual(viewport.width);
+		}
+		const { viewport: vw, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(vw + 1);
+	});
+}

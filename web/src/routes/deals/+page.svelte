@@ -6,6 +6,7 @@
 	import OfferRow from '$lib/components/OfferRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Check from '@lucide/svelte/icons/check';
 	import { dealToOffer, NEAR_ALL_TIME_LOW_PCT } from '$lib/deals';
 	import { DEAL_MIN_AUD, DEAL_MIN_PCT, EARNED_LOW_RISE_PCT } from '$lib/constants';
 	import { formatShortDate } from '$lib/formats';
@@ -77,11 +78,11 @@
 					type="button"
 					aria-pressed={data.belowMsrp}
 					onclick={() => select('below_msrp', data.belowMsrp ? null : '1')}
-					class="inline-flex min-h-8 items-center gap-1 rounded-full border px-3 text-body font-medium {data.belowMsrp
-						? 'border-accent bg-accent-soft text-accent'
-						: 'border-border-input bg-surface text-text hover:bg-surface-hover'}"
+					class="inline-flex min-h-8 items-center gap-1 rounded-full border px-3 text-body {data.belowMsrp
+						? 'border-accent bg-accent-soft font-semibold text-accent'
+						: 'border-border-input bg-surface font-normal text-text hover:bg-surface-hover'}"
 				>
-					<BadgeDollarSign size={13} aria-hidden="true" />
+					{#if data.belowMsrp}<Check size={14} aria-hidden="true" />{:else}<BadgeDollarSign size={13} aria-hidden="true" />{/if}
 					Below MSRP
 				</button>
 			</div>

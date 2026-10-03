@@ -18,7 +18,7 @@
 	<div class="mx-auto flex {widthClass} flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
 		<Wordmark />
 		<nav
-			class="-mx-1 flex max-w-full items-center gap-1 overflow-x-auto px-1 text-sm md:overflow-visible"
+			class="-mx-1 flex max-w-full flex-wrap items-center gap-1 px-1 text-sm md:flex-nowrap"
 			aria-label="Main"
 		>
 			{#each NAV_LINKS as link (link.href)}
@@ -64,7 +64,7 @@
 						<path d="m21 21-4.35-4.35" />
 					</svg>
 					<span class="hidden sm:inline">Search</span>
-					<kbd class="rounded border border-border px-1 py-0.5 font-mono text-[10px]">Ctrl K</kbd>
+					<kbd class="rounded border border-border px-1 py-0.5 font-mono text-meta">Ctrl K</kbd>
 				</button>
 			{/if}
 			<ThemeToggle />

@@ -378,12 +378,12 @@ test.describe('homepage dashboard', () => {
 		await expect(page.getByLabel('GPUs').getByText('Biggest rises (7d)')).toBeVisible();
 	});
 
-	// #22 Task 5: an empty movers column is not rendered as a blank panel. The
-	// synthetic seed (CI) has no CPU rise: its Ryzen 9 9900X is flat and the
-	// other CPUs fall. A local data/ scrape has none either as of Oct 2026; if
-	// a real CPU rise ever lands there, the invariant test below still holds.
-	// The CPU section shows one muted line instead of the column.
+	// #22 Task 5: an empty movers column is not rendered as a blank panel. Only
+	// the synthetic seed guarantees a CPU section with no rise (its Ryzen 9
+	// 9900X is flat and the other CPUs fall); a real scrape may hold one, so
+	// this case is gated on it. The invariant test below runs on any seed.
 	test('a movers column with no rows is replaced by one line (#22)', async ({ page }) => {
+		test.skip(!SYNTHETIC, 'only the synthetic seed guarantees a CPU section with no rise');
 		await goto(page, '/');
 		const cpus = page.getByLabel('CPUs');
 		await expect(cpus.getByTestId('biggest-rises')).toHaveCount(0);
@@ -1945,6 +1945,21 @@ test.describe('MSRP cues (Task 3)', () => {
 		await expect(page).toHaveURL(/below_msrp=1/);
 		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 		await expect(page.getByRole('link', { name: 'E2E New Low GPU', exact: true })).toHaveCount(0);
+	});
+
+	// #22 R5 (WCAG 1.4.1): pressed is shown by a check mark and weight, not colour alone.
+	test('the pressed Below MSRP toggle shows a check and a heavier weight', async ({ page }) => {
+		await goto(page, '/deals');
+		const toggle = page.getByRole('button', { name: 'Below MSRP' });
+		const weight = () => toggle.evaluate((el) => Number(getComputedStyle(el).fontWeight));
+		const icon = () => toggle.locator('svg').innerHTML();
+		const before = await weight();
+		const iconBefore = await icon();
+		await toggle.click();
+		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+		expect(await weight()).toBeGreaterThan(before);
+		// The pressed state swaps the dollar badge for a check mark.
+		expect(await icon()).not.toBe(iconBefore);
 	});
 });
 
