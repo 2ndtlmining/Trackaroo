@@ -11,6 +11,8 @@ How it works:
 
 ## Unreleased
 
+## 0.6.1 — 2026-10-04
+
 ### Fixed
 - Prices inside buy-signal sentences now use the same mono number face as every other price (#62).
 - The self-hosted fonts are cached by the browser for a year instead of being re-checked on every page load (#63).
