@@ -1865,6 +1865,26 @@ test.describe('MSRP cues (Task 3)', () => {
 		await expect(bar).toContainText('$520');
 	});
 
+	for (const width of [1024, 1280]) {
+		test(`catalogue rows do not wrap and the page does not scroll sideways at ${width}px`, async ({ page }) => {
+			await page.setViewportSize({ width, height: 900 });
+			await goto(page, '/products?category=gpu');
+			const rows = page.getByTestId('catalog-row');
+			await expect(rows.first()).toBeVisible();
+			expect(await rows.count()).toBeGreaterThan(1);
+			// A wrapped row drops its last cell onto a new line; taller cell text does not.
+			const tops = await rows.evaluateAll((els) =>
+				els.map((e) => {
+					const cells = [...e.querySelectorAll('[role="cell"]')].filter((c) => (c as HTMLElement).offsetParent !== null);
+					return Math.abs(cells[0].getBoundingClientRect().top - cells[cells.length - 1].getBoundingClientRect().top);
+				})
+			);
+			for (const t of tops) expect(t).toBeLessThan(20);
+			const noScroll = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+			expect(noScroll).toBe(true);
+		});
+	}
+
 	test('the catalogue sorts by vs MSRP, cheapest against MSRP first', async ({ page }) => {
 		await goto(page, '/products?category=gpu&sort=msrp');
 		const header = page.getByRole('columnheader', { name: /^vs MSRP/ });

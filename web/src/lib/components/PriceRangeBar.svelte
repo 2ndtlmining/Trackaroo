@@ -35,9 +35,13 @@
 		price recorded" for a product tracked for weeks at a steady price is
 		simply false, and that is what this panel used to say.
 	-->
-	{#if compact}
+	{#if compact && points > 1}
 		<p class="text-[11px] text-text-muted">
 			Steady at <span class="num">{formatAud(current)}</span>
+		</p>
+	{:else if compact}
+		<p class="text-[11px] text-text-muted">
+			Only one price: <span class="num">{formatAud(current)}</span>
 		</p>
 	{:else if points > 1}
 		<p class="text-xs text-text-muted">

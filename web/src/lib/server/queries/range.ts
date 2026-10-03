@@ -8,6 +8,8 @@ import { dailyCheapestInStock } from './sql';
 export interface Range90 {
 	low: number;
 	high: number;
+	// Distinct days with a price in the window.
+	days: number;
 }
 
 // Low and high of the daily cheapest price over the last 90 days (global
@@ -18,7 +20,7 @@ export function getRange90(db: DB, productIds?: number[]): Map<number, Range90> 
 	const all = memo(db, 'range90', () => {
 		const rows = db
 			.prepare(
-				`SELECT d.product_id AS productId, MIN(d.price) AS low, MAX(d.price) AS high
+				`SELECT d.product_id AS productId, MIN(d.price) AS low, MAX(d.price) AS high, COUNT(*) AS days
 				 FROM (${dailyCheapestInStock({
 						form: 'standalone',
 						perProduct: true,
@@ -27,8 +29,8 @@ export function getRange90(db: DB, productIds?: number[]): Map<number, Range90> 
 					})}) d
 				 GROUP BY d.product_id`
 			)
-			.all() as Array<{ productId: number; low: number; high: number }>;
-		return new Map(rows.map((r) => [r.productId, { low: r.low, high: r.high }]));
+			.all() as Array<{ productId: number; low: number; high: number; days: number }>;
+		return new Map(rows.map((r) => [r.productId, { low: r.low, high: r.high, days: r.days }]));
 	});
 	if (!productIds) return all;
 	const out = new Map<number, Range90>();

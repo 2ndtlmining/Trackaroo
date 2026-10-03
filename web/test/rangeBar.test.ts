@@ -98,28 +98,35 @@ describe('ProductRow range bar', () => {
 	const bar = (html: string) => (html.match(/data-segment="\d"/g) ?? []).length;
 
 	it('shows 6 segments against the shown price when range90 exists', () => {
-		const html = render(ProductRow, { group: { ...row, range90: { low: 1000, high: 2000 } } });
+		const html = render(ProductRow, { group: { ...row, range90: { low: 1000, high: 2000, days: 42 } } });
 		expect(bar(html)).toBe(6);
 		expect(html).toContain('data-testid="row-range"');
+		expect(html).toContain('Over 42 days the cheapest price per day');
 	});
 	it('clamps a shown price outside the range', () => {
 		const html = render(ProductRow, {
-			group: { ...row, range90: { low: 1500, high: 2000 } },
+			group: { ...row, range90: { low: 1500, high: 2000, days: 42 } },
 			price: 1200
 		});
 		expect(html).toMatch(/data-segment="0"[^>]*data-filled="true"/);
 	});
 	it('flat range uses the steady wording, never NaN', () => {
-		const html = render(ProductRow, { group: { ...row, range90: { low: 1250, high: 1250 } } });
+		const html = render(ProductRow, { group: { ...row, range90: { low: 1250, high: 1250, days: 42 } } });
 		expect(bar(html)).toBe(0);
 		expect(html).not.toContain('NaN');
 		expect(html).toContain('Steady');
+	});
+	it('a single day of history uses the single-reading wording, not Steady', () => {
+		const html = render(ProductRow, { group: { ...row, range90: { low: 1250, high: 1250, days: 1 } } });
+		expect(bar(html)).toBe(0);
+		expect(html).not.toContain('Steady');
+		expect(html).toContain('Only one price');
 	});
 	it('no range90 or no shown price shows no bar', () => {
 		expect(bar(render(ProductRow, { group: { ...row, range90: null } }))).toBe(0);
 		expect(bar(render(ProductRow, { group: row }))).toBe(0);
 		expect(
-			bar(render(ProductRow, { group: { ...row, range90: { low: 1, high: 2 } }, price: null }))
+			bar(render(ProductRow, { group: { ...row, range90: { low: 1, high: 2, days: 5 } }, price: null }))
 		).toBe(0);
 	});
 });
@@ -164,7 +171,7 @@ describe('getRange90', () => {
 		add(1, {}, [['2026-10-01', 900], ['2026-09-20', 800], ['2026-09-10', 1000]]);
 		add(1, {}, [['2026-09-20', 850], ['2026-09-10', 950]]);
 		// daily cheapest: 10-01 900, 09-20 min(800,850)=800, 09-10 min(1000,950)=950
-		expect(getRange90(db as any).get(1)).toEqual({ low: 800, high: 950 });
+		expect(getRange90(db as any).get(1)).toEqual({ low: 800, high: 950, days: 3 });
 	});
 	it('counts only in-stock, active, non-bundle listings', () => {
 		add(1, {}, [['2026-10-01', 500]]);
@@ -172,12 +179,12 @@ describe('getRange90', () => {
 		add(1, { status: 'delisted' }, [['2026-10-01', 90]]);
 		add(1, { name: 'CPU power bundle' }, [['2026-10-01', 80]]);
 		add(1, { url: 'https://x/bdl-1' }, [['2026-10-01', 70]]);
-		expect(getRange90(db as any).get(1)).toEqual({ low: 500, high: 500 });
+		expect(getRange90(db as any).get(1)).toEqual({ low: 500, high: 500, days: 1 });
 	});
 	it('excludes data older than 90 days, keeping day 89', () => {
 		add(1, {}, [['2026-10-01', 600], ['2026-07-04', 400], ['2026-07-03', 300]]);
 		// 2026-10-01 minus 89 days = 2026-07-04
-		expect(getRange90(db as any).get(1)).toEqual({ low: 400, high: 600 });
+		expect(getRange90(db as any).get(1)).toEqual({ low: 400, high: 600, days: 2 });
 	});
 	it('omits products with no history and allows low = high', () => {
 		add(2, {}, [['2026-10-01', 750]]);
@@ -185,7 +192,7 @@ describe('getRange90', () => {
 		const m = getRange90(db as any);
 		expect(m.has(4)).toBe(false);
 		expect(m.has(3)).toBe(false);
-		expect(m.get(2)).toEqual({ low: 750, high: 750 });
+		expect(m.get(2)).toEqual({ low: 750, high: 750, days: 1 });
 	});
 	it('filters by product ids', () => {
 		add(1, {}, [['2026-10-01', 700]]);

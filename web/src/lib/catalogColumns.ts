@@ -17,7 +17,7 @@ export const COL = {
 	released: 'hidden w-20 shrink-0 md:block',
 	listings: 'hidden w-20 shrink-0 text-right md:block',
 	trend: 'hidden w-14 shrink-0 lg:block',
-	range: 'hidden w-24 shrink-0 lg:block',
+	range: 'hidden w-24 shrink-0 xl:block',
 	brand: 'hidden w-20 shrink-0 xl:flex',
 	delta: 'w-36 shrink-0',
 	msrp: 'hidden w-16 shrink-0 text-right lg:block',

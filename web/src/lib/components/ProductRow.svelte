@@ -164,6 +164,7 @@
 				high={range.high}
 				current={shown}
 				position={rangePos}
+				points={range.days}
 			/>
 		{/if}
 	</span>
