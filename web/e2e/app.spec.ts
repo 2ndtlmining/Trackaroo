@@ -858,7 +858,7 @@ test('error page is styled and offers retry (#29)', async ({ page }) => {
 	await expect(page.getByText('404', { exact: true })).toBeVisible();
 	const retry = page.getByRole('link', { name: 'Try again' });
 	await expect(retry).toHaveAttribute('href', '/product/999999');
-	await expect(page.getByRole('main').getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+	await expect(page.getByRole('main').getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('href', '/');
 });
 
 test.describe('command palette', () => {

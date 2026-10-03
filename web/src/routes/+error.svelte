@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import Wordmark from '$lib/components/Wordmark.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 
 	/**
@@ -27,6 +28,7 @@
 <PageHead title={heading} description={message} />
 
 <div class="mx-auto max-w-xl py-16 text-center">
+	<div class="mb-8"><Wordmark size="large" /></div>
 	<h1 class="text-2xl font-semibold text-text">{heading}</h1>
 	<p class="mt-3 text-sm text-text">{message}</p>
 

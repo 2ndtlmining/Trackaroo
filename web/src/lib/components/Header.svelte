@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import Wordmark from './Wordmark.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { NAV_LINKS, isActiveLink } from '$lib/nav';
 	import type { Category } from '$lib/types';
@@ -15,10 +16,7 @@
 
 <header class="border-b border-border bg-surface">
 	<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-		<a href="/" class="flex items-center gap-2 text-sm font-semibold tracking-tight text-text no-underline hover:no-underline">
-			<span class="h-2 w-2 rounded-full bg-accent"></span>
-			Trackaroo
-		</a>
+		<Wordmark />
 		<nav
 			class="-mx-1 flex max-w-full items-center gap-1 overflow-x-auto px-1 text-sm md:overflow-visible"
 			aria-label="Main"
