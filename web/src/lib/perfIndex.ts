@@ -57,10 +57,31 @@ function asOfLabel(asOf: string): string {
 	return m && month ? `${month} ${m[1]}` : asOf;
 }
 
-/** "1440p raster, TechPowerUp, <review title>, Apr 2026": the on-screen citation. */
-export function sourceNote(metric: MetricKey): string {
+/** "TechPowerUp, <review title>, Apr 2026": publisher, title and month. */
+export function sourceCitation(metric: MetricKey): string {
 	const m = METRICS[metric];
 	// source reads "TechPowerUp, <review title> (<chart>)"; keep publisher and title.
 	const cited = m.source.replace(/\s*\([^)]*\)\s*$/, '');
-	return `${m.label}, ${cited}, ${asOfLabel(m.as_of)}`;
+	return `${cited}, ${asOfLabel(m.as_of)}`;
+}
+
+/** "1440p raster, TechPowerUp, <review title>, Apr 2026": the on-screen citation. */
+export function sourceNote(metric: MetricKey): string {
+	return `${METRICS[metric].label}, ${sourceCitation(metric)}`;
+}
+
+const CATEGORY_METRICS: Record<'gpu' | 'cpu', MetricKey[]> = {
+	gpu: ['gpu_raster_1440p', 'gpu_rt_1440p'],
+	cpu: ['cpu_gaming_1080p']
+};
+
+/** The metrics a category can be charted on (/value toggle). */
+export function metricsFor(category: 'gpu' | 'cpu'): MetricKey[] {
+	return CATEGORY_METRICS[category];
+}
+
+/** A URL metric, or the category default when it is missing or belongs elsewhere. */
+export function parseMetric(category: 'gpu' | 'cpu', raw: string | null): MetricKey {
+	const options = CATEGORY_METRICS[category];
+	return options.includes(raw as MetricKey) ? (raw as MetricKey) : defaultMetric(category);
 }

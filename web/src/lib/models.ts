@@ -350,6 +350,8 @@ export interface ValueRow {
 	name: string;
 	model: string;
 	vramGb: number | null;
+	/** generation_tier: 'current', 'current-1', 'current-2' or null. */
+	tier: string | null;
 	price: number | null;
 }
 

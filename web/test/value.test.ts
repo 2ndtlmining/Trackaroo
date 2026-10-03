@@ -230,6 +230,15 @@ describe('getValueRows / getValueData', () => {
 		expect(coverage.noPrice).toBe(2);
 		expect(coverage.withoutPerf).toBe(1);
 	});
+	it('counts required-tier coverage and names the retailers priced today (R6, /value)', () => {
+		db.exec(`UPDATE products SET generation_tier = 'current' WHERE id IN (1, 3);
+			UPDATE products SET generation_tier = 'current-2' WHERE id = 4;`);
+		_resetMemo();
+		const { required, retailers } = getValueData(db, 'gpu', 'gpu_raster_1440p');
+		// 5060 Ti 16GB (perf) and 3050 6GB (not in source) are current; 3060 is current-2.
+		expect(required).toEqual({ tracked: 2, withPerf: 1 });
+		expect(retailers).toEqual(['scorptec', 'umart']);
+	});
 });
 
 describe('tierCoverage (#33)', () => {

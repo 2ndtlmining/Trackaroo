@@ -56,6 +56,8 @@ const PAGES = [
 	'/discover',
 	'/changelog',
 	'/compare',
+	'/value',
+	'/value?category=cpu',
 	'/product/999999',
 	OZB_PRODUCT
 ];

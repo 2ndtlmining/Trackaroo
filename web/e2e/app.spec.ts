@@ -2051,3 +2051,60 @@ test.describe('PageHeader on every route (#22)', () => {
 		await expect(sub.locator('strong')).toHaveText('and');
 	});
 });
+
+test.describe('/value (#33)', () => {
+	test('charts one focusable point per priced product, with the frontier and a matching table', async ({ page }) => {
+		await goto(page, '/value');
+		await expect(page.getByTestId('page-header').getByRole('heading', { name: 'Value', level: 1 })).toBeVisible();
+		const points = page.getByTestId('value-point');
+		const n = await points.count();
+		// Both seeds chart at least the RTX 5060 and 5060 Ti (and the B580 and RX 7800 XT).
+		expect(n).toBeGreaterThanOrEqual(2);
+		await expect(page.getByTestId('value-table').locator('tbody tr')).toHaveCount(n);
+		expect(await page.locator('[data-testid="value-point"][data-frontier="true"]').count()).toBeGreaterThan(0);
+		for (const href of await points.evaluateAll((els) => els.map((e) => e.getAttribute('href')))) {
+			expect(href).toMatch(/^\/product\/\d+$/);
+		}
+		const first = points.first();
+		await expect(first).toHaveAttribute('aria-label', /: \$[\d,.]+, 1440p raster \d+(\.\d+)?, \d+ per A\$1,000/);
+		await first.focus();
+		await expect(page.getByTestId('value-tooltip')).toBeVisible();
+		await expect(page.getByTestId('value-source')).toContainText('Performance: TechPowerUp');
+		await expect(page.getByTestId('value-source')).toContainText('Prices: cheapest in stock today across');
+		await expect(page.getByTestId('value-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs/);
+	});
+
+	test('switching to CPUs updates the URL, the metric and the points', async ({ page }) => {
+		await goto(page, '/value');
+		const gpuHrefs = await page.getByTestId('value-point').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+		await page.getByRole('group', { name: 'Category' }).getByRole('button', { name: 'CPUs' }).click();
+		await expect(page).toHaveURL(/\/value\?category=cpu$/);
+		await expect(page.getByRole('group', { name: 'Metric' })).toHaveCount(0);
+		await expect(page.getByTestId('value-metric-label')).toHaveText('1080p gaming');
+		const cpuHrefs = await page.getByTestId('value-point').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+		expect(cpuHrefs.length).toBeGreaterThanOrEqual(2);
+		expect(cpuHrefs.some((h) => gpuHrefs.includes(h))).toBe(false);
+		await expect(page.getByTestId('value-table').locator('tbody tr')).toHaveCount(cpuHrefs.length);
+		// The seed's out-of-stock-only Core Ultra 7 265K (or the live data's) is counted, never plotted.
+		await expect(page.getByTestId('value-excluded')).toContainText(/\d+ products? without an in-stock price/);
+		await expect(page.getByLabel('Exclude 8 GB cards')).toHaveCount(0);
+	});
+
+	test('the GPU metric toggle switches to ray tracing in the URL', async ({ page }) => {
+		await goto(page, '/value');
+		await page.getByRole('group', { name: 'Metric' }).getByRole('button', { name: 'Ray tracing' }).click();
+		await expect(page).toHaveURL(/metric=gpu_rt_1440p/);
+		await expect(page.getByRole('heading', { name: /Price against 1440p ray tracing/i })).toBeVisible();
+	});
+
+	test('budget cards show winners, and excluding 8 GB cards changes them', async ({ page }) => {
+		await goto(page, '/value');
+		await expect(page.getByTestId('budget-card')).toHaveCount(5);
+		expect(await page.getByTestId('budget-winner').count()).toBeGreaterThan(0);
+		// The RTX 5060 (8 GB) is in stock in both seeds, so some card changes.
+		const before = await page.getByTestId('budget-winners').innerText();
+		await page.getByLabel('Exclude 8 GB cards').check();
+		await expect(page).toHaveURL(/no8gb=1/);
+		await expect(page.getByTestId('budget-winners')).not.toHaveText(before);
+	});
+});
