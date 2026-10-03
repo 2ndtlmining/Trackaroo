@@ -73,7 +73,7 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 1187 vitest + 225 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 1190 vitest + 225 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -461,7 +461,7 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (1187 vitest)
+# Run frontend unit tests (1190 vitest)
 npm test
 
 # Run browser e2e regression tests (225 Playwright, against a seeded dev server)
@@ -531,7 +531,7 @@ Icons are Lucide (`@lucide/svelte`); `web/test/noEmoji.test.ts` fails if an emoj
 - Frontier rule: a point is on the frontier unless another point has a price at or below and performance at or above, with at least one strictly better. Ties are kept.
 - Best per budget: brackets of A$400, 700, 1000, 1500 and 2500. The winner is the highest performance at or under the bracket price. Ties go to the lower price. The runner-up and the gap are shown. "Exclude 8 GB cards" applies to GPUs. The toggle appears only when it can change something (an 8 GB card sits in a budget card) and stays visible while it is on, so it can always be switched off.
 - Accessibility: every point is focusable, tab order follows price, and a visually hidden table carries the same rows.
-- Price source differs by page: `/value` uses the global latest scrape date, while `/products` and `/compare` use each listing's latest price. They can disagree on a failed-scrape day or during the morning retry window.
+- One price rule for value figures (#59): `/products`, `/compare` and `/value` all use the cheapest in-stock, active, non-bundle listing, each at its own latest snapshot, so a Perf/A$1k figure is the same on every page. `/deals` and the OzBargain alert deliberately count only today's scrape.
 
 **Refreshing the index.**
 

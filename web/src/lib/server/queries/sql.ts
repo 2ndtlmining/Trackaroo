@@ -132,6 +132,25 @@ export const LATEST_CTE = `
 	)
 `;
 
+// The catalogue's price rule (#59): per tracked product, the cheapest
+// in-stock active non-bundle listing, each listing at its own latest
+// snapshot. /products, /compare and /value all use this, so a value figure
+// never differs between them. /deals and the OzBargain alert deliberately
+// keep cheapestListingPerProduct (today's scrape only).
+export function cheapestInStockLatest(where: string): string {
+	return `${LATEST_CTE}
+	SELECT p.id AS product_id, MIN(lat.price_aud) AS price
+	FROM latest lat
+	JOIN retailer_listings l ON l.id = lat.retailer_listing_id
+	JOIN products p ON p.id = l.product_id
+	WHERE ${where}
+	  AND p.tracked = 1
+	  AND l.status = 'active'
+	  AND lat.stock_status = 'in_stock'
+	  AND ${notBundle('l')}
+	GROUP BY p.id`;
+}
+
 export function windowStartSubquery(reference: string): string {
 	return `(
 		SELECT MIN(ps.snapshot_date)

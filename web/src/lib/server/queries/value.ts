@@ -1,6 +1,6 @@
 import type { DB } from '../db';
 import { memo } from '../cache';
-import { MAX_SNAPSHOT_DATE, cheapestListingPerProduct, notBundle } from './sql';
+import { LATEST_CTE, cheapestInStockLatest, notBundle } from './sql';
 import { perfFor, type MetricKey } from '../../perfIndex';
 import { tierCoverage, valueCoverage, type ValuePoint } from '../../value';
 import type { ValueCoverage, ValueRow } from '../../models';
@@ -13,8 +13,9 @@ interface ProductRow {
 }
 
 /**
- * Tracked products of a category with the cheapest in-stock active non-bundle
- * price on the latest snapshot date, or null when nothing is in stock.
+ * Tracked products of a category with their cheapest in-stock price, by the
+ * catalogue's rule (each listing at its latest snapshot; see
+ * cheapestInStockLatest), or null when nothing is in stock.
  */
 export function getValueRows(db: DB, category: 'gpu' | 'cpu'): ValueRow[] {
 	return memo(db, `valueRows:${category}`, () => {
@@ -28,7 +29,7 @@ export function getValueRows(db: DB, category: 'gpu' | 'cpu'): ValueRow[] {
 		const prices = new Map(
 			(
 				db
-					.prepare(cheapestListingPerProduct('p.id AS product_id, ps.price_aud AS price', 'p.category = @category'))
+					.prepare(cheapestInStockLatest('p.category = @category'))
 					.all({ category }) as { product_id: number; price: number }[]
 			).map((r) => [r.product_id, r.price])
 		);
@@ -44,21 +45,22 @@ export function getValueRows(db: DB, category: 'gpu' | 'cpu'): ValueRow[] {
 }
 
 /**
- * Retailers with an in-stock price for this category on the latest date: the
- * "cheapest in stock today across ..." list on /value, in pipeline order.
+ * Retailers with an in-stock latest price for this category (the catalogue's
+ * rule): the "cheapest in stock across ..." list on /value, in pipeline order.
  */
 export function getValueRetailers(db: DB, category: 'gpu' | 'cpu'): string[] {
 	return memo(db, `valueRetailers:${category}`, () =>
 		(
 			db
 				.prepare(
-					`SELECT l.retailer AS retailer
-					 FROM retailer_listings l
+					`${LATEST_CTE}
+					 SELECT l.retailer AS retailer
+					 FROM latest lat
+					 JOIN retailer_listings l ON l.id = lat.retailer_listing_id
 					 JOIN products p ON p.id = l.product_id
-					 JOIN price_snapshots ps ON ps.retailer_listing_id = l.id
 					 LEFT JOIN active_retailers a ON a.retailer = l.retailer
 					 WHERE p.category = @category AND p.tracked = 1 AND l.status = 'active'
-					   AND ps.snapshot_date = ${MAX_SNAPSHOT_DATE} AND ps.stock_status = 'in_stock'
+					   AND lat.stock_status = 'in_stock'
 					   AND ${notBundle('l')}
 					 GROUP BY l.retailer
 					 ORDER BY MIN(COALESCE(a.position, 999)), l.retailer`
