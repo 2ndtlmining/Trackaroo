@@ -11,7 +11,7 @@ import path from 'node:path';
 
 const SRC = path.resolve(__dirname, '..', 'src');
 const PRICE_CALL = /\b(formatAud|formatSignedAud|money)\(/;
-const MONO_CLASS = /(^|[\s'"{}?:])(num|text-price)(?=$|[\s'"{}?:])/;
+const MONO_CLASS = /(^|[\s'"{}?:])(num|text-price|text-price-lg)(?=$|[\s'"{}?:])/;
 const VOID = new Set(['br', 'hr', 'img', 'input', 'meta', 'link', 'source', 'col', 'wbr', 'area', 'base']);
 
 function walk(dir: string): string[] {

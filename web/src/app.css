@@ -203,6 +203,16 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/* Product-page headline price: display size (32/38) in the mono face, so the
+   price is never smaller than the title above it. */
+@utility text-price-lg {
+	font-family: var(--font-mono);
+	font-size: var(--text-display);
+	line-height: var(--text-display--line-height);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
 @keyframes skeleton-pulse {
 	0%,
 	100% {

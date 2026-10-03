@@ -942,6 +942,12 @@ function headline(overrides: Partial<Headline> = {}): Headline {
 describe('ProductHeadline', () => {
 	const base = { listingCount: 6, snapshotCount: 47, span: '12 Mar – 23 Aug 2026' };
 
+	it('the headline price is display-sized mono (R7), not the 22px row price', () => {
+		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
+		expect(html).toMatch(/class="[^"]*\btext-price-lg\b[^"]*"[^>]*>\$1,299/);
+		expect(html).not.toMatch(/class="[^"]*\btext-price(?![-\w])[^"]*"[^>]*>\$1,299/);
+	});
+
 	it('leads with the current cheapest price and its retailer', () => {
 		const html = renderComponent(ProductHeadline, { headline: headline(), ...base });
 		expect(html).toContain('$1,299');

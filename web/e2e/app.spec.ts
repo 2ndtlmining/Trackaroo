@@ -1320,7 +1320,7 @@ test.describe('product detail offer list', () => {
 
 		// The headline leads with the cheapest in-stock price — it must match
 		// the first (cheapest-first-sorted) row in the offer list below it.
-		const headlinePrice = (await page.locator('.text-price').first().textContent())?.trim();
+		const headlinePrice = (await page.locator('.text-price-lg').first().textContent())?.trim();
 		expect(headlinePrice).toBeTruthy();
 		const firstRowPrice = (
 			await page.locator('.order-1.w-24').first().textContent()

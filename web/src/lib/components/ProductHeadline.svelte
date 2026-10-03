@@ -32,7 +32,7 @@
 <div class="space-y-3">
 	{#if headline.currentPrice !== null}
 		<div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-			<span class="text-price text-text">{formatAud(headline.currentPrice)}</span>
+			<span class="text-price-lg text-text">{formatAud(headline.currentPrice)}</span>
 			<span class="flex flex-wrap items-center gap-x-3 text-sm">
 				{#if headline.vsAvg30Pct !== null}
 					{@const d = deltaPresentation(headline.vsAvg30Pct)}
