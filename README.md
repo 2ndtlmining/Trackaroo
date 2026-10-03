@@ -474,6 +474,8 @@ Point it at a different DB file with `TRACKAROO_DB=/path/to/trackaroo.db`. The d
 - **Surface tokens:** `surface-2`, `surface-3`, `border-card` and the card shadow, in both themes.
 - **Components:** `Wordmark` (terminal style: mono `trackaroo` plus an accent `_`), `PageHeader` (one per route, with `actions` and `meta` slots and a snippet subtitle) and `PriceRangeBar` (6 segments, full and compact sizes; catalogue rows show it from xl).
 - **Layout:** table pages are wide through the `wide` loader flag. The phone nav wraps.
+- **Non-colour state:** pressed filter chips and the /deals Below MSRP toggle show a heavier weight plus a check icon, not colour alone.
+- **Range bar scope:** the product-page bar spans all recorded history and the catalogue row bar spans 90 days; both are labelled.
 - **Icons:** `node scripts/render-icons.mjs` (from `web/`) regenerates the PNG icons from `static/favicon.svg`.
 
 ### Browsing the catalogue
