@@ -124,5 +124,11 @@ pages and chart images were fetched directly over HTTPS (curl) in the same sessi
 1. Pick one newer chart per metric and record it in the table above.
 2. Re-transcribe **every** value for that metric from the new chart. Never mix
    old and new values within a metric.
-3. Rebuild `not_in_source` from the new chart.
-4. Run `python -m pytest -q unit_testing/test_perf_index.py`.
+3. Rebuild `not_in_source` from the new chart. GPU raster and CPU gaming are
+   required for current and current-1 products. Ray tracing is required only
+   where the RT chart lists the card; otherwise the card goes to
+   `not_in_source.gpu_rt_1440p`.
+4. Update the pinned VRAM-variant values in the tests
+   (`unit_testing/test_perf_index.py`, `web/test/value.test.ts`,
+   `web/test/compareRows.test.ts`).
+5. Run `python -m pytest -q unit_testing/test_perf_index.py`.

@@ -526,15 +526,17 @@ Icons are Lucide (`@lucide/svelte`); `web/test/noEmoji.test.ts` fails if an emoj
 
 - Scatter of price against performance with a log price axis (labelled "log scale"). A y axis that does not start at 0 says so on the chart.
 - Frontier rule: a point is on the frontier unless another point has a price at or below and performance at or above, with at least one strictly better. Ties are kept.
-- Best per budget: brackets of A$400, 700, 1000, 1500 and 2500. The winner is the highest performance at or under the bracket price. Ties go to the lower price. The runner-up and the gap are shown. "Exclude 8 GB cards" applies to GPUs.
+- Best per budget: brackets of A$400, 700, 1000, 1500 and 2500. The winner is the highest performance at or under the bracket price. Ties go to the lower price. The runner-up and the gap are shown. "Exclude 8 GB cards" applies to GPUs. The toggle appears only when it can change something (an 8 GB card sits in a budget card) and stays visible while it is on, so it can always be switched off.
 - Accessibility: every point is focusable, tab order follows price, and a visually hidden table carries the same rows.
+- Price source differs by page: `/value` uses the global latest scrape date, while `/products` and `/compare` use each listing's latest price. They can disagree on a failed-scrape day or during the morning retry window.
 
 **Refreshing the index.**
 
-1. Pick one chart per metric (the newest large TechPowerUp chart) and record it in `docs/perf-index-sources.md` and in `metrics` in `db/perf_index.json`.
+1. Pick one chart per metric: the recent TechPowerUp chart that lists the most tracked products of that category. Record it in `docs/perf-index-sources.md` and in `metrics` in `db/perf_index.json`.
 2. Transcribe every value for that metric from that chart. Never mix old and new values.
-3. List each tracked current and previous generation product the chart lacks under `not_in_source`.
-4. Run `python -m pytest unit_testing/test_perf_index.py` and the web watchlist coverage test (`cd web && npm test`).
+3. List each tracked current and previous generation product the chart lacks under `not_in_source`. Coverage rule: GPU raster and CPU gaming are required for current and current-1 products. Ray tracing is required only where the RT chart lists the card; otherwise the card goes to `not_in_source.gpu_rt_1440p`.
+4. Update the pinned VRAM-variant values in the tests (`unit_testing/test_perf_index.py`, `web/test/value.test.ts`, `web/test/compareRows.test.ts`).
+5. Run `python -m pytest unit_testing/test_perf_index.py` and the web watchlist coverage test (`cd web && npm test`).
 
 ## Data model
 
