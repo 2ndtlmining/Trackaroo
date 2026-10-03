@@ -3,18 +3,23 @@
 	import type { Crumb } from '$lib/breadcrumbs';
 	import Breadcrumbs from './Breadcrumbs.svelte';
 
+	// subtitle: a plain string, or a snippet when it carries markup (tabular
+	// counts, a bold "and"). meta: block content that belongs to the title,
+	// such as the product page's brand line, kept above the bottom rule.
 	let {
 		title,
 		subtitle = null,
 		crumbs,
 		compact = false,
-		actions
+		actions,
+		meta
 	}: {
 		title: string;
-		subtitle?: string | null;
+		subtitle?: string | Snippet | null;
 		crumbs?: Crumb[];
 		compact?: boolean;
 		actions?: Snippet;
+		meta?: Snippet;
 	} = $props();
 </script>
 
@@ -25,8 +30,13 @@
 	<div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
 		<div class="min-w-0 max-w-full flex-1 basis-64">
 			<h1 class="{compact ? 'text-title' : 'text-display'} break-words text-text">{title}</h1>
-			{#if subtitle}
+			{#if typeof subtitle === 'function'}
+				<p class="mt-1 text-body text-text-muted">{@render subtitle()}</p>
+			{:else if subtitle}
 				<p class="mt-1 text-body text-text-muted">{subtitle}</p>
+			{/if}
+			{#if meta}
+				<div data-testid="page-header-meta" class="mt-2 space-y-1 text-body text-text-muted">{@render meta()}</div>
 			{/if}
 		</div>
 		{#if actions}

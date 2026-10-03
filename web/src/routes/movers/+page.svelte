@@ -243,13 +243,13 @@
 	</div>
 
 	{#if sorted.length === 0}
-		<div class="rounded-md border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted">
+		<div class="rounded-xl border border-border-card bg-surface shadow-card px-4 py-8 text-center text-sm text-text-muted">
 			No movers match the current filters.
 		</div>
 	{:else}
 		<!-- One table at every width (#5 item 6): lower-priority columns hide below
 		     md instead of a second, mobile-only copy of every row. -->
-		<div class="overflow-x-auto rounded-md border border-border">
+		<div class="overflow-x-auto rounded-xl border border-border-card bg-surface shadow-card">
 			<table class="w-full border-collapse text-sm">
 				<caption class="sr-only">{caption}</caption>
 				<thead>

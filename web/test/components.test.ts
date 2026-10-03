@@ -1317,7 +1317,46 @@ describe('CategorySection', () => {
 	it('gives every empty column real copy, not a blank panel', () => {
 		const html = renderComponent(CategorySection, base);
 		expect(html).toContain('Nothing below its recent average today.');
-		expect(html).toContain('No significant price moves in the last 7 days.');
+		expect(html).toContain('No big price drops this week.');
+		expect(html).toContain('No big price rises this week.');
+	});
+
+	// #22 Task 5: an empty column is not rendered; one muted line stands in and
+	// the columns that have rows share the width.
+	it('drops an empty movers column and lets the others span the width', () => {
+		const drop = {
+			listingId: 1,
+			productId: 5,
+			category: 'gpu',
+			brand: 'NVIDIA',
+			model: 'GeForce RTX 5070 Ti',
+			retailer: 'scorptec',
+			variantName: 'ASUS TUF',
+			listingUrl: 'https://example.com/1',
+			oldPrice: 1400,
+			newPrice: 1299,
+			change: -101,
+			pctChange: -7.2,
+			pointsInWindow: 7,
+			historyPoints: 30,
+			notEnoughHistory: false,
+			windowStart: '2026-08-18',
+			windowEnd: '2026-08-25'
+		};
+		const target = document.createElement('div');
+		mount(CategorySection as never, { target, props: { ...base, drops: [drop] } });
+		expect(target.querySelector('[data-testid="biggest-rises"]')).toBeNull();
+		expect(target.querySelector('[data-testid="top-deals"]')).toBeNull();
+		expect(target.querySelector('[data-testid="biggest-drops"]')).not.toBeNull();
+		expect(target.textContent).toContain('No big price rises this week.');
+		expect(target.textContent).not.toContain('No big price drops this week.');
+		const grid = target.querySelector('[data-testid="biggest-drops"]')!.parentElement!;
+		expect(grid.className).not.toMatch(/md:grid-cols-[23]/);
+	});
+
+	it('uses card surfaces: border-card, shadow-card, rounded-xl', () => {
+		const cls = renderComponent(CategorySection, base).match(/<section class="([^"]*)"/)![1];
+		for (const c of ['bg-surface', 'border-border-card', 'shadow-card', 'rounded-xl']) expect(cls).toContain(c);
 	});
 
 	it('says how many of the tracked products can actually be bought', () => {

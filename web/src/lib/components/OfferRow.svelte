@@ -77,7 +77,7 @@
 >
 	<div class="order-1 w-24 shrink-0">
 		{#if offer.latestPrice !== null}
-			<span class="num text-base font-semibold text-text">{formatAud(offer.latestPrice)}</span>
+			<span class="num text-[1.0625rem] font-semibold text-text">{formatAud(offer.latestPrice)}</span>
 		{:else}
 			<span class="text-sm text-text-muted">—</span>
 		{/if}
@@ -116,7 +116,7 @@
 	<div class="order-3 shrink-0 text-xs">
 		{#if typeof saving === 'number' && deltaPct !== null}
 			<span class={deltaPresentation(deltaPct).class}>
-				{formatSignedAud(-saving)} · {formatPct(deltaPct)} {avgWindowLabel(avgPoints)} ({formatAud(avg30 as number)})
+				<span class="num">{formatSignedAud(-saving)}</span> · <span class="num">{formatPct(deltaPct)}</span> {avgWindowLabel(avgPoints)} (<span class="num">{formatAud(avg30 as number)}</span>)
 			</span>
 		{:else if deltaPct !== null}
 			{@const d = deltaPresentation(deltaPct)}
@@ -150,7 +150,7 @@
 				title={ozb.title}
 				aria-label="OzBargain {formatAud(ozb.priceAud)} (opens in a new tab)"
 				data-testid="ozb-chip"
-				class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-accent no-underline hover:bg-surface-hover"
+				class="inline-flex min-h-6 items-center gap-1 whitespace-nowrap rounded-md border border-border-card bg-surface px-2 py-0.5 text-meta text-accent no-underline hover:bg-surface-hover"
 			>
 				<Tag size={12} aria-hidden="true" />
 				OzBargain <span class="num font-medium">{formatAud(ozb.priceAud)}</span>
@@ -163,7 +163,7 @@
 			type="button"
 			aria-pressed={offer.selected}
 			onclick={() => onToggleChart(offer.listingId)}
-			class="order-5 shrink-0 rounded-md border border-border px-2 py-1 text-xs {offer.selected
+			class="order-5 min-h-7 shrink-0 rounded-md border border-border px-2.5 text-meta {offer.selected
 				? 'border-accent bg-accent-soft font-medium text-accent'
 				: 'bg-surface text-text-muted hover:text-text'}"
 		>

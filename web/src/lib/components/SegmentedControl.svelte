@@ -15,14 +15,14 @@
 	} = $props();
 </script>
 
-<div role="group" aria-label={label} class="flex items-center gap-1 rounded-md border border-border bg-surface p-1">
+<div role="group" aria-label={label} class="flex items-center gap-1 rounded-lg border border-border-card bg-surface-2 p-1">
 	{#each options as opt (opt.value)}
 		<button
 			type="button"
 			aria-pressed={opt.value === value}
 			onclick={() => onChange(opt.value)}
-			class="min-h-6 rounded px-2.5 py-1 text-sm {opt.value === value
-				? 'bg-surface-hover font-medium text-text'
+			class="min-h-7 rounded-md px-2.5 py-1 text-body {opt.value === value
+				? 'bg-surface-3 font-medium text-text shadow-card'
 				: 'text-text-muted hover:text-text'}"
 		>
 			{opt.label}

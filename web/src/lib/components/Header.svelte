@@ -46,7 +46,7 @@
 				<button
 					type="button"
 					onclick={onOpenSearch}
-					class="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-text"
+					class="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-meta text-text-muted hover:bg-surface-hover hover:text-text"
 					aria-label="Search products"
 					title="Search products (Ctrl+K)"
 				>

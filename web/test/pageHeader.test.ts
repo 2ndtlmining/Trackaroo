@@ -50,6 +50,28 @@ describe('PageHeader (#22)', () => {
 		expect(render({ actions }).querySelector('button')!.textContent).toBe('Go');
 	});
 
+	it('accepts a snippet subtitle, so counts keep their tabular spans', () => {
+		const subtitle = createRawSnippet(() => ({
+			render: () => '<span><span class="num">47</span> tracked</span>'
+		}));
+		const p = render({ subtitle }).querySelector('[data-testid="page-header"] p')!;
+		expect(p.textContent).toBe('47 tracked');
+		expect(p.querySelector('.num')!.textContent).toBe('47');
+		expect(p.classList.contains('text-text-muted')).toBe(true);
+	});
+
+	it('renders the meta snippet inside the header, under the title (R3)', () => {
+		const meta = createRawSnippet(() => ({ render: () => '<p data-testid="m">NVIDIA</p>' }));
+		const t = render({ meta, subtitle: 'Sub' });
+		const header = t.querySelector('[data-testid="page-header"]')!;
+		const m = header.querySelector('[data-testid="m"]')!;
+		expect(m.textContent).toBe('NVIDIA');
+		// After the h1 in document order, still above the bottom rule.
+		const h1 = header.querySelector('h1')!;
+		expect(h1.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(render().querySelector('[data-testid="page-header-meta"]')).toBeNull();
+	});
+
 	it('closes with a bottom border and pb-4 mb-6', () => {
 		const cls = render().querySelector('header')!.className;
 		for (const c of ['border-b', 'pb-4', 'mb-6']) expect(cls).toContain(c);

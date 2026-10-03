@@ -52,7 +52,7 @@
 		{#if data.untracked.length === 0}
 			<p class="text-sm text-text-muted">Nothing untracked: every in-scope part on sale is tracked or ignored.</p>
 		{:else}
-			<ul data-testid="discover-untracked" class="divide-y divide-border rounded-md border border-border">
+			<ul data-testid="discover-untracked" class="divide-y divide-border rounded-xl border border-border-card bg-surface shadow-card">
 				{#each data.untracked as p (p.id)}
 					<li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-3 {p.lastSeen < data.today ? 'opacity-60' : ''}">
 						<details class="min-w-0 flex-1 basis-56">
@@ -68,12 +68,12 @@
 							first seen {day(p.firstSeen)}{#if p.lastSeen < data.today} · last seen {day(p.lastSeen)}{/if}
 						</span>
 						<span class="text-xs text-text-muted">{p.listingCount} listings · {p.retailers.map(label).join(', ')}</span>
-						<span class="tabular-nums text-sm text-text">
-							from {#if p.minPriceUrl}<a href={p.minPriceUrl} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5">{money(p.minPrice)}<ArrowUpRight size={13} aria-hidden="true" /></a>{:else}{money(p.minPrice)}{/if}
+						<span class="text-sm text-text">
+							from {#if p.minPriceUrl}<a href={p.minPriceUrl} target="_blank" rel="noopener noreferrer" class="num inline-flex items-center gap-0.5">{money(p.minPrice)}<ArrowUpRight size={13} aria-hidden="true" /></a>{:else}<span class="num">{money(p.minPrice)}</span>{/if}
 						</span>
 						<span class="flex gap-2">
-							<form method="POST" action="?/track"><input type="hidden" name="id" value={p.id} /><button class="min-h-6 rounded-md border border-accent bg-accent-soft px-3 text-sm font-medium text-accent hover:bg-surface-hover">Track</button></form>
-							<form method="POST" action="?/ignore"><input type="hidden" name="id" value={p.id} /><button class="min-h-6 rounded-md border border-border bg-surface px-3 text-sm text-text-muted hover:bg-surface-hover hover:text-text">Ignore</button></form>
+							<form method="POST" action="?/track"><input type="hidden" name="id" value={p.id} /><button class="min-h-7 rounded-md border border-accent bg-accent-soft px-3 text-sm font-medium text-accent hover:bg-surface-hover">Track</button></form>
+							<form method="POST" action="?/ignore"><input type="hidden" name="id" value={p.id} /><button class="min-h-7 rounded-md border border-border bg-surface px-3 text-sm text-text-muted hover:bg-surface-hover hover:text-text">Ignore</button></form>
 						</span>
 					</li>
 				{/each}
@@ -93,8 +93,8 @@
 					<div class="flex flex-wrap items-center justify-between gap-2">
 						<span class="text-sm font-medium text-text">{p.displayName}</span>
 						<span class="flex gap-2">
-							<button type="button" class="min-h-6 rounded-md border border-border bg-surface px-3 text-sm text-text-muted hover:bg-surface-hover hover:text-text" onclick={() => copy(p)}>{copied === p.id ? 'Copied' : 'Copy row'}</button>
-							<form method="POST" action="?/untrack"><input type="hidden" name="id" value={p.id} /><button class="min-h-6 rounded-md border border-border bg-surface px-3 text-sm text-text-muted hover:bg-surface-hover hover:text-text">Undo</button></form>
+							<button type="button" class="min-h-7 rounded-md border border-border bg-surface px-3 text-sm text-text-muted hover:bg-surface-hover hover:text-text" onclick={() => copy(p)}>{copied === p.id ? 'Copied' : 'Copy row'}</button>
+							<form method="POST" action="?/untrack"><input type="hidden" name="id" value={p.id} /><button class="min-h-7 rounded-md border border-border bg-surface px-3 text-sm text-text-muted hover:bg-surface-hover hover:text-text">Undo</button></form>
 						</span>
 					</div>
 					<code class="mt-1 block overflow-x-auto whitespace-pre text-xs text-text-muted">{p.suggestedRow}</code>
@@ -108,7 +108,7 @@
 		{#if data.conflicts.length === 0}
 			<p class="text-sm text-text-muted">None: every listing matches its product.</p>
 		{:else}
-			<ul data-testid="discover-conflicts" class="divide-y divide-border rounded-md border border-border">
+			<ul data-testid="discover-conflicts" class="divide-y divide-border rounded-xl border border-border-card bg-surface shadow-card">
 				{#each data.conflicts as c (c.listingId)}
 					<li class="px-3 py-2 text-sm">
 						<span class="text-text">{c.title}</span>
@@ -123,11 +123,11 @@
 
 	<details>
 		<summary class="cursor-pointer text-sm font-semibold text-text">Ignored ({data.ignored.length})</summary>
-		<ul data-testid="discover-ignored" class="mt-2 divide-y divide-border rounded-md border border-border">
+		<ul data-testid="discover-ignored" class="mt-2 divide-y divide-border rounded-xl border border-border-card bg-surface shadow-card">
 			{#each data.ignored as p (p.id)}
 				<li class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
 					<span class="text-text">{p.displayName}</span>
-					<form method="POST" action="?/unignore"><input type="hidden" name="id" value={p.id} /><button class="min-h-6 rounded-md border border-border bg-surface px-3 text-sm text-text-muted hover:bg-surface-hover hover:text-text">Un-ignore</button></form>
+					<form method="POST" action="?/unignore"><input type="hidden" name="id" value={p.id} /><button class="min-h-7 rounded-md border border-border bg-surface px-3 text-sm text-text-muted hover:bg-surface-hover hover:text-text">Un-ignore</button></form>
 				</li>
 			{/each}
 		</ul>

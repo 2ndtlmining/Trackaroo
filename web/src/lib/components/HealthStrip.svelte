@@ -37,7 +37,7 @@
 </script>
 
 <section
-	class="mb-6 rounded-lg border border-border bg-surface px-3 py-2.5"
+	class="mb-6 rounded-xl border border-border-card bg-surface shadow-card px-3 py-2.5"
 	aria-label="Data health"
 >
 	{#if latestSnapshotDate}

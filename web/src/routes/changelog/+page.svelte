@@ -17,7 +17,7 @@
 	<ol class="mt-6 space-y-6">
 		{#each data.releases as release (release.version)}
 			<li
-				class="rounded-lg border border-border bg-surface p-4 sm:p-5"
+				class="rounded-xl border border-border-card bg-surface shadow-card p-4 sm:p-5"
 				data-testid="release"
 				aria-labelledby="release-{release.version}"
 			>

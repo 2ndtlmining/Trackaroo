@@ -377,6 +377,35 @@ test.describe('homepage dashboard', () => {
 		await expect(page.getByLabel('GPUs').getByText('Biggest drops (7d)')).toBeVisible();
 		await expect(page.getByLabel('GPUs').getByText('Biggest rises (7d)')).toBeVisible();
 	});
+
+	// #22 Task 5: an empty movers column is not rendered as a blank panel. The
+	// synthetic seed (CI) has no CPU rise: its Ryzen 9 9900X is flat and the
+	// other CPUs fall. A local data/ scrape has none either as of Oct 2026; if
+	// a real CPU rise ever lands there, the invariant test below still holds.
+	// The CPU section shows one muted line instead of the column.
+	test('a movers column with no rows is replaced by one line (#22)', async ({ page }) => {
+		await goto(page, '/');
+		const cpus = page.getByLabel('CPUs');
+		await expect(cpus.getByTestId('biggest-rises')).toHaveCount(0);
+		await expect(cpus.getByText('No big price rises this week.')).toBeVisible();
+		await expect(cpus.getByTestId('biggest-drops')).toBeVisible();
+	});
+
+	test('every rendered movers column has rows; every missing one says so (#22)', async ({ page }) => {
+		await goto(page, '/');
+		const lines = { 'biggest-drops': 'No big price drops this week.', 'biggest-rises': 'No big price rises this week.' };
+		for (const section of ['GPUs', 'CPUs']) {
+			for (const [column, line] of Object.entries(lines)) {
+				const col = page.getByLabel(section).getByTestId(column);
+				if ((await col.count()) > 0) {
+					expect(await col.getByRole('link').count()).toBeGreaterThan(0);
+					await expect(page.getByLabel(section).getByText(line)).toHaveCount(0);
+				} else {
+					await expect(page.getByLabel(section).getByText(line)).toBeVisible();
+				}
+			}
+		}
+	});
 });
 
 // Filters.svelte moved off the homepage with the listing table (spec §5) and is
@@ -1952,5 +1981,27 @@ test.describe('PageHeader on every route (#22)', () => {
 	test('/changelog keeps the 72rem column', async ({ page }) => {
 		await goto(page, '/changelog');
 		expect(await widthOf(page)).toBe('1152px');
+	});
+
+	// R3: the brand line and product-meta belong to the title, above the rule.
+	test('the product page brand line and meta sit inside the page header', async ({ page }) => {
+		await goto(page, '/product/1');
+		const header = page.getByTestId('page-header');
+		await expect(header.getByTestId('product-meta')).toBeVisible();
+		await expect(header.getByTestId('product-brand')).toBeVisible();
+	});
+
+	test('/products count line keeps tabular numbers', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const sub = page.getByTestId('page-header').locator('p').first();
+		await expect(sub).toContainText('tracked');
+		expect(await sub.locator('.num').count()).toBe(2);
+	});
+
+	test('/deals subtitle says both thresholds must hold', async ({ page }) => {
+		await goto(page, '/deals');
+		const sub = page.getByTestId('page-header').locator('p').first();
+		await expect(sub).toContainText(/at least \d+% and at least \$\d+ below/);
+		await expect(sub.locator('strong')).toHaveText('and');
 	});
 });

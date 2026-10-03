@@ -28,7 +28,7 @@
 	const filled = (w: WindowStats) => w.enough && w.low !== null && w.median !== null && w.high !== null;
 </script>
 
-<section class="rounded-md border border-border bg-surface p-4" aria-labelledby="buy-heading">
+<section class="rounded-xl border border-border-card bg-surface shadow-card p-4" aria-labelledby="buy-heading">
 	<h2 id="buy-heading" class="text-sm font-semibold text-text">Is now a good time to buy?</h2>
 
 	<p class="mt-2 text-sm text-text" data-testid="low-summary">

@@ -20,14 +20,14 @@
 
 	function chipClass(active: boolean): string {
 		return active
-			? 'rounded-full border border-accent bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent'
-			: 'rounded-full border border-border bg-surface px-2.5 py-1 text-xs text-text-muted hover:bg-surface-hover hover:text-text';
+			? 'min-h-8 rounded-full border border-accent bg-accent-soft px-3 text-body font-medium text-accent'
+			: 'min-h-8 rounded-full border border-border-input bg-surface px-3 text-body font-medium text-text hover:bg-surface-hover';
 	}
 </script>
 
 {#if useful}
 	<div class="flex flex-wrap items-center gap-1.5">
-		<span class="w-16 shrink-0 text-xs text-text-muted">{label}</span>
+		<span class="w-16 shrink-0 text-meta text-text-muted">{label}</span>
 		<button
 			type="button"
 			aria-pressed={selected === null}

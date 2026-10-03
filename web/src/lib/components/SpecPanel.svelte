@@ -64,7 +64,7 @@
 	const l2Cache = $derived(formatCacheMb(spec.l2_cache_mb));
 </script>
 
-<div class="overflow-hidden rounded-md border border-border">
+<div class="overflow-hidden rounded-xl border border-border-card bg-surface shadow-card">
 	<h2 class="border-b border-border bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
 		Specs
 	</h2>

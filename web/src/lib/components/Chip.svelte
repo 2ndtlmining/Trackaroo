@@ -3,8 +3,8 @@
 </script>
 
 <span
-	class="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1 text-sm"
+	class="inline-flex min-h-7 items-center gap-1.5 rounded-lg border border-border-card bg-surface-2 px-2.5 py-1 text-body"
 >
-	<span class="text-xs text-text-muted">{label}</span>
+	<span class="text-meta text-text-muted">{label}</span>
 	<span class="num font-medium text-text">{value}</span>
 </span>

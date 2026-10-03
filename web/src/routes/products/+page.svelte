@@ -46,10 +46,6 @@
 	} = $props();
 
 	const heading = $derived(data.category === 'cpu' ? 'CPUs' : 'GPUs');
-	const countLine = $derived(
-		`${data.trackedCount} tracked · ` +
-			(data.inStockOnly ? `${data.groups.length} in stock` : `${data.listedCount} seen at a retailer`)
-	);
 
 	// The base card carries its VRAM where a "<model> <N>GB" sibling exists
 	// (display only). Search and rows both use the display name, so
@@ -227,7 +223,9 @@
 />
 
 <div>
-	<PageHeader title={heading} subtitle={countLine} />
+	<PageHeader title={heading}>
+		{#snippet subtitle()}<span class="num">{data.trackedCount}</span> tracked · <span class="num">{data.inStockOnly ? data.groups.length : data.listedCount}</span> {data.inStockOnly ? 'in stock' : 'seen at a retailer'}{/snippet}
+	</PageHeader>
 
 	<div class="mt-3 flex flex-wrap items-center gap-3">
 		<div class="min-w-0 flex-1 basis-64">
@@ -282,7 +280,7 @@
 	{#if searching}
 		{#if matches.length > 0}
 			<div
-				class="mt-3 divide-y divide-border rounded-lg border border-border bg-surface"
+				class="mt-3 divide-y divide-border rounded-xl border border-border-card bg-surface shadow-card"
 				role="table"
 				aria-label={`${heading} matching “${query.trim()}”`}
 			>

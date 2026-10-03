@@ -29,7 +29,7 @@
 		<span class="block truncate text-xs text-text-muted" title={subtitle}>{subtitle}</span>
 	</div>
 	{#if presentation && mover.pctChange !== null}
-		<span class="shrink-0 text-xs {presentation.class}">
+		<span class="num shrink-0 text-xs {presentation.class}">
 			{presentation.arrow}
 			{formatPct(mover.pctChange)}
 		</span>
