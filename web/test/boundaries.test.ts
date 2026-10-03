@@ -1,5 +1,5 @@
-// #30: client code never imports server modules, and no server file grows
-// past 350 lines.
+// #30: client code never imports server modules. #61: no source file under
+// web/src (server or client, .ts or .svelte) grows past 350 lines.
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +19,7 @@ const isServerSide = (f: string) =>
 	/\+server\.ts$/.test(f) ||
 	/hooks\.server\.ts$/.test(f);
 
-describe('boundaries (#30)', () => {
+describe('boundaries (#30, #61)', () => {
 	it('no client file imports $lib/server (alias or relative)', () => {
 		const serverDir = path.join(SRC, 'lib', 'server');
 		const specRe = /(?:\bfrom\s+|\bimport\s+|\bimport\s*\(\s*)['"]([^'"]+)['"]/g;
@@ -41,9 +41,8 @@ describe('boundaries (#30)', () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it('no server file over 350 lines', () => {
+	it('no source file over 350 lines', () => {
 		const big = files
-			.filter((f) => f.includes(`${path.sep}lib${path.sep}server${path.sep}`))
 			.map((f) => [path.relative(SRC, f), fs.readFileSync(f, 'utf-8').split('\n').length] as const)
 			.filter(([, n]) => n > 350);
 		expect(big).toEqual([]);

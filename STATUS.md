@@ -14,6 +14,16 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-04 -- Client file splits; 350-line cap now covers all of web/src (#61).**
+  PriceChart.svelte (542 -> 228) moves its uPlot series/data/axes and draw hooks to
+  `$lib/priceChartPlot.ts` (ChartSeries/ChartBand types now live there) and its legend to
+  PriceChartLegend.svelte (the `<figcaption>` stays in PriceChart for a11y). /products
+  (450 -> 305) hands its list to CatalogResults.svelte and the compare bar to CompareBar.svelte;
+  CatalogFilters.svelte (377 -> 301) uses FilterCheckboxGroup.svelte (Brand, Generation) and
+  CatalogSortControls.svelte. `$lib/models` re-exports the alert/FX/OzB/value DTOs from
+  `modelsFeatures.ts` (366 -> 314). `test/boundaries.test.ts` now caps every .ts/.svelte file
+  under web/src, no allowlist. Markup unchanged. Gate: pytest 1377, vitest 1214, Playwright 225
+  (+1 skipped), svelte-check 0/0. v0.6.1 release PR #67 cut the same morning.
 - **2026-10-03 -- Fonts cached for a year; mono prices in signal sentences (#63, #62).**
   `web/server.js` sets `Cache-Control: public, max-age=31536000, immutable` on successful
   `/fonts/*` responses (overriding sirv; 304 and HEAD included, errors untouched).

@@ -1,27 +1,25 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto, replaceState } from '$app/navigation';
-	import ProductRow from '$lib/components/ProductRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import CatalogFilters from '$lib/components/CatalogFilters.svelte';
+	import CatalogResults from '$lib/components/CatalogResults.svelte';
+	import CompareBar from '$lib/components/CompareBar.svelte';
 	import { groupForIndex, type CatalogRow } from '$lib/productIndex';
 	import {
 		DEFAULT_DIR,
 		activeFilterCount,
 		applyCatalogView,
 		catalogViewParams,
-		earliestYear,
 		genOptions,
 		parseCatalogView,
 		brandOptions,
-		shownPrice,
-		shownStock,
 		type CatalogRowInput,
 		type CatalogSort,
 		type CatalogView
 	} from '$lib/catalogView';
-	import { COL, catalogColumns } from '$lib/catalogColumns';
+	import { catalogColumns } from '$lib/catalogColumns';
 	import { retailerLabel } from '$lib/filters';
 	import { searchProducts } from '$lib/productSearch';
 	import { MAX_COMPARE, parseCompareIds, withParams } from '$lib/urlState';
@@ -109,11 +107,6 @@
 			view.sort === key
 				? { ...view, dir: view.dir === 'asc' ? 'desc' : 'asc' }
 				: { ...view, sort: key, dir: DEFAULT_DIR[key] };
-	}
-
-	function ariaSort(key: CatalogSort): 'ascending' | 'descending' | 'none' {
-		if (view.sort !== key) return 'none';
-		return view.dir === 'asc' ? 'ascending' : 'descending';
 	}
 
 	// Everything but the filters, so Clear keeps the search, selection and sort.
@@ -290,161 +283,23 @@
 			<a href={METRICS[perfMetric].source_url} class="text-text-muted underline underline-offset-2 hover:text-text">{sourceCitation(perfMetric)}</a></span>
 	</p>
 
-	{#if searching}
-		{#if matches.length > 0}
-			<div
-				class="mt-3 divide-y divide-border rounded-xl border border-border-card bg-surface shadow-card"
-				role="table"
-				aria-label={`${heading} matching “${query.trim()}”`}
-			>
-				{#each matches as group (group.productId)}
-					<ProductRow
-						{group}
-						price={shownPrice(group, view)}
-						retailer={view.retailer ?? undefined}
-						outOfStock={shownStock(group, view) === 'out'}
-						fx={data.fx}
-						compareSelected={compareIds.has(group.productId)}
-						compareDisabled={!compareIds.has(group.productId) && compareIds.size >= MAX_COMPARE}
-						onToggleCompare={toggleCompare}
-					/>
-				{/each}
-			</div>
-		{:else}
-			<p
-				class="mt-3 rounded-lg border border-border bg-surface px-3 py-8 text-center text-sm text-text-muted"
-			>
-				No {heading} match “{query}”{activeCount > 0 ? ' with these filters' : ''}.
-				<button type="button" class="ml-1 text-accent underline" onclick={() => (query = '')}>
-					Clear
-				</button>
-			</p>
-		{/if}
-	{:else if shown.length === 0}
-		<p
-			class="mt-3 rounded-lg border border-border bg-surface px-3 py-8 text-center text-sm text-text-muted"
-			data-testid="catalog-empty"
-		>
-			No products match these filters.
-			<a href={clearHref} class="ml-1 text-accent underline">Clear filters</a>
-		</p>
-	{:else}
-		<p class="mt-3 text-xs text-text-muted md:hidden">Tick a box to compare up to four.</p>
-		<!-- An ARIA table over the flex rows (#23): ProductRow explains why not
-		     <table>. The header row is hidden on a phone, where every cell keeps
-		     its own sr-only label and the filter panel offers the sort. -->
-		<div role="table" aria-label={heading}>
-			<div
-				role="rowgroup"
-				class="sticky top-0 z-10 mt-3 hidden border-b border-border bg-bg md:block"
-				data-testid="catalog-header"
-			>
-				<div
-					role="row"
-					class="flex items-center gap-x-3 xl:gap-x-2 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-muted"
-				>
-					{#each columns as col (col.key)}
-						{#if col.sort}
-							{@const key = col.sort}
-							<span class={COL[col.key]} role="columnheader" aria-sort={ariaSort(key)}>
-								<button
-									type="button"
-									onclick={() => sortBy(key)}
-									class="inline-flex items-center gap-1 uppercase tracking-wide hover:text-text"
-									class:text-text={view.sort === key}
-								>
-									{col.label}
-									<span aria-hidden="true" class="w-2">
-										{view.sort === key ? (view.dir === 'asc' ? '↑' : '↓') : ''}
-									</span>
-								</button>
-							</span>
-						{:else}
-							<span
-								class={COL[col.key]}
-								role="columnheader">{col.label}</span
-							>
-						{/if}
-					{/each}
-				</div>
-			</div>
-			{#if view.sort}
-				<div role="rowgroup" class="divide-y divide-border">
-					{#each shown as item (item.productId)}
-						<ProductRow
-							group={item}
-							price={shownPrice(item, view)}
-							retailer={view.retailer ?? undefined}
-							outOfStock={shownStock(item, view) === 'out'}
-							fx={data.fx}
-							compareSelected={compareIds.has(item.productId)}
-							compareDisabled={!compareIds.has(item.productId) && compareIds.size >= MAX_COMPARE}
-							onToggleCompare={toggleCompare}
-						/>
-					{/each}
-				</div>
-			{:else}
-				{#each groups as group (group.key)}
-					{@const inStock = group.items.filter((i) => i.cheapestInStockPrice !== null).length}
-					{@const year = earliestYear(group.items)}
-					<div role="rowgroup" class="mt-4 first:mt-0">
-						<div role="row">
-							<div role="cell" aria-colspan={columns.length}>
-								<h2
-									class="border-b border-border pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-text-muted"
-								>
-									{group.brand} · {group.label}{year ? ` · ${year}` : ''}
-									<span class="normal-case tracking-normal">
-										· {group.items.length} {group.items.length === 1 ? 'model' : 'models'} · {inStock} in stock
-									</span>
-								</h2>
-							</div>
-						</div>
-						<div class="divide-y divide-border">
-							{#each group.items as item (item.productId)}
-								<ProductRow
-									group={item}
-									price={shownPrice(item, view)}
-									retailer={view.retailer ?? undefined}
-									outOfStock={shownStock(item, view) === 'out'}
-							fx={data.fx}
-									compareSelected={compareIds.has(item.productId)}
-									compareDisabled={!compareIds.has(item.productId) && compareIds.size >= MAX_COMPARE}
-									onToggleCompare={toggleCompare}
-								/>
-							{/each}
-						</div>
-					</div>
-				{/each}
-			{/if}
-		</div>
-	{/if}
+	<CatalogResults
+		{heading}
+		{query}
+		{searching}
+		{matches}
+		{shown}
+		{groups}
+		{columns}
+		{view}
+		{activeCount}
+		{clearHref}
+		{compareIds}
+		fx={data.fx}
+		onSort={sortBy}
+		onToggleCompare={toggleCompare}
+		onClearQuery={() => (query = '')}
+	/>
 </div>
 
-{#if compareIds.size >= 1}
-	<div
-		class="fixed inset-x-0 bottom-4 z-20 flex justify-center px-4"
-		role="region"
-		aria-label="Compare bar"
-	>
-		<div
-			class="flex items-center gap-3 rounded-full border border-border bg-surface px-4 py-2 shadow-lg"
-		>
-			<span class="text-sm text-text-muted">{compareIds.size} selected</span>
-			<button
-				type="button"
-				onclick={() => (compareIds = new Set())}
-				class="text-sm text-text-muted hover:text-text"
-			>
-				Clear
-			</button>
-			{#if compareIds.size === 1}
-				<span class="text-sm text-text-muted">Pick 1 more to compare</span>
-			{:else}
-				<a href={compareUrl} class="text-sm font-medium text-accent no-underline hover:underline">
-					Compare ({compareIds.size}) →
-				</a>
-			{/if}
-		</div>
-	</div>
-{/if}
+<CompareBar count={compareIds.size} href={compareUrl} onClear={() => (compareIds = new Set())} />
