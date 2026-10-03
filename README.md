@@ -435,6 +435,9 @@ The release links to `/changelog`, which renders [`CHANGELOG.md`](CHANGELOG.md).
   4. Redeploy.
 - **Version numbers:** the minor number goes up for features, the patch number
   for fixes.
+- **Open PRs during a release:** a feature PR branched before a release merged
+  can land its `## Unreleased` line inside the just-released section. After
+  merging such a PR, check that its CHANGELOG line still sits under Unreleased.
 - **Guards:** pytest (`test_release.py`) and vitest (`changelog.test.ts`) both
   fail if the newest changelog release and `package.json` disagree. Vitest also
   fails if releases are not listed newest first.
