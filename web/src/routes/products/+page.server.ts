@@ -13,6 +13,8 @@ import {
 import { getDb } from '$lib/server/db';
 import { memo } from '$lib/server/cache';
 import { parseFilters } from '$lib/filters';
+import { defaultMetric, perfFor } from '$lib/perfIndex';
+import { valueCoverage } from '$lib/value';
 import type { Category, ListingFilters, Retailer } from '$lib/types';
 import type { LatestListing } from '$lib/models';
 
@@ -70,7 +72,10 @@ export function load({
 			const msrps = getLaunchMsrps(db, category);
 			const sparklines = getProductSparklines(db, category, 30);
 			const ranges = getRange90(db);
-			const extras = (productId: number, launchDate: string | null) => ({
+			const metric = defaultMetric(category);
+			const extras = (productId: number, launchDate: string | null, p: { model: string; vramGb: number | null }) => ({
+				metric,
+				perf: perfFor({ category, model: p.model, vramGb: p.vramGb }, metric),
 				sparkline: (sparklines.get(productId) ?? []).map((p) => p.price),
 				msrpUsd: msrps.get(productId) ?? null,
 				range90: ranges.get(productId) ?? null,
@@ -90,7 +95,7 @@ export function load({
 					return {
 						...product,
 						launchDate,
-						...extras(product.productId, launchDate),
+						...extras(product.productId, launchDate, product),
 						retailerPrices: {} as RetailerPrices,
 						listingCount: 0,
 						cheapestInStockPrice: null,
@@ -105,7 +110,7 @@ export function load({
 				const { listings, ...rest } = group;
 				return {
 					...rest,
-					...extras(group.productId, launchDate),
+					...extras(group.productId, launchDate, product),
 					retailerPrices: retailerPricesOf(listings),
 					vramGb: product.vramGb,
 					cores: product.cores,
@@ -118,7 +123,12 @@ export function load({
 				};
 			});
 
+			// R6: performance data is partial (CPUs especially); the page says how much.
+			const coverage = valueCoverage(
+				groups.map((g) => ({ price: g.cheapestInStockPrice, perf: g.perf }))
+			);
 			return {
+				coverage,
 				trackedCount: groups.length,
 				listedCount: withListings.length,
 				listedInStockCount: withListings.filter((g) => g.inStockCount > 0).length,
@@ -138,6 +148,7 @@ export function load({
 		inStockOnly,
 		trackedCount,
 		listedCount,
+		perfCoverage: { withPerf: base.coverage.withPerf, tracked: base.coverage.tracked },
 		fx: getLatestFxRate(db),
 		groups: visible
 	};

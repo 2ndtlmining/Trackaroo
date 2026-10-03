@@ -18,10 +18,11 @@ export const COL = {
 	listings: 'hidden w-20 shrink-0 text-right md:block',
 	trend: 'hidden w-14 shrink-0 lg:block',
 	range: 'hidden w-24 shrink-0 xl:block',
+	value: 'hidden w-14 shrink-0 text-right xl:block',
 	brand: 'hidden w-20 shrink-0 xl:flex',
 	delta: 'w-36 shrink-0',
 	msrp: 'hidden w-16 shrink-0 text-right lg:block',
-	retailer: 'w-20 shrink-0 text-right'
+	retailer: 'w-16 shrink-0 text-right'
 } as const;
 
 export interface CatalogColumn {
@@ -49,6 +50,7 @@ export function catalogColumns(category: Category, priceAt: string | null): Cata
 		{ key: 'listings', label: 'Listings', sort: 'listings' },
 		{ key: 'trend', label: '30-day' },
 		{ key: 'range', label: '90-day range' },
+		{ key: 'value', label: 'Perf / A$1k', sort: 'value' },
 		...(cpu ? [] : [{ key: 'brand', label: 'Brand' } as CatalogColumn]),
 		{ key: 'delta', label: 'vs average' },
 		{ key: 'msrp', label: 'vs MSRP', sort: 'msrp' },

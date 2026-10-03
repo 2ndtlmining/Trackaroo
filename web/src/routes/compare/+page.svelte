@@ -24,6 +24,7 @@
 	const rows = $derived(
 		buildCompareRows(entries).map((d) => ({
 			label: d.label,
+			hint: d.hint,
 			mono: d.mono === true || d.numeric !== undefined,
 			values: entries.map(d.value),
 			best: bestIndexes(d, entries)
@@ -127,7 +128,8 @@
 						<th
 							class="border-r border-border bg-surface px-3 py-2 text-left text-xs font-medium text-text-muted"
 						>
-							{row.label}
+							<span title={row.hint}>{row.label}</span>
+							{#if row.hint}<span class="sr-only">{`, ${row.hint}`}</span>{/if}
 						</th>
 						{#each row.values as value, i}
 							<td class="px-3 py-2 text-text {row.mono ? 'num' : ''}">

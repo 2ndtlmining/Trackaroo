@@ -12,6 +12,7 @@ How it works:
 ## Unreleased
 
 ### Added
+- Perf / A$1k column on the GPU and CPU lists and a row on /compare: published relative performance divided by the shown price, with its source on hover (#33).
 - OzBargain deals on product pages and /deals, with a Discord alert when a deal beats our best in-stock price (#34).
 
 ### Changed

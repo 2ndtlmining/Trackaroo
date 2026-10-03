@@ -3,6 +3,7 @@
 import { GENERIC_TIER_LABELS, generationTierLabel } from './tiers';
 import type { Category, GenerationTier, Retailer } from './types';
 import type { ProductGroup } from './models';
+import type { MetricKey } from './perfIndex';
 
 // One /products row: a product group without its listings (#28), plus the
 // catalog columns (#23).
@@ -23,6 +24,9 @@ export type CatalogRow = Omit<ProductGroup, 'listings'> & {
 	msrpUsd?: number | null;
 	// Low and high of the daily cheapest price over 90 days, for the row's
 	// segmented bar; null without in-window history (#22).
+	// Index performance and the metric it is on, for the value column (#33).
+	perf?: number | null;
+	metric?: MetricKey;
 	range90?: { low: number; high: number; days: number } | null;
 };
 

@@ -1914,6 +1914,37 @@ test.describe('MSRP cues (Task 3)', () => {
 		});
 	}
 
+	test('the value column shows perf per A$1,000, a dash without data, and sorts (#33)', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await goto(page, '/products?category=gpu&sort=value');
+		const header = page.getByRole('columnheader', { name: /^Perf \/ A\$1k/ });
+		await expect(header).toBeVisible();
+		await expect(header).toHaveAttribute('aria-sort', 'descending');
+		const withPerf = page.getByTestId('catalog-row').filter({ hasText: 'GeForce RTX 5060 Ti' }).first().getByTestId('row-value');
+		await expect(withPerf).toContainText(/\d+$/);
+		await expect(withPerf).toHaveAttribute('title', /1440p raster, TechPowerUp/);
+		const without = page.getByTestId('catalog-row').filter({ hasText: 'E2E New Low GPU' }).getByTestId('row-value');
+		await expect(without).toContainText('–');
+		// Rows without a figure sort last.
+		const last = page.getByTestId('catalog-row').last().getByTestId('row-value');
+		await expect(last).toContainText('–');
+		await expect(page.getByTestId('perf-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs/);
+	});
+
+	test('/compare shows a Perf / A$1k row (#33)', async ({ page }) => {
+		const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+		const ids = db
+			.prepare("SELECT id FROM products WHERE category = 'gpu' AND model IN ('GeForce RTX 5060 Ti', 'GeForce RTX 5060') ORDER BY id")
+			.all() as { id: number }[];
+		db.close();
+		expect(ids.length).toBe(2);
+		await goto(page, `/compare?ids=${ids[0].id},${ids[1].id}`);
+		const cells = page.locator('tbody tr', { has: page.getByRole('rowheader', { name: /^Perf \/ A\$1k/ }) }).locator('td');
+		await expect(cells).toHaveCount(2);
+		await expect(cells.nth(0)).toContainText(/\d+/);
+		await expect(cells.nth(1)).toContainText(/\d+/);
+	});
+
 	test('the catalogue sorts by vs MSRP, cheapest against MSRP first', async ({ page }) => {
 		await goto(page, '/products?category=gpu&sort=msrp');
 		const header = page.getByRole('columnheader', { name: /^vs MSRP/ });

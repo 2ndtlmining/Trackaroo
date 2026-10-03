@@ -38,6 +38,7 @@
 			inStockOnly: boolean;
 			trackedCount: number;
 			listedCount: number;
+			perfCoverage: { withPerf: number; tracked: number };
 			fx: FxRate | null;
 			groups: (CatalogRow & CatalogRowInput)[];
 			// From the root layout's load (merged into page data).
@@ -277,6 +278,12 @@
 		{/if}
 	</p>
 
+	<!-- R6: the performance figures cover only part of the watchlist. -->
+	<p class="mt-1 text-xs text-text-muted" data-testid="perf-coverage">
+		Performance data for <span class="num">{data.perfCoverage.withPerf}</span> of
+		<span class="num">{data.perfCoverage.tracked}</span> {heading}
+	</p>
+
 	{#if searching}
 		{#if matches.length > 0}
 			<div
@@ -328,7 +335,7 @@
 			>
 				<div
 					role="row"
-					class="flex items-center gap-x-3 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-muted"
+					class="flex items-center gap-x-3 xl:gap-x-2 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-muted"
 				>
 					{#each columns as col (col.key)}
 						{#if col.sort}
