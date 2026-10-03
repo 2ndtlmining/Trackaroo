@@ -27,13 +27,10 @@ Environment variables (all optional):
     TRACKAROO_PRICE_MOVE_PCT            Day-over-day move flagged on its own (default: 0.10)
 
     TRACKAROO_SCRAPER_TIMEOUT_SECONDS   Per-scraper subprocess timeout (default: 300)
-    TRACKAROO_BATCH_SIZE                Algolia batch size            (default: 16)
-    TRACKAROO_BATCH_DELAY               Seconds between Algolia batches (default: 1.0)
     TRACKAROO_ALGOLIA_TIMEOUT_SECONDS   Algolia HTTP timeout          (default: 15)
     TRACKAROO_ALGOLIA_MAX_RETRIES       Algolia request retries        (default: 3)
     TRACKAROO_ALGOLIA_BACKOFF_MAX       Upper bound for exponential backoff (default: 20)
     TRACKAROO_ALGOLIA_RATE_LIMIT_WAIT   Base wait on 429 (seconds)     (default: 5)
-    TRACKAROO_ALGOLIA_CIRCUIT_BREAKER   Consecutive failed batches before aborting (default: 3)
     TRACKAROO_PCCG_COOLDOWN_HOURS       Cooldown window after breaker trips (default: 4)
     TRACKAROO_PCCG_COOLDOWN_FILE        Breaker cooldown state file   (default: <data>/pccg_cooldown.json)
     TRACKAROO_CATEGORY_PASS_DELAY       Delay between CPU/GPU passes  (default: 2.0)
@@ -61,7 +58,6 @@ Environment variables (all optional):
 
     TRACKAROO_ALGOLIA_HITS_PER_PAGE     Algolia hits per page          (default: 20)
     TRACKAROO_ALGOLIA_MAX_PAGES         Algolia pagination safety cap  (default: 10)
-    TRACKAROO_ALGOLIA_BATCH_MAX_PAGES   Page cap for batch searches    (default: 3)
     TRACKAROO_ALGOLIA_PAGE_DELAY        Delay between Algolia pages    (default: 0.3)
     TRACKAROO_ALGOLIA_CATALOGUE_HITS    Hits per catalogue page        (default: 1000)
     TRACKAROO_ALGOLIA_CATALOGUE_PAGES   Catalogue pagination cap       (default: 10)
@@ -204,17 +200,11 @@ MATCH_DROP_MIN_HISTORY = _env_int("TRACKAROO_MATCH_DROP_MIN_HISTORY", 3)
 # Per-scraper subprocess timeout in the daily runner
 SCRAPER_TIMEOUT_SECONDS = _env_int("TRACKAROO_SCRAPER_TIMEOUT_SECONDS", 300)
 
-# Algolia batch tuning (PCCG rate-limits aggressively on 429s)
-BATCH_SIZE = _env_int("TRACKAROO_BATCH_SIZE", 16)
-BATCH_DELAY = _env_float("TRACKAROO_BATCH_DELAY", 1.0)
+# Algolia request tuning (PCCG rate-limits aggressively on 429s)
 ALGOLIA_TIMEOUT_SECONDS = _env_int("TRACKAROO_ALGOLIA_TIMEOUT_SECONDS", 15)
 ALGOLIA_MAX_RETRIES = _env_int("TRACKAROO_ALGOLIA_MAX_RETRIES", 3)
 ALGOLIA_BACKOFF_MAX_SECONDS = _env_float("TRACKAROO_ALGOLIA_BACKOFF_MAX", 20.0)
 ALGOLIA_RATE_LIMIT_WAIT_SECONDS = _env_float("TRACKAROO_ALGOLIA_RATE_LIMIT_WAIT", 5.0)
-# Circuit breaker: abort a category pass after this many consecutive failed
-# batches (all retries exhausted), rather than grinding through the whole
-# watchlist against a blocking API. Written to PCCG_COOLDOWN_FILE on trip.
-ALGOLIA_CIRCUIT_BREAKER_LIMIT = _env_int("TRACKAROO_ALGOLIA_CIRCUIT_BREAKER", 3)
 PCCG_COOLDOWN_HOURS = _env_float("TRACKAROO_PCCG_COOLDOWN_HOURS", 4.0)
 PCCG_COOLDOWN_FILE = _env_path("TRACKAROO_PCCG_COOLDOWN_FILE", DATA_DIR / "pccg_cooldown.json")
 # Short pause between the CPU and GPU category passes (same Algolia index/IP).
@@ -279,9 +269,6 @@ SCORPTEC_DELIST_PAGE_DELAY = _env_float("TRACKAROO_SCORPTEC_DELIST_PAGE_DELAY", 
 # ── Algolia pagination tuning (PCCG) ──────────────────────────────────
 ALGOLIA_HITS_PER_PAGE = _env_int("TRACKAROO_ALGOLIA_HITS_PER_PAGE", 20)
 ALGOLIA_MAX_PAGES = _env_int("TRACKAROO_ALGOLIA_MAX_PAGES", 10)
-# Batch searches paginate shallower than single searches — products appear
-# early in the ranked results, so 3 pages is enough.
-ALGOLIA_BATCH_MAX_PAGES = _env_int("TRACKAROO_ALGOLIA_BATCH_MAX_PAGES", 3)
 ALGOLIA_PAGE_DELAY = _env_float("TRACKAROO_ALGOLIA_PAGE_DELAY", 0.3)
 
 # Catalogue fetch — PCCG's public search key is capped at 100 queries per IP

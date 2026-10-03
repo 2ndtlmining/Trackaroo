@@ -14,6 +14,15 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-04 -- Ops hygiene: dead Algolia knobs, scoped alert deletes, count-free watchlist tests (#15, #20).**
+  Removed `BATCH_SIZE`, `BATCH_DELAY`, `ALGOLIA_BATCH_MAX_PAGES` and `ALGOLIA_CIRCUIT_BREAKER_LIMIT`
+  (config.py, .env.example, pccg imports; unused since the whole-catalogue fetch; a leftover
+  `TRACKAROO_BATCH_*` line in a prod `.env` is now simply ignored). `deleteAlert(db, productId,
+  alertId)` deletes `WHERE id = ? AND product_id = ?`; `$lib/alertTarget.parseTargetPrice` rounds
+  the target to cents and caps it at A$100,000 (input `max` too). test_seed/test_watchlist_validation
+  no longer pin 105/55/50: they check every data line loads, a 35-per-category floor, every tier
+  tracked per category and no duplicates, so adding or retiring a product needs no test edit.
+  Still open in #15: requirements-dev + hash pins, run_daily lock, WAL caveat doc, ORIGIN note.
 - **2026-10-04 -- Client file splits; 350-line cap now covers all of web/src (#61).**
   PriceChart.svelte (542 -> 228) moves its uPlot series/data/axes and draw hooks to
   `$lib/priceChartPlot.ts` (ChartSeries/ChartBand types now live there) and its legend to
