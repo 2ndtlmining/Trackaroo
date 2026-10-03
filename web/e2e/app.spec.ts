@@ -1920,7 +1920,13 @@ test.describe('MSRP cues (Task 3)', () => {
 		const header = page.getByRole('columnheader', { name: /^Perf\/A\$1k/ });
 		await expect(header).toBeVisible();
 		await expect(header).toHaveAttribute('aria-sort', 'descending');
-		const withPerf = page.getByTestId('catalog-row').filter({ hasText: 'GeForce RTX 5060 Ti' }).first().getByTestId('row-value');
+		// The seed's pinned in-stock 8 GB fixture (seedValueFixtures), not a scraped row.
+		const fixtureId = productIdByModel('Radeon RX 9060 XT 8GB');
+		const withPerf = page
+			.getByTestId('catalog-row')
+			.filter({ has: page.locator(`a[href="/product/${fixtureId}"]`) })
+			.getByTestId('row-value');
+		await expect(withPerf).toHaveCount(1);
 		await expect(withPerf).toContainText(/\d+$/);
 		await expect(withPerf).toHaveAttribute('title', /1440p raster, TechPowerUp/);
 		const without = page.getByTestId('catalog-row').filter({ hasText: 'E2E New Low GPU' }).getByTestId('row-value');
@@ -1934,7 +1940,7 @@ test.describe('MSRP cues (Task 3)', () => {
 	test('/compare shows a Perf / A$1k row (#33)', async ({ page }) => {
 		const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
 		const ids = db
-			.prepare("SELECT id FROM products WHERE category = 'gpu' AND model IN ('GeForce RTX 5060 Ti', 'GeForce RTX 5060') ORDER BY id")
+			.prepare("SELECT id FROM products WHERE category = 'gpu' AND model IN ('Radeon RX 9060 XT 8GB', 'Radeon RX 7600') ORDER BY id")
 			.all() as { id: number }[];
 		db.close();
 		expect(ids.length).toBe(2);
@@ -2108,7 +2114,7 @@ test.describe('/value (#33)', () => {
 		await goto(page, '/value');
 		await expect(page.getByTestId('budget-card')).toHaveCount(5);
 		expect(await page.getByTestId('budget-winner').count()).toBeGreaterThan(0);
-		// The RTX 5060 (8 GB) is in stock in both seeds, so some card changes.
+		// The seed pins an in-stock 8 GB card at A$299 (best under A$400), so some card changes.
 		const before = await page.getByTestId('budget-winners').innerText();
 		const toggle = page.getByRole('button', { name: 'Exclude 8 GB cards' });
 		await expect(toggle).toHaveAttribute('aria-pressed', 'false');

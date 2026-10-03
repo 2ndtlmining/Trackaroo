@@ -185,14 +185,18 @@ function loadSources() {
 	return buildSyntheticSources();
 }
 
-// /value fixtures (#33), additive only.
+// /value fixtures (#33). Deterministic whatever data/ holds, so the specs never
+// depend on the scraped data.
 //  1. vram_gb from db/watchlist.csv for every GPU that has none, as seed.py
 //     does in a real DB. The performance index is keyed "<model> <vram>GB", so
 //     without it only the two hand-set cards above resolve to an entry.
-//  2. CPUs whose model names are real index keys, inserted only when the
-//     loaded snapshots lack them (the synthetic fixture's four CPUs are all
-//     absent from the CPU chart): two priced and in stock, one out of stock
-//     only, so "N without an in-stock price are not shown" has a member.
+//  2. Five products whose model names are real index keys, with pinned prices
+//     and stock, always created: two CPUs in stock, one CPU out of stock only
+//     ("N without an in-stock price are not shown" has a member) and two 8 GB
+//     GPUs in stock at A$299 and A$199 (best under A$400 on both seeds, so excluding 8 GB
+//     cards always changes a budget card). If a scraped row for the same
+//     product exists its listings are delisted, so the pinned listing is the
+//     only price the value pages can see.
 function seedValueFixtures(db) {
 	const watchlist = fs.readFileSync(path.resolve(webRoot, '..', 'db', 'watchlist.csv'), 'utf-8');
 	const setVram = db.prepare(
@@ -207,30 +211,43 @@ function seedValueFixtures(db) {
 
 	const latest = db.prepare('SELECT MAX(snapshot_date) AS d FROM price_snapshots').get()?.d;
 	if (!latest) return;
-	const exists = db.prepare("SELECT 1 FROM products WHERE category = 'cpu' AND model = ?");
-	const cpus = [
-		['AMD', 'Ryzen 7 9800X3D', 749, 'in_stock'],
-		['AMD', 'Ryzen 5 9600X', 349, 'in_stock'],
-		['Intel', 'Core Ultra 7 265K', 529, 'out_of_stock']
+	const fixtures = [
+		['cpu', 'AMD', 'Ryzen 7 9800X3D', null, 749, 'in_stock'],
+		['cpu', 'AMD', 'Ryzen 5 9600X', null, 349, 'in_stock'],
+		['cpu', 'Intel', 'Core Ultra 7 265K', null, 529, 'out_of_stock'],
+		['gpu', 'AMD', 'Radeon RX 9060 XT 8GB', 8, 299, 'in_stock'],
+		['gpu', 'AMD', 'Radeon RX 7600', 8, 199, 'in_stock']
 	];
-	for (const [brand, model, price, stock] of cpus) {
-		if (exists.get(model)) continue;
-		const productId = Number(
-			db
-				.prepare(
-					`INSERT INTO products (category, brand, model, generation_tier, tracked)
-					 VALUES ('cpu', ?, ?, 'current', 1)`
-				)
-				.run(brand, model).lastInsertRowid
-		);
-		const slug = model.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+	for (const [category, brand, model, vram, price, stock] of fixtures) {
+		const found = db
+			.prepare(
+				`SELECT id FROM products WHERE category = ? AND model = ?
+				   AND (? IS NULL OR vram_gb = ?) ORDER BY id LIMIT 1`
+			)
+			.get(category, model, vram, vram);
+		let productId;
+		if (found) {
+			productId = found.id;
+			db.prepare("UPDATE retailer_listings SET status = 'delisted' WHERE product_id = ?").run(productId);
+			db.prepare("UPDATE products SET tracked = 1, generation_tier = 'current' WHERE id = ?").run(productId);
+		} else {
+			productId = Number(
+				db
+					.prepare(
+						`INSERT INTO products (category, brand, model, generation_tier, tracked, vram_gb)
+						 VALUES (?, ?, ?, 'current', 1, ?)`
+					)
+					.run(category, brand, model, vram).lastInsertRowid
+			);
+		}
+		const slug = `${model}-${vram ?? ''}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 		const listingId = Number(
 			db
 				.prepare(
 					`INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status)
 					 VALUES (?, 'scorptec', ?, ?, 'active')`
 				)
-				.run(productId, `${brand} ${model} Processor`, `/p/e2e-value-${slug}`).lastInsertRowid
+				.run(productId, `${brand} ${model} Fixture`, `/p/e2e-value-${slug}`).lastInsertRowid
 		);
 		// Flat for three days: never a deal, a mover or a new low.
 		for (const n of [2, 1, 0]) {
