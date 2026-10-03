@@ -6,6 +6,7 @@
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import type { Signal, SignalIcon, SignalTone } from '$lib/buySignals';
+	import { splitPrices } from '$lib/formats';
 
 	// One buying signal (#31): a tinted icon disc, the short claim, then the
 	// evidence behind it. The icon is decorative; the words carry the meaning,
@@ -42,10 +43,10 @@
 	</span>
 	<span class="min-w-0">
 		<span class="block text-sm tabular-nums leading-snug font-semibold text-text" data-testid="signal-claim">
-			{signal.claim}
+			{#each splitPrices(signal.claim) as part, i (i)}{#if part.price}<span class="num">{part.text}</span>{:else}{part.text}{/if}{/each}
 		</span>
 		<span class="mt-0.5 block tabular-nums text-xs leading-snug text-text-muted" data-testid="signal-evidence">
-			{signal.evidence}
+			{#each splitPrices(signal.evidence) as part, i (i)}{#if part.price}<span class="num">{part.text}</span>{:else}{part.text}{/if}{/each}
 		</span>
 	</span>
 </li>

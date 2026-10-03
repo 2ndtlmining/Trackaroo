@@ -14,6 +14,12 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-03 -- Fonts cached for a year; mono prices in signal sentences (#63, #62).**
+  `web/server.js` sets `Cache-Control: public, max-age=31536000, immutable` on successful
+  `/fonts/*` responses (overriding sirv; 304 and HEAD included, errors untouched).
+  `splitPrices()` in `$lib/formats` lets SignalBadge set amounts in `.num`. Gate: pytest 1377,
+  vitest 1200, Playwright 225 (+1 skipped); image checked offline (font 200 immutable).
+
 - **2026-10-03 -- One price rule for value figures (#59).** `/value` now prices products like
   `/products` and `/compare` (cheapest in-stock, active, non-bundle listing, each at its latest
   snapshot, via `cheapestInStockLatest` in `queries/sql.ts`); `/deals` and the OzBargain alert keep

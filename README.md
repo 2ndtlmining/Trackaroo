@@ -73,7 +73,7 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 | **Price alerts** | ✅ Complete | `check_alerts.py` — price-drop (≤ target, re-fires on further drops) + restock (24h cooldown) alerts, delivered best-effort via Discord/SMTP/webhook after each healthy run |
 | **Delisted detection** | ✅ Complete | `check_delisted.py` — re-checks stale Scorptec listings that vanished from the grid; a positive 404/410 or "No Longer Available" page marks them `delisted` (shown with a Delisted badge, excluded from price ranges); unverifiable pages are left untouched |
 | **Staleness monitor** | ✅ Complete | `check_staleness.py` — the only check that runs *outside* the pipeline, so it can detect the run that never happened; ERROR (exit 1 + Discord alert) when no retailer has data inside the threshold, WARNING when a single retailer lags |
-| **Frontend tests** | ✅ Complete | 1190 vitest + 225 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
+| **Frontend tests** | ✅ Complete | 1200 vitest + 225 Playwright e2e (incl. axe accessibility checks) (with a `goto()` hydration helper) |
 | **Deployment** | ✅ Complete | Single all-in-one Docker image: pipeline + dashboard in one container, run with `docker compose` (`deploy/redeploy.sh`)
 
 ## Quick start
@@ -461,7 +461,7 @@ npm run check
 # Production build (adapter-node)
 npm run build
 
-# Run frontend unit tests (1190 vitest)
+# Run frontend unit tests (1200 vitest)
 npm test
 
 # Run browser e2e regression tests (225 Playwright, against a seeded dev server)
@@ -472,7 +472,8 @@ Point it at a different DB file with `TRACKAROO_DB=/path/to/trackaroo.db`. The d
 
 ### Design system
 
-- **Fonts** are self-hosted in `web/static/fonts/` (Bricolage Grotesque 700/800 for display, IBM Plex Sans 400/500/600 for text, IBM Plex Mono 500/600 for prices), each with its OFL licence. No request goes to Google or any other font host.
+- **Fonts** are self-hosted in `web/static/fonts/` (Bricolage Grotesque 700/800 for display, IBM Plex Sans 400/500/600 for text, IBM Plex Mono 500/600 for prices), each with its OFL licence. No request goes to Google or any other font host. `web/server.js` serves `/fonts/*` with `Cache-Control: public, max-age=31536000, immutable` (#63), so never change a font file in place: give a new font a new file name.
+- **Prices inside sentences** (buy-signal claims and evidence) are split with `splitPrices()` in `$lib/formats` and the amounts set in `.num` (#62), so every price uses the mono number face.
 - **Type tokens** in `web/src/app.css`: classes `.text-display`, `.text-title`, `.text-section`, `.text-price`, and theme sizes `text-body` and `text-meta`. Prices use the mono tabular face (`.num` or `text-price`).
 - **Surface tokens:** `surface-2`, `surface-3`, `border-card` and the card shadow, in both themes.
 - **Components:** `Wordmark` (terminal style: mono `trackaroo` plus an accent `_`), `PageHeader` (one per route, with `actions` and `meta` slots and a snippet subtitle) and `PriceRangeBar` (6 segments, full and compact sizes; catalogue rows show it from xl).

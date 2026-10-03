@@ -57,6 +57,67 @@ describe('compression wrapper (#28)', () => {
 	});
 });
 
+describe('font caching (#63)', () => {
+	const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+	it('marks /fonts/ responses immutable even when the static handler sets its own header', async () => {
+		// sirv passes Cache-Control in writeHead's header object.
+		const base = await start((_req, res) => {
+			res.writeHead(200, { 'Cache-Control': 'no-cache', 'Content-Type': 'font/woff2' });
+			res.end('wOF2');
+		});
+		const res = await fetch(`${base}/fonts/ibm-plex-sans-latin-400-normal.woff2`);
+		expect(res.headers.get('cache-control')).toBe(IMMUTABLE);
+	});
+
+	it('also wins over a header set with setHeader', async () => {
+		const base = await start((_req, res) => {
+			res.setHeader('Cache-Control', 'no-cache');
+			res.end('wOF2');
+		});
+		const res = await fetch(`${base}/fonts/x.woff2`);
+		expect(res.headers.get('cache-control')).toBe(IMMUTABLE);
+	});
+
+	it('leaves every other path alone', async () => {
+		const base = await start((_req, res) => {
+			res.writeHead(200, { 'Cache-Control': 'no-cache', 'Content-Type': 'text/html' });
+			res.end('ok');
+		});
+		for (const path of ['/', '/products', '/fontsx/a.woff2', '/favicon.svg']) {
+			const res = await fetch(`${base}${path}`);
+			expect(res.headers.get('cache-control')).toBe('no-cache');
+		}
+	});
+
+	it('also marks a 304 revalidation and a HEAD request', async () => {
+		const notModified = await start((_req, res) => {
+			res.writeHead(304);
+			res.end();
+		});
+		const r304 = await fetch(`${notModified}/fonts/x.woff2`);
+		expect(r304.status).toBe(304);
+		expect(r304.headers.get('cache-control')).toBe(IMMUTABLE);
+		server.close();
+		const head = await start((_req, res) => {
+			res.writeHead(200, { 'Cache-Control': 'no-cache', 'Content-Type': 'font/woff2' });
+			res.end();
+		});
+		const rHead = await fetch(`${head}/fonts/x.woff2?v=1`, { method: 'HEAD' });
+		expect(rHead.headers.get('cache-control')).toBe(IMMUTABLE);
+	});
+
+	it('does not cache error responses', async () => {
+		const base = await start((_req, res) => {
+			res.writeHead(404, { 'Content-Type': 'text/plain' });
+			res.end('Not found');
+		});
+		const res = await fetch(`${base}/fonts/missing.woff2`);
+		expect(res.status).toBe(404);
+		expect(res.headers.get('cache-control')).toBeNull();
+	});
+});
+
 describe('graceful shutdown (#28 follow-up)', () => {
 	// A fake signal source, never the real `process` -- so this never
 	// registers a listener for a real OS signal on the test runner's process.
