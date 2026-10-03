@@ -6,7 +6,7 @@ import type { DiscoverAction } from '$lib/types';
 
 // Not memoised: a Track/Ignore click must show on the redirect straight back.
 export function load() {
-	return getDiscoverPage(getDb(), localIsoDate());
+	return { wide: true, ...getDiscoverPage(getDb(), localIsoDate()) };
 }
 
 async function act(request: Request, action: DiscoverAction) {

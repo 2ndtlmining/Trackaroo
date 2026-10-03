@@ -5,7 +5,7 @@
 	import { NAV_LINKS, isActiveLink } from '$lib/nav';
 	import type { Category } from '$lib/types';
 
-	let { onOpenSearch }: { onOpenSearch?: () => void } = $props();
+	let { onOpenSearch, widthClass = 'max-w-6xl' }: { onOpenSearch?: () => void; widthClass?: string } = $props();
 
 	// Only the product page's data has a `product`; everywhere else this is null.
 	const productCategory = $derived(
@@ -15,7 +15,7 @@
 </script>
 
 <header class="border-b border-border bg-surface">
-	<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+	<div class="mx-auto flex {widthClass} flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
 		<Wordmark />
 		<nav
 			class="-mx-1 flex max-w-full items-center gap-1 overflow-x-auto px-1 text-sm md:overflow-visible"

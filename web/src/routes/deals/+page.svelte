@@ -5,6 +5,7 @@
 	import FacetChips from '$lib/components/FacetChips.svelte';
 	import OfferRow from '$lib/components/OfferRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { dealToOffer, NEAR_ALL_TIME_LOW_PCT } from '$lib/deals';
 	import { DEAL_MIN_AUD, DEAL_MIN_PCT, EARNED_LOW_RISE_PCT } from '$lib/constants';
 	import { formatShortDate } from '$lib/formats';
@@ -37,12 +38,12 @@
 	description="AU CPUs and GPUs priced below their recent average, or at their lowest since tracking began."
 />
 
+<PageHeader
+	title="Deals"
+	subtitle="Cheapest in-stock price at least {DEAL_MIN_PCT}% and ${DEAL_MIN_AUD} below its own 30-day average."
+/>
+
 <div>
-	<h1 class="text-xl font-semibold tracking-tight text-text">Deals</h1>
-	<p class="mt-1 text-sm text-text-muted">
-		Cheapest in-stock price at least {DEAL_MIN_PCT}% <strong>and</strong> ${DEAL_MIN_AUD} below its
-		own 30-day average.
-	</p>
 
 	<div class="mt-4 flex flex-col gap-2">
 		<FacetChips

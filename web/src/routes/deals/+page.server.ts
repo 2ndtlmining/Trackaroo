@@ -68,6 +68,7 @@ export function load({
 		rows.map((d) => ({ ...d, ozb: ozb.get(d.productId) ?? null }));
 
 	return {
+		wide: true,
 		fx,
 		belowMsrp,
 		belowAverage: withOzb(belowAverage(visible)),

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Wordmark from '$lib/components/Wordmark.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 
 	/**
@@ -29,8 +30,7 @@
 
 <div class="mx-auto max-w-xl py-16 text-center">
 	<div class="mb-8"><Wordmark size="large" /></div>
-	<h1 class="text-2xl font-semibold text-text">{heading}</h1>
-	<p class="mt-3 text-sm text-text">{message}</p>
+	<PageHeader title={heading} subtitle={message} />
 
 	{#if hint}
 		<p class="mt-3 text-sm text-text-muted">{hint}</p>

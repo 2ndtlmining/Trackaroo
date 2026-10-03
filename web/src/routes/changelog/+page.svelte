@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { renderInline, type Release } from '$lib/changelog';
 	import { formatDate } from '$lib/formats';
 
@@ -8,8 +9,7 @@
 
 <PageHead title="What's new" description="Trackaroo releases and what changed in each." />
 
-<h1 class="text-2xl font-semibold text-text">What's new</h1>
-<p class="mt-1 text-sm text-text-muted">Every Trackaroo release, newest first.</p>
+<PageHeader title="What's new" subtitle="Every Trackaroo release, newest first." />
 
 {#if data.releases.length === 0}
 	<p class="mt-6 text-sm text-text-muted">No releases yet.</p>

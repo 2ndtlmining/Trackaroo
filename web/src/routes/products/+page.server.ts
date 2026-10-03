@@ -130,6 +130,7 @@ export function load({
 	const listedCount = inStockOnly ? base.listedInStockCount : base.listedCount;
 
 	return {
+		wide: true,
 		category,
 		inStockOnly,
 		trackedCount,

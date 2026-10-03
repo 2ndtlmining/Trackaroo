@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { navigating } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import Header from '$lib/components/Header.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import StaleDataBanner from '$lib/components/StaleDataBanner.svelte';
@@ -8,6 +8,10 @@
 	let { data, children } = $props();
 
 	let paletteOpen = $state(false);
+
+	// Table pages (loaders return `wide: true`) get the wider column; header and footer follow.
+	const wide = $derived((page.data as { wide?: boolean }).wide === true);
+	const widthClass = $derived(wide ? 'max-w-7xl' : 'max-w-6xl');
 </script>
 
 <!--
@@ -33,13 +37,13 @@
 </a>
 
 <div class="flex min-h-screen flex-col">
-	<Header onOpenSearch={() => (paletteOpen = true)} />
-	<main id="main" class="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+	<Header onOpenSearch={() => (paletteOpen = true)} {widthClass} />
+	<main id="main" class="mx-auto w-full {widthClass} flex-1 px-4 py-6">
 		<StaleDataBanner latestSnapshotDate={data.stats.latestSnapshotDate} />
 		{@render children()}
 	</main>
 	<footer class="border-t border-border">
-		<div class="mx-auto max-w-6xl px-4 py-4 text-xs text-text-muted">
+		<div class="mx-auto {widthClass} px-4 py-4 text-xs text-text-muted">
 			Trackaroo — AU CPU &amp; GPU price tracker · Logos are trademarks of their respective owners
 			· <span data-testid="version-line"
 				><a

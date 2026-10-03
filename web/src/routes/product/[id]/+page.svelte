@@ -9,7 +9,7 @@
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import PriceDataTable from '$lib/components/PriceDataTable.svelte';
-	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { productBreadcrumbs } from '$lib/breadcrumbs';
 	import { chartSummary } from '$lib/chartSummary';
 	import type { AlertChannel } from '$lib/types';
@@ -145,14 +145,14 @@ label:
 
 <div class="space-y-6">
 	<div>
-		<Breadcrumbs crumbs={productBreadcrumbs({ ...product, model: name })} />
-		<p class="mt-2 flex items-center gap-1.5 text-sm text-text-muted">
+		<PageHeader
+			title={`${name}${product.variant ? ` · ${product.variant}` : ''}`}
+			crumbs={productBreadcrumbs({ ...product, model: name })}
+		/>
+		<p class="flex items-center gap-1.5 text-sm text-text-muted">
 			<BrandIcon brand={product.brand} size={16} />
 			{product.brand}
 		</p>
-		<h1 class="text-xl font-semibold text-text">
-			{name}{product.variant ? ` · ${product.variant}` : ''}
-		</h1>
 
 		<p class="mt-1 text-sm text-text-muted" data-testid="product-meta">
 			{product.category?.toUpperCase()}

@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto, replaceState } from '$app/navigation';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import PriceChange from '$lib/components/PriceChange.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Sparkline from '$lib/components/Sparkline.svelte';
@@ -207,13 +208,11 @@
 {/snippet}
 
 <div class="space-y-6">
-	<div class="flex flex-wrap items-center justify-between gap-4">
-		<div>
-			<h1 class="text-xl font-semibold text-text">Movers</h1>
-			<p class="mt-1 text-sm text-text-muted">Biggest price changes over the selected window.</p>
-		</div>
-		<SegmentedControl label="Window" options={windowOptions} value={data.window} onChange={setWindow} />
-	</div>
+	<PageHeader title="Movers" subtitle="Biggest price changes over the selected window.">
+		{#snippet actions()}
+			<SegmentedControl label="Window" options={windowOptions} value={data.window} onChange={setWindow} />
+		{/snippet}
+	</PageHeader>
 
 	{#if data.showAll}
 		<a class="text-xs text-accent" href={moversHref(data.window, view, false)}>Hide unchanged and new listings</a>

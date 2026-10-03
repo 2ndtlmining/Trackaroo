@@ -3,6 +3,7 @@
 	import { afterNavigate, goto, replaceState } from '$app/navigation';
 	import ProductRow from '$lib/components/ProductRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import CatalogFilters from '$lib/components/CatalogFilters.svelte';
 	import { groupForIndex, type CatalogRow } from '$lib/productIndex';
 	import {
@@ -45,6 +46,10 @@
 	} = $props();
 
 	const heading = $derived(data.category === 'cpu' ? 'CPUs' : 'GPUs');
+	const countLine = $derived(
+		`${data.trackedCount} tracked · ` +
+			(data.inStockOnly ? `${data.groups.length} in stock` : `${data.listedCount} seen at a retailer`)
+	);
 
 	// The base card carries its VRAM where a "<model> <N>GB" sibling exists
 	// (display only). Search and rows both use the display name, so
@@ -222,17 +227,7 @@
 />
 
 <div>
-	<div class="flex flex-wrap items-baseline justify-between gap-2">
-		<h1 class="text-xl font-semibold text-text">{heading}</h1>
-		<p class="text-xs text-text-muted">
-			<span class="num">{data.trackedCount}</span> tracked
-			{#if data.inStockOnly}
-				· <span class="num">{data.groups.length}</span> in stock
-			{:else}
-				· <span class="num">{data.listedCount}</span> seen at a retailer
-			{/if}
-		</p>
-	</div>
+	<PageHeader title={heading} subtitle={countLine} />
 
 	<div class="mt-3 flex flex-wrap items-center gap-3">
 		<div class="min-w-0 flex-1 basis-64">

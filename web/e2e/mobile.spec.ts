@@ -1,4 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import Database from 'better-sqlite3';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Mobile viewport regression tests.
@@ -214,5 +217,23 @@ test.describe('discover mobile', () => {
 		const { viewport, scrollWidth } = await horizontalOverflow(page);
 		expect(scrollWidth, '/discover overflows its viewport').toBeLessThanOrEqual(viewport + 1);
 		await expect(page.getByTestId('discover-untracked').getByRole('button', { name: 'Track' }).first()).toBeVisible();
+	});
+});
+
+test.describe('PageHeader with the longest product name (#22)', () => {
+	test.use({ viewport: NARROW });
+
+	test('the product page does not overflow at 320px', async ({ page }) => {
+		const db = new Database(path.join(path.dirname(fileURLToPath(import.meta.url)), 'e2e.db'), {
+			readonly: true
+		});
+		const row = db
+			.prepare('SELECT id FROM products WHERE tracked = 1 ORDER BY length(model) DESC, id LIMIT 1')
+			.get() as { id: number };
+		db.close();
+		await goto(page, `/product/${row.id}`);
+		await expect(page.locator('h1')).toHaveCount(1);
+		const { viewport, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
 	});
 });

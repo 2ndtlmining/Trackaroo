@@ -36,6 +36,7 @@ export function load({
 		return { all, movers, sparklines };
 	});
 	return {
+		wide: true,
 		movers: movers.map((m) => ({
 			...m,
 			sparkline: (sparklines.get(m.listingId) ?? []).map((p) => ({ date: p.date, price: p.price }))

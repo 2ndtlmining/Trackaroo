@@ -1887,3 +1887,39 @@ test.describe('MSRP cues (Task 3)', () => {
 		await expect(page.getByRole('link', { name: 'E2E New Low GPU', exact: true })).toHaveCount(0);
 	});
 });
+
+test.describe('PageHeader on every route (#22)', () => {
+	const ROUTES = [
+		'/',
+		'/products?category=gpu',
+		'/product/1',
+		'/deals',
+		'/movers',
+		'/discover',
+		'/compare',
+		'/changelog',
+		'/no-such-page'
+	];
+	for (const route of ROUTES) {
+		test(`${route} has exactly one h1, inside the page header`, async ({ page }) => {
+			await goto(page, route);
+			await expect(page.locator('h1')).toHaveCount(1);
+			await expect(page.locator('[data-testid="page-header"] h1')).toHaveCount(1);
+		});
+	}
+
+	const widthOf = (page: Page) =>
+		page.locator('main').evaluate((el) => getComputedStyle(el).maxWidth);
+
+	for (const route of ['/products?category=gpu', '/deals', '/movers', '/discover']) {
+		test(`${route} uses the wide 80rem column`, async ({ page }) => {
+			await goto(page, route);
+			expect(await widthOf(page)).toBe('1280px');
+		});
+	}
+
+	test('/changelog keeps the 72rem column', async ({ page }) => {
+		await goto(page, '/changelog');
+		expect(await widthOf(page)).toBe('1152px');
+	});
+});

@@ -2,6 +2,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { bestIndexes, buildCompareRows } from '$lib/compareRows';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import type { CompareEntry, ProductIndexEntry } from '$lib/models';
@@ -40,12 +41,10 @@
 <PageHead title="Compare" description="Specs and current best AU prices side by side." />
 
 <div class="space-y-6">
-	<div>
-		<h1 class="text-xl font-semibold text-text">Compare</h1>
-		<p class="mt-1 text-sm text-text-muted">
-			Specs and current best prices side by side. Share the URL to keep a comparison handy.
-		</p>
-	</div>
+	<PageHeader
+		title="Compare"
+		subtitle="Specs and current best prices side by side. Share the URL to keep a comparison handy."
+	/>
 
 	{#if entries.length === 0}
 		<section class="rounded-md border border-border bg-surface p-4" aria-labelledby="pick-heading">

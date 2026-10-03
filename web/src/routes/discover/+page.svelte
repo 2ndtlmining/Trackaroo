@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { copyText } from '$lib/clipboard';
 	import { formatAud, formatShortDate } from '$lib/formats';
 	import type { DiscoveredPart } from '$lib/types';
@@ -17,6 +18,10 @@
 		return new Date(`${p.firstSeen}T00:00:00`) >= weekAgo;
 	};
 	const ranAt = $derived(data.lastRun ? data.lastRun.finishedAt.slice(11, 16) : null);
+	const summary = $derived(
+		`${data.newThisWeek} new this week · ${data.untracked.length} untracked · ${data.conflicts.length} conflicts` +
+			(data.lastRun ? ` · last checked ${day(data.lastRun.runDate)} ${ranAt}` : '')
+	);
 	let copied = $state<number | null>(null);
 	let copyFailed = $state<number | null>(null);
 	async function copy(p: DiscoveredPart) {
@@ -28,13 +33,9 @@
 
 <PageHead title="Discover" description="Parts retailers sell that Trackaroo does not track yet." />
 
-<div class="mx-auto max-w-5xl space-y-8 px-4 py-6">
-	<header class="space-y-2">
-		<h1 class="text-xl font-semibold text-text">Discover</h1>
-		<p class="text-sm text-text-muted">
-			{data.newThisWeek} new this week · {data.untracked.length} untracked · {data.conflicts.length} conflicts
-			{#if data.lastRun} · last checked {day(data.lastRun.runDate)} {ranAt}{/if}
-		</p>
+<div class="space-y-8">
+	<div class="space-y-2">
+		<PageHeader title="Discover" subtitle={summary} />
 		{#if data.isStale}
 			<p class="rounded-md bg-warning-soft px-3 py-2 text-sm text-text" role="status">
 				{#if !data.lastRun}Discovery has not run yet.{:else if data.lastRun.runDate === data.today}No catalogues were saved today; showing the last results.{:else}Showing results from {day(data.lastRun.runDate)}: discovery has not run today yet.{/if}
@@ -44,7 +45,7 @@
 			<p class="text-xs text-text-muted">Missing today: {data.lastRun.missing.join(', ')}</p>
 		{/if}
 		{#if form?.error}<p class="text-sm text-danger" role="alert">{form.error}</p>{/if}
-	</header>
+	</div>
 
 	<section aria-labelledby="untracked-h">
 		<h2 id="untracked-h" class="mb-2 text-sm font-semibold text-text">Untracked parts ({data.untracked.length})</h2>
