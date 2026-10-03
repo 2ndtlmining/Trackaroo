@@ -34,18 +34,43 @@ pages and chart images were fetched directly over HTTPS (curl) in the same sessi
     Super cards and the RTX 3050.
 
   The raster and RT charts come from the same review.
-- **CPUs.** The brief asked for the most recent TechPowerUp CPU review with
-  "Relative Performance, Games 1920x1080" on an RTX 4090/5090 test bed. That is
-  the Ryzen 7 7700X3D review: test bed RTX 5090 (Zotac Solid), 2x16 GB
-  DDR5-6000. Its chart lists only 20 CPUs, so CPU coverage is thin; see the
-  gaps below.
+- **CPUs.** The rule is the GPU rule (ruling R3): use the 2025–2026
+  TechPowerUp CPU review on an RTX 4090/5090 test bed whose "Relative
+  Performance, Games 1920x1080" chart lists the most tracked CPUs (any tier).
+  Every 2025–2026 review in TechPowerUp's Processors category was fetched and
+  its chart counted:
+
+  | Review | Published | Chart entries | Tracked matches (all tiers) | Required matches (current + current-1, of 38) |
+  |---|---|---|---|---|
+  | AMD Ryzen 7 7700X3D | 16-Jul-2026 | 20 | **16** | **15** |
+  | AMD Ryzen 9 9950X3D2 Dual Edition | 9-Jun-2026 | 17 | 12 | 12 |
+  | Intel Core Ultra 7 270K Plus | 23-Mar-2026 | 17 | 12 | 12 |
+  | Intel Core Ultra 5 250K Plus | 23-Mar-2026 | 15 | 12 | 12 |
+  | AMD Ryzen 7 9850X3D | 28-Jan-2026 | 13 | 11 | 11 |
+  | AMD Ryzen 9 9950X3D | 11-Mar-2025 | 8 | 7 | 7 |
+
+  - TechPowerUp has no Ryzen 9 9900X3D review; `/review/amd-ryzen-9-9900x3d/`
+    returns 404, and it is not in the Processors listing.
+  - The Arrow Lake refresh is the 270K Plus / 250K Plus pair above. No Zen 6
+    review is listed.
+  - The Ryzen 7 9800X3D (Nov 2024, 49 entries) and Core Ultra 285K / 265K /
+    245K (Oct 2024) reviews predate the 2025–2026 window, so they are not
+    eligible.
+
+  The Ryzen 7 7700X3D review wins: test bed RTX 5090 (Zotac Solid), 2x16 GB
+  DDR5-6000. Its chart is still small, so CPU coverage is thin; see the gaps
+  below.
 
 ### Matching notes
 
-- Keys: GPUs use `"<watchlist model> <watchlist spec>"`, and CPUs use the
-  watchlist model. Watchlist rows whose model already contains the VRAM
-  therefore get it twice, e.g. `GeForce RTX 5060 Ti 8GB 8GB` and
-  `Radeon RX 9060 XT 8GB 8GB`.
+- **Product key rule (ruling R5):**
+  - For a GPU whose watchlist `model` already ends with its `spec` as a whole
+    word, the key is the `model`: `GeForce RTX 5060 Ti 8GB`,
+    `Radeon RX 9060 XT 8GB`, `GeForce RTX 3050 6GB`.
+  - For any other GPU, the key is `"<model> <spec>"`, e.g.
+    `GeForce RTX 5060 Ti 16GB`.
+  - For a CPU, the key is the `model`.
+  - `product_key()` in `unit_testing/test_perf_index.py` implements the rule.
 - The chart labels give the VRAM, e.g. "RTX 5060 Ti 8 GB". Each GPU was matched
   on model **and** VRAM:
   - RTX 5060 Ti 16 GB and 8 GB are separate rows (raster 35 / 35, RT 35 / 25);
@@ -79,7 +104,7 @@ pages and chart images were fetched directly over HTTPS (curl) in the same sessi
 **`gpu_raster_1440p` and `gpu_rt_1440p`** (same list for both)
 - current: Radeon RX 9070 GRE 12GB, Arc B570 10GB
 - current-1: Arc A380 6GB, Arc A750 8GB
-- current-2: GeForce RTX 3050 6GB 6GB, GeForce RTX 3070 Ti 8GB,
+- current-2: GeForce RTX 3050 6GB, GeForce RTX 3070 Ti 8GB,
   GeForce RTX 3080 Ti 12GB, GeForce RTX 3090 24GB, Radeon RX 6600 8GB,
   Radeon RX 6650 XT 8GB, Radeon RX 6700 XT 12GB, Radeon RX 6750 XT 12GB,
   Radeon RX 6800 16GB, Radeon RX 6950 XT 16GB

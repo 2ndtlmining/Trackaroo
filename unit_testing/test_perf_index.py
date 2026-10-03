@@ -38,10 +38,19 @@ REQUIRED_TIERS = ("current", "current-1")
 
 
 def product_key(row: dict) -> str:
-    """The index key for a watchlist row: '<model> <spec>' (GPU) or '<model>' (CPU)."""
-    if row["category"] == "gpu":
-        return f"{row['model']} {row['spec'].strip()}"
-    return row["model"]
+    """The index key for a watchlist row.
+
+    GPU: the model when it already ends with its spec as a whole word
+    ("GeForce RTX 5060 Ti 8GB" + "8GB"), otherwise "<model> <spec>".
+    CPU: the model.
+    """
+    model = row["model"]
+    if row["category"] != "gpu":
+        return model
+    spec = row["spec"].strip()
+    if model.endswith(" " + spec):
+        return model
+    return f"{model} {spec}"
 
 
 @pytest.fixture(scope="module")
@@ -137,9 +146,35 @@ def test_tracked_current_and_current1_are_covered(index, watchlist):
 
 def test_vram_variants_are_separate_products(index, watchlist):
     """RTX 5060 Ti 8GB/16GB and RX 9060 XT 8GB/16GB resolve to distinct keys."""
-    for key in ("GeForce RTX 5060 Ti 16GB", "GeForce RTX 5060 Ti 8GB 8GB",
-                "Radeon RX 9060 XT 16GB", "Radeon RX 9060 XT 8GB 8GB"):
+    for key in ("GeForce RTX 5060 Ti 16GB", "GeForce RTX 5060 Ti 8GB",
+                "Radeon RX 9060 XT 16GB", "Radeon RX 9060 XT 8GB",
+                "GeForce RTX 3050 8GB", "GeForce RTX 3050 6GB"):
         assert key in watchlist, key
+
+
+@pytest.mark.parametrize(
+    "model, spec, expected",
+    [
+        ("GeForce RTX 5060 Ti 8GB", "8GB", "GeForce RTX 5060 Ti 8GB"),
+        ("Radeon RX 9060 XT 8GB", "8GB", "Radeon RX 9060 XT 8GB"),
+        ("GeForce RTX 3050 6GB", "6GB", "GeForce RTX 3050 6GB"),
+        ("GeForce RTX 5060 Ti", "16GB", "GeForce RTX 5060 Ti 16GB"),
+        ("GeForce RTX 3050", "8GB", "GeForce RTX 3050 8GB"),
+        # a suffix that is only part of a word is not the spec
+        ("Radeon Example 16GB", "6GB", "Radeon Example 16GB 6GB"),
+    ],
+)
+def test_gpu_product_key_rule(model, spec, expected):
+    assert product_key({"category": "gpu", "model": model, "spec": spec}) == expected
+
+
+def test_cpu_product_key_is_model():
+    assert product_key({"category": "cpu", "model": "Core i5-14400F", "spec": "10c"}) == "Core i5-14400F"
+
+
+def test_spec_suffixed_watchlist_rows_resolve(watchlist):
+    for model in ("GeForce RTX 5060 Ti 8GB", "Radeon RX 9060 XT 8GB", "GeForce RTX 3050 6GB"):
+        assert watchlist[model]["model"] == model
 
 
 def test_current2_gaps_warn(index, watchlist):

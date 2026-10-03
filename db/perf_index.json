@@ -94,7 +94,7 @@
       "gpu_raster_1440p": 35,
       "gpu_rt_1440p": 35
     },
-    "GeForce RTX 5060 Ti 8GB 8GB": {
+    "GeForce RTX 5060 Ti 8GB": {
       "gpu_raster_1440p": 35,
       "gpu_rt_1440p": 25
     },
@@ -150,7 +150,7 @@
       "gpu_raster_1440p": 33,
       "gpu_rt_1440p": 33
     },
-    "Radeon RX 9060 XT 8GB 8GB": {
+    "Radeon RX 9060 XT 8GB": {
       "gpu_raster_1440p": 32,
       "gpu_rt_1440p": 30
     },
@@ -221,7 +221,7 @@
   },
   "not_in_source": {
     "gpu_raster_1440p": [
-      "GeForce RTX 3050 6GB 6GB",
+      "GeForce RTX 3050 6GB",
       "GeForce RTX 3070 Ti 8GB",
       "GeForce RTX 3080 Ti 12GB",
       "GeForce RTX 3090 24GB",
@@ -237,7 +237,7 @@
       "Arc B570 10GB"
     ],
     "gpu_rt_1440p": [
-      "GeForce RTX 3050 6GB 6GB",
+      "GeForce RTX 3050 6GB",
       "GeForce RTX 3070 Ti 8GB",
       "GeForce RTX 3080 Ti 12GB",
       "GeForce RTX 3090 24GB",
