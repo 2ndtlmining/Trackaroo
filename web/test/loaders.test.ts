@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 import { createSeededDb, type SeededDb } from './helpers/seed';
+import { BUDGETS } from '$lib/value';
 
 // getDb() caches its connection in module scope (src/lib/server/db.ts), so
 // TRACKAROO_DB must be set before anything first calls it. The loaders below
@@ -178,7 +179,7 @@ describe('/value loader (#33)', () => {
 		expect(data.exclude8gb).toBe(false);
 		// Shown only when an 8 GB card could sit in a budget card.
 		expect(data.show8gbToggle).toBe(
-			data.points.some((p) => p.vramGb != null && p.vramGb <= 8 && p.price <= 2500)
+			data.points.some((p) => p.vramGb != null && p.vramGb <= 8 && p.price <= BUDGETS.at(-1)!)
 		);
 	});
 

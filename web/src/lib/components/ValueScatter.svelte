@@ -111,23 +111,23 @@
 	<div class="relative" bind:clientWidth={width}>
 		<svg viewBox="0 0 {w} {h}" width="100%" height={h} class="block overflow-visible" role="group" aria-label="Value scatter">
 			<!-- y title sits above the plot, horizontal, so a phone keeps its width -->
-			<text x={M.left - 6} y={12} class="fill-text-muted text-[11px]"
+			<text x={M.left - 6} y={12} class="fill-text-muted text-meta"
 				>{metricLabel} ({unit}){#if ys.zoomed && !noteOwnLine}<tspan data-testid="value-axis-note" class="fill-text"
 						>. Axis doesn't start at 0</tspan
 					>{/if}</text
 			>
 			{#if noteOwnLine}
-				<text data-testid="value-axis-note" x={M.left - 6} y={26} class="fill-text text-[11px]">Axis doesn't start at 0</text>
+				<text data-testid="value-axis-note" x={M.left - 6} y={26} class="fill-text text-meta">Axis doesn't start at 0</text>
 			{/if}
 			{#each ys.ticks as t (t)}
 				<line x1={M.left} x2={w - M.right} y1={y(t)} y2={y(t)} class="stroke-border" stroke-width="1" />
-				<text x={M.left - 6} y={y(t) + 3.5} text-anchor="end" class="num fill-text-muted text-[10.5px]">{t}</text>
+				<text x={M.left - 6} y={y(t) + 3.5} text-anchor="end" class="num fill-text-muted text-meta">{t}</text>
 			{/each}
 			{#each xTicks as t (t)}
-				<text x={x(t)} y={h - M.bottom + 15} text-anchor="middle" class="num fill-text-muted text-[10.5px]">{audTick(t)}</text>
+				<text x={x(t)} y={h - M.bottom + 15} text-anchor="middle" class="num fill-text-muted text-meta">{audTick(t)}</text>
 			{/each}
 			<line x1={M.left} x2={w - M.right} y1={h - M.bottom} y2={h - M.bottom} class="stroke-border-strong" stroke-width="1" />
-			<text x={w - M.right} y={h - 6} text-anchor="end" class="fill-text-muted text-[11px]">Price (A$, log scale)</text>
+			<text x={w - M.right} y={h - 6} text-anchor="end" class="fill-text-muted text-meta">Price (A$, log scale)</text>
 
 			{#if area}
 				<path d={area} class="fill-accent-soft" />
@@ -135,7 +135,7 @@
 			{/if}
 
 			{#each labels as l (l.id)}
-				<text x={l.lx} y={l.ly} text-anchor={l.anchor} class="pointer-events-none fill-text-muted text-[11px]">{l.text}</text>
+				<text x={l.lx} y={l.ly} text-anchor={l.anchor} class="pointer-events-none fill-text-muted text-meta">{l.text}</text>
 			{/each}
 
 			{#each painted as p (p.id)}
