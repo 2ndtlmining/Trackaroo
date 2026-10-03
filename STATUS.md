@@ -19,7 +19,7 @@ backup integrity.
   on every route, wide table pages, 6-segment `PriceRangeBar` (catalogue rows from xl),
   collapsed empty homepage columns, wrapping phone nav. No data or schema change; deploy
   with `deploy/redeploy.sh` outside 04:00-09:59. Gate: pytest **1354 passed**, vitest
-  **1104 passed**, Playwright **209 passed, 1 skipped**, svelte-check **0 errors, 0 warnings**,
+  **1107 passed**, Playwright **209 passed, 1 skipped**, svelte-check **0 errors, 0 warnings**,
   `npm run build` ok.
 
 - **2026-10-03 -- OzBargain deals (#34) built on branch `feat/2026-10-03-ozbargain`.**
