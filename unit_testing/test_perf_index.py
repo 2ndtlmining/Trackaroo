@@ -139,17 +139,73 @@ def _gaps(index, watchlist, tiers):
     return sorted(missing)
 
 
-def test_tracked_current_and_current1_are_covered(index, watchlist):
+def check_coverage(index: dict, watchlist: dict) -> None:
+    """Fail on current/current-1 gaps; warn (UserWarning) on current-2 gaps.
+
+    A gap is a (product, metric) pair with neither a value nor a
+    not_in_source entry.
+    """
     missing = _gaps(index, watchlist, REQUIRED_TIERS)
     assert not missing, f"no value and not in not_in_source: {missing}"
+    optional = _gaps(index, watchlist, ("current-2",))
+    if optional:
+        warnings.warn(f"current-2 products without perf data: {optional}", UserWarning)
+
+
+def test_coverage_of_real_data(index, watchlist):
+    check_coverage(index, watchlist)
+
+
+def _synthetic(tier: str):
+    """A one-GPU watchlist with an index that has no data for it."""
+    watchlist = {"Test GPU 8GB": {"category": "gpu", "model": "Test GPU", "spec": "8GB", "gen_tier": tier}}
+    index = {"metrics": {}, "products": {}, "not_in_source": {}}
+    return index, watchlist
+
+
+def test_current2_gap_warns():
+    index, watchlist = _synthetic("current-2")
+    with pytest.warns(UserWarning, match="Test GPU 8GB"):
+        check_coverage(index, watchlist)
+
+
+@pytest.mark.parametrize("tier", REQUIRED_TIERS)
+def test_required_tier_gap_fails(tier):
+    index, watchlist = _synthetic(tier)
+    with pytest.raises(AssertionError, match="Test GPU 8GB"):
+        check_coverage(index, watchlist)
+
+
+def test_not_in_source_closes_a_required_gap():
+    index, watchlist = _synthetic("current")
+    index["not_in_source"] = {m: ["Test GPU 8GB"] for m in GPU_METRICS}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        check_coverage(index, watchlist)
+
+
+VRAM_VARIANT_KEYS = (
+    "GeForce RTX 5060 Ti 16GB", "GeForce RTX 5060 Ti 8GB",
+    "Radeon RX 9060 XT 16GB", "Radeon RX 9060 XT 8GB",
+    "GeForce RTX 3050 8GB", "GeForce RTX 3050 6GB",
+)
 
 
 def test_vram_variants_are_separate_products(index, watchlist):
-    """RTX 5060 Ti 8GB/16GB and RX 9060 XT 8GB/16GB resolve to distinct keys."""
-    for key in ("GeForce RTX 5060 Ti 16GB", "GeForce RTX 5060 Ti 8GB",
-                "Radeon RX 9060 XT 16GB", "Radeon RX 9060 XT 8GB",
-                "GeForce RTX 3050 8GB", "GeForce RTX 3050 6GB"):
+    """Each VRAM variant is its own key with its own values or not_in_source entry."""
+    for key in VRAM_VARIANT_KEYS:
         assert key in watchlist, key
+        values = index["products"].get(key, {})
+        for metric in GPU_METRICS:
+            in_products = metric in values
+            in_nis = key in index["not_in_source"].get(metric, [])
+            assert in_products != in_nis, (key, metric, in_products, in_nis)
+    # The RT chart gives the two RTX 5060 Ti variants different values
+    # ("16 GB: 35 %", "8 GB: 25 %"), which proves neither was copied.
+    rt16 = index["products"]["GeForce RTX 5060 Ti 16GB"]["gpu_rt_1440p"]
+    rt8 = index["products"]["GeForce RTX 5060 Ti 8GB"]["gpu_rt_1440p"]
+    assert rt16 != rt8
+    assert (rt16, rt8) == (35, 25)
 
 
 @pytest.mark.parametrize(
@@ -175,9 +231,3 @@ def test_cpu_product_key_is_model():
 def test_spec_suffixed_watchlist_rows_resolve(watchlist):
     for model in ("GeForce RTX 5060 Ti 8GB", "Radeon RX 9060 XT 8GB", "GeForce RTX 3050 6GB"):
         assert watchlist[model]["model"] == model
-
-
-def test_current2_gaps_warn(index, watchlist):
-    missing = _gaps(index, watchlist, ("current-2",))
-    if missing:
-        warnings.warn(f"current-2 products without perf data: {missing}", UserWarning)
