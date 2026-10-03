@@ -11,6 +11,8 @@ How it works:
 
 ## Unreleased
 
+## 0.6.0 — 2026-10-03
+
 ### Added
 - Price to performance (#33): a Perf / A$1k column on the GPU and CPU lists and /compare, and a /value page with price against performance, the value frontier and the best buy under $400, $700, $1,000, $1,500 and $2,500. Performance is published TechPowerUp relative performance, with its source on hover; parts the source does not list show "–".
 
