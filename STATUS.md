@@ -14,6 +14,14 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-03 -- Visual refresh (#22) built on branch `feat/2026-10-03-visual-refresh`.**
+  Self-hosted fonts, type and surface tokens, terminal wordmark and icons, `PageHeader`
+  on every route, wide table pages, 6-segment `PriceRangeBar` (catalogue rows from xl),
+  collapsed empty homepage columns, wrapping phone nav. No data or schema change; deploy
+  with `deploy/redeploy.sh` outside 04:00-09:59. Gate: pytest **1354 passed**, vitest
+  **1104 passed**, Playwright **209 passed, 1 skipped**, svelte-check **0 errors, 0 warnings**,
+  `npm run build` ok.
+
 - **2026-10-03 -- OzBargain deals (#34) built on branch `feat/2026-10-03-ozbargain`.**
   `ozbargain.py` polls the video-card and cpu RSS tag feeds every 2 hours (07-23,
   `OZB_POLL_HOURS`, 18 GETs a day) into `ozb_deals`/`ozb_polls`; `ozbargain_alerts.py`
