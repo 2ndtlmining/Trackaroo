@@ -2,14 +2,9 @@
 	import { onMount } from 'svelte';
 	import { formatAud } from '$lib/formats';
 	import { retailerLabel } from '$lib/filters';
-	import {
-		ACTIVE_RETAILER_OPTIONS,
-		DEFAULT_DIR,
-		parseCatalogView,
-		type CatalogSort,
-		type CatalogView,
-		type SortDir
-	} from '$lib/catalogView';
+	import { ACTIVE_RETAILER_OPTIONS, parseCatalogView, type CatalogView } from '$lib/catalogView';
+	import FilterCheckboxGroup from './FilterCheckboxGroup.svelte';
+	import CatalogSortControls from './CatalogSortControls.svelte';
 	import type { Category, GenerationTier, Retailer } from '$lib/types';
 
 	// The catalogue's controls (#23, spec §4), rendered from one snippet into
@@ -56,16 +51,6 @@
 		{ label: formatAud(2000), value: 2000 },
 		{ label: 'Any', value: null }
 	];
-
-	const SORT_LABELS = $derived<Record<CatalogSort, string>>({
-		price: 'Price',
-		name: 'Model',
-		spec: category === 'cpu' ? 'Cores' : 'VRAM',
-		released: 'Released',
-		listings: 'Listings',
-		msrp: 'vs MSRP',
-		value: 'Perf / A$1k'
-	});
 
 	// The submit button exists for the no-JS form only. It stays in the DOM
 	// (hidden) once hydrated because it is the form's default button: Enter in
@@ -147,15 +132,6 @@
 		if (maxTimer !== undefined) commitMax();
 	}
 
-	function toggle<T extends string>(list: T[], value: T, on: boolean): T[] {
-		return on ? [...list.filter((v) => v !== value), value] : list.filter((v) => v !== value);
-	}
-
-	function onSort(value: string) {
-		const sort = value ? (value as CatalogSort) : null;
-		set({ sort, dir: sort ? DEFAULT_DIR[sort] : 'asc' });
-	}
-
 	// A link can name a retailer the pipeline no longer scrapes; the select
 	// must still show what the URL says, rather than silently reading "Any".
 	const staleRetailer = $derived(
@@ -223,47 +199,25 @@
 	<!-- A single brand or tier is no choice, unless it is ticked: then it is
 	     the control that clears an active filter. -->
 	{#if brands.length > 1 || view.brands.length > 0}
-		<fieldset>
-			<legend class={legend}>Brand</legend>
-			<div class="flex flex-wrap items-center gap-3">
-				{#each brands as b (b)}
-					<label class="flex h-9 cursor-pointer select-none items-center gap-1.5 text-sm text-text">
-						<input
-							type="checkbox"
-							name="brand"
-							value={b}
-							class="size-4 accent-accent"
-							checked={view.brands.includes(b)}
-							onchange={(e) =>
-								set({ brands: toggle(view.brands, b, (e.target as HTMLInputElement).checked) })}
-						/>
-						{b}
-					</label>
-				{/each}
-			</div>
-		</fieldset>
+		<FilterCheckboxGroup
+			legend="Brand"
+			legendClass={legend}
+			name="brand"
+			options={brands.map((b) => ({ value: b, label: b }))}
+			selected={view.brands}
+			onChange={(next) => set({ brands: next })}
+		/>
 	{/if}
 
 	{#if gens.length > 1 || view.gens.length > 0}
-		<fieldset>
-			<legend class={legend}>Generation</legend>
-			<div class="flex flex-wrap items-center gap-3">
-				{#each gens as g (g.value)}
-					<label class="flex h-9 cursor-pointer select-none items-center gap-1.5 text-sm text-text">
-						<input
-							type="checkbox"
-							name="gen"
-							value={g.value}
-							class="size-4 accent-accent"
-							checked={view.gens.includes(g.value)}
-							onchange={(e) =>
-								set({ gens: toggle(view.gens, g.value, (e.target as HTMLInputElement).checked) })}
-						/>
-						{g.label}
-					</label>
-				{/each}
-			</div>
-		</fieldset>
+		<FilterCheckboxGroup
+			legend="Generation"
+			legendClass={legend}
+			name="gen"
+			options={gens}
+			selected={view.gens}
+			onChange={(next) => set({ gens: next })}
+		/>
 	{/if}
 
 	<label
@@ -299,37 +253,7 @@
 		</select>
 	</label>
 
-	<!-- The column headers sort too; these are for a phone (the header row
-	     is hidden there) and for the no-JS form. -->
-	<div class="flex items-end gap-2">
-		<label class="flex flex-col text-sm text-text">
-			<span class={legend}>Sort</span>
-			<select
-				name="sort"
-				class={control}
-				value={view.sort ?? ''}
-				onchange={(e) => onSort((e.target as HTMLSelectElement).value)}
-			>
-				<option value="">By series</option>
-				{#each Object.entries(SORT_LABELS) as [value, label] (value)}
-					<option {value}>{label}</option>
-				{/each}
-			</select>
-		</label>
-		<label class="flex flex-col text-sm text-text">
-			<span class={legend}>Order</span>
-			<select
-				name="dir"
-				class={control}
-				value={view.dir}
-				disabled={view.sort === null}
-				onchange={(e) => set({ dir: (e.target as HTMLSelectElement).value as SortDir })}
-			>
-				<option value="asc">Ascending</option>
-				<option value="desc">Descending</option>
-			</select>
-		</label>
-	</div>
+	<CatalogSortControls {view} {category} {control} legendClass={legend} {set} />
 
 	{#if activeCount > 0}
 		<a href={clearHref} class="self-start text-sm text-accent underline md:self-end md:pb-2">

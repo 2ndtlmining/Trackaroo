@@ -11,6 +11,9 @@ How it works:
 
 ## Unreleased
 
+### Changed
+- Behind the scenes: the price chart, the GPU/CPU list and its filters are split into smaller pieces, with no visible change (#61).
+
 ## 0.6.1 — 2026-10-04
 
 ### Fixed

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import PriceChart, { type ChartSeries } from '$lib/components/PriceChart.svelte';
+	import PriceChart from '$lib/components/PriceChart.svelte';
+	import type { ChartSeries } from '$lib/priceChartPlot';
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import ProductHeadline from '$lib/components/ProductHeadline.svelte';
 	import BuyPanel from '$lib/components/BuyPanel.svelte';
