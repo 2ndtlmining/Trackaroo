@@ -65,7 +65,7 @@
 </script>
 
 <div class="overflow-hidden rounded-xl border border-border-card bg-surface shadow-card">
-	<h2 class="border-b border-border bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+	<h2 class="border-b border-border bg-surface px-3 py-2 text-section">
 		Specs
 	</h2>
 
@@ -143,7 +143,7 @@
 
 	<details class="border-t border-border">
 		<summary
-			class="cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase tracking-wide text-text-muted hover:bg-surface"
+			class="cursor-pointer select-none px-3 py-2 text-section hover:bg-surface"
 		>
 			Show full specs
 		</summary>

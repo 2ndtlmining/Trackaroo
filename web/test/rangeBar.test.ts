@@ -68,6 +68,33 @@ describe('PriceRangeBar segments', () => {
 			'Only one price recorded'
 		);
 	});
+	it('compact steady wording quotes the range value, not the shown price', () => {
+		const html = render(PriceRangeBar, {
+			low: 1250,
+			high: 1250,
+			current: 1300,
+			position: null,
+			points: 30,
+			size: 'compact'
+		});
+		expect(html).toContain('Steady at');
+		expect(html).toContain('$1,250');
+		expect(html).not.toContain('$1,300');
+	});
+	it('compact single-price wording is short and never wraps', () => {
+		const html = render(PriceRangeBar, {
+			low: 1250,
+			high: 1250,
+			current: 1300,
+			position: null,
+			points: 1,
+			size: 'compact'
+		});
+		expect(html).toContain('1 price:');
+		expect(html).not.toContain('Only one price');
+		expect(html).toContain('whitespace-nowrap');
+		expect(html).toContain('$1,250');
+	});
 	it('compact size is a 96px bar with a visible label', () => {
 		const html = render(PriceRangeBar, { ...props, size: 'compact' });
 		expect(segs(html)).toHaveLength(6);
@@ -120,7 +147,17 @@ describe('ProductRow range bar', () => {
 		const html = render(ProductRow, { group: { ...row, range90: { low: 1250, high: 1250, days: 1 } } });
 		expect(bar(html)).toBe(0);
 		expect(html).not.toContain('Steady');
-		expect(html).toContain('Only one price');
+		expect(html).toContain('1 price:');
+	});
+	it('an out-of-stock shown price renders no bar (never a deal cue)', () => {
+		const html = render(ProductRow, {
+			group: { ...row, range90: { low: 1000, high: 2000, days: 42 } },
+			price: 1010,
+			outOfStock: true
+		});
+		expect(bar(html)).toBe(0);
+		expect(html).not.toContain('bg-down');
+		expect(html).toContain('data-testid="row-range"');
 	});
 	it('no range90 or no shown price shows no bar', () => {
 		expect(bar(render(ProductRow, { group: { ...row, range90: null } }))).toBe(0);

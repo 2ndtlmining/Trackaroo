@@ -53,11 +53,11 @@
 	const vsMsrpClass = $derived(
 		vsMsrp === null || outOfStock ? 'text-text-muted' : MSRP_TONE_CLASS[msrpTone(vsMsrp)]
 	);
-	// The 90-day bar: only with a range and a shown price. A flat range has no
+	// The 90-day bar: only with a range and an in-stock shown price (an out-of-stock one is never a deal cue). A flat range has no
 	// position, which PriceRangeBar words as "Steady" rather than drawing.
 	const range = $derived(group.range90 ?? null);
 	const rangePos = $derived(
-		range && shown !== null ? rangePosition(shown, range.low, range.high) : null
+		range && shown !== null && !outOfStock ? rangePosition(shown, range.low, range.high) : null
 	);
 	const cpu = $derived(group.category === 'cpu');
 	const trend = $derived(formatTrend(group.sparkline ?? []));
@@ -157,7 +157,7 @@
 	</span>
 
 	<span class="{COL.range} text-xs" role="cell" data-testid="row-range">
-		{#if range && shown !== null}
+		{#if range && shown !== null && !outOfStock}
 			<PriceRangeBar
 				size="compact"
 				low={range.low}

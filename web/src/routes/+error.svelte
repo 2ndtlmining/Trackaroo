@@ -30,7 +30,7 @@
 
 <div class="mx-auto max-w-xl py-16 text-center">
 	<div class="mb-8"><Wordmark size="large" /></div>
-	<PageHeader title={heading} subtitle={message} />
+	<PageHeader compact title={heading} subtitle={message} />
 
 	{#if hint}
 		<p class="mt-3 text-sm text-text-muted">{hint}</p>

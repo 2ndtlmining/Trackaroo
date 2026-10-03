@@ -1320,7 +1320,7 @@ test.describe('product detail offer list', () => {
 
 		// The headline leads with the cheapest in-stock price — it must match
 		// the first (cheapest-first-sorted) row in the offer list below it.
-		const headlinePrice = (await page.locator('.text-3xl.num').first().textContent())?.trim();
+		const headlinePrice = (await page.locator('.text-price').first().textContent())?.trim();
 		expect(headlinePrice).toBeTruthy();
 		const firstRowPrice = (
 			await page.locator('.order-1.w-24').first().textContent()
@@ -2000,7 +2000,7 @@ test.describe('PageHeader on every route (#22)', () => {
 
 	// R3: the brand line and product-meta belong to the title, above the rule.
 	test('the product page brand line and meta sit inside the page header', async ({ page }) => {
-		await goto(page, '/product/1');
+		await goto(page, `/product/${productIdByModel('E2E Deal Demo GPU')}`);
 		const header = page.getByTestId('page-header');
 		await expect(header.getByTestId('product-meta')).toBeVisible();
 		await expect(header.getByTestId('product-brand')).toBeVisible();

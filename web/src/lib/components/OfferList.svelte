@@ -68,7 +68,7 @@
 
 <div class="overflow-hidden rounded-xl border border-border-card bg-surface shadow-card">
 	<div class="space-y-2 border-b border-border bg-surface px-3 py-2">
-		<h2 class="text-xs font-semibold uppercase tracking-wide text-text-muted">Offers</h2>
+		<h2 class="text-section">Offers</h2>
 
 		<FacetChips
 			label="Retailer"

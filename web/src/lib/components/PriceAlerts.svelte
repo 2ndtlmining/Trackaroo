@@ -77,7 +77,7 @@
 
 	{#if alerts.length > 0}
 		<div class="mt-4 border-t border-border pt-3">
-			<h3 class="text-xs font-semibold uppercase tracking-wide text-text-muted">My alerts</h3>
+			<h3 class="text-section">My alerts</h3>
 			<ul class="mt-2 space-y-2">
 				{#each alerts as alert (alert.id)}
 					<li

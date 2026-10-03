@@ -107,7 +107,7 @@
 	{#if empty.length > 0}
 		<div class="flex flex-wrap gap-2 px-3 py-3 {shown > 0 ? 'border-t border-border' : ''}">
 			{#each empty as line (line)}
-				<p class="rounded-lg border border-dashed border-border-strong px-3 py-1.5 text-meta text-text-muted">
+				<p class="text-meta text-text-muted">
 					{line}
 				</p>
 			{/each}
