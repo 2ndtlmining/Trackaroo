@@ -21,6 +21,9 @@ export type CatalogRow = Omit<ProductGroup, 'listings'> & {
 	releaseYear?: number | null;
 	// US launch MSRP in USD, for the vs-MSRP column (Task 3).
 	msrpUsd?: number | null;
+	// Low and high of the daily cheapest price over 90 days, for the row's
+	// segmented bar; null without in-window history (#22).
+	range90?: { low: number; high: number } | null;
 };
 
 export interface IndexGroup<T> {

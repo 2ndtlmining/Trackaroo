@@ -1,9 +1,11 @@
 <script lang="ts">
 	import BrandIcon from './BrandIcon.svelte';
+	import PriceRangeBar from './PriceRangeBar.svelte';
 	import Sparkline from './Sparkline.svelte';
 	import { retailerLabel as lookupRetailerLabel } from '$lib/filters';
 	import { formatAud, formatMonthYear, formatPct, formatTrend } from '$lib/formats';
 	import { COL } from '$lib/catalogColumns';
+	import { rangePosition } from '$lib/rangeBar';
 	import { avgWindowLabel, deltaPresentation, deltaVsAvg30 } from '$lib/offers';
 	import type { FxRate } from '$lib/models';
 	import { MSRP_TONE_CLASS, formatMsrpDelta, msrpAud, msrpDelta, msrpTone } from '$lib/msrp';
@@ -50,6 +52,12 @@
 	const vsMsrp = $derived(msrpDelta(shown, msrpAud(group.msrpUsd ?? null, fx)));
 	const vsMsrpClass = $derived(
 		vsMsrp === null || outOfStock ? 'text-text-muted' : MSRP_TONE_CLASS[msrpTone(vsMsrp)]
+	);
+	// The 90-day bar: only with a range and a shown price. A flat range has no
+	// position, which PriceRangeBar words as "Steady" rather than drawing.
+	const range = $derived(group.range90 ?? null);
+	const rangePos = $derived(
+		range && shown !== null ? rangePosition(shown, range.low, range.high) : null
 	);
 	const cpu = $derived(group.category === 'cpu');
 	const trend = $derived(formatTrend(group.sparkline ?? []));
@@ -146,6 +154,18 @@
 	>
 	<span class="{COL.trend} text-xs" role="cell" data-testid="row-trend">
 		<Sparkline values={group.sparkline ?? []} label={trend ? `30-day trend: ${trend}` : undefined} />
+	</span>
+
+	<span class="{COL.range} text-xs" role="cell" data-testid="row-range">
+		{#if range && shown !== null}
+			<PriceRangeBar
+				size="compact"
+				low={range.low}
+				high={range.high}
+				current={shown}
+				position={rangePos}
+			/>
+		{/if}
 	</span>
 
 	{#if !cpu}

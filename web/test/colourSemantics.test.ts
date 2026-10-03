@@ -18,6 +18,8 @@ function sources(dir: string): string[] {
 // green again (#24).
 const PRICE_DIRECTION_FILES = new Set([
 	'lib/offers.ts',
+	// The range bar's cheap/middling/dear segments are price position.
+	'lib/rangeBar.ts',
 	'lib/components/Badge.svelte',
 	'lib/components/ProductHeadline.svelte'
 ]);

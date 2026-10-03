@@ -861,14 +861,14 @@ describe('PriceRangeBar', () => {
 		expect(html).toMatch(/aria-label="[^"]*\$1,469[^"]*\$1,249[^"]*\$1,689[^"]*"/);
 	});
 
-	it('places the marker at the given position', () => {
+	it('fills the segment at the given position', () => {
 		const html = renderComponent(PriceRangeBar, {
 			low: 1000,
 			high: 2000,
 			current: 1250,
 			position: 0.25
 		});
-		expect(html).toContain('25%');
+		expect(html).toMatch(/data-segment="1"[^>]*data-filled="true"/);
 	});
 
 	it('degrades to a plain text line when a bar would be meaningless', () => {

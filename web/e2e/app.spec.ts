@@ -1854,6 +1854,17 @@ test.describe('MSRP cues (Task 3)', () => {
 		await expect(page.getByTestId('msrp-line')).toHaveCount(0);
 	});
 
+	test('a catalogue row with history shows the 6-segment range bar and its label', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await goto(page, '/products?category=gpu');
+		const row = page.getByTestId('catalog-row').filter({ hasText: 'E2E New Low GPU' });
+		const bar = row.getByTestId('row-range');
+		await expect(bar.locator('[data-segment]')).toHaveCount(6);
+		await expect(bar.locator('[data-filled="true"]')).toHaveCount(1);
+		await expect(bar).toContainText('$500');
+		await expect(bar).toContainText('$520');
+	});
+
 	test('the catalogue sorts by vs MSRP, cheapest against MSRP first', async ({ page }) => {
 		await goto(page, '/products?category=gpu&sort=msrp');
 		const header = page.getByRole('columnheader', { name: /^vs MSRP/ });
