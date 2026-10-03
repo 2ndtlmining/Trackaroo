@@ -144,7 +144,8 @@ function sortValue(
 		case 'spec': return row.vramGb ?? row.cores;
 		case 'released': return row.launchDate;
 		case 'listings': return row.listingCount;
-		case 'value': return perfPerKilo(shownPrice(row, view), row.perf ?? null);
+		// R7: an out-of-stock shown price has no figure, so it sorts last.
+		case 'value': return shownStock(row, view) === 'out' ? null : perfPerKilo(shownPrice(row, view), row.perf ?? null);
 		case 'msrp': return msrpDelta(shownPrice(row, view), msrpAud(row.msrpUsd, ctx.fx));
 	}
 }

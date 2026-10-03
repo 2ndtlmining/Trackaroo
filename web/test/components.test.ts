@@ -1512,6 +1512,16 @@ describe('ProductRow value column (#33)', () => {
 	it('uses the price it is shown, not the cheapest anywhere', () => {
 		expect(renderComponent(ProductRow, { group: row, price: 620 })).toMatch(/>50</);
 	});
+	it('shows no figure for an out-of-stock shown price (R7)', () => {
+		const html = renderComponent(ProductRow, { group: row, price: 100, outOfStock: true });
+		expect(html).toMatch(/row-value".*?<span class="num font-medium">–<\/span>/s);
+	});
+	it('keeps a long retailer name on one line with the full name on hover', () => {
+		const html = renderComponent(ProductRow, { group: { ...row, cheapestInStockRetailer: 'centrecom' as const } });
+		expect(html).toMatch(/title="Centre Com"/);
+		expect(html).toMatch(/whitespace-nowrap/);
+		expect(html).toContain('xl:w-16');
+	});
 	it('shows a dash without a figure or a price', () => {
 		expect(renderComponent(ProductRow, { group: { ...row, perf: null } })).toMatch(/row-value".*?<span class="num font-medium">–<\/span>/s);
 		expect(renderComponent(ProductRow, { group: row, price: null })).toMatch(/row-value".*?<span class="num font-medium">–<\/span>/s);

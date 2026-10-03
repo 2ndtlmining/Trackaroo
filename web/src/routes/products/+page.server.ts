@@ -14,7 +14,7 @@ import { getDb } from '$lib/server/db';
 import { memo } from '$lib/server/cache';
 import { parseFilters } from '$lib/filters';
 import { defaultMetric, perfFor } from '$lib/perfIndex';
-import { valueCoverage } from '$lib/value';
+import { tierCoverage, valueCoverage } from '$lib/value';
 import type { Category, ListingFilters, Retailer } from '$lib/types';
 import type { LatestListing } from '$lib/models';
 
@@ -127,8 +127,10 @@ export function load({
 			const coverage = valueCoverage(
 				groups.map((g) => ({ price: g.cheapestInStockPrice, perf: g.perf }))
 			);
+			const required = tierCoverage(groups.map((g) => ({ tier: g.generationTier, perf: g.perf })));
 			return {
 				coverage,
+				required,
 				trackedCount: groups.length,
 				listedCount: withListings.length,
 				listedInStockCount: withListings.filter((g) => g.inStockCount > 0).length,
@@ -148,7 +150,12 @@ export function load({
 		inStockOnly,
 		trackedCount,
 		listedCount,
-		perfCoverage: { withPerf: base.coverage.withPerf, tracked: base.coverage.tracked },
+		perfCoverage: {
+			withPerf: base.coverage.withPerf,
+			tracked: base.coverage.tracked,
+			requiredWithPerf: base.required.withPerf,
+			requiredTracked: base.required.tracked
+		},
 		fx: getLatestFxRate(db),
 		groups: visible
 	};

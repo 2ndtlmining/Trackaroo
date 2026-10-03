@@ -204,3 +204,15 @@ describe('sort=value (#33)', () => {
 		expect(applyCatalogView(r, p('retailer=pccg&sort=value')).map((x) => x.productId)).toEqual([2, 1]);
 	});
 });
+
+describe('sort=value and out-of-stock prices (R7)', () => {
+	const rows = [
+		row({ productId: 1, cheapestInStockPrice: 900, perf: 30, retailerPrices: { pccg: { inStock: null, any: 100 } } }),
+		row({ productId: 2, cheapestInStockPrice: 900, perf: 30, retailerPrices: { pccg: { inStock: 900, any: 900 } } })
+	];
+	for (const dir of ['desc', 'asc']) {
+		it(`a sold-out retailer price sorts last (${dir})`, () => {
+			expect(applyCatalogView(rows, p(`retailer=pccg&sort=value&dir=${dir}`)).map((r) => r.productId)).toEqual([2, 1]);
+		});
+	}
+});

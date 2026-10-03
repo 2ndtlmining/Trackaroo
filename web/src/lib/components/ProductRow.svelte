@@ -63,9 +63,10 @@
 	);
 	const cpu = $derived(group.category === 'cpu');
 	// Performance per A$1,000 at the shown price, so a retailer view compares
-	// that retailer (#33). Out-of-stock prices still rank: the sort does too.
+	// that retailer (#33). An out-of-stock shown price gets no figure (R7), the
+	// same rule the value sort applies.
 	const metric = $derived(group.metric ?? defaultMetric(cpu ? 'cpu' : 'gpu'));
-	const value = $derived(perfPerKilo(shown, group.perf ?? null));
+	const value = $derived(outOfStock ? null : perfPerKilo(shown, group.perf ?? null));
 	const trend = $derived(formatTrend(group.sparkline ?? []));
 
 	const specHeader = $derived(group.category === 'gpu' ? 'VRAM' : 'Cores');
@@ -211,5 +212,9 @@
 		></span
 	>
 
-	<span class="{COL.retailer} text-xs text-text-muted" role="cell">{retailerLabel ?? ''}</span>
+	<span
+		class="{COL.retailer} text-xs text-text-muted"
+		role="cell"
+		title={retailerLabel ?? undefined}>{retailerLabel ?? ''}</span
+	>
 </div>

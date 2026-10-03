@@ -38,7 +38,7 @@
 			inStockOnly: boolean;
 			trackedCount: number;
 			listedCount: number;
-			perfCoverage: { withPerf: number; tracked: number };
+			perfCoverage: { withPerf: number; tracked: number; requiredWithPerf: number; requiredTracked: number };
 			fx: FxRate | null;
 			groups: (CatalogRow & CatalogRowInput)[];
 			// From the root layout's load (merged into page data).
@@ -282,6 +282,8 @@
 	<p class="mt-1 text-xs text-text-muted" data-testid="perf-coverage">
 		Performance data for <span class="num">{data.perfCoverage.withPerf}</span> of
 		<span class="num">{data.perfCoverage.tracked}</span> {heading}
+		(<span class="num">{data.perfCoverage.requiredWithPerf}</span> of
+		<span class="num">{data.perfCoverage.requiredTracked}</span> current and previous generation)
 	</p>
 
 	{#if searching}

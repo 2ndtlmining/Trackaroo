@@ -231,3 +231,18 @@ describe('getValueRows / getValueData', () => {
 		expect(coverage.withoutPerf).toBe(1);
 	});
 });
+
+describe('tierCoverage (#33)', () => {
+	it('counts only current and current-1 products', async () => {
+		const { tierCoverage } = await import('../src/lib/value');
+		expect(
+			tierCoverage([
+				{ tier: 'current', perf: 10 },
+				{ tier: 'current-1', perf: null },
+				{ tier: 'current-1', perf: 5 },
+				{ tier: 'current-2', perf: 5 },
+				{ tier: null, perf: null }
+			])
+		).toEqual({ withPerf: 2, tracked: 3 });
+	});
+});

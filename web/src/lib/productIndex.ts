@@ -24,10 +24,10 @@ export type CatalogRow = Omit<ProductGroup, 'listings'> & {
 	msrpUsd?: number | null;
 	// Low and high of the daily cheapest price over 90 days, for the row's
 	// segmented bar; null without in-window history (#22).
+	range90?: { low: number; high: number; days: number } | null;
 	// Index performance and the metric it is on, for the value column (#33).
 	perf?: number | null;
 	metric?: MetricKey;
-	range90?: { low: number; high: number; days: number } | null;
 };
 
 export interface IndexGroup<T> {

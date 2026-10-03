@@ -22,7 +22,8 @@ export const COL = {
 	brand: 'hidden w-20 shrink-0 xl:flex',
 	delta: 'w-36 shrink-0',
 	msrp: 'hidden w-16 shrink-0 text-right lg:block',
-	retailer: 'w-16 shrink-0 text-right'
+	// xl-only narrowing: the xl row has no room (the value column), below it there is.
+	retailer: 'w-20 xl:w-16 shrink-0 truncate whitespace-nowrap text-right'
 } as const;
 
 export interface CatalogColumn {
@@ -50,7 +51,7 @@ export function catalogColumns(category: Category, priceAt: string | null): Cata
 		{ key: 'listings', label: 'Listings', sort: 'listings' },
 		{ key: 'trend', label: '30-day' },
 		{ key: 'range', label: '90-day range' },
-		{ key: 'value', label: 'Perf / A$1k', sort: 'value' },
+		{ key: 'value', label: 'Perf/A$1k', sort: 'value' },
 		...(cpu ? [] : [{ key: 'brand', label: 'Brand' } as CatalogColumn]),
 		{ key: 'delta', label: 'vs average' },
 		{ key: 'msrp', label: 'vs MSRP', sort: 'msrp' },

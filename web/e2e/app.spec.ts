@@ -1917,7 +1917,7 @@ test.describe('MSRP cues (Task 3)', () => {
 	test('the value column shows perf per A$1,000, a dash without data, and sorts (#33)', async ({ page }) => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await goto(page, '/products?category=gpu&sort=value');
-		const header = page.getByRole('columnheader', { name: /^Perf \/ A\$1k/ });
+		const header = page.getByRole('columnheader', { name: /^Perf\/A\$1k/ });
 		await expect(header).toBeVisible();
 		await expect(header).toHaveAttribute('aria-sort', 'descending');
 		const withPerf = page.getByTestId('catalog-row').filter({ hasText: 'GeForce RTX 5060 Ti' }).first().getByTestId('row-value');
@@ -1928,7 +1928,7 @@ test.describe('MSRP cues (Task 3)', () => {
 		// Rows without a figure sort last.
 		const last = page.getByTestId('catalog-row').last().getByTestId('row-value');
 		await expect(last).toContainText('–');
-		await expect(page.getByTestId('perf-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs/);
+		await expect(page.getByTestId('perf-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs\s+\(\d+ of \d+ current and previous generation\)/);
 	});
 
 	test('/compare shows a Perf / A$1k row (#33)', async ({ page }) => {
