@@ -12,11 +12,40 @@ import compression from 'compression';
 // pre-compressed immutable assets pass through untouched.
 const compress = compression({ threshold: 1024 });
 
+// Self-hosted fonts never change in place (a new font gets a new file name),
+// so browsers may keep them for a year instead of revalidating on every page
+// load (#63). sirv sets its own Cache-Control in writeHead's header object,
+// so the override has to happen there, and only for successful responses.
+const FONT_CACHE = 'public, max-age=31536000, immutable';
+
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
+function cacheFonts(req, res) {
+	const path = (req.url ?? '').split('?')[0];
+	if (!path.startsWith('/fonts/')) return;
+	const writeHead = res.writeHead;
+	/** @type {any} */ (res).writeHead = function (/** @type {number} */ code, /** @type {any[]} */ ...rest) {
+		if ((code >= 200 && code < 300) || code === 304) {
+			const headers = rest[rest.length - 1];
+			if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+				for (const key of Object.keys(headers)) {
+					if (key.toLowerCase() === 'cache-control') delete headers[key];
+				}
+			}
+			res.setHeader('Cache-Control', FONT_CACHE);
+		}
+		return writeHead.call(this, code, ...rest);
+	};
+}
+
 /**
  * @param {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, next: () => void) => void} handler
  */
 export function createServer(handler) {
 	return http.createServer((req, res) => {
+		cacheFonts(req, res);
 		// `compression`'s types expect Express req/res; we run it directly
 		// against the plain node:http objects adapter-node's handler also uses.
 		compress(/** @type {any} */ (req), /** @type {any} */ (res), () => {

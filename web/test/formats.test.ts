@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	splitPrices,
 	formatAud,
 	formatBandwidth,
 	formatBytes,
@@ -268,5 +269,33 @@ describe('formatTrend (#23)', () => {
 	it('is null with fewer than two points', () => {
 		expect(formatTrend([])).toBeNull();
 		expect(formatTrend([499])).toBeNull();
+	});
+});
+
+describe('splitPrices (#62)', () => {
+	it('splits AUD amounts out of a sentence', () => {
+		expect(splitPrices('Today $459 against a 30-day average of $465.67.')).toEqual([
+			{ text: 'Today ', price: false },
+			{ text: '$459', price: true },
+			{ text: ' against a 30-day average of ', price: false },
+			{ text: '$465.67', price: true },
+			{ text: '.', price: false }
+		]);
+	});
+	it('handles thousands separators, a leading amount and no amounts', () => {
+		expect(splitPrices('$1,099 at Mwave')).toEqual([
+			{ text: '$1,099', price: true },
+			{ text: ' at Mwave', price: false }
+		]);
+		expect(splitPrices('Flat is within 1%.')).toEqual([{ text: 'Flat is within 1%.', price: false }]);
+		expect(splitPrices('')).toEqual([]);
+	});
+	it('keeps the text identical when joined back', () => {
+		const s = 'A$949 vs $1,199.50, then $0.';
+		expect(
+			splitPrices(s)
+				.map((p) => p.text)
+				.join('')
+		).toBe(s);
 	});
 });

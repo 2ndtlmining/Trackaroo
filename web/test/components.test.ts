@@ -1123,6 +1123,24 @@ describe('SignalBadge (#31)', () => {
 		expect(html).toContain('lucide-circle-check');
 	});
 
+	it('renders dollar amounts inside the evidence and claim in the mono number face (#62)', () => {
+		const html = renderComponent(SignalBadge, {
+			signal: {
+				key: 'avg',
+				tone: 'neutral',
+				icon: 'dash',
+				claim: 'Lowest since 9 Aug 2026: $499',
+				evidence: 'Today $459 against a 30-day average of $465.67.'
+			}
+		});
+		const nums = [...html.matchAll(/<span class="num">([^<]*)<\/span>/g)].map((m) => m[1]);
+		expect(nums).toEqual(['$499', '$459', '$465.67']);
+		// The words are unchanged once the markup is stripped.
+		const text = html.replace(/<!--[^>]*-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+		expect(text).toContain('Today $459 against a 30-day average of $465.67.');
+		expect(text).toContain('Lowest since 9 Aug 2026: $499');
+	});
+
 	it.each([
 		['good', 'text-success', 'bg-success-soft'],
 		['warn', 'text-warning', 'bg-warning-soft'],

@@ -12,6 +12,8 @@ How it works:
 ## Unreleased
 
 ### Fixed
+- Prices inside buy-signal sentences now use the same mono number face as every other price (#62).
+- The self-hosted fonts are cached by the browser for a year instead of being re-checked on every page load (#63).
 - /value now prices products by the same rule as /products and /compare (each listing's latest in-stock price), so a Perf/A$1k figure is the same on every page (#59).
 
 ## 0.6.0 — 2026-10-03

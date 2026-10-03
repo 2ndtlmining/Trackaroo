@@ -248,3 +248,31 @@ export function updatedLabel(lastSnapshotAt: string | null, now: Date = new Date
 	if (days === 0) return `Updated ${formatRelative(lastSnapshotAt, now)}`;
 	return days === 1 ? 'Updated 1 day ago' : `Updated ${days} days ago`;
 }
+
+// AUD amounts as they appear in generated sentences ("$459", "$1,099",
+// "$465.67", "A$949"). A trailing comma or full stop is never part of the
+// amount.
+const PRICE_IN_TEXT = /A?\$(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
+
+export interface TextPart {
+	text: string;
+	price: boolean;
+}
+
+/**
+ * Split a sentence into plain text and dollar amounts, so a component can set
+ * the amounts in the mono number face (#62) without changing the words.
+ * Joining the parts' text gives back the input exactly.
+ */
+export function splitPrices(text: string): TextPart[] {
+	const parts: TextPart[] = [];
+	let last = 0;
+	for (const m of text.matchAll(PRICE_IN_TEXT)) {
+		const at = m.index ?? 0;
+		if (at > last) parts.push({ text: text.slice(last, at), price: false });
+		parts.push({ text: m[0], price: true });
+		last = at + m[0].length;
+	}
+	if (last < text.length) parts.push({ text: text.slice(last), price: false });
+	return parts;
+}
