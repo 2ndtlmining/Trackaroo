@@ -1935,6 +1935,15 @@ test.describe('MSRP cues (Task 3)', () => {
 		const last = page.getByTestId('catalog-row').last().getByTestId('row-value');
 		await expect(last).toContainText('–');
 		await expect(page.getByTestId('perf-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs\s+\(\d+ of \d+ current and previous generation\)/);
+		// The source is reachable without a mouse: a visible, focusable citation link.
+		const source = page.getByTestId('perf-source');
+		await expect(source).toBeVisible();
+		await expect(source).toContainText('1440p raster');
+		const link = source.getByRole('link', { name: /TechPowerUp/ });
+		await expect(link).toBeVisible();
+		await expect(link).toHaveAttribute('href', /^https:\/\/www\.techpowerup\.com\//);
+		await link.focus();
+		await expect(link).toBeFocused();
 	});
 
 	test('/compare shows a Perf / A$1k row (#33)', async ({ page }) => {
@@ -1949,6 +1958,10 @@ test.describe('MSRP cues (Task 3)', () => {
 		await expect(cells).toHaveCount(2);
 		await expect(cells.nth(0)).toContainText(/\d+/);
 		await expect(cells.nth(1)).toContainText(/\d+/);
+		const source = page.getByTestId('perf-source');
+		await expect(source).toBeVisible();
+		await expect(source).toContainText('1440p raster');
+		await expect(source.getByRole('link', { name: /TechPowerUp/ })).toHaveAttribute('href', /^https:\/\/www\.techpowerup\.com\//);
 	});
 
 	test('the catalogue sorts by vs MSRP, cheapest against MSRP first', async ({ page }) => {

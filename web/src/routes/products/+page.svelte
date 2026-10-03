@@ -27,6 +27,7 @@
 	import { MAX_COMPARE, parseCompareIds, withParams } from '$lib/urlState';
 	import { urlParams } from '$lib/urlParams';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
+	import { METRICS, defaultMetric, sourceCitation } from '$lib/perfIndex';
 	import type { Category } from '$lib/types';
 	import type { FxRate, ProductIndexEntry } from '$lib/models';
 
@@ -47,6 +48,7 @@
 	} = $props();
 
 	const heading = $derived(data.category === 'cpu' ? 'CPUs' : 'GPUs');
+	const perfMetric = $derived(defaultMetric(data.category));
 
 	// The base card carries its VRAM where a "<model> <N>GB" sibling exists
 	// (display only). Search and rows both use the display name, so
@@ -284,6 +286,8 @@
 		<span class="num">{data.perfCoverage.tracked}</span> {heading}
 		(<span class="num">{data.perfCoverage.requiredWithPerf}</span> of
 		<span class="num">{data.perfCoverage.requiredTracked}</span> current and previous generation)
+		<span data-testid="perf-source" class="block sm:inline"><span class="hidden sm:inline"> · </span>Perf/A$1k: {METRICS[perfMetric].label},
+			<a href={METRICS[perfMetric].source_url} class="text-text-muted underline underline-offset-2 hover:text-text">{sourceCitation(perfMetric)}</a></span>
 	</p>
 
 	{#if searching}
