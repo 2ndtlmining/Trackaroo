@@ -11,6 +11,8 @@ How it works:
 
 ## Unreleased
 
+## 0.5.0 — 2026-10-03
+
 ### Added
 - OzBargain deals on product pages and /deals, with a Discord alert when a deal beats our best in-stock price (#34).
 
