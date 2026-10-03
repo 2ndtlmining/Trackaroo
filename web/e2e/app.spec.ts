@@ -2069,8 +2069,10 @@ test.describe('/value (#33)', () => {
 		await expect(first).toHaveAttribute('aria-label', /: \$[\d,.]+, 1440p raster \d+(\.\d+)?, \d+ per A\$1,000/);
 		await first.focus();
 		await expect(page.getByTestId('value-tooltip')).toBeVisible();
-		// The GPU axis starts at 0, so no zoom note.
-		await expect(page.getByTestId('value-axis-note')).toHaveCount(0);
+		// R9: the zoom note appears exactly when the axis is zoomed. That depends on the data (the
+		// default seed starts at 0, the CI synthetic data does not), so check the two agree.
+		const zoomed = /axis doesn't start at 0/.test((await page.locator('figure').first().getAttribute('aria-label')) ?? '');
+		await expect(page.getByTestId('value-axis-note')).toHaveCount(zoomed ? 1 : 0);
 		await expect(page.getByTestId('value-source')).toContainText('Performance: TechPowerUp');
 		await expect(page.getByTestId('value-source')).toContainText('Prices: cheapest in stock today across');
 		await expect(page.getByTestId('value-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs/);

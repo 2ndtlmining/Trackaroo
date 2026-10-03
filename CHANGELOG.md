@@ -12,8 +12,7 @@ How it works:
 ## Unreleased
 
 ### Added
-- Perf / A$1k column on the GPU and CPU lists and a row on /compare: published relative performance divided by the shown price, with its source on hover (#33).
-- /value page: price against performance for GPUs (raster or ray tracing) and CPUs, with the value frontier highlighted and the best buy under $400, $700, $1,000, $1,500 and $2,500 (#33).
+- Price to performance (#33): a Perf / A$1k column on the GPU and CPU lists and /compare, and a /value page with price against performance, the value frontier and the best buy under $400, $700, $1,000, $1,500 and $2,500. Performance is published TechPowerUp relative performance, with its source on hover; parts the source does not list show "–".
 - OzBargain deals on product pages and /deals, with a Discord alert when a deal beats our best in-stock price (#34).
 
 ### Changed
