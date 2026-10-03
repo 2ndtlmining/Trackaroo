@@ -126,7 +126,7 @@
 			<p data-testid="value-source">
 				Performance: <a href={data.metricInfo.source_url} class="text-text-muted underline underline-offset-2 hover:text-text"
 					>{data.citation}</a
-				>, relative to {data.metricInfo.baseline}. Prices: cheapest in stock today across {retailerList || 'tracked retailers'}.
+				>, relative to {data.metricInfo.baseline}. Prices: cheapest in stock across {retailerList || 'tracked retailers'}.
 			</p>
 			<p data-testid="value-coverage">
 				Performance data for <span class="num">{data.coverage.withPerf}</span> of

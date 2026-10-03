@@ -2093,7 +2093,7 @@ test.describe('/value (#33)', () => {
 		const zoomed = /axis doesn't start at 0/.test((await page.locator('figure').first().getAttribute('aria-label')) ?? '');
 		await expect(page.getByTestId('value-axis-note')).toHaveCount(zoomed ? 1 : 0);
 		await expect(page.getByTestId('value-source')).toContainText('Performance: TechPowerUp');
-		await expect(page.getByTestId('value-source')).toContainText('Prices: cheapest in stock today across');
+		await expect(page.getByTestId('value-source')).toContainText('Prices: cheapest in stock across');
 		await expect(page.getByTestId('value-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs/);
 	});
 
