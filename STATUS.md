@@ -14,6 +14,12 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-03 -- One price rule for value figures (#59).** `/value` now prices products like
+  `/products` and `/compare` (cheapest in-stock, active, non-bundle listing, each at its latest
+  snapshot, via `cheapestInStockLatest` in `queries/sql.ts`); `/deals` and the OzBargain alert keep
+  today-only. Cross-surface tests pin it. Gate: pytest 1377, vitest 1190, Playwright 225 (+1
+  skipped) default seed, 224 (+2 skipped) synthetic.
+
 - **2026-10-03 -- Price to performance (#33) built on branch `feat/2026-10-03-price-performance`.**
   `db/perf_index.json` (GPU raster/RT 1440p from the TechPowerUp RTX 5090 Matrix review, CPU
   1080p gaming from the 7700X3D review; `not_in_source` for gaps), "Perf/A$1k" column on

@@ -205,6 +205,20 @@ describe('one price rule across /products, /compare and /value (#59)', () => {
 		expect(value).toBe(650);
 	});
 
+	it('ignores a listing whose latest snapshot is out of stock, on every surface', () => {
+		// PCCG was cheapest and in stock yesterday, sold out today.
+		db.exec(`INSERT INTO retailer_listings (id, product_id, retailer, variant_name, listing_url, status) VALUES
+				(3, 1, 'pccg', 'C', 'https://x/3', 'active');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES
+				(3, '2026-10-02', 500, 'in_stock'), (3, '2026-10-03', 500, 'out_of_stock');`);
+		_resetMemo();
+		const catalogue = groupListingsByProduct(getLatestListings(db, { category: 'gpu' }))[0]
+			.cheapestInStockPrice;
+		expect(catalogue).toBe(650);
+		expect(getComparisonData(db, [1])[0].cheapestInStock?.price).toBe(650);
+		expect(getValueRows(db, 'gpu')[0].price).toBe(650);
+	});
+
 	it('lists every retailer that has an in-stock latest price', () => {
 		expect(getValueData(db, 'gpu', 'gpu_raster_1440p').retailers).toEqual(['scorptec', 'umart']);
 	});
