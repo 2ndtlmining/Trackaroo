@@ -25,18 +25,14 @@ import requests
 
 from config import (
     ALGOLIA_BACKOFF_MAX_SECONDS,
-    ALGOLIA_BATCH_MAX_PAGES,
     ALGOLIA_CATALOGUE_HITS_PER_PAGE,
     ALGOLIA_CATALOGUE_MAX_PAGES,
-    ALGOLIA_CIRCUIT_BREAKER_LIMIT,
     ALGOLIA_HITS_PER_PAGE,
     ALGOLIA_MAX_PAGES,
     ALGOLIA_MAX_RETRIES,
     ALGOLIA_PAGE_DELAY,
     ALGOLIA_RATE_LIMIT_WAIT_SECONDS,
     ALGOLIA_TIMEOUT_SECONDS,
-    BATCH_DELAY,
-    BATCH_SIZE,
     CATEGORY_PASS_DELAY,
     DATA_DIR,
     FILE_DATE_FORMAT,
@@ -71,7 +67,6 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-# Batch size for multi-query requests (config-driven — see TRACKAROO_BATCH_SIZE)
 
 
 def _is_bundle_product(name: str, url: str = "") -> bool:

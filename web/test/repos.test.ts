@@ -938,10 +938,19 @@ describe('price alerts repo', () => {
 		upsertAlert(mini.db, 1, 999, 'discord', false);
 		upsertAlert(mini.db, 1, 999, 'email', false);
 		const [discord] = getProductAlerts(mini.db, 1);
-		deleteAlert(mini.db, discord.id);
+		deleteAlert(mini.db, 1, discord.id);
 		const remaining = getProductAlerts(mini.db, 1);
 		expect(remaining.length).toBe(1);
 		expect(remaining[0].channel).toBe('email');
+	});
+
+	it('deleteAlert ignores an alert id that belongs to another product (#15)', () => {
+		upsertAlert(mini.db, 2, 599, 'discord', false);
+		const [other] = getProductAlerts(mini.db, 2);
+		deleteAlert(mini.db, 1, other.id);
+		expect(getProductAlerts(mini.db, 2).length).toBe(1);
+		deleteAlert(mini.db, 2, other.id);
+		expect(getProductAlerts(mini.db, 2)).toEqual([]);
 	});
 
 	it('getProductAlerts returns only that product, ordered by channel', () => {

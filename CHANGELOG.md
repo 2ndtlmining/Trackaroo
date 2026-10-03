@@ -11,6 +11,9 @@ How it works:
 
 ## Unreleased
 
+### Fixed
+- A price alert can only be deleted from its own product page, and a target price is rounded to cents and capped at $100,000 (#15).
+
 ### Changed
 - Behind the scenes: the price chart, the GPU/CPU list and its filters are split into smaller pieces, with no visible change (#61).
 

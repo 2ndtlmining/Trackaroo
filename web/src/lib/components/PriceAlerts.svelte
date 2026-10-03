@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { MAX_TARGET_PRICE } from '$lib/alertTarget';
 	import { formatAud } from '$lib/formats';
 	import type { AlertRow } from '$lib/models';
 	import type { AlertChannel } from '$lib/types';
@@ -32,6 +33,7 @@
 				type="number"
 				name="target_price"
 				min="1"
+				max={MAX_TARGET_PRICE}
 				step="1"
 				required
 				aria-label="Target price in AUD"

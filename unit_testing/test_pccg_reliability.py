@@ -72,7 +72,6 @@ def test_batch_search_terminates_when_all_retries_429(monkeypatch):
         calls.append(1)
         return _fake_429()
     monkeypatch.setattr("scraper.pccg.requests.post", _counted_429)
-    monkeypatch.setattr("scraper.pccg.BATCH_DELAY", 0)
     monkeypatch.setattr("scraper.pccg.ALGOLIA_RATE_LIMIT_WAIT_SECONDS", 0)
 
     start = time.time()
@@ -92,7 +91,6 @@ def test_single_search_terminates_when_all_retries_429(monkeypatch):
         calls.append(1)
         return _fake_429()
     monkeypatch.setattr("scraper.pccg.requests.post", _counted_429)
-    monkeypatch.setattr("scraper.pccg.BATCH_DELAY", 0)
     monkeypatch.setattr("scraper.pccg.ALGOLIA_RATE_LIMIT_WAIT_SECONDS", 0)
 
     start = time.time()

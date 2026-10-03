@@ -22,8 +22,10 @@ export function upsertAlert(
 	).run(productId, targetPrice, channel, notifyOnRestock ? 1 : 0);
 }
 
-export function deleteAlert(db: DB, alertId: number): void {
-	db.prepare('DELETE FROM price_alerts WHERE id = ?').run(alertId);
+// Scoped to the product (#15): a form posted to one product page can never
+// delete another product's alert by guessing its id.
+export function deleteAlert(db: DB, productId: number, alertId: number): void {
+	db.prepare('DELETE FROM price_alerts WHERE id = ? AND product_id = ?').run(alertId, productId);
 }
 
 export function getProductAlerts(db: DB, productId: number): AlertRow[] {

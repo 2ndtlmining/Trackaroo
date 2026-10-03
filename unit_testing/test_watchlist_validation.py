@@ -149,8 +149,9 @@ class TestTheRealWatchlistIsClean:
 
     def test_every_row_validates(self):
         """The shipped file must have no rows that would be skipped."""
-        # 105 on 28-Sep-2026: 245K and the four memory/GRE variants (#1, #2)
-        assert len(load_watchlist(strict=True)) == 105
+        # strict=True raises on the first bad row; the floor catches truncation
+        # without pinning a count every add or retire would have to bump (#20).
+        assert len(load_watchlist(strict=True)) >= 70
 
 
 class TestKnownMissingSpecsAreSeparated:
