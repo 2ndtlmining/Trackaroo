@@ -35,6 +35,8 @@ RUN npm ci
 COPY web/ ./
 # The /changelog page bundles the repo-root CHANGELOG.md (web/src/lib/server/changelog.ts).
 COPY CHANGELOG.md /app/CHANGELOG.md
+# The value pages bundle the curated performance index (web/src/lib/perfIndex.ts).
+COPY db/perf_index.json /app/db/perf_index.json
 RUN npm run build
 # Drop dev deps so the runtime image stays lean (better-sqlite3 native module
 # must remain in node_modules).
