@@ -13,7 +13,7 @@ const css = fs.readFileSync(
 
 function tokens(block: string): Record<string, string> {
 	const out: Record<string, string> = {};
-	for (const m of block.matchAll(/--([a-z-]+):\s*(#[0-9a-fA-F]{6})\s*;/g)) out[m[1]] = m[2].toLowerCase();
+	for (const m of block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})\s*;/g)) out[m[1]] = m[2].toLowerCase();
 	return out;
 }
 
@@ -106,6 +106,21 @@ describe.each([
 		const soft = over(rgba(block, 'accent-soft'), t[surface]);
 		expect(contrast(t.accent, soft)).toBeGreaterThanOrEqual(4.5);
 	});
+});
+
+describe.each([
+	['dark', dark],
+	['light', light]
+] as const)('%s card surfaces (#22)', (_name, t) => {
+	it.each(
+		['text', 'text-muted'].flatMap((fg) => ['surface-2', 'surface-3'].map((bg) => [fg, bg]))
+	)('text token %s on %s is at least 4.5:1', (fg, bg) =>
+		expect(contrast(t[fg], t[bg])).toBeGreaterThanOrEqual(4.5)
+	);
+
+	// Decorative card edge, not a control boundary (WCAG 1.4.11 n/a), so no ratio: it only has to beat the old --border.
+	it('border-card is more visible against bg than --border', () =>
+		expect(contrast(t['border-card'], t.bg)).toBeGreaterThan(contrast(t.border, t.bg)));
 });
 
 describe('contrast()', () => {
