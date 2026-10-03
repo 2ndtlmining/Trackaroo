@@ -1,4 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import Database from 'better-sqlite3';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Mobile viewport regression tests.
@@ -216,3 +219,41 @@ test.describe('discover mobile', () => {
 		await expect(page.getByTestId('discover-untracked').getByRole('button', { name: 'Track' }).first()).toBeVisible();
 	});
 });
+
+test.describe('PageHeader with the longest product name (#22)', () => {
+	test.use({ viewport: NARROW });
+
+	test('the product page does not overflow at 320px', async ({ page }) => {
+		const db = new Database(path.join(path.dirname(fileURLToPath(import.meta.url)), 'e2e.db'), {
+			readonly: true
+		});
+		const row = db
+			.prepare('SELECT id FROM products WHERE tracked = 1 ORDER BY length(model) DESC, id LIMIT 1')
+			.get() as { id: number };
+		db.close();
+		await goto(page, `/product/${row.id}`);
+		await expect(page.locator('h1')).toHaveCount(1);
+		const { viewport, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
+	});
+});
+
+// #22 R5: the phone header nav wraps to a second row instead of scrolling, so
+// no link is cut mid-word and the Discover pending badge stays visible.
+for (const viewport of [PHONE, NARROW]) {
+	test(`every header nav link is fully on screen at ${viewport.width}px`, async ({ page }) => {
+		await page.setViewportSize(viewport);
+		await goto(page, '/');
+		const links = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
+		const n = await links.count();
+		expect(n).toBeGreaterThan(0);
+		for (let i = 0; i < n; i++) {
+			const box = await links.nth(i).boundingBox();
+			expect(box, `nav link ${i} has a box`).not.toBeNull();
+			expect(box!.x, `nav link ${i} starts off screen`).toBeGreaterThanOrEqual(0);
+			expect(box!.x + box!.width, `nav link ${i} runs past the viewport`).toBeLessThanOrEqual(viewport.width);
+		}
+		const { viewport: vw, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(vw + 1);
+	});
+}

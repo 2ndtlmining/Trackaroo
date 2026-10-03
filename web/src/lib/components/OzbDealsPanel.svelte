@@ -36,7 +36,7 @@
 	>
 		<div class="w-24 shrink-0">
 			{#if deal.priceAud !== null}
-				<span class="num text-base font-semibold {deal.expired ? 'text-text-muted' : 'text-text'}"
+				<span class="num text-[1.0625rem] font-semibold {deal.expired ? 'text-text-muted' : 'text-text'}"
 					>{formatAud(deal.priceAud)}</span
 				>
 			{:else}
@@ -78,7 +78,7 @@
 {/snippet}
 
 {#if live.length > 0 || expired.length > 0}
-	<section class="rounded-md border border-border bg-surface p-4" aria-labelledby="ozb-heading">
+	<section class="rounded-xl border border-border-card bg-surface shadow-card p-4" aria-labelledby="ozb-heading">
 		<h2 id="ozb-heading" class="text-sm font-semibold text-text">OzBargain deals</h2>
 		<p class="mt-0.5 text-xs text-text-muted">
 			Community-posted deals from OzBargain, checked every 2 hours. Prices are as posted.
@@ -97,7 +97,7 @@
 		{#if expired.length > 0}
 			<button
 				type="button"
-				class="mt-3 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-text-muted hover:text-text"
+				class="mt-3 inline-flex min-h-7 items-center gap-1 rounded-md px-1.5 text-meta text-text-muted hover:text-text"
 				aria-expanded={showExpired}
 				aria-controls="ozb-expired"
 				onclick={() => (showExpired = !showExpired)}

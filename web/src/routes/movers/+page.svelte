@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto, replaceState } from '$app/navigation';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import PriceChange from '$lib/components/PriceChange.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Sparkline from '$lib/components/Sparkline.svelte';
@@ -207,13 +208,11 @@
 {/snippet}
 
 <div class="space-y-6">
-	<div class="flex flex-wrap items-center justify-between gap-4">
-		<div>
-			<h1 class="text-xl font-semibold text-text">Movers</h1>
-			<p class="mt-1 text-sm text-text-muted">Biggest price changes over the selected window.</p>
-		</div>
-		<SegmentedControl label="Window" options={windowOptions} value={data.window} onChange={setWindow} />
-	</div>
+	<PageHeader title="Movers" subtitle="Biggest price changes over the selected window.">
+		{#snippet actions()}
+			<SegmentedControl label="Window" options={windowOptions} value={data.window} onChange={setWindow} />
+		{/snippet}
+	</PageHeader>
 
 	{#if data.showAll}
 		<a class="text-xs text-accent" href={moversHref(data.window, view, false)}>Hide unchanged and new listings</a>
@@ -244,13 +243,13 @@
 	</div>
 
 	{#if sorted.length === 0}
-		<div class="rounded-md border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted">
+		<div class="rounded-xl border border-border-card bg-surface shadow-card px-4 py-8 text-center text-sm text-text-muted">
 			No movers match the current filters.
 		</div>
 	{:else}
 		<!-- One table at every width (#5 item 6): lower-priority columns hide below
 		     md instead of a second, mobile-only copy of every row. -->
-		<div class="overflow-x-auto rounded-md border border-border">
+		<div class="overflow-x-auto rounded-xl border border-border-card bg-surface shadow-card">
 			<table class="w-full border-collapse text-sm">
 				<caption class="sr-only">{caption}</caption>
 				<thead>

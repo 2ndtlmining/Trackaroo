@@ -40,7 +40,7 @@
 </script>
 
 <span
-	class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface px-2 py-0.5 text-xs"
+	class="inline-flex min-h-6 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-card bg-surface px-2 py-0.5 text-meta font-medium"
 >
 	<span class="h-1.5 w-1.5 shrink-0 rounded-full {dotClass[tone]}"></span>
 	<span class="{textClass[tone]}">{label}</span>

@@ -75,7 +75,9 @@ export function buildSyntheticSources() {
 		['Ryzen 5 5600', 'pccg', 'AMD Ryzen 5 5600 Processor', '/p/5600-pccg', [195, 195, 195]],
 		['Ryzen 5 5600', 'scorptec', 'AMD Ryzen 5 5600', '/p/5600-sct', [189, 189, 189]],
 		['Ryzen 5 7600', 'scorptec', 'AMD Ryzen 5 7600', '/p/7600-sct', [339, 339, 339]],
-		['Ryzen 9 9900X', 'scorptec', 'AMD Ryzen 9 9900X', '/p/9900x-sct', [749, 749, 799]],
+		// Flat (#22 Task 5): the CPU section must have no rise, so the homepage's
+		// empty-column line is testable. The only rising fixture is the GPU riser.
+		['Ryzen 9 9900X', 'scorptec', 'AMD Ryzen 9 9900X', '/p/9900x-sct', [799, 799, 799]],
 		// RTX 5060 Ti carries 12 listings on purpose (10 in-stock + 2 out-of-stock,
 		// across both retailers and several AIB brands) so the product page's
 		// offer-list expander, in-stock filter, and facet chips are all
@@ -354,6 +356,16 @@ export function seedE2eDb(dbPath = DB_PATH) {
 			[2, 505],
 			[1, 502],
 			[0, 500]
+		]);
+		// E2E Riser GPU (#22 Task 5): +12% over its last 5 days, so the GPU
+		// section always has a "Biggest rises" column whatever data/ holds (the
+		// synthetic GPUs only fall). Above its average, so never a deal.
+		addDealFixture('E2E Riser GPU', '/p/e2e-riser', [
+			[4, 500],
+			[3, 500],
+			[2, 500],
+			[1, 500],
+			[0, 560]
 		]);
 		// E2E Sale Window GPU (Task 5): a flat price with one extra day inside
 		// the most recent EOFY sale (20 June), so the chart's date range covers a

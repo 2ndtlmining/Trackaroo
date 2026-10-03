@@ -5,6 +5,8 @@
 	import FacetChips from '$lib/components/FacetChips.svelte';
 	import OfferRow from '$lib/components/OfferRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Check from '@lucide/svelte/icons/check';
 	import { dealToOffer, NEAR_ALL_TIME_LOW_PCT } from '$lib/deals';
 	import { DEAL_MIN_AUD, DEAL_MIN_PCT, EARNED_LOW_RISE_PCT } from '$lib/constants';
 	import { formatShortDate } from '$lib/formats';
@@ -37,12 +39,15 @@
 	description="AU CPUs and GPUs priced below their recent average, or at their lowest since tracking began."
 />
 
+<PageHeader title="Deals">
+	{#snippet subtitle()}
+		Cheapest in-stock price at least <span class="num">{DEAL_MIN_PCT}%</span>
+		<strong class="font-semibold text-text">and</strong> at least
+		<span class="num">${DEAL_MIN_AUD}</span> below its own 30-day average.
+	{/snippet}
+</PageHeader>
+
 <div>
-	<h1 class="text-xl font-semibold tracking-tight text-text">Deals</h1>
-	<p class="mt-1 text-sm text-text-muted">
-		Cheapest in-stock price at least {DEAL_MIN_PCT}% <strong>and</strong> ${DEAL_MIN_AUD} below its
-		own 30-day average.
-	</p>
 
 	<div class="mt-4 flex flex-col gap-2">
 		<FacetChips
@@ -73,11 +78,11 @@
 					type="button"
 					aria-pressed={data.belowMsrp}
 					onclick={() => select('below_msrp', data.belowMsrp ? null : '1')}
-					class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs {data.belowMsrp
-						? 'border-accent bg-accent-soft font-medium text-accent'
-						: 'border-border bg-surface text-text-muted hover:bg-surface-hover hover:text-text'}"
+					class="inline-flex min-h-8 items-center gap-1 rounded-full border px-3 text-body {data.belowMsrp
+						? 'border-accent bg-accent-soft font-semibold text-accent'
+						: 'border-border-input bg-surface font-normal text-text hover:bg-surface-hover'}"
 				>
-					<BadgeDollarSign size={13} aria-hidden="true" />
+					{#if data.belowMsrp}<Check size={14} aria-hidden="true" />{:else}<BadgeDollarSign size={13} aria-hidden="true" />{/if}
 					Below MSRP
 				</button>
 			</div>
@@ -94,7 +99,7 @@
 		</h2>
 		{#if data.belowAverage.length > 0}
 			<div
-				class="mt-2 divide-y divide-border rounded-lg border border-border bg-surface"
+				class="mt-2 divide-y divide-border rounded-xl border border-border-card bg-surface shadow-card"
 				data-testid="below-average-list"
 			>
 				{#each data.belowAverage as deal (deal.productId)}
@@ -114,7 +119,7 @@
 			</div>
 		{:else}
 			<p
-				class="mt-2 rounded-lg border border-border bg-surface px-3 py-6 text-center text-sm text-text-muted"
+				class="mt-2 rounded-xl border border-border-card bg-surface shadow-card px-3 py-6 text-center text-sm text-text-muted"
 			>
 				No products{msrpNote} are below their recent average today.
 			</p>
@@ -130,7 +135,7 @@
 		</p>
 		{#if data.atAllTimeLow.length > 0}
 			<div
-				class="mt-2 divide-y divide-border rounded-lg border border-border bg-surface"
+				class="mt-2 divide-y divide-border rounded-xl border border-border-card bg-surface shadow-card"
 				data-testid="all-time-low-list"
 			>
 				{#each data.atAllTimeLow as deal (deal.productId)}
@@ -150,7 +155,7 @@
 			</div>
 		{:else}
 			<p
-				class="mt-2 rounded-lg border border-border bg-surface px-3 py-6 text-center text-sm text-text-muted"
+				class="mt-2 rounded-xl border border-border-card bg-surface shadow-card px-3 py-6 text-center text-sm text-text-muted"
 			>
 				No product{msrpNote} has dropped to a new low today.
 			</p>

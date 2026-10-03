@@ -6,6 +6,7 @@ import {
 	getLaunchMsrps,
 	getProductDealStats,
 	getProductSparklines,
+	getRange90,
 	getTrackedProducts,
 	groupListingsByProduct
 } from '$lib/server/repos';
@@ -68,9 +69,11 @@ export function load({
 			const cpuSpecs = getCpuSpecs(db, category);
 			const msrps = getLaunchMsrps(db, category);
 			const sparklines = getProductSparklines(db, category, 30);
+			const ranges = getRange90(db);
 			const extras = (productId: number, launchDate: string | null) => ({
 				sparkline: (sparklines.get(productId) ?? []).map((p) => p.price),
 				msrpUsd: msrps.get(productId) ?? null,
+				range90: ranges.get(productId) ?? null,
 				socket: cpuSpecs.get(productId)?.socket ?? null,
 				threads: cpuSpecs.get(productId)?.threads ?? null,
 				releaseYear: launchDate ? Number(launchDate.slice(0, 4)) : null
@@ -130,6 +133,7 @@ export function load({
 	const listedCount = inStockOnly ? base.listedInStockCount : base.listedCount;
 
 	return {
+		wide: true,
 		category,
 		inStockOnly,
 		trackedCount,

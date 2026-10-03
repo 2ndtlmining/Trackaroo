@@ -360,7 +360,7 @@
 	bind:this={dialog}
 	onclose={onDialogClose}
 	aria-label="Filters"
-	class="m-auto w-[calc(100%-2rem)] max-w-md rounded-lg border border-border bg-surface p-4 text-text backdrop:bg-bg/80 md:hidden"
+	class="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-border-card bg-surface-3 p-4 text-text backdrop:bg-bg/80 md:hidden"
 >
 	<form method="get" action="/products" onsubmit={onSubmit} class="flex {formClass}">
 		{@render controls()}

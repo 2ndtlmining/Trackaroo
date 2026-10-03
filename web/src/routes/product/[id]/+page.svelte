@@ -9,7 +9,7 @@
 	import PriceAlerts from '$lib/components/PriceAlerts.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import PriceDataTable from '$lib/components/PriceDataTable.svelte';
-	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { productBreadcrumbs } from '$lib/breadcrumbs';
 	import { chartSummary } from '$lib/chartSummary';
 	import type { AlertChannel } from '$lib/types';
@@ -145,30 +145,35 @@ label:
 
 <div class="space-y-6">
 	<div>
-		<Breadcrumbs crumbs={productBreadcrumbs({ ...product, model: name })} />
-		<p class="mt-2 flex items-center gap-1.5 text-sm text-text-muted">
-			<BrandIcon brand={product.brand} size={16} />
-			{product.brand}
-		</p>
-		<h1 class="text-xl font-semibold text-text">
-			{name}{product.variant ? ` · ${product.variant}` : ''}
-		</h1>
+		<PageHeader
+			title={`${name}${product.variant ? ` · ${product.variant}` : ''}`}
+			crumbs={productBreadcrumbs({ ...product, model: name })}
+		>
+			{#snippet meta()}
+				<p class="flex items-center gap-1.5 font-medium text-text" data-testid="product-brand">
+					<BrandIcon brand={product.brand} size={16} />
+					{product.brand}
+				</p>
+				<p data-testid="product-meta">
+					{product.category?.toUpperCase()}
+					{#if specLabel}· {specLabel}{/if}
+					{#if product.generation_tier}
+						· {generationTierLabel(product.brand, product.category, product.generation_tier) ??
+							product.generation_tier}
+					{/if}
+				</p>
+			{/snippet}
+			{#snippet actions()}
+				<a
+					href="/products?category={product.category}&compare={product.id}"
+					class="inline-flex min-h-9 items-center rounded-lg border border-border-input bg-surface-2 px-3.5 text-body font-semibold text-text no-underline hover:bg-surface-hover"
+				>
+					Compare with…
+				</a>
+			{/snippet}
+		</PageHeader>
 
-		<p class="mt-1 text-sm text-text-muted" data-testid="product-meta">
-			{product.category?.toUpperCase()}
-			{#if specLabel}· {specLabel}{/if}
-			{#if product.generation_tier}
-				· {generationTierLabel(product.brand, product.category, product.generation_tier) ??
-					product.generation_tier}
-			{/if}
-		</p>
-		<p class="mt-1 text-sm">
-			<a href="/products?category={product.category}&compare={product.id}" class="text-accent">
-				Compare with…
-			</a>
-		</p>
-
-		<div class="mt-4">
+		<div>
 			<ProductHeadline
 				{headline}
 				listingCount={series.length}
@@ -217,7 +222,7 @@ label:
 		</div>
 	{:else}
 		<div
-			class="rounded-md border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted"
+			class="rounded-xl border border-border-card bg-surface shadow-card px-4 py-8 text-center text-sm text-text-muted"
 		>
 			No price history recorded for this product yet.
 		</div>

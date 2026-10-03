@@ -46,7 +46,7 @@
 			<span class="text-text-muted">≈<span class="num">A{formatAud(Math.round(aud))}</span> inc. GST</span>
 			<button
 				type="button"
-				class="-m-1 inline-flex size-6 items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text"
+				class="-m-1 inline-flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text"
 				aria-label="How the MSRP is converted"
 				aria-expanded={open}
 				aria-controls={`${id}-msrp`}

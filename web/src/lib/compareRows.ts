@@ -10,6 +10,8 @@ export interface CompareRow {
 	direction?: 'higher' | 'lower';
 	// The comparable number behind `value`; read from the same field.
 	numeric?: (entry: CompareEntry) => number | null;
+	// Set in the mono tabular face (#22); rows with `numeric` always are.
+	mono?: boolean;
 }
 
 // Mirrors the value formatters, which treat 0 as missing.
@@ -44,6 +46,7 @@ const CORE_FORMAT = new Intl.NumberFormat('en-AU');
 const sharedSpecRows: CompareRow[] = [
 	{
 		label: 'US launch MSRP',
+		mono: true,
 		value: (e) => (e.spec?.launch_msrp_usd ? formatUsd(e.spec.launch_msrp_usd) : null)
 	},
 	{

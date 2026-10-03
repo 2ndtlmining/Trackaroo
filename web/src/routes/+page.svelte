@@ -2,6 +2,7 @@
 	import CategorySection from '$lib/components/CategorySection.svelte';
 	import HealthStrip from '$lib/components/HealthStrip.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 
 	let { data } = $props();
 </script>
@@ -11,7 +12,7 @@
 />
 
 <div>
-	<h1 class="mb-4 text-xl font-semibold text-text">Dashboard</h1>
+	<PageHeader title="Dashboard" />
 
 	<HealthStrip
 		retailers={data.retailers}

@@ -12,7 +12,7 @@
 </script>
 
 {#if band.length > 0}
-	<details class="rounded-md border border-border bg-surface">
+	<details class="rounded-xl border border-border-card bg-surface shadow-card">
 		<summary class="cursor-pointer px-3 py-2 text-sm text-text">
 			Show price data ({dayCount})
 		</summary>

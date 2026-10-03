@@ -2,6 +2,7 @@
 // New code may import from $lib/server/queries/<module> directly.
 export type * from '$lib/models';
 export * from './queries/catalog';
+export * from './queries/range';
 export * from './queries/history';
 export * from './queries/stats';
 export * from './queries/deals';

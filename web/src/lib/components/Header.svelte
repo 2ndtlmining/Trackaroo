@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import Wordmark from './Wordmark.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { NAV_LINKS, isActiveLink } from '$lib/nav';
 	import type { Category } from '$lib/types';
 
-	let { onOpenSearch }: { onOpenSearch?: () => void } = $props();
+	let { onOpenSearch, widthClass = 'max-w-6xl' }: { onOpenSearch?: () => void; widthClass?: string } = $props();
 
 	// Only the product page's data has a `product`; everywhere else this is null.
 	const productCategory = $derived(
@@ -14,13 +15,10 @@
 </script>
 
 <header class="border-b border-border bg-surface">
-	<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-		<a href="/" class="flex items-center gap-2 text-sm font-semibold tracking-tight text-text no-underline hover:no-underline">
-			<span class="h-2 w-2 rounded-full bg-accent"></span>
-			Trackaroo
-		</a>
+	<div class="mx-auto flex {widthClass} flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+		<Wordmark />
 		<nav
-			class="-mx-1 flex max-w-full items-center gap-1 overflow-x-auto px-1 text-sm md:overflow-visible"
+			class="-mx-1 flex max-w-full flex-wrap items-center gap-1 px-1 text-sm md:flex-nowrap"
 			aria-label="Main"
 		>
 			{#each NAV_LINKS as link (link.href)}
@@ -48,7 +46,7 @@
 				<button
 					type="button"
 					onclick={onOpenSearch}
-					class="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-text"
+					class="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-meta text-text-muted hover:bg-surface-hover hover:text-text"
 					aria-label="Search products"
 					title="Search products (Ctrl+K)"
 				>
@@ -66,7 +64,7 @@
 						<path d="m21 21-4.35-4.35" />
 					</svg>
 					<span class="hidden sm:inline">Search</span>
-					<kbd class="rounded border border-border px-1 py-0.5 font-mono text-[10px]">Ctrl K</kbd>
+					<kbd class="rounded border border-border px-1 py-0.5 font-mono text-meta">Ctrl K</kbd>
 				</button>
 			{/if}
 			<ThemeToggle />

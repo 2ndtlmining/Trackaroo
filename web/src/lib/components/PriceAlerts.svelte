@@ -19,7 +19,7 @@
 	];
 </script>
 
-<section class="rounded-md border border-border bg-surface p-4">
+<section class="rounded-xl border border-border-card bg-surface shadow-card p-4">
 	<h2 class="text-sm font-semibold text-text">Price alerts</h2>
 	<p class="mt-1 text-xs text-text-muted">
 		Get notified when this product's cheapest in-stock price drops to your target.
@@ -77,14 +77,14 @@
 
 	{#if alerts.length > 0}
 		<div class="mt-4 border-t border-border pt-3">
-			<h3 class="text-xs font-semibold uppercase tracking-wide text-text-muted">My alerts</h3>
+			<h3 class="text-section">My alerts</h3>
 			<ul class="mt-2 space-y-2">
 				{#each alerts as alert (alert.id)}
 					<li
 						class="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 py-2"
 					>
 						<div class="flex flex-wrap items-center gap-2 text-sm">
-							<span class="text-text">Under {formatAud(alert.target_price)}</span>
+							<span class="text-text">Under <span class="num">{formatAud(alert.target_price)}</span></span>
 							<span class="text-text-muted">· {alert.channel}</span>
 							{#if alert.notify_on_restock}
 								<span class="text-text-muted">· restock</span>
@@ -97,7 +97,7 @@
 							<input type="hidden" name="alert_id" value={alert.id} />
 							<button
 								type="submit"
-								class="text-xs text-text-muted hover:text-text"
+								class="min-h-7 rounded-md px-1.5 text-meta text-text-muted hover:bg-surface-hover hover:text-text"
 								aria-label="Delete alert"
 							>
 								Delete

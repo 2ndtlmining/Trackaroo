@@ -40,6 +40,8 @@ export interface DailyCheapestOpts {
 	 * into SQL verbatim: constants and placeholder lists only, never user input.
 	 */
 	product?: '= ?' | '= p.id' | `IN (${string})`;
+	/** Only listings with status = 'active' (the default keeps every status). */
+	activeOnly?: boolean;
 	/** Also select and group by `product_id` (one row per product per day). */
 	perProduct?: boolean;
 	/** Output name of the date column; default keeps `snapshot_date`. */
@@ -70,6 +72,7 @@ export function dailyCheapestInStock(opts: DailyCheapestOpts): string {
 	const where: string[] = [];
 	if (opts.product !== undefined) where.push(`${l}.product_id ${opts.product}`);
 	where.push(`${s}.stock_status = 'in_stock'`);
+	if (opts.activeOnly) where.push(`${l}.status = 'active'`);
 	where.push(notBundle(l));
 	where.push(
 		opts.window === null

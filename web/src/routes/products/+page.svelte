@@ -3,6 +3,7 @@
 	import { afterNavigate, goto, replaceState } from '$app/navigation';
 	import ProductRow from '$lib/components/ProductRow.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import CatalogFilters from '$lib/components/CatalogFilters.svelte';
 	import { groupForIndex, type CatalogRow } from '$lib/productIndex';
 	import {
@@ -222,17 +223,9 @@
 />
 
 <div>
-	<div class="flex flex-wrap items-baseline justify-between gap-2">
-		<h1 class="text-xl font-semibold text-text">{heading}</h1>
-		<p class="text-xs text-text-muted">
-			<span class="num">{data.trackedCount}</span> tracked
-			{#if data.inStockOnly}
-				· <span class="num">{data.groups.length}</span> in stock
-			{:else}
-				· <span class="num">{data.listedCount}</span> seen at a retailer
-			{/if}
-		</p>
-	</div>
+	<PageHeader title={heading}>
+		{#snippet subtitle()}<span class="num">{data.trackedCount}</span> tracked · <span class="num">{data.inStockOnly ? data.groups.length : data.listedCount}</span> {data.inStockOnly ? 'in stock' : 'seen at a retailer'}{/snippet}
+	</PageHeader>
 
 	<div class="mt-3 flex flex-wrap items-center gap-3">
 		<div class="min-w-0 flex-1 basis-64">
@@ -287,7 +280,7 @@
 	{#if searching}
 		{#if matches.length > 0}
 			<div
-				class="mt-3 divide-y divide-border rounded-lg border border-border bg-surface"
+				class="mt-3 divide-y divide-border rounded-xl border border-border-card bg-surface shadow-card"
 				role="table"
 				aria-label={`${heading} matching “${query.trim()}”`}
 			>

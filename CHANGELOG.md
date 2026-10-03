@@ -14,6 +14,9 @@ How it works:
 ### Added
 - OzBargain deals on product pages and /deals, with a Discord alert when a deal beats our best in-stock price (#34).
 
+### Changed
+- Visual refresh (#22): new type scale and fonts (self-hosted), terminal wordmark and icons, a shared page header on every page, wider table pages, mono prices, a segmented 90-day range bar on catalogue rows, and no empty homepage columns.
+
 ## 0.4.0 — 2026-10-03
 
 ### Added

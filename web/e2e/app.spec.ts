@@ -377,6 +377,35 @@ test.describe('homepage dashboard', () => {
 		await expect(page.getByLabel('GPUs').getByText('Biggest drops (7d)')).toBeVisible();
 		await expect(page.getByLabel('GPUs').getByText('Biggest rises (7d)')).toBeVisible();
 	});
+
+	// #22 Task 5: an empty movers column is not rendered as a blank panel. Only
+	// the synthetic seed guarantees a CPU section with no rise (its Ryzen 9
+	// 9900X is flat and the other CPUs fall); a real scrape may hold one, so
+	// this case is gated on it. The invariant test below runs on any seed.
+	test('a movers column with no rows is replaced by one line (#22)', async ({ page }) => {
+		test.skip(!SYNTHETIC, 'only the synthetic seed guarantees a CPU section with no rise');
+		await goto(page, '/');
+		const cpus = page.getByLabel('CPUs');
+		await expect(cpus.getByTestId('biggest-rises')).toHaveCount(0);
+		await expect(cpus.getByText('No big price rises this week.')).toBeVisible();
+		await expect(cpus.getByTestId('biggest-drops')).toBeVisible();
+	});
+
+	test('every rendered movers column has rows; every missing one says so (#22)', async ({ page }) => {
+		await goto(page, '/');
+		const lines = { 'biggest-drops': 'No big price drops this week.', 'biggest-rises': 'No big price rises this week.' };
+		for (const section of ['GPUs', 'CPUs']) {
+			for (const [column, line] of Object.entries(lines)) {
+				const col = page.getByLabel(section).getByTestId(column);
+				if ((await col.count()) > 0) {
+					expect(await col.getByRole('link').count()).toBeGreaterThan(0);
+					await expect(page.getByLabel(section).getByText(line)).toHaveCount(0);
+				} else {
+					await expect(page.getByLabel(section).getByText(line)).toBeVisible();
+				}
+			}
+		}
+	});
 });
 
 // Filters.svelte moved off the homepage with the listing table (spec §5) and is
@@ -858,7 +887,7 @@ test('error page is styled and offers retry (#29)', async ({ page }) => {
 	await expect(page.getByText('404', { exact: true })).toBeVisible();
 	const retry = page.getByRole('link', { name: 'Try again' });
 	await expect(retry).toHaveAttribute('href', '/product/999999');
-	await expect(page.getByRole('main').getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+	await expect(page.getByRole('main').getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('href', '/');
 });
 
 test.describe('command palette', () => {
@@ -1291,7 +1320,7 @@ test.describe('product detail offer list', () => {
 
 		// The headline leads with the cheapest in-stock price — it must match
 		// the first (cheapest-first-sorted) row in the offer list below it.
-		const headlinePrice = (await page.locator('.text-3xl.num').first().textContent())?.trim();
+		const headlinePrice = (await page.locator('.text-price-lg').first().textContent())?.trim();
 		expect(headlinePrice).toBeTruthy();
 		const firstRowPrice = (
 			await page.locator('.order-1.w-24').first().textContent()
@@ -1854,6 +1883,37 @@ test.describe('MSRP cues (Task 3)', () => {
 		await expect(page.getByTestId('msrp-line')).toHaveCount(0);
 	});
 
+	test('a catalogue row with history shows the 6-segment range bar and its label', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await goto(page, '/products?category=gpu');
+		const row = page.getByTestId('catalog-row').filter({ hasText: 'E2E New Low GPU' });
+		const bar = row.getByTestId('row-range');
+		await expect(bar.locator('[data-segment]')).toHaveCount(6);
+		await expect(bar.locator('[data-filled="true"]')).toHaveCount(1);
+		await expect(bar).toContainText('$500');
+		await expect(bar).toContainText('$520');
+	});
+
+	for (const width of [1024, 1280]) {
+		test(`catalogue rows do not wrap and the page does not scroll sideways at ${width}px`, async ({ page }) => {
+			await page.setViewportSize({ width, height: 900 });
+			await goto(page, '/products?category=gpu');
+			const rows = page.getByTestId('catalog-row');
+			await expect(rows.first()).toBeVisible();
+			expect(await rows.count()).toBeGreaterThan(1);
+			// A wrapped row drops its last cell onto a new line; taller cell text does not.
+			const tops = await rows.evaluateAll((els) =>
+				els.map((e) => {
+					const cells = [...e.querySelectorAll('[role="cell"]')].filter((c) => (c as HTMLElement).offsetParent !== null);
+					return Math.abs(cells[0].getBoundingClientRect().top - cells[cells.length - 1].getBoundingClientRect().top);
+				})
+			);
+			for (const t of tops) expect(t).toBeLessThan(20);
+			const noScroll = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+			expect(noScroll).toBe(true);
+		});
+	}
+
 	test('the catalogue sorts by vs MSRP, cheapest against MSRP first', async ({ page }) => {
 		await goto(page, '/products?category=gpu&sort=msrp');
 		const header = page.getByRole('columnheader', { name: /^vs MSRP/ });
@@ -1885,5 +1945,78 @@ test.describe('MSRP cues (Task 3)', () => {
 		await expect(page).toHaveURL(/below_msrp=1/);
 		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 		await expect(page.getByRole('link', { name: 'E2E New Low GPU', exact: true })).toHaveCount(0);
+	});
+
+	// #22 R5 (WCAG 1.4.1): pressed is shown by a check mark and weight, not colour alone.
+	test('the pressed Below MSRP toggle shows a check and a heavier weight', async ({ page }) => {
+		await goto(page, '/deals');
+		const toggle = page.getByRole('button', { name: 'Below MSRP' });
+		const weight = () => toggle.evaluate((el) => Number(getComputedStyle(el).fontWeight));
+		const icon = () => toggle.locator('svg').innerHTML();
+		const before = await weight();
+		const iconBefore = await icon();
+		await toggle.click();
+		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+		expect(await weight()).toBeGreaterThan(before);
+		// The pressed state swaps the dollar badge for a check mark.
+		expect(await icon()).not.toBe(iconBefore);
+	});
+});
+
+test.describe('PageHeader on every route (#22)', () => {
+	const ROUTES = [
+		'/',
+		'/products?category=gpu',
+		'/product/1',
+		'/deals',
+		'/movers',
+		'/discover',
+		'/compare',
+		'/changelog',
+		'/no-such-page'
+	];
+	for (const route of ROUTES) {
+		test(`${route} has exactly one h1, inside the page header`, async ({ page }) => {
+			await goto(page, route);
+			await expect(page.locator('h1')).toHaveCount(1);
+			await expect(page.locator('[data-testid="page-header"] h1')).toHaveCount(1);
+		});
+	}
+
+	const widthOf = (page: Page) =>
+		page.locator('main').evaluate((el) => getComputedStyle(el).maxWidth);
+
+	for (const route of ['/products?category=gpu', '/deals', '/movers', '/discover']) {
+		test(`${route} uses the wide 80rem column`, async ({ page }) => {
+			await goto(page, route);
+			expect(await widthOf(page)).toBe('1280px');
+		});
+	}
+
+	test('/changelog keeps the 72rem column', async ({ page }) => {
+		await goto(page, '/changelog');
+		expect(await widthOf(page)).toBe('1152px');
+	});
+
+	// R3: the brand line and product-meta belong to the title, above the rule.
+	test('the product page brand line and meta sit inside the page header', async ({ page }) => {
+		await goto(page, `/product/${productIdByModel('E2E Deal Demo GPU')}`);
+		const header = page.getByTestId('page-header');
+		await expect(header.getByTestId('product-meta')).toBeVisible();
+		await expect(header.getByTestId('product-brand')).toBeVisible();
+	});
+
+	test('/products count line keeps tabular numbers', async ({ page }) => {
+		await goto(page, '/products?category=gpu');
+		const sub = page.getByTestId('page-header').locator('p').first();
+		await expect(sub).toContainText('tracked');
+		expect(await sub.locator('.num').count()).toBe(2);
+	});
+
+	test('/deals subtitle says both thresholds must hold', async ({ page }) => {
+		await goto(page, '/deals');
+		const sub = page.getByTestId('page-header').locator('p').first();
+		await expect(sub).toContainText(/at least \d+% and at least \$\d+ below/);
+		await expect(sub.locator('strong')).toHaveText('and');
 	});
 });

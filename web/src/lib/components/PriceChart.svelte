@@ -337,7 +337,7 @@
 			tooltipEl = document.createElement('div');
 			tooltipEl.setAttribute('data-tooltip', '');
 			tooltipEl.className =
-				'pointer-events-none absolute z-10 min-w-32 rounded-md border border-border bg-surface/95 px-2.5 py-2 text-sm shadow-md';
+				'pointer-events-none absolute z-10 min-w-32 rounded-lg border border-border-card bg-surface-3 px-2.5 py-2 text-sm shadow-md';
 			tooltipEl.style.display = 'none';
 			chartEl.appendChild(tooltipEl);
 		}
@@ -427,7 +427,7 @@
 		bind:this={chartEl}
 		role="img"
 		aria-label={summary}
-		class="relative w-full overflow-hidden rounded-md border border-border bg-surface"
+		class="relative w-full overflow-hidden rounded-xl border border-border-card bg-surface shadow-card"
 	>
 		{#if !chartReady}
 			<!-- No role="status": children of role="img" are presentational. -->
@@ -486,7 +486,7 @@
 							stroke-dasharray="8 4"
 						/>
 					</svg>
-					30-day avg {formatAud(avg30)}
+					30-day avg <span class="num">{formatAud(avg30)}</span>
 				</li>
 			{/if}
 			{#if cheapestInStock}

@@ -2,6 +2,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { bestIndexes, buildCompareRows } from '$lib/compareRows';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import type { CompareEntry, ProductIndexEntry } from '$lib/models';
@@ -23,6 +24,7 @@
 	const rows = $derived(
 		buildCompareRows(entries).map((d) => ({
 			label: d.label,
+			mono: d.mono === true || d.numeric !== undefined,
 			values: entries.map(d.value),
 			best: bestIndexes(d, entries)
 		}))
@@ -40,15 +42,13 @@
 <PageHead title="Compare" description="Specs and current best AU prices side by side." />
 
 <div class="space-y-6">
-	<div>
-		<h1 class="text-xl font-semibold text-text">Compare</h1>
-		<p class="mt-1 text-sm text-text-muted">
-			Specs and current best prices side by side. Share the URL to keep a comparison handy.
-		</p>
-	</div>
+	<PageHeader
+		title="Compare"
+		subtitle="Specs and current best prices side by side. Share the URL to keep a comparison handy."
+	/>
 
 	{#if entries.length === 0}
-		<section class="rounded-md border border-border bg-surface p-4" aria-labelledby="pick-heading">
+		<section class="rounded-xl border border-border-card bg-surface shadow-card p-4" aria-labelledby="pick-heading">
 			<h2 id="pick-heading" class="text-sm font-semibold text-text">Nothing selected to compare yet.</h2>
 			<p class="mt-1 text-sm text-text-muted">
 				Pick two below, or tick <span class="font-medium text-text">Compare</span> on up to four rows of
@@ -95,7 +95,7 @@
 			{/if}
 		</section>
 	{:else}
-		<div class="overflow-x-auto rounded-md border border-border">
+		<div class="overflow-x-auto rounded-xl border border-border-card bg-surface shadow-card">
 		<table class="w-full border-collapse text-sm">
 			<thead>
 				<tr class="border-b border-border bg-surface">
@@ -130,11 +130,11 @@
 							{row.label}
 						</th>
 						{#each row.values as value, i}
-							<td class="px-3 py-2 text-text">
+							<td class="px-3 py-2 text-text {row.mono ? 'num' : ''}">
 								{#if value !== null && row.best.has(i)}
 									<span class="font-semibold">{value}</span>
 									<span
-										class="ml-1.5 rounded-sm bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent"
+										class="ml-1.5 rounded-sm bg-accent-soft px-1.5 py-0.5 font-sans text-xs font-medium text-accent"
 										aria-hidden="true">Best</span
 									>
 									<span class="sr-only">(best value in this row)</span>

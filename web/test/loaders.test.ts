@@ -175,6 +175,24 @@ describe('/products catalog fields (#23)', () => {
 	});
 });
 
+describe('/products range90 (#22)', () => {
+	it('every row carries range90: low <= high, or null without history', async () => {
+		const { load } = await import('../src/routes/products/+page.server');
+		const data = load({ url: new URL('http://x/products?category=gpu'), setHeaders: noopSetHeaders } as any);
+		let withRange = 0;
+		for (const g of data.groups as any[]) {
+			expect(g).toHaveProperty('range90');
+			if (g.range90 === null) continue;
+			withRange++;
+			expect(g.range90.low).toBeGreaterThan(0);
+			expect(g.range90.low).toBeLessThanOrEqual(g.range90.high);
+		}
+		expect(withRange).toBeGreaterThan(0);
+		const never = (data.groups as any[]).filter((g) => g.neverListed);
+		for (const g of never) expect(g.range90).toBeNull();
+	});
+});
+
 describe('/products catalogue controls data (#23)', () => {
 	async function run(q: string) {
 		const { load } = await import('../src/routes/products/+page.server');

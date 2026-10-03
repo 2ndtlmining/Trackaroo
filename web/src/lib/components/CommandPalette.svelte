@@ -170,7 +170,7 @@
 			aria-label="Search products"
 			tabindex="-1"
 			onkeydown={trapTab}
-			class="relative w-full max-w-md overflow-hidden rounded-md border border-border-strong bg-surface shadow-xl"
+			class="relative w-full max-w-md overflow-hidden rounded-xl border border-border-strong bg-surface-3 shadow-xl"
 		>
 			<div class="flex items-center gap-2 border-b border-border px-3 py-2.5">
 				<svg
@@ -202,7 +202,7 @@
 					aria-activedescendant={activeId}
 					autocomplete="off"
 				/>
-				<kbd class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[10px] text-text-muted">esc</kbd>
+				<kbd class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-meta text-text-muted">esc</kbd>
 			</div>
 			{#if results.length === 0}
 				<p class="mx-3 my-2 rounded-md border border-border bg-surface px-3 py-6 text-center text-sm text-text-muted">
