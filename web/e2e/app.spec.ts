@@ -2069,6 +2069,8 @@ test.describe('/value (#33)', () => {
 		await expect(first).toHaveAttribute('aria-label', /: \$[\d,.]+, 1440p raster \d+(\.\d+)?, \d+ per A\$1,000/);
 		await first.focus();
 		await expect(page.getByTestId('value-tooltip')).toBeVisible();
+		// The GPU axis starts at 0, so no zoom note.
+		await expect(page.getByTestId('value-axis-note')).toHaveCount(0);
 		await expect(page.getByTestId('value-source')).toContainText('Performance: TechPowerUp');
 		await expect(page.getByTestId('value-source')).toContainText('Prices: cheapest in stock today across');
 		await expect(page.getByTestId('value-coverage')).toContainText(/Performance data for \d+ of \d+ GPUs/);
@@ -2087,7 +2089,10 @@ test.describe('/value (#33)', () => {
 		await expect(page.getByTestId('value-table').locator('tbody tr')).toHaveCount(cpuHrefs.length);
 		// The seed's out-of-stock-only Core Ultra 7 265K (or the live data's) is counted, never plotted.
 		await expect(page.getByTestId('value-excluded')).toContainText(/\d+ products? without an in-stock price/);
-		await expect(page.getByLabel('Exclude 8 GB cards')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'Exclude 8 GB cards' })).toHaveCount(0);
+		// R9: the CPU perf axis is zoomed (scores cluster near 100), and says so.
+		await expect(page.getByTestId('value-axis-note')).toContainText("Axis doesn't start at 0");
+		await expect(page.locator('figure').first()).toHaveAttribute('aria-label', /axis doesn't start at 0/);
 	});
 
 	test('the GPU metric toggle switches to ray tracing in the URL', async ({ page }) => {
@@ -2103,8 +2108,34 @@ test.describe('/value (#33)', () => {
 		expect(await page.getByTestId('budget-winner').count()).toBeGreaterThan(0);
 		// The RTX 5060 (8 GB) is in stock in both seeds, so some card changes.
 		const before = await page.getByTestId('budget-winners').innerText();
-		await page.getByLabel('Exclude 8 GB cards').check();
+		const toggle = page.getByRole('button', { name: 'Exclude 8 GB cards' });
+		await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+		await toggle.click();
 		await expect(page).toHaveURL(/no8gb=1/);
+		await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 		await expect(page.getByTestId('budget-winners')).not.toHaveText(before);
+	});
+
+	test('a focused point keeps its ring while another is hovered (WCAG 2.4.7)', async ({ page }) => {
+		await goto(page, '/value');
+		const points = page.getByTestId('value-point');
+		const ring = (i: number) => points.nth(i).getByTestId('value-point-ring');
+		await points.first().focus();
+		await expect(ring(0)).toHaveCSS('opacity', '1');
+		const last = (await points.count()) - 1;
+		await points.last().hover();
+		await expect(ring(last)).toHaveCSS('opacity', '1');
+		await expect(ring(0)).toHaveCSS('opacity', '1');
+		await expect(points.first()).toBeFocused();
+	});
+
+	test('Tab walks the points cheapest first', async ({ page }) => {
+		await goto(page, '/value');
+		const labels = await page.getByTestId('value-point').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? ''));
+		const prices = labels.map((l) => Number(/: \$([\d,.]+),/.exec(l)![1].replace(/,/g, '')));
+		expect(prices).toEqual([...prices].sort((a, b) => a - b));
+		await page.getByTestId('value-point').first().focus();
+		await page.keyboard.press('Tab');
+		await expect(page.getByTestId('value-point').nth(1)).toBeFocused();
 	});
 });

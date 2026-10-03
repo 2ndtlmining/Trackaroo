@@ -26,17 +26,32 @@ describe('niceScale (#33 /value axes)', () => {
 });
 
 describe('niceRange (performance axis)', () => {
-	it('starts at 0 when the data spreads widely', () => {
-		expect(niceRange(15, 93)).toEqual({ lo: 0, hi: 100, ticks: [0, 20, 40, 60, 80, 100] });
+	it('starts at 0 when the data spreads widely, and says it did not zoom', () => {
+		expect(niceRange(15, 93)).toEqual({ lo: 0, hi: 100, ticks: [0, 20, 40, 60, 80, 100], zoomed: false });
 	});
-	it('zooms in on a tight cluster, never putting a point on the floor', () => {
-		expect(niceRange(89.2, 112.7)).toEqual({ lo: 85, hi: 115, ticks: [85, 90, 95, 100, 105, 110, 115] });
-		expect(niceRange(90, 110).lo).toBeLessThan(90);
+	it('zooms in on a tight cluster and flags it (R9)', () => {
+		expect(niceRange(89.2, 112.7)).toEqual({
+			lo: 85,
+			hi: 115,
+			ticks: [85, 90, 95, 100, 105, 110, 115],
+			zoomed: true
+		});
+	});
+	it('pads one step, not two, when min sits on a step', () => {
+		const r = niceRange(90, 112.7);
+		expect(r.lo).toBe(85);
+		expect(r.ticks[0]).toBe(85);
+	});
+	it('pads the top the same way when max sits on a step', () => {
+		const r = niceRange(89.2, 110);
+		expect(r.hi).toBe(115);
+		expect(niceRange(91, 112).hi).toBe(115);
 	});
 	it('copes with one point', () => {
 		const r = niceRange(100, 100);
 		expect(r.lo).toBeLessThan(100);
-		expect(r.hi).toBeGreaterThanOrEqual(100);
+		expect(r.hi).toBeGreaterThan(100);
+		expect(r.zoomed).toBe(true);
 	});
 });
 

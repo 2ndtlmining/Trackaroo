@@ -2,6 +2,8 @@
 	// Best performance at or under each budget (#33): the winner with its price,
 	// performance and perf per A$1k, then the runner-up and the gap between them.
 	// An empty bracket says so; a lone product has no runner-up and no gap.
+	// "Charted": the pool is products with performance data and an in-stock
+	// price (less 8 GB cards when excluded), not everything in stock.
 	import Trophy from '@lucide/svelte/icons/trophy';
 	import { formatAud } from '$lib/formats';
 	import { perfPerKilo, type BudgetPick } from '$lib/value';
@@ -10,12 +12,15 @@
 	let {
 		budgets,
 		metricLabel,
-		note
+		note,
+		noun
 	}: {
 		budgets: BudgetPick[];
 		metricLabel: string;
 		/** sourceNote(metric), the hover text on every performance figure. */
 		note: string;
+		/** "GPU" / "CPU": the pool is charted products (perf data, in stock). */
+		noun: string;
 	} = $props();
 </script>
 
@@ -54,11 +59,11 @@
 							>, <span class="num">{formatAud(b.runnerUp.price)}</span>
 						</p>
 					{:else}
-						<p>The only one in stock {under}</p>
+						<p>The only charted {noun} {under}</p>
 					{/if}
 				</div>
 			{:else}
-				<p class="mt-2 text-sm text-text-muted" data-testid="budget-empty">Nothing in stock {under}</p>
+				<p class="mt-2 text-sm text-text-muted" data-testid="budget-empty">No charted {noun} {under}</p>
 			{/if}
 		</li>
 	{/each}

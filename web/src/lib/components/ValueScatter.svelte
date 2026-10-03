@@ -37,11 +37,12 @@
 	let width = $state(0);
 	const w = $derived(width > 0 ? width : 720);
 	const h = $derived(w < 480 ? 300 : 380);
-	const M = { top: 30, right: 14, bottom: 40, left: 40 };
-
 	const onFrontier = $derived(new Set(frontier));
 	const xs = $derived(logScale(Math.min(...points.map((p) => p.price)), Math.max(...points.map((p) => p.price))));
 	const ys = $derived(niceRange(Math.min(...points.map((p) => p.perf)), Math.max(...points.map((p) => p.perf))));
+	// R9: a zoomed perf axis says so. On a phone the note takes its own line.
+	const noteOwnLine = $derived(ys.zoomed && w < 480);
+	const M = $derived({ top: noteOwnLine ? 44 : 30, right: 14, bottom: 40, left: 40 });
 	const x = (v: number) =>
 		M.left + (Math.log(v / xs.lo) / Math.log(xs.hi / xs.lo)) * (w - M.left - M.right);
 	const y = (v: number) => h - M.bottom - ((v - ys.lo) / (ys.hi - ys.lo)) * (h - M.top - M.bottom);
@@ -61,8 +62,11 @@
 			? `${line}V${h - M.bottom}H${x(frontPts[0].price).toFixed(1)}Z`
 			: ''
 	);
-	// Muted dots first, frontier on top.
-	const ordered = $derived([...points].sort((a, b) => Number(onFrontier.has(a.id)) - Number(onFrontier.has(b.id))));
+	// Paint order: muted dots first, frontier on top. Focus order is separate:
+	// the links sit in their own layer, cheapest first, so Tab walks the
+	// chart left to right whatever is painted over what.
+	const painted = $derived([...points].sort((a, b) => Number(onFrontier.has(a.id)) - Number(onFrontier.has(b.id))));
+	const byPrice = $derived([...points].sort((a, b) => a.price - b.price || b.perf - a.perf || a.id - b.id));
 
 	// Direct labels: frontier only, desktop only, never two that touch. Each
 	// sits above-left of its dot: no product can be there (it would beat the
@@ -87,8 +91,12 @@
 		return placed;
 	});
 
-	let active = $state<number | null>(null);
-	const tip = $derived(active == null ? null : byId.get(active) ?? null);
+	// Hover and keyboard focus are tracked apart, so hovering one point never
+	// takes the focus ring off another (WCAG 2.4.7).
+	let hovered = $state<number | null>(null);
+	let focused = $state<number | null>(null);
+	const shown = $derived(hovered ?? focused);
+	const tip = $derived(shown == null ? null : (byId.get(shown) ?? null));
 
 	function ariaLabel(p: ScatterPoint): string {
 		const front = onFrontier.has(p.id) ? ', on the value frontier' : '';
@@ -96,11 +104,21 @@
 	}
 </script>
 
-<figure class="m-0" aria-label={`Price against ${metricLabel} for each ${noun.slice(0, -1)} in stock`}>
+<figure
+	class="m-0"
+	aria-label={`Price against ${metricLabel} for each ${noun.slice(0, -1)} in stock.${ys.zoomed ? ` The ${metricLabel} axis doesn't start at 0.` : ''}`}
+>
 	<div class="relative" bind:clientWidth={width}>
 		<svg viewBox="0 0 {w} {h}" width="100%" height={h} class="block overflow-visible" role="group" aria-label="Value scatter">
 			<!-- y title sits above the plot, horizontal, so a phone keeps its width -->
-			<text x={M.left - 6} y={12} class="fill-text-muted text-[11px]">{metricLabel} ({unit})</text>
+			<text x={M.left - 6} y={12} class="fill-text-muted text-[11px]"
+				>{metricLabel} ({unit}){#if ys.zoomed && !noteOwnLine}<tspan data-testid="value-axis-note" class="fill-text"
+						>. Axis doesn't start at 0</tspan
+					>{/if}</text
+			>
+			{#if noteOwnLine}
+				<text data-testid="value-axis-note" x={M.left - 6} y={26} class="fill-text text-[11px]">Axis doesn't start at 0</text>
+			{/if}
 			{#each ys.ticks as t (t)}
 				<line x1={M.left} x2={w - M.right} y1={y(t)} y2={y(t)} class="stroke-border" stroke-width="1" />
 				<text x={M.left - 6} y={y(t) + 3.5} text-anchor="end" class="num fill-text-muted text-[10.5px]">{t}</text>
@@ -120,18 +138,28 @@
 				<text x={l.lx} y={l.ly} text-anchor={l.anchor} class="pointer-events-none fill-text-muted text-[11px]">{l.text}</text>
 			{/each}
 
-			{#each ordered as p (p.id)}
+			{#each painted as p (p.id)}
 				{@const front = onFrontier.has(p.id)}
+				<circle
+					cx={x(p.price)}
+					cy={y(p.perf)}
+					r={front ? 5 : 4}
+					stroke-width="2"
+					class="pointer-events-none stroke-surface {front ? 'fill-accent' : 'fill-text-muted'}"
+				/>
+			{/each}
+
+			{#each byPrice as p (p.id)}
 				<a
 					href="/product/{p.id}"
 					data-testid="value-point"
-					data-frontier={front ? 'true' : 'false'}
+					data-frontier={onFrontier.has(p.id) ? 'true' : 'false'}
 					aria-label={ariaLabel(p)}
 					class="point outline-none"
-					onmouseenter={() => (active = p.id)}
-					onmouseleave={() => (active = null)}
-					onfocus={() => (active = p.id)}
-					onblur={() => (active = null)}
+					onmouseenter={() => (hovered = p.id)}
+					onmouseleave={() => (hovered = null)}
+					onfocus={() => (focused = p.id)}
+					onblur={() => (focused = null)}
 				>
 					<circle cx={x(p.price)} cy={y(p.perf)} r="12" fill="transparent" />
 					<circle
@@ -140,14 +168,8 @@
 						r="9"
 						fill="none"
 						stroke-width="2"
-						class="ring stroke-text {active === p.id ? 'opacity-100' : 'opacity-0'}"
-					/>
-					<circle
-						cx={x(p.price)}
-						cy={y(p.perf)}
-						r={front ? 5 : 4}
-						stroke-width="2"
-						class="stroke-surface {front ? 'fill-accent' : 'fill-text-muted'}"
+						data-testid="value-point-ring"
+						class="ring stroke-text {hovered === p.id || focused === p.id ? 'opacity-100' : 'opacity-0'}"
 					/>
 				</a>
 			{/each}

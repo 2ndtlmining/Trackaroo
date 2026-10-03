@@ -1,7 +1,7 @@
 import { getValueData, getValueRows } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 import { METRICS, metricsFor, parseMetric, sourceCitation } from '$lib/perfIndex';
-import { bestPerBudget, paretoFrontier, perfPerKilo } from '$lib/value';
+import { BUDGETS, bestPerBudget, paretoFrontier, perfPerKilo } from '$lib/value';
 import { buildDisplayNames } from '$lib/displayName';
 
 // /value (#33): price against performance for one category and metric. Every
@@ -32,6 +32,10 @@ export function load({ url, setHeaders }: { url: URL; setHeaders: (headers: Reco
 		frontier: paretoFrontier(named),
 		budgets: bestPerBudget(named, { exclude8gb }),
 		exclude8gb,
+		// Only when it would change a budget card, or is on (so it can be turned off).
+		show8gbToggle:
+			category === 'gpu' &&
+			(exclude8gb || named.some((p) => p.vramGb != null && p.vramGb <= 8 && p.price <= BUDGETS[BUDGETS.length - 1])),
 		excluded: coverage.noPrice,
 		coverage,
 		required,

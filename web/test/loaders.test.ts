@@ -176,6 +176,10 @@ describe('/value loader (#33)', () => {
 		expect(data.metrics).toEqual(['gpu_raster_1440p', 'gpu_rt_1440p']);
 		expect(data.metricInfo.label).toBe('1440p raster');
 		expect(data.exclude8gb).toBe(false);
+		// Shown only when an 8 GB card could sit in a budget card.
+		expect(data.show8gbToggle).toBe(
+			data.points.some((p) => p.vramGb != null && p.vramGb <= 8 && p.price <= 2500)
+		);
 	});
 
 	it('plots only priced points, with a frontier drawn from them and five budgets', async () => {
@@ -200,12 +204,15 @@ describe('/value loader (#33)', () => {
 		expect(data.metric).toBe('cpu_gaming_1080p');
 		expect(data.metrics).toEqual(['cpu_gaming_1080p']);
 		expect(data.exclude8gb).toBe(false);
+		expect(data.show8gbToggle).toBe(false);
 	});
 
 	it('reads the GPU metric and the 8 GB toggle from the URL', async () => {
 		const data = await loadValue('?category=gpu&metric=gpu_rt_1440p&no8gb=1');
 		expect(data.metric).toBe('gpu_rt_1440p');
 		expect(data.exclude8gb).toBe(true);
+		// On, so it stays visible and can be turned off.
+		expect(data.show8gbToggle).toBe(true);
 		for (const b of data.budgets) {
 			for (const p of [b.winner, b.runnerUp]) if (p) expect(p.vramGb == null || p.vramGb > 8).toBe(true);
 		}

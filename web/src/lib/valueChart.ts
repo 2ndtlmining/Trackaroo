@@ -23,26 +23,34 @@ export interface NiceRange {
 	lo: number;
 	hi: number;
 	ticks: number[];
+	/** True when the axis starts above 0: the chart must say so. */
+	zoomed: boolean;
 }
 
 /**
  * The performance axis. From 0 when the data spreads widely (GPUs, 15 to 93),
  * but CPUs cluster within 25% of each other (89 to 113), and a 0 baseline
  * would flatten them into one line. This is a scatter, not bars, so a
- * clipped baseline misstates no length.
+ * clipped baseline misstates no length, but `zoomed` is set so the chart
+ * can say so. Both ends get the same rule: the nearest step outside the
+ * data, one step further when a value sits exactly on it, so no point lies
+ * on the floor or the ceiling and no empty band is added.
  */
 export function niceRange(min: number, max: number, target = 5): NiceRange {
 	const top = niceScale(max, target);
-	if (!(Number.isFinite(min) && min > top.max * 0.5)) return { lo: 0, hi: top.max, ticks: top.ticks };
+	if (!(Number.isFinite(min) && min > top.max * 0.5)) {
+		return { lo: 0, hi: top.max, ticks: top.ticks, zoomed: false };
+	}
 	const span = Math.max(max - min, max * 0.05);
 	const raw = span / target;
 	const mag = 10 ** Math.floor(Math.log10(raw));
 	const step = (STEPS.find((s) => s * mag >= raw) ?? 10) * mag;
-	const lo = Math.floor(min / step - 1e-9) * step - (min % step === 0 ? step : 0);
-	const hi = Math.ceil(max / step - 1e-9) * step;
+	const lo = Math.max(0, Math.floor(min / step - 1e-9) * step);
+	const hi = Math.ceil(max / step + 1e-9) * step;
 	const ticks: number[] = [];
 	for (let t = lo; t <= hi + step / 2; t += step) ticks.push(Number(t.toPrecision(12)));
-	return { lo: ticks[0], hi: ticks[ticks.length - 1], ticks };
+	const first = ticks[0];
+	return { lo: first, hi: ticks[ticks.length - 1], ticks, zoomed: first > 0 };
 }
 
 export interface LogScale {

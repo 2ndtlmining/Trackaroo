@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Check from '@lucide/svelte/icons/check';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import PageHead from '$lib/components/PageHead.svelte';
@@ -25,6 +26,7 @@
 			frontier: number[];
 			budgets: BudgetPick[];
 			exclude8gb: boolean;
+			show8gbToggle: boolean;
 			excluded: number;
 			coverage: ValueCoverage;
 			required: { tracked: number; withPerf: number };
@@ -144,20 +146,26 @@
 	<section aria-labelledby="value-budget-heading" class="space-y-3">
 		<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
 			<h2 id="value-budget-heading" class="text-section">Best per budget</h2>
-			{#if data.category === 'gpu'}
-				<label
-					class="flex h-9 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-sm text-text"
+			{#if data.show8gbToggle}
+				<!-- The /deals "Below MSRP" pattern: pressed = weight + check, not colour alone. -->
+				<button
+					type="button"
+					aria-pressed={data.exclude8gb}
+					onclick={() => set({ no8gb: data.exclude8gb ? null : '1' })}
+					class="inline-flex min-h-8 items-center gap-1 rounded-full border px-3 text-body {data.exclude8gb
+						? 'border-accent bg-accent-soft font-semibold text-accent'
+						: 'border-border-input bg-surface font-normal text-text hover:bg-surface-hover'}"
 				>
-					<input
-						type="checkbox"
-						class="size-4 accent-accent"
-						checked={data.exclude8gb}
-						onchange={(e) => set({ no8gb: (e.target as HTMLInputElement).checked ? '1' : null })}
-					/>
+					{#if data.exclude8gb}<Check size={14} aria-hidden="true" />{/if}
 					Exclude 8 GB cards
-				</label>
+				</button>
 			{/if}
 		</div>
-		<BudgetWinners budgets={data.budgets} metricLabel={data.metricInfo.label} {note} />
+		<BudgetWinners
+			budgets={data.budgets}
+			metricLabel={data.metricInfo.label}
+			{note}
+			noun={data.category === 'gpu' ? 'GPU' : 'CPU'}
+		/>
 	</section>
 </div>
