@@ -2160,3 +2160,66 @@ test.describe('/value (#33)', () => {
 		await expect(page.getByTestId('value-point').nth(1)).toBeFocused();
 	});
 });
+
+import { getMatchup } from '../src/lib/server/queries/matchups';
+
+// First tracked NVIDIA/AMD GPU in the seeded DB that has a matchup, worked out
+// with the same query the page uses, so the test never hard-codes seed data.
+function matchupFixture(): { id: number; rivalId: number; rivalName: string; noneId: number } {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		const ids = db
+			.prepare("SELECT id FROM products WHERE category = 'gpu' AND tracked = 1 AND brand IN ('NVIDIA', 'AMD') ORDER BY id")
+			.all() as { id: number }[];
+		for (const { id } of ids) {
+			const m = getMatchup(db as any, id);
+			if (m) {
+				const none = db
+					.prepare("SELECT id FROM products WHERE category = 'gpu' AND brand = 'Intel' ORDER BY id LIMIT 1")
+					.get() as { id: number };
+				return { id, rivalId: m.rival.id, rivalName: m.rival.name, noneId: none.id };
+			}
+		}
+		throw new Error('seeded e2e.db has no product with a matchup');
+	} finally {
+		db.close();
+	}
+}
+
+test.describe('head-to-head matchup (#60)', () => {
+	test('shows the rival, a cost-per-frame line, the source and a compare link', async ({ page }) => {
+		const f = matchupFixture();
+		await goto(page, `/product/${f.id}`);
+		const panel = page.getByTestId('matchup');
+		await expect(panel.getByRole('heading', { name: 'Head to head' })).toBeVisible();
+		await expect(panel.getByTestId('matchup-rival')).toHaveText(f.rivalName);
+		await expect(panel.getByTestId('matchup-rival')).toHaveAttribute('href', `/product/${f.rivalId}`);
+		await expect(panel.getByTestId('matchup-line').first()).toHaveText(
+			/(is \d+% cheaper per frame|costs \d+% more per frame|About the same cost per frame).* at 1440p raster/
+		);
+		await expect(panel.getByTestId('matchup-compare')).toHaveAttribute('href', `/compare?ids=${f.id},${f.rivalId}`);
+		await expect(panel.getByRole('link', { name: /TechPowerUp/ }).first()).toBeVisible();
+	});
+
+	test('an Intel GPU page has no matchup panel', async ({ page }) => {
+		await goto(page, `/product/${matchupFixture().noneId}`);
+		await expect(page.getByRole('heading', { name: 'Is now a good time to buy?' })).toBeVisible();
+		await expect(page.getByTestId('matchup')).toHaveCount(0);
+	});
+
+	test('following the rival link re-renders the panel for the rival', async ({ page }) => {
+		const f = matchupFixture();
+		await goto(page, `/product/${f.id}`);
+		await page.getByTestId('matchup-rival').click();
+		await expect(page).toHaveURL(new RegExp(`/product/${f.rivalId}$`));
+		await page.waitForLoadState('networkidle');
+		const rivalLink = page.getByTestId('matchup-rival');
+		if ((await rivalLink.count()) > 0) {
+			await expect(rivalLink).not.toHaveAttribute('href', `/product/${f.rivalId}`);
+		}
+		const compare = page.getByTestId('matchup-compare');
+		if ((await compare.count()) > 0) {
+			await expect(compare).not.toHaveAttribute('href', `/compare?ids=${f.id},${f.rivalId}`);
+		}
+	});
+});

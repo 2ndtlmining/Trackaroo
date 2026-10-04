@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-04
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -14,6 +14,13 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-04 -- Head-to-head matchups on product pages (#60).**
+  `$lib/matchups.ts` holds the rival rule (nearest other-brand main-metric score within 15%, VRAM
+  tie-break; GPUs NVIDIA vs AMD only, CPUs AMD vs Intel) and the cost-per-frame lines; `getMatchup(db, id)`
+  in `queries/matchups.ts` feeds the product loader; `MatchupPanel.svelte` renders the "Head to head"
+  card after BuyPanel; `ValueRow` gained `brand`. `perfIndex.ts` now imports the JSON with
+  `with { type: 'json' }` so Playwright's ESM loader can import `getMatchup` in specs. Gate: pytest 1377,
+  Vitest 1253, Playwright 231 (+1 skipped), `npm run check` 0/0, build OK.
 - **2026-10-04 -- Ops hygiene: dead Algolia knobs, scoped alert deletes, count-free watchlist tests (#15, #20).**
   Removed `BATCH_SIZE`, `BATCH_DELAY`, `ALGOLIA_BATCH_MAX_PAGES` and `ALGOLIA_CIRCUIT_BREAKER_LIMIT`
   (config.py, .env.example, pccg imports; unused since the whole-catalogue fetch; a leftover
