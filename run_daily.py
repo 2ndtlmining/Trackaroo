@@ -68,6 +68,7 @@ from pipeline_state import (
     retailers_pending,
     sync_active_retailers,
 )
+from run_lock import RunLockHeld, run_lock
 from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED, REPORT_ENV, read_run_report
 
 LOGGER = logging.getLogger(__name__)
@@ -80,6 +81,9 @@ def today_filename() -> str:
 
 # Process exit codes for run_daily itself. The entrypoints log any non-zero as
 # "finished with errors" and carry on; DEPLOYMENT.md documents these.
+# Held for the whole of main() so two runs never overlap (#15, run_lock.py).
+RUN_LOCK_PATH = DB_PATH.parent / "run_daily.lock"
+
 RUN_EXIT_OK = 0
 RUN_EXIT_ALL_FAILED = 1   # nothing was scraped, or the run crashed
 RUN_EXIT_DEGRADED = 2     # a scraper or health check failed; good data was kept
@@ -548,14 +552,26 @@ def main(argv: Optional[List[str]] = None) -> None:
     setup_logging()
     args = build_parser().parse_args(argv)
     try:
-        code = run(args)
+        with run_lock(RUN_LOCK_PATH):
+            code = _run_guarded(args)
+    except RunLockHeld as held:
+        # Not a failure: the run already in progress does today's work, and a
+        # non-zero exit would read as "finished with errors" in the entrypoint.
+        LOGGER.warning("Another run_daily.py is already running (%s) - exiting without doing anything.",
+                       held)
+        code = RUN_EXIT_OK
+    if code:
+        sys.exit(code)
+
+
+def _run_guarded(args: argparse.Namespace) -> int:
+    try:
+        return run(args)
     except Exception:  # noqa: BLE001 - last line of defence: a crash must still page
         LOGGER.exception("Daily run crashed")
         if alerts_enabled(args):
             send_pipeline_alert(["- **Daily run crashed** - see the log for the traceback."])
-        code = RUN_EXIT_ALL_FAILED
-    if code:
-        sys.exit(code)
+        return RUN_EXIT_ALL_FAILED
 
 
 def run(args: argparse.Namespace) -> int:

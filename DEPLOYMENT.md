@@ -106,6 +106,17 @@ Map **both**. `data/*.json` is the backup the DB is rebuilt from
 (`python ingest.py`), so a container with only `/app/db` mapped still loses the
 backup on `docker rm`.
 
+**Docker Desktop (Windows / macOS): never write to the mounted DB from the host
+while the container runs.** The DB is in WAL mode, and WAL coordinates writers
+through shared memory in `trackaroo.db-shm`. Docker Desktop's bind mounts cross
+a VM boundary, so that shared memory is not coherent between a host process and
+the container: a native `python run_daily.py`, `seed.py` or `repair_listings.py`
+on the host can corrupt the DB or lose writes. Run those inside the container
+instead (`docker compose exec trackaroo python seed.py`), or stop the container
+first. A native Linux host (like the production server) shares one kernel and
+is unaffected. The run lock (`db/run_daily.lock`) stops two pipeline runs
+overlapping, but it does not make host-side writes safe here.
+
 | Setting | Default | Override (in `.env`; `-e X=Y` with `docker run`) |
 |---|---|---|
 | Daily run hour (local) | `04` | `RUN_AT_HOUR=6` |
@@ -508,6 +519,15 @@ TRACKAROO_DB=../db/trackaroo.db PORT=3000 HOST=0.0.0.0 node server.js
 
 Put this behind a reverse proxy (Caddy / nginx / Traefik) for TLS if the host
 is internet-facing.
+
+**Behind a reverse proxy, set `ORIGIN`.** adapter-node checks every form POST
+(the product-page price alerts, Discover's Track / Ignore) against the origin it
+thinks it is serving. Behind a proxy it sees the internal address, so those
+forms fail with `403 Cross-site POST form submissions are forbidden`. Set the
+public URL, e.g. `ORIGIN=https://trackaroo.example.com`, in `.env` (compose) or
+the environment above. Alternatively set `PROTOCOL_HEADER=x-forwarded-proto` and
+`HOST_HEADER=x-forwarded-host` if the proxy sends those. No proxy is used today,
+so nothing needs setting on the LAN.
 
 ---
 
