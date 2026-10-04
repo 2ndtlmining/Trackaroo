@@ -3,6 +3,7 @@
 	import Wordmark from '$lib/components/Wordmark.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import PageHead from '$lib/components/PageHead.svelte';
+	import { errorHint } from '$lib/errorHints';
 
 	/**
 	 * Without this, every failure — a 404 from an unknown product id, a 400 from
@@ -14,16 +15,7 @@
 	const heading = $derived(status === 404 ? 'Page not found' : 'Something went wrong');
 	const message = $derived(page.error?.message ?? 'Something went wrong.');
 
-	const hint = $derived.by(() => {
-		if (status === 404) return 'The page or product you asked for does not exist.';
-		if (status === 400) return 'That link looks malformed — check the query parameters.';
-		if (/no such file|unable to open database|SQLITE_CANTOPEN/i.test(message))
-			return 'The database could not be opened. Run `python seed.py` (and `python run_daily.py` for data), or check that TRACKAROO_DB points at the right file.';
-		if (/no such table/i.test(message))
-			return 'The database is missing a table. Run `python migrate.py` to bring the schema up to date.';
-		if (status >= 500) return 'The server hit an unexpected error. The details are in the server log.';
-		return null;
-	});
+	const hint = $derived(errorHint(status, page.error));
 </script>
 
 <PageHead title={heading} description={message} />
