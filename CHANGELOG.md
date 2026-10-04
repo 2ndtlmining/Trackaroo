@@ -15,6 +15,7 @@ How it works:
 - Only one daily run can happen at a time: a second run started while one is going exits straight away instead of scraping twice. Python dependencies are now pinned by hash, with test-only packages split out of the image (#15).
 - Watchlist upkeep: the unused search-alias column is gone (matching uses chip keys), Ryzen 10000 parts get spec pages, Intel spec sources are configurable, and a part added this week shows as pending specs instead of a gap (#20).
 - If PC Case Gear changes its search key, the PCCG scraper now finds the new key on PCCG's own site and carries on, instead of stopping until someone updates it by hand (#11).
+- When the database is missing or out of date, the error page now says so and shows how to fix it, instead of a bare "Internal Error" (#29).
 
 ## 0.7.0 — 2026-10-04
 
