@@ -8,7 +8,8 @@ import {
 	getProductHistory,
 	getRetailerLatest,
 	upsertAlert,
-	deleteAlert
+	deleteAlert,
+	getMatchup
 } from '$lib/server/repos';
 import { getDb, getWriteDb } from '$lib/server/db';
 import { memo } from '$lib/server/cache';
@@ -45,6 +46,8 @@ export function load({ params }: { params: { id: string } }) {
 		ozb: getOzbDeals(db, id, now),
 		ozbBest: getBestInStockPrice(db, id),
 		ozbNow: now.toISOString(),
+		// Head-to-head with the nearest other-brand rival (#60); null when none qualifies.
+		matchup: getMatchup(db, id),
 		// Computed once on the server so a render near Melbourne midnight cannot
 		// differ between server and client (sale badge).
 		today: melbourneTodayIso(new Date())

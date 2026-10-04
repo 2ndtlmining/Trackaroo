@@ -7,6 +7,7 @@ import type { ValueCoverage, ValueRow } from '../../models';
 
 interface ProductRow {
 	id: number;
+	brand: string;
 	model: string;
 	vram_gb: number | null;
 	generation_tier: string | null;
@@ -21,7 +22,7 @@ export function getValueRows(db: DB, category: 'gpu' | 'cpu'): ValueRow[] {
 	return memo(db, `valueRows:${category}`, () => {
 		const products = db
 			.prepare(
-				`SELECT id, model, vram_gb, generation_tier FROM products
+				`SELECT id, brand, model, vram_gb, generation_tier FROM products
 				 WHERE category = @category AND tracked = 1
 				 ORDER BY model COLLATE NOCASE ASC`
 			)
@@ -35,6 +36,7 @@ export function getValueRows(db: DB, category: 'gpu' | 'cpu'): ValueRow[] {
 		);
 		return products.map((p) => ({
 			id: p.id,
+			brand: p.brand,
 			name: p.model,
 			model: p.model,
 			vramGb: p.vram_gb,

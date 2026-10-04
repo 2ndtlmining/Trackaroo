@@ -346,6 +346,26 @@ describe('MSRP data (#32)', () => {
 		expect(data.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 	});
 
+	it('/product/[id] returns matchup (null or a well-formed pair)', async () => {
+		const { load } = await import('../src/routes/product/[id]/+page.server');
+		const { getDb } = await import('../src/lib/server/db');
+		const ids = getDb().prepare('SELECT id FROM products WHERE tracked = 1 ORDER BY id').all() as { id: number }[];
+		let seen = 0;
+		for (const { id } of ids) {
+			const data = load({ params: { id: String(id) } } as any);
+			expect(data).toHaveProperty('matchup');
+			const m = data.matchup;
+			if (m === null) continue;
+			seen++;
+			expect(m.product.id).toBe(id);
+			expect(m.rival.id).not.toBe(id);
+			expect(m.lines.length).toBeGreaterThan(0);
+			expect(m.lines[0].metric).toBe(m.metric);
+		}
+		// The seeded DB has in-stock NVIDIA and AMD GPUs with perf data.
+		expect(seen).toBeGreaterThan(0);
+	});
+
 	it('getLaunchMsrps reads positive MSRPs per category', async () => {
 		const { getLaunchMsrps } = await import('../src/lib/server/repos');
 		const db = new Database(':memory:');
