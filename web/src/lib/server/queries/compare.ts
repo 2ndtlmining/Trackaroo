@@ -1,6 +1,6 @@
 import type { DB, ProductRow } from '../db';
 import type { Retailer } from '../../types';
-import { LATEST_CTE, notBundle } from './sql';
+import { LATEST_WITH_RETAILER_CTE, notBundle, seenRecently } from './sql';
 import type { CompareEntry, ComparePrice, SpecRow } from '../../models';
 
 // Read-only view powering the /compare route: joins products + specs + each
@@ -15,13 +15,14 @@ export function getComparisonData(db: DB, productIds: number[]): CompareEntry[] 
 		'SELECT * FROM specs WHERE product_id = ? ORDER BY last_synced_at DESC LIMIT 1'
 	);
 	const priceStmt = db.prepare(
-		`${LATEST_CTE}
+		`${LATEST_WITH_RETAILER_CTE}
 		SELECT l.retailer AS retailer, MIN(lat.price_aud) AS price
 		FROM retailer_listings l
 		JOIN latest lat ON lat.retailer_listing_id = l.id
 		WHERE l.product_id = ? AND lat.stock_status = 'in_stock'
 		  AND l.status = 'active'
 		  AND ${notBundle('l')}
+		  AND ${seenRecently('lat', 'l')}
 		GROUP BY l.retailer`
 	);
 

@@ -7,10 +7,13 @@ import { _resetMemo } from '../src/lib/server/cache';
 import {
 	getComparisonData,
 	getLatestListings,
+	getProductHistory,
 	getValueData,
 	getValueRows,
 	groupListingsByProduct
 } from '../src/lib/server/repos';
+import { toListingDisplays } from '../src/lib/listingsPanel';
+import { buildHeadline } from '../src/lib/productHeadline';
 import {
 	METRICS,
 	defaultMetric,
@@ -221,6 +224,59 @@ describe('one price rule across /products, /compare and /value (#59)', () => {
 
 	it('lists every retailer that has an in-stock latest price', () => {
 		expect(getValueData(db, 'gpu', 'gpu_raster_1440p').retailers).toEqual(['scorptec', 'umart']);
+	});
+
+	// The product headline is the fourth surface (#70): it now applies the same
+	// rule as the catalogue, /compare, /value and the Head to head panel.
+	function headlinePrice(): number | null {
+		const h = getProductHistory(db, 1)!;
+		const offers = toListingDisplays(h.series, h.product.brand, new Set(), h.retailerLatest);
+		return buildHeadline(offers, h.band, h.stats).currentPrice;
+	}
+
+	function everySurface(): Record<string, number | null | undefined> {
+		_resetMemo();
+		return {
+			catalogue: groupListingsByProduct(getLatestListings(db, { category: 'gpu' }))[0]
+				.cheapestInStockPrice,
+			compare: getComparisonData(db, [1])[0].cheapestInStock?.price,
+			value: getValueRows(db, 'gpu')[0].price,
+			headline: headlinePrice()
+		};
+	}
+
+	it('the product headline agrees with the other surfaces (#70)', () => {
+		expect(everySurface()).toEqual({ catalogue: 650, compare: 650, value: 650, headline: 650 });
+	});
+
+	it('ignores a cheaper in-stock bundle on every surface, the headline included (#70)', () => {
+		db.exec(`INSERT INTO retailer_listings (id, product_id, retailer, variant_name, listing_url, status) VALUES
+				(4, 1, 'scorptec', 'RTX 5060 Ti power bundle', 'https://x/4', 'active');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES
+				(4, '2026-10-03', 600, 'in_stock');`);
+		expect(everySurface()).toEqual({ catalogue: 650, compare: 650, value: 650, headline: 650 });
+	});
+
+	it('ignores an active listing unseen for more than 7 days on every surface (#70)', () => {
+		// PCCG kept scraping (its latest day is 2026-10-03), but this listing was
+		// last seen on 2026-09-25: 8 days before its retailer's latest snapshot.
+		db.exec(`INSERT INTO retailer_listings (id, product_id, retailer, variant_name, listing_url, status) VALUES
+				(5, 1, 'pccg', 'D', 'https://x/5', 'active'),
+				(6, 1, 'pccg', 'E', 'https://x/6', 'active');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES
+				(5, '2026-09-25', 550, 'in_stock'),
+				(6, '2026-10-03', 900, 'in_stock');`);
+		expect(everySurface()).toEqual({ catalogue: 650, compare: 650, value: 650, headline: 650 });
+	});
+
+	it('keeps a listing seen exactly 7 days before its retailer latest (#70)', () => {
+		db.exec(`INSERT INTO retailer_listings (id, product_id, retailer, variant_name, listing_url, status) VALUES
+				(5, 1, 'pccg', 'D', 'https://x/5', 'active'),
+				(6, 1, 'pccg', 'E', 'https://x/6', 'active');
+			INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status) VALUES
+				(5, '2026-09-26', 550, 'in_stock'),
+				(6, '2026-10-03', 900, 'in_stock');`);
+		expect(everySurface()).toEqual({ catalogue: 550, compare: 550, value: 550, headline: 550 });
 	});
 });
 

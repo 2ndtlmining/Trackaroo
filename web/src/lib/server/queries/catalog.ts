@@ -1,10 +1,11 @@
 import type { DB } from '../db';
 import type { Category, GenerationTier, ListingFilters, ListingStatus, Retailer, StockStatus } from '../../types';
 import {
-	LATEST_CTE,
+	LATEST_WITH_RETAILER_CTE,
 	dailyCheapestInStock,
 	notBundle,
 	pointsInWindowSubquery,
+	seenRecently,
 	windowStartPriceSubquery,
 	windowStartSubquery
 } from './sql';
@@ -258,7 +259,7 @@ export function getLatestListings(
 ): LatestListing[] {
 	const { clause, params } = filtersToParams(filters);
 	const sql = `
-${LATEST_CTE}
+${LATEST_WITH_RETAILER_CTE}
 		SELECT
 			l.id AS listing_id,
 			p.id AS product_id,
@@ -282,7 +283,8 @@ ${LATEST_CTE}
 		FROM latest lat
 		JOIN retailer_listings l ON l.id = lat.retailer_listing_id
 		JOIN products p ON p.id = l.product_id
-		WHERE l.status = 'active' AND p.tracked = 1 AND ${notBundle('l')}${clause}
+		WHERE l.status = 'active' AND p.tracked = 1 AND ${notBundle('l')}
+		  AND ${seenRecently('lat', 'l')}${clause}
 		ORDER BY p.category, p.model, l.retailer, lat.price_aud
 	`;
 

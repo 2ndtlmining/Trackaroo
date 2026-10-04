@@ -6,6 +6,8 @@
 // not to paper over them. Nothing here interpolates user input: windows are
 // bound parameters ('?' / '@window') or fixed literals.
 
+import { STALE_LISTING_DAYS } from '../../constants';
+
 // Excludes CPU+motherboard bundle listings (e.g. Scorptec "... power bundle")
 // from product pricing. Bundles price the whole combo, not the component alone,
 // so they'd throw off CPU-only price listings, movers, and history.
@@ -132,13 +134,37 @@ export const LATEST_CTE = `
 	)
 `;
 
-// The catalogue's price rule (#59): per tracked product, the cheapest
-// in-stock active non-bundle listing, each listing at its own latest
-// snapshot. /products, /compare and /value all use this, so a value figure
-// never differs between them. /deals and the OzBargain alert deliberately
-// keep cheapestListingPerProduct (today's scrape only).
+// LATEST_CTE plus each retailer's latest snapshot date, for seenRecently().
+// MATERIALIZED: computed once per query, not once per listing row.
+export const LATEST_WITH_RETAILER_CTE = `${LATEST_CTE.trimEnd()},
+	retailer_latest AS MATERIALIZED (
+		SELECT rl.retailer AS retailer, MAX(rs.snapshot_date) AS d
+		FROM price_snapshots rs
+		JOIN retailer_listings rl ON rl.id = rs.retailer_listing_id
+		GROUP BY rl.retailer
+	)
+`;
+
+// The listing's latest snapshot is no more than STALE_LISTING_DAYS older than
+// its retailer's latest one: the product page's staleness rule
+// (listingsPanel.toListingDisplays), so a listing the retailer stopped
+// showing cannot set a price before check_stale_listings flips its status
+// (#70). Needs LATEST_WITH_RETAILER_CTE.
+export function seenRecently(lat: string, l: string): string {
+	return `${lat}.snapshot_date >= date(
+		(SELECT d FROM retailer_latest WHERE retailer = ${l}.retailer),
+		'-${STALE_LISTING_DAYS} days'
+	)`;
+}
+
+// The one price rule (#59, #70): per tracked product, the cheapest in-stock
+// active non-bundle listing, each listing at its own latest snapshot, seen
+// within STALE_LISTING_DAYS of its retailer's latest scrape. /products,
+// /compare, /value, the Head to head panel and the product headline all agree
+// on it (value.test.ts pins this). /deals and the OzBargain alert
+// deliberately keep cheapestListingPerProduct (today's scrape only).
 export function cheapestInStockLatest(where: string): string {
-	return `${LATEST_CTE}
+	return `${LATEST_WITH_RETAILER_CTE}
 	SELECT p.id AS product_id, MIN(lat.price_aud) AS price
 	FROM latest lat
 	JOIN retailer_listings l ON l.id = lat.retailer_listing_id
@@ -148,6 +174,7 @@ export function cheapestInStockLatest(where: string): string {
 	  AND l.status = 'active'
 	  AND lat.stock_status = 'in_stock'
 	  AND ${notBundle('l')}
+	  AND ${seenRecently('lat', 'l')}
 	GROUP BY p.id`;
 }
 
