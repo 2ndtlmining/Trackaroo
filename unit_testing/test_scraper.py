@@ -563,7 +563,6 @@ class TestScorptecSavesAllVariants:
                 # vram_gb is required for the chip-key Matcher (#1) to
                 # disambiguate by VRAM when a title states a size.
                 "vram_gb": 8,
-                "search_terms": ["rtx 5060 ti"],
             },
         ]
         scraped = [
@@ -608,7 +607,6 @@ class TestScorptecSavesAllVariants:
                 # vram_gb is required for the chip-key Matcher (#1) to
                 # disambiguate by VRAM when a title states a size.
                 "vram_gb": 16,
-                "search_terms": ["rtx 5080"],
             },
         ]
         scraped = [
@@ -684,8 +682,8 @@ class TestAnalyzeUnmatchedClassification:
     def test_variant_only_is_not_reported_as_matching_issue(self, caplog):
         from scraper.scorptec import analyze_unmatched
         watchlist = [
-            {"model": "Ryzen 9 9900", "category": "cpu", "search_terms": ["ryzen 9 9900"]},
-            {"model": "Ryzen 5 5600", "category": "cpu", "search_terms": ["ryzen 5 5600"]},
+            {"model": "Ryzen 9 9900", "category": "cpu"},
+            {"model": "Ryzen 5 5600", "category": "cpu"},
         ]
         all_scraped = {
             "cpu_amd_am5_9000": [{"name": "AMD Ryzen 9 9900X Processor", "price_aud": 799.0}],
@@ -702,7 +700,7 @@ class TestAnalyzeUnmatchedClassification:
     def test_genuine_standalone_term_is_still_a_matching_issue(self, caplog):
         from scraper.scorptec import analyze_unmatched
         watchlist = [
-            {"model": "Ryzen 5 5600", "category": "cpu", "search_terms": ["ryzen 5 5600"]},
+            {"model": "Ryzen 5 5600", "category": "cpu"},
         ]
         all_scraped = {
             "cpu_amd_am4": [{"name": "AMD Ryzen 5 5600 Processor", "price_aud": 189.0}],
@@ -713,10 +711,23 @@ class TestAnalyzeUnmatchedClassification:
         assert len(possible) == 1
         assert possible[0][0] == "Ryzen 5 5600"
 
+    def test_works_from_the_model_name_alone(self, caplog):
+        # #20: no search aliases any more. Punctuation in the model name
+        # ("i5-14400F") must not hide a retailer's "i5 14400F" title.
+        from scraper.scorptec import analyze_unmatched
+        watchlist = [{"model": "Core i5-14400F", "category": "cpu"}]
+        all_scraped = {
+            "cpu_intel": [{"name": "Intel Core i5 14400F Processor", "price_aud": 299.0}],
+        }
+        delisted, possible = analyze_unmatched(watchlist, set(), all_scraped)
+
+        assert delisted == []
+        assert [p[0] for p in possible] == ["Core i5-14400F"]
+
     def test_term_not_found_anywhere_is_delisted(self, caplog):
         from scraper.scorptec import analyze_unmatched
         watchlist = [
-            {"model": "Ryzen 5 5500", "category": "cpu", "search_terms": ["ryzen 5 5500"]},
+            {"model": "Ryzen 5 5500", "category": "cpu"},
         ]
         all_scraped = {
             "cpu_amd_am4": [{"name": "AMD Ryzen 5 5600", "price_aud": 189.0}],

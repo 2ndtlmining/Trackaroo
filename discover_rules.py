@@ -142,5 +142,4 @@ def suggested_row(
     model = f"{base} {vram}GB" if category == "gpu" and vram and vram_in_model else base
     spec = (f"{vram}GB" if vram else "?GB") if category == "gpu" else "?c"
     tier = series_tier(category, key) or "current"
-    aliases = "|".join(dict.fromkeys([normalise(base), key]))
-    return f'{category},{brand_for(key)},{model},{spec},{tier},"{aliases}"'
+    return f"{category},{brand_for(key)},{model},{spec},{tier}"

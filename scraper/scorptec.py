@@ -25,7 +25,7 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.catalogue_io import catalogue_item, save_catalogue
-from scraper.chip_key import Matcher
+from scraper.chip_key import Matcher, normalise
 from scraper.run_report import EXIT_OK, RunReport, exit_code_for
 from scraper.snapshot_io import save_category_snapshot
 
@@ -447,21 +447,23 @@ def analyze_unmatched(
         if i in matched_ids:
             continue
 
-        primary = wp["search_terms"][0] if wp["search_terms"] else ""
+        # The model name, normalised so "Core i5-14400F" finds "core i5 14400f"
+        # (#20: there are no search aliases any more).
+        primary = normalise(wp["model"])
         if not primary:
             continue
 
         matching_names: List[str] = []
         for cat_key, scraped in all_scraped.items():
             for s in scraped:
-                if primary in s["name"].lower():
+                if primary in normalise(s["name"]):
                     matching_names.append(s["name"][:80])
 
         if not matching_names:
             likely_delist.append(wp["model"])
             continue
 
-        if all(_term_matches_only_variants(primary, n.lower()) for n in matching_names):
+        if all(_term_matches_only_variants(primary, normalise(n)) for n in matching_names):
             variant_only.append((wp["model"], primary, matching_names[0]))
         else:
             possible_stocked.append((wp["model"], primary, matching_names[0]))

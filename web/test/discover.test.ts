@@ -19,7 +19,7 @@ function insertPart(db: any, key: string, status: string, firstSeen: string, ext
 				`INSERT INTO discovered_parts (category, part_key, display_name, status, first_seen, last_seen,
 				   listing_count, retailers, min_price, min_price_url, sample_titles, suggested_row)
 				 VALUES (@category, @key, @name, @status, @firstSeen, @lastSeen, 3, 'pccg,scorptec', 389, 'https://x',
-				   '["A title"]', 'gpu,NVIDIA,GeForce RTX 5050,8GB,current,"rtx 5050"')`
+				   '["A title"]', 'gpu,NVIDIA,GeForce RTX 5050,8GB,current')`
 			)
 			.run({ category: 'gpu', key, name: `Part ${key}`, status, firstSeen, lastSeen: firstSeen, ...extra })
 			.lastInsertRowid

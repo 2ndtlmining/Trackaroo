@@ -13,6 +13,7 @@ How it works:
 
 - Prices on /products, /compare, /value and Head to head now skip a listing its retailer has not shown for more than 7 days, the same rule the product page headline already used, so every page agrees on a product's price (#70).
 - Only one daily run can happen at a time: a second run started while one is going exits straight away instead of scraping twice. Python dependencies are now pinned by hash, with test-only packages split out of the image (#15).
+- Watchlist upkeep: the unused search-alias column is gone (matching uses chip keys), Ryzen 10000 parts get spec pages, Intel spec sources are configurable, and a part added this week shows as pending specs instead of a gap (#20).
 
 ## 0.7.0 — 2026-10-04
 

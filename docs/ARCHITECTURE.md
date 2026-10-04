@@ -261,8 +261,8 @@ three things about the process are not obvious from the CSV.
 **1. Edit `db/watchlist.csv`.** One row per product:
 
 ```
-category,brand,model,spec,gen_tier,search_aliases
-gpu,NVIDIA,GeForce RTX 5070,12GB,current,"rtx 5070|5070 nvidia|nvidia rtx 5070"
+category,brand,model,spec,gen_tier
+gpu,NVIDIA,GeForce RTX 5070,12GB,current
 ```
 
 `spec` is cores for a CPU (`16c`) or VRAM for a GPU (`16GB`). Case and spacing
@@ -270,29 +270,28 @@ are tolerated — `16c`, `16C` and ` 16 c ` all work — but the unit is require
 because a bare `12` is ambiguous between cores and gigabytes and is rejected
 rather than guessed.
 
-> **Note:** this item predates the chip-key matcher (#1). Scrapers now resolve
-> through an exact chip-key `Matcher`, so alias ordering no longer decides
-> matching; see the note in `unit_testing/test_watchlist_validation.py`. The
-> text below is kept for history.
+**2. Check the model name yields the right chip key.** Matching is exact
+chip-key equality (`scraper/chip_key.py`, #1): every retailer title and every
+`model` is reduced to a key such as `rtx 5070 ti`, `rx 9070 gre` or
+`core 14400f`, and a listing belongs to the row whose key is equal. Retailer
+spellings ("RTX5070 Ti", "Radeon RX 9070GRE", "Core i5 14400F") are handled
+there, so there is no alias column: it was retired in #20, because only the
+first alias was ever read and nothing used it for matching. A CSV that still
+has a `search_aliases` column loads fine; the column is ignored.
 
-**2. Mind the alias ordering — this is the one that bites.** `scrape_scorptec`
-and `scrape_umart` test watchlist entries by **primary search term length,
-descending**, and stop at the first match, so the most specific entry wins. That
-only holds while a base model's *first* alias is shorter than its variants':
+```bash
+python -c "from scraper.chip_key import chip_key; print(chip_key('GeForce RTX 5070', 'gpu'))"
+```
 
-| Model | First alias | Length |
-|---|---|---|
-| `GeForce RTX 5070 Ti` | `rtx 5070 ti` | 11 |
-| `GeForce RTX 5070` | `rtx 5070` | 8 |
+A model that yields no key, or two rows sharing a key without distinct VRAM,
+fails `test_chip_key.py::test_every_watchlist_row_has_a_key_and_no_collisions`. Rows may share
+a key only for memory variants (`GeForce RTX 5060 Ti` 16GB and
+`GeForce RTX 5060 Ti 8GB`); the listing title's VRAM then picks the row. A
+genuinely new suffix needs a pattern change in `chip_key.py`, with a test.
 
-Give the base model a first alias of `nvidia geforce rtx 5070` (23) and it
-outranks the Ti, silently claiming every Ti listing — the prices look plausible
-and nothing errors. `unit_testing/test_watchlist_validation.py` pins this: any
-base model whose primary alias is not shorter than a more specific sibling's
-fails the suite.
-
-**3. Run the seeder.** `python seed.py` inserts new rows; existing products are
-never overwritten, so re-running is safe.
+**3. Run the seeder.** `python seed.py` inserts new rows, and on existing rows
+(same category + brand + model) syncs `gen_tier` and the spec facts (cores /
+VRAM); identity columns are never touched, so re-running is safe.
 
 ```bash
 python seed.py            # Inserted: 1, Skipped (already exists): 99
@@ -307,7 +306,9 @@ from booting. The cost is now one missing product, which the log states plainly.
 **4. Specs arrive on the next weekly sync, not immediately.** `sync_specs.py`
 runs in-container on `SPEC_SYNC_DOW` at `SPEC_SYNC_HOUR` (default Sunday 03:00),
 so a product added on Monday shows no specs on its product page for six days.
-That is expected, not a fault. To pull them in immediately:
+That is expected, not a fault: for `SPEC_PENDING_DAYS` (default 7) after it is
+added, a product with no spec match is reported as **pending**, not unmatched
+(#20). To pull them in immediately:
 
 ```bash
 python sync_specs.py --category cpu --dry-run   # check it matches first
@@ -319,6 +320,17 @@ reported and left alone rather than guessed. Read the summary — `unmatched`
 means *a gap worth investigating*, while products the upstream source genuinely
 does not carry are listed separately under "no upstream specs (known)" and
 tracked in `sync_specs.SPECS_UNAVAILABLE_UPSTREAM` with a reason and a date.
+
+A new generation needs config, not code (#20): add its amd.com series path to
+`config.AMD_SERIES_PATHS` (a Ryzen 10000 part resolves to `.../10000-series/...`
+already), and point `TRACKAROO_INTEL_SPEC_URLS` at newer Intel dataset files
+when `toUpperCase78/intel-processors` publishes them (comma separated; replaces
+the pinned `v1_8` / `v1_10` pair).
+
+**Add the launch MSRP in the same PR.** Put the US launch MSRP in
+`db/launch_msrp.json`, keyed by the exact `model`. `backfill_msrp.py` applies it
+on every container boot, so it reaches prod with the redeploy;
+`test_watchlist_validation.py` fails on a key that names no watchlist model.
 
 **5. Verify.** `check_spec_coverage` warns below `TRACKAROO_SPEC_COVERAGE_MIN_PCT`
 (default 80%), and the daily run reports per-retailer match counts. A new product

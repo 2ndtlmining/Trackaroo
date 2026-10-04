@@ -94,9 +94,9 @@ def test_display_name_adds_vram_for_gpus():
 
 def test_suggested_rows():
     assert r.suggested_row("gpu", "rtx 5050", 8, [], vram_in_model=False) == \
-        'gpu,NVIDIA,GeForce RTX 5050,8GB,current,"geforce rtx 5050|rtx 5050"'
+        'gpu,NVIDIA,GeForce RTX 5050,8GB,current'
     assert r.suggested_row("gpu", "rtx 5060", 8, [], vram_in_model=True) == \
-        'gpu,NVIDIA,GeForce RTX 5060 8GB,8GB,current,"geforce rtx 5060|rtx 5060"'
+        'gpu,NVIDIA,GeForce RTX 5060 8GB,8GB,current'
     assert r.suggested_row("cpu", "ryzen 5600gt", None, [], vram_in_model=False) == \
-        'cpu,AMD,Ryzen 5 5600GT,?c,current-2,"ryzen 5 5600gt|ryzen 5600gt"'
+        'cpu,AMD,Ryzen 5 5600GT,?c,current-2'
     assert r.suggested_row("gpu", "rtx 5050", None, [], vram_in_model=False).split(",")[3] == "?GB"

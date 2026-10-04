@@ -186,7 +186,6 @@ class TestScrapeUmart:
                 "gen_tier": "current",
                 "vram_gb": 8,
                 "cores": None,
-                "search_terms": ["rtx 5060", "5060 nvidia"],
             },
             {
                 "model": "Radeon RX 9060 XT",
@@ -195,7 +194,6 @@ class TestScrapeUmart:
                 "gen_tier": "current",
                 "vram_gb": 16,
                 "cores": None,
-                "search_terms": ["rx 9060 xt", "9060xt"],
             },
         ]
 
