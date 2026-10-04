@@ -2,7 +2,7 @@
 	// Head-to-head with the nearest other-brand rival (#60). Every figure comes
 	// from the loader's Matchup; this file only lays it out.
 	import Scale from '@lucide/svelte/icons/scale';
-	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import type { Matchup, MatchupSide } from '$lib/models';
 	import { METRICS, sourceNote } from '$lib/perfIndex';
 	import { formatAud } from '$lib/formats';
@@ -11,7 +11,6 @@
 
 	const p = $derived(matchup.product);
 	const r = $derived(matchup.rival);
-	const kind = $derived(matchup.category === 'gpu' ? 'card' : 'processor');
 	const sources = $derived([...new Set(matchup.lines.map((l) => l.metric))]);
 </script>
 
@@ -22,7 +21,7 @@
 			<span class="num font-semibold">{formatAud(side.price)}</span>
 			<span class="text-text-muted">·</span>
 			<span class="num">{Math.round(side.perfPerKilo)}</span>
-			<span class="text-text-muted">per A$1,000</span>
+			<span class="text-text-muted">Perf/A$1k</span>
 		</dd>
 	</div>
 {/snippet}
@@ -41,7 +40,7 @@
 			href="/product/{r.id}"
 			class="text-accent underline underline-offset-2 hover:no-underline"
 			data-testid="matchup-rival">{r.name}</a
-		>, the closest {kind} from the other brand on {METRICS[matchup.metric].label}, at today's in-stock prices.
+		>, the nearest match from the other brand on {METRICS[matchup.metric].label}, at today's in-stock prices.
 	</p>
 
 	<ul class="mt-3 space-y-1.5 text-sm text-text">
@@ -72,7 +71,7 @@
 			class="inline-flex items-center gap-1 font-medium text-accent hover:underline"
 			data-testid="matchup-compare"
 		>
-			Compare side by side <ArrowUpRight class="size-3.5" aria-hidden="true" />
+			Compare side by side <ArrowRight class="size-3.5" aria-hidden="true" />
 		</a>
 		<span>
 			Performance:

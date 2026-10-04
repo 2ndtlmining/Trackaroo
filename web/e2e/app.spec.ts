@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { saleEventsInRange } from '../src/lib/saleEvents';
+import { getMatchup } from '../src/lib/server/queries/matchups';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -2161,8 +2162,6 @@ test.describe('/value (#33)', () => {
 	});
 });
 
-import { getMatchup } from '../src/lib/server/queries/matchups';
-
 // First tracked NVIDIA/AMD GPU in the seeded DB that has a matchup, worked out
 // with the same query the page uses, so the test never hard-codes seed data.
 function matchupFixture(): { id: number; rivalId: number; rivalName: string; noneId: number } {
@@ -2207,7 +2206,7 @@ test.describe('head-to-head matchup (#60)', () => {
 		await expect(page.getByTestId('matchup')).toHaveCount(0);
 	});
 
-	test('following the rival link re-renders the panel for the rival', async ({ page }) => {
+	test('following the rival link re-renders or hides the panel for the rival', async ({ page }) => {
 		const f = matchupFixture();
 		await goto(page, `/product/${f.id}`);
 		await page.getByTestId('matchup-rival').click();
