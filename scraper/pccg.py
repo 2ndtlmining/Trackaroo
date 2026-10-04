@@ -42,6 +42,7 @@ from config import (
 )
 from db.watchlist import load_watchlist, WatchlistProduct
 from scraper.catalogue_io import catalogue_item, save_catalogue
+from scraper import pccg_key
 from scraper.chip_key import Matcher
 from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED, RunReport, exit_code_for
 from scraper.snapshot_io import save_category_snapshot
@@ -66,6 +67,41 @@ HEADERS = {
     "X-Algolia-API-Key": ALGOLIA_API_KEY,
     "Content-Type": "application/json",
 }
+
+
+def set_credentials(app_id: str, api_key: str) -> None:
+    """Point every Algolia request at this app ID and key (#11b)."""
+    global ALGOLIA_APP_ID, ALGOLIA_API_KEY, ALGOLIA_URL
+    ALGOLIA_APP_ID, ALGOLIA_API_KEY = app_id, api_key
+    ALGOLIA_URL = f"https://{app_id}-dsn.algolia.net/1/indexes/*/queries"
+    HEADERS["X-Algolia-Application-Id"] = app_id
+    HEADERS["X-Algolia-API-Key"] = api_key
+
+
+def _rotate_key(report: RunReport) -> bool:
+    """After a rejection: read the current key from a PCCG page and switch to it.
+
+    True when a DIFFERENT key was found (the caller retries once). False when
+    discovery failed or the page still carries the rejected key: nothing a
+    retry could fix, so the caller fails loudly as before (#11a).
+    """
+    found = pccg_key.discover_credentials()
+    if found is None:
+        return False
+    if found == (ALGOLIA_APP_ID, ALGOLIA_API_KEY):
+        LOGGER.error("PCCG key discovery: the page still carries the rejected key; "
+                     "PCCG may be mid-rotation. Not retrying.")
+        return False
+    if os.environ.get("ALGOLIA_API_KEY"):
+        LOGGER.warning("ALGOLIA_API_KEY is set in the environment and was rejected. Remove it "
+                       "from .env: the discovered key is cached and used from now on.")
+    set_credentials(*found)
+    pccg_key.save_cached(found)
+    LOGGER.warning("PCCG Algolia key rotated: discovered a new key on %s, cached in %s; retrying.",
+                   pccg_key.DISCOVERY_URL, pccg_key.CACHE_FILE)
+    report.note(f"PCCG Algolia key rotated: new key discovered and cached ({pccg_key.CACHE_FILE.name})")
+    report.flush()
+    return True
 
 
 
@@ -727,10 +763,24 @@ def main() -> int:
     all_matched: set[int] = set()
     all_tripped: list[str] = []
 
+    # A key discovered after an earlier rotation (#11b), unless .env pins one.
+    cached = pccg_key.cached_credentials_unless_env()
+    if cached:
+        set_credentials(*cached)
+    rotated = False
+
     try:
         for i, category in enumerate(["cpu", "gpu"]):
-            results, matched, tripped = scrape_category(
-                category, watchlist, report=report, catalogue_dir=DATA_DIR, file_date=today)
+            try:
+                results, matched, tripped = scrape_category(
+                    category, watchlist, report=report, catalogue_dir=DATA_DIR, file_date=today)
+            except AlgoliaAuthError:
+                # One discovery and one retry per run, never a loop (#11b).
+                if rotated or not _rotate_key(report):
+                    raise
+                rotated = True
+                results, matched, tripped = scrape_category(
+                    category, watchlist, report=report, catalogue_dir=DATA_DIR, file_date=today)
             # Saved per category so a timeout during GPUs keeps the CPUs (R2).
             save_category_snapshot(DATA_DIR, "pccg", category, today, watchlist, results, matched)
             report.set(category, matched=len(results))

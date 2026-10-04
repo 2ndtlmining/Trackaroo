@@ -473,10 +473,24 @@ scrapes and saves JSON to `data/` — it only skips writing to the DB.
 
 ### PCCG key rotation
 
-Symptom: a Discord alert "Scraper **PCCG** was refused by the retailer
+PCC's search runs on Algolia with a public, search-only key that the site
+embeds in every page. If PCC rotates it, the scraper **recovers by itself**
+(#11b): on a 401/403 it fetches one pccasegear.com category page, reads the
+key from the Algolia Insights `aa('init', {appId: ..., apiKey: ...})` block,
+caches it in `data/pccg_algolia.json`, and retries that category once. The run
+log and the run report say `PCCG Algolia key rotated`. Later runs start from the
+cached key, so nothing needs doing.
+
+It still alerts, with no cooldown written, when recovery cannot work:
+
+- the page could not be fetched or carries no key;
+- the page still shows the rejected key (PCC may be mid-rotation; the next
+  hourly retry tries again);
+- the discovered key is rejected too.
+
+Symptom then: a Discord alert "Scraper **PCCG** was refused by the retailer
 (credentials rejected) ... update ALGOLIA_API_KEY", and `logs/trackaroo-*.log`
-shows `Algolia auth rejected (403)`. PCC has rotated the public search key the
-site embeds. The scraper writes **no** cooldown for this: waiting cannot fix it.
+shows `Algolia auth rejected (403)`. Fix it by hand:
 
 1. Open <https://www.pccasegear.com> in a browser, open DevTools -> Network,
    filter on `algolia`, and search the site for anything.
@@ -486,10 +500,9 @@ site embeds. The scraper writes **no** cooldown for this: waiting cannot fix it.
 4. Restart the container (`docker restart trackaroo`), or wait: the next
    hourly retry before `RETRY_UNTIL_HOUR` picks the new key up.
 5. Update the defaults in `scraper/pccg.py` in a PR, then comment the two
-   lines in `.env` out again, so a later rotation is not pinned by `.env`.
-
-Not yet verified: whether the key is in the page HTML or only in a JS bundle.
-The Network-tab method works either way.
+   lines in `.env` out again. An `ALGOLIA_API_KEY` in `.env` beats the cached
+   key, so a stale one there costs a rejected query and a page fetch every run
+   (the log says so).
 
 ---
 
@@ -770,5 +783,5 @@ frontend honours `TRACKAROO_DB` identically.
 | `TRACKAROO_HEARTBEAT_URL` | unset (off) | GET after a complete, clean day (healthchecks.io / Uptime Kuma push) | Phase 6 |
 | `GIT_SHA` (build arg) | `dev` | Baked in as `TRACKAROO_VERSION`, shown by `/healthz` | Phase 6 redeploy script |
 | `TRACKAROO_RUN_REPORT` | set by `run_daily` | Internal: where a scraper writes its per-category counts. Never set it yourself. | internal |
-| `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` | code default | Now commented out in `.env.example`; set only per "PCCG key rotation" | on rotation |
+| `ALGOLIA_APP_ID` / `ALGOLIA_API_KEY` | code default, then `data/pccg_algolia.json` | Now commented out in `.env.example`; a rotated key is discovered and cached automatically (#11b); set only per "PCCG key rotation" | on rotation |
 | `TRACKAROO_SYNTHETIC` | `0` | Set by CI (`.github/workflows/ci.yml`) to skip frontend tests that need real-scrape price/retailer variety a synthetic fixture doesn't have | CI/test only |
