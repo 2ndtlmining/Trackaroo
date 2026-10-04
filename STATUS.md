@@ -14,6 +14,13 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-04 (end of day) -- v0.7.0 tagged; next-session plan written.**
+  Head to head (#60, PR #71) and the 0.7.0 release (PR #72) are merged; tag `v0.7.0` is on 57b2ad9.
+  Prod runs d622f3e (the matchups code), but `/healthz` still says 0.6.1, and the prod checkout has
+  local edits from running `release.py` on the host, which blocks `redeploy.sh` until they are
+  discarded. Main's web CI went red with #71 because the matchup loader test needed `data/`; fixed
+  test-only in PR #73. Follow-up #70 filed. **Next steps:**
+  `docs/superpowers/plans/2026-10-05-next-session.md`.
 - **2026-10-04 -- Head-to-head matchups on product pages (#60).**
   `$lib/matchups.ts` holds the rival rule (nearest other-brand main-metric score within 15%, VRAM
   tie-break; GPUs NVIDIA vs AMD only, CPUs AMD vs Intel) and the cost-per-frame lines; `getMatchup(db, id)`
@@ -1481,6 +1488,11 @@ Shipped per the agreed design — see the "COMPLETE: Price-drop & restock alerts
 5. ~~**RSS feed of biggest movers**~~ — dropped 27-Aug, not wanted.
 
 ## Next concrete steps
+
+> **Current plan (from 5-Oct-2026):**
+> [`docs/superpowers/plans/2026-10-05-next-session.md`](docs/superpowers/plans/2026-10-05-next-session.md).
+> It covers housekeeping, the issue-hygiene pass, #70, the #15 remainder, #20, #11 and the items
+> waiting on the owner. The notes below are historical.
 
 > [`docs/superpowers/plans/2026-09-01-next-steps.md`](docs/superpowers/plans/2026-09-01-next-steps.md)
 > is **fully closed out as of 3-Sep-2026**: Task 0 (deploy to prod) confirmed
