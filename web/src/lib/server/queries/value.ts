@@ -1,6 +1,6 @@
 import type { DB } from '../db';
 import { memo } from '../cache';
-import { LATEST_CTE, cheapestInStockLatest, notBundle } from './sql';
+import { LATEST_WITH_RETAILER_CTE, cheapestInStockLatest, notBundle, seenRecently } from './sql';
 import { perfFor, type MetricKey } from '../../perfIndex';
 import { tierCoverage, valueCoverage, type ValuePoint } from '../../value';
 import type { ValueCoverage, ValueRow } from '../../models';
@@ -55,7 +55,7 @@ export function getValueRetailers(db: DB, category: 'gpu' | 'cpu'): string[] {
 		(
 			db
 				.prepare(
-					`${LATEST_CTE}
+					`${LATEST_WITH_RETAILER_CTE}
 					 SELECT l.retailer AS retailer
 					 FROM latest lat
 					 JOIN retailer_listings l ON l.id = lat.retailer_listing_id
@@ -64,6 +64,7 @@ export function getValueRetailers(db: DB, category: 'gpu' | 'cpu'): string[] {
 					 WHERE p.category = @category AND p.tracked = 1 AND l.status = 'active'
 					   AND lat.stock_status = 'in_stock'
 					   AND ${notBundle('l')}
+					   AND ${seenRecently('lat', 'l')}
 					 GROUP BY l.retailer
 					 ORDER BY MIN(COALESCE(a.position, 999)), l.retailer`
 				)

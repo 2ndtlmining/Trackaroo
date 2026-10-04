@@ -532,7 +532,7 @@ Icons are Lucide (`@lucide/svelte`); `web/test/noEmoji.test.ts` fails if an emoj
 - Frontier rule: a point is on the frontier unless another point has a price at or below and performance at or above, with at least one strictly better. Ties are kept.
 - Best per budget: brackets of A$400, 700, 1000, 1500 and 2500. The winner is the highest performance at or under the bracket price. Ties go to the lower price. The runner-up and the gap are shown. "Exclude 8 GB cards" applies to GPUs. The toggle appears only when it can change something (an 8 GB card sits in a budget card) and stays visible while it is on, so it can always be switched off.
 - Accessibility: every point is focusable, tab order follows price, and a visually hidden table carries the same rows.
-- One price rule for value figures (#59): `/products`, `/compare` and `/value` all use the cheapest in-stock, active, non-bundle listing, each at its own latest snapshot, so a Perf/A$1k figure is the same on every page. `/deals` and the OzBargain alert deliberately count only today's scrape.
+- One price rule (#59, #70): `/products`, `/compare`, `/value`, the Head to head panel and the product headline all use the cheapest in-stock, active, non-bundle listing, each at its own latest snapshot and seen within 7 days of its retailer's latest scrape, so a price or Perf/A$1k figure is the same on every page. `/deals` and the OzBargain alert deliberately count only today's scrape.
 
 **Refreshing the index.**
 

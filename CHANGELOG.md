@@ -11,6 +11,8 @@ How it works:
 
 ## Unreleased
 
+- Prices on /products, /compare, /value and Head to head now skip a listing its retailer has not shown for more than 7 days, the same rule the product page headline already used, so every page agrees on a product's price (#70).
+
 ## 0.7.0 — 2026-10-04
 
 ### Added
