@@ -19,7 +19,7 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 1403 tests.
+**Backend** (repo root): `python -m pytest -q` — 1416 tests.
 
 **Frontend** (from `web/`):
 
@@ -154,6 +154,11 @@ Never delete price or product data. Products that roll out of scope get
   PCCG for `PCCG_COOLDOWN_HOURS`. That is intended — don't "fix" it by removing
   the breaker. If it trips now, suspect something *other* than our own query
   volume: another process on the same IP, or PCCG changing the key.
+- A **rejected key** (401/403) is not a block: no cooldown. `scraper/pccg_key.py`
+  reads the current key from one pccasegear.com page, caches it in
+  `data/pccg_algolia.json` and retries that category **once** per run (#11b);
+  if that fails, exit 4 and alert. Keep it one discovery, one retry: a loop
+  would spend the 100/hour budget on a dead key.
 
 ## E2E conventions
 

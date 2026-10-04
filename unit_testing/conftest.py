@@ -88,6 +88,14 @@ def _no_real_run_lock(monkeypatch, tmp_path):
     monkeypatch.setattr(run_daily, "RUN_LOCK_PATH", tmp_path / "run_daily.lock")
 
 
+# pccg.main() starts from a cached Algolia key in data/pccg_algolia.json when
+# one exists (#11b). Tests must never read or write the real cache.
+@pytest.fixture(autouse=True)
+def _no_real_pccg_key_cache(monkeypatch, tmp_path):
+    from scraper import pccg_key
+    monkeypatch.setattr(pccg_key, "CACHE_FILE", tmp_path / "pccg_algolia.json")
+
+
 def _make_connection(use_memory: bool = True) -> sqlite3.Connection:
     """Create a fresh connection with the schema applied."""
     if use_memory:
