@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-10-04
+**Last updated:** 2026-10-05
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -13,6 +13,24 @@ backup integrity.
 > **Recent changes** as a dated bullet — do not start another nested chain.
 
 ## Recent changes
+
+- **2026-10-05 -- plan items 0-5 done: #70, #15, #20, #11, #29 (PRs #74-#78).**
+  Housekeeping verified: prod runs v0.7.0 (57b2ad9) per `/healthz`, footer and `/changelog`; Head to
+  head renders. Issue pass: #2 #23 #27 closed with evidence, #9 (heartbeat later) and #10 (backups
+  handled outside the app) closed at the owner's request, #21 left for the owner's Track/Ignore on
+  /discover, and the #40 checklist was updated. Merged: #73, #74 (#70: one price rule now carries the
+  7-day staleness guard on every surface; the "headline includes bundles" half was a false alarm) and
+  #75 (#15: `run_lock.py` OS lock on `db/run_daily.lock`, a second run exits 0; uv-compiled hash-pinned
+  `requirements(.in|-dev)`; Docker Desktop WAL and ORIGIN docs). **Open, stacked (base main; merging
+  #78 ships all three):** #76 (#20: `search_aliases` column retired, `AMD_SERIES_PATHS`,
+  `TRACKAROO_INTEL_SPEC_URLS`, `pending_specs` for 7 days, MSRP test), #77 (#11b: a rotated PCCG
+  Algolia key is read from one pccasegear.com page, cached in `data/pccg_algolia.json`, one retry),
+  #78 (#29: the error hook was exported as `handleServerError` so it NEVER ran; now `handleError` +
+  `App.Error.code` + a styled `src/error.html`). Gate on the stack: pytest 1416, vitest 1274,
+  Playwright 231 (+1 skipped), svelte-check 0/0. **Next:** owner merges #78 once all three CI jobs
+  are green, then release 0.7.1 or 0.8.0 (#11 is a feature, so 0.8.0) with `python release.py` on
+  the PC, tag, redeploy. After 9-Oct: remove `trackaroo-old` and `trackaroo:pre-compose`. Backlog
+  needing a brainstorm: #17 #18 #19 #35 #36 #37 #38 #39; #58 is data-blocked.
 
 - **2026-10-04 (end of day) -- v0.7.0 tagged; next-session plan written.**
   Head to head (#60, PR #71) and the 0.7.0 release (PR #72) are merged; tag `v0.7.0` is on 57b2ad9.
