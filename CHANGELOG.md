@@ -11,6 +11,8 @@ How it works:
 
 ## Unreleased
 
+## 0.7.0 — 2026-10-04
+
 ### Added
 - Head to head on product pages (#60): how a GPU or CPU's cost per frame in AU today compares with its closest rival from the other brand (NVIDIA vs AMD, AMD vs Intel), with ray tracing shown separately and the performance source cited.
 
