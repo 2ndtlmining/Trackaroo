@@ -72,8 +72,10 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Python backend — install deps first (layer caching), then app code.
+# Runtime deps only (test packages live in requirements-dev.txt), every
+# package pinned by hash (#15): a changed or substituted wheel fails the build.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip install --no-cache-dir --break-system-packages --require-hashes -r requirements.txt
 
 COPY *.py ./
 COPY scraper/ scraper/

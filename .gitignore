@@ -26,6 +26,7 @@ Thumbs.db
 db/*.db
 db/*.db-shm
 db/*.db-wal
+db/run_daily.lock
 db/backups/
 
 # Scraped data (large, regenerable)

@@ -21,6 +21,7 @@ db/backups/
 db/*.db
 db/*.db-wal
 db/*.db-shm
+db/run_daily.lock
 
 # SvelteKit / web (built inside its own image stage)
 web/node_modules/

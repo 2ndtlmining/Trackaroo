@@ -12,6 +12,7 @@ How it works:
 ## Unreleased
 
 - Prices on /products, /compare, /value and Head to head now skip a listing its retailer has not shown for more than 7 days, the same rule the product page headline already used, so every page agrees on a product's price (#70).
+- Only one daily run can happen at a time: a second run started while one is going exits straight away instead of scraping twice. Python dependencies are now pinned by hash, with test-only packages split out of the image (#15).
 
 ## 0.7.0 — 2026-10-04
 

@@ -1,0 +1,7 @@
+# Trackaroo runtime dependencies (top level). Edit this, then regenerate the
+# hash-pinned requirements.txt; see "Dependencies" in README.md.
+requests==2.34.2
+beautifulsoup4==4.15.0
+# Windows has no system time-zone database; zoneinfo needs this there for
+# Australia/Melbourne (ozbargain_live.py). Linux and the image use the OS copy.
+tzdata ; sys_platform == 'win32'

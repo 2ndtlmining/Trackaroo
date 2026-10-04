@@ -79,8 +79,8 @@ detail lands in `data/spec_sync_report.json` (`python sync_specs.py --report-onl
 ## Quick start
 
 ```bash
-# Install dependencies
-python -m pip install -r requirements.txt
+# Install dependencies (runtime + test; both files are hash-pinned)
+python -m pip install --require-hashes -r requirements.txt -r requirements-dev.txt
 
 # Full daily run — scrape both retailers + ingest into DB + health checks
 python run_daily.py
@@ -137,6 +137,28 @@ python sync_specs.py --report-only
 # Run regression tests
 python -m pytest unit_testing/ -v
 ```
+
+Only one `run_daily.py` runs at a time. It holds an OS file lock on
+`db/run_daily.lock` (next to the DB) for the whole run, so a manual run started
+while the scheduled one is going logs "already running" and exits 0 without
+doing anything. The OS drops the lock when the process exits, even on a crash,
+so there is never a stale lock to delete.
+
+### Dependencies
+
+Python dependencies are pinned with hashes, in two pairs of files:
+`requirements.in` / `requirements.txt` for the runtime (the only file the Docker
+image installs) and `requirements-dev.in` / `requirements-dev.txt` for the tests.
+Edit the `.in` file, then regenerate both `.txt` files with
+[uv](https://docs.astral.sh/uv/) and commit all four:
+
+```bash
+uv pip compile requirements.in --universal --generate-hashes --python-version 3.12 -o requirements.txt
+uv pip compile requirements-dev.in --universal --generate-hashes --python-version 3.12 -o requirements-dev.txt
+```
+
+`--universal` keeps platform markers (pytest needs `colorama` on Windows only),
+so the same files install on Linux, in the image and on a Windows dev machine.
 
 ## OzBargain deals
 
@@ -601,7 +623,10 @@ Trackaroo/
 ├── sync_specs.py       # weekly spec sync (fetch + match + upsert; never calls run_daily.py)
 ├── spec_matching.py    # name normalization + product→spec-dataset matching
 ├── migrate.py          # schema migration tool (historical upgrades only)
-├── requirements.txt    # pinned dependencies
+├── requirements.in     # runtime deps, top level (edit this)
+├── requirements.txt    # runtime deps, hash-pinned (generated; the Docker image installs this)
+├── requirements-dev.in # test deps, top level (edit this)
+├── requirements-dev.txt # test deps, hash-pinned (generated; CI installs both files)
 │
 ├── Dockerfile          # all-in-one image: Python pipeline + dashboard (see DEPLOYMENT.md)
 ├── deploy/

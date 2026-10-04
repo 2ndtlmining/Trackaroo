@@ -1,0 +1,5 @@
+# Test-only dependencies (top level). Constrained to the runtime pins so a
+# shared transitive package never resolves to two versions.
+-c requirements.txt
+pytest==9.1.1
+pytest-mock==3.15.1

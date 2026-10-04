@@ -79,6 +79,15 @@ def _no_real_fx_path(monkeypatch, tmp_path):
     monkeypatch.setattr(fx, "DB_PATH", tmp_path / "fx-guard.db")
 
 
+# run_daily.main() holds a lock file next to the real DB (#15). Tests that call
+# main() must lock a throwaway file, so they neither litter db/ nor collide
+# with a real run on the same machine.
+@pytest.fixture(autouse=True)
+def _no_real_run_lock(monkeypatch, tmp_path):
+    import run_daily
+    monkeypatch.setattr(run_daily, "RUN_LOCK_PATH", tmp_path / "run_daily.lock")
+
+
 def _make_connection(use_memory: bool = True) -> sqlite3.Connection:
     """Create a fresh connection with the schema applied."""
     if use_memory:
