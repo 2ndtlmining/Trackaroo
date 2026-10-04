@@ -283,6 +283,35 @@ SPEC_FETCH_TIMEOUT_SECONDS = _env_int("TRACKAROO_SPEC_FETCH_TIMEOUT", 20)
 SPEC_RETRY_BACKOFF = _env_float("TRACKAROO_SPEC_RETRY_BACKOFF", 2.0)
 AMD_FETCH_DELAY_SECONDS = _env_float("TRACKAROO_AMD_FETCH_DELAY", 1.0)
 
+# amd.com product pages live under a per-series path. Keyed by the model
+# number without its last three digits ("9950" -> "9", "10700" -> "10"), so a
+# new Ryzen generation is one line here, not a code change (#20). A series not
+# listed gets no URL and the product is reported, never guessed.
+AMD_SERIES_PATHS = {
+    "5": "5000-series",
+    "7": "7000-series",
+    "8": "8000-series",
+    "9": "9000-series",
+    "10": "10000-series",
+}
+
+# The Intel spec dataset (toUpperCase78/intel-processors) puts a version in
+# each file name, so a dataset update used to need a code change (#20).
+# TRACKAROO_INTEL_SPEC_URLS (comma separated) replaces the whole list.
+INTEL_SPEC_SOURCE_URLS = [
+    u.strip() for u in os.environ.get(
+        "TRACKAROO_INTEL_SPEC_URLS",
+        "https://raw.githubusercontent.com/toUpperCase78/intel-processors/master/"
+        "intel_core_processors_v1_8.csv,"
+        "https://raw.githubusercontent.com/toUpperCase78/intel-processors/master/"
+        "Intel_Core_Ultra_Processors_v1_10.csv",
+    ).split(",") if u.strip()
+]
+
+# A product added within this many days that matches no spec record is
+# reported as pending (specs usually lag a launch), not unmatched (#20).
+SPEC_PENDING_DAYS = _env_int("TRACKAROO_SPEC_PENDING_DAYS", 7)
+
 # ── Spec coverage tuning (health_checks.py check_spec_coverage) ──────
 SPEC_COVERAGE_MIN_PCT = _env_float("TRACKAROO_SPEC_COVERAGE_MIN_PCT", 80.0)
 SPEC_STALE_THRESHOLD_DAYS = _env_int("TRACKAROO_SPEC_STALE_THRESHOLD_DAYS", 14)

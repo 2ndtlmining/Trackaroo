@@ -222,8 +222,7 @@ def test_circuit_breaker_trips_when_catalogue_fetch_is_rate_limited(monkeypatch)
     monkeypatch.setattr("scraper.pccg._clear_cooldown", lambda: None)
 
     watchlist = [
-        {"category": "gpu", "model": f"GPU {i}", "brand": "NVIDIA", "gen_tier": "current",
-         "search_terms": [f"gpu {i}"]}
+        {"category": "gpu", "model": f"GPU {i}", "brand": "NVIDIA", "gen_tier": "current"}
         for i in range(10)
     ]
     results, matched, tripped = scrape_category("gpu", watchlist)
@@ -251,9 +250,9 @@ def test_partial_catalogue_keeps_its_matches_without_tripping(monkeypatch):
 
     watchlist = [
         {"category": "gpu", "model": "GeForce RTX 5070", "brand": "NVIDIA", "gen_tier": "current",
-         "vram_gb": 12, "search_terms": ["rtx 5070"]},
+         "vram_gb": 12},
         {"category": "gpu", "model": "GeForce RTX 5080", "brand": "NVIDIA", "gen_tier": "current",
-         "vram_gb": 16, "search_terms": ["rtx 5080"]},
+         "vram_gb": 16},
     ]
     results, matched, tripped = scrape_category("gpu", watchlist)
 

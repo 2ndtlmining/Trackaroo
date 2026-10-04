@@ -11,6 +11,7 @@ Covers (IMPROVEMENT_16 §6):
 """
 import json
 import sqlite3
+from datetime import datetime, timezone
 import sys
 from pathlib import Path
 from unittest import mock
@@ -87,10 +88,13 @@ AMD_HTML = """
 """
 
 
-def _insert_product(db, category, brand, model, vram_gb=None, cores=None):
+def _insert_product(db, category, brand, model, vram_gb=None, cores=None,
+                    created_at="2026-01-01T00:00:00.000Z"):
+    # Long-tracked by default: a product added this week is "pending" (#20).
     db.execute(
-        "INSERT INTO products (category, brand, model, vram_gb, cores) VALUES (?, ?, ?, ?, ?)",
-        (category, brand, model, vram_gb, cores),
+        "INSERT INTO products (category, brand, model, vram_gb, cores, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (category, brand, model, vram_gb, cores, created_at),
     )
     return db.execute("SELECT id FROM products WHERE model = ?", (model,)).fetchone()[0]
 
@@ -284,6 +288,84 @@ class TestAmdUrl:
     def test_unrecognised_series_returns_none(self):
         assert ss.amd_url_for("Ryzen 3 3200G") is None
 
+    def test_five_digit_series_from_config(self):
+        # #20: the first digit of "10700" is "1", which used to map to nothing.
+        assert ss.amd_url_for("Ryzen 7 10700X") == (
+            "https://www.amd.com/en/products/processors/desktops/ryzen/"
+            "10000-series/amd-ryzen-7-10700x.html"
+        )
+
+    def test_series_paths_come_from_config(self, monkeypatch):
+        monkeypatch.setattr(ss, "AMD_SERIES_PATHS", {"11": "11000-series-desktop"})
+        assert ss.amd_series_for("Ryzen 9 11950X") == "11000-series-desktop"
+        assert ss.amd_series_for("Ryzen 9 9950X") is None
+
+
+class TestIntelSourceUrls:
+    def test_default_is_the_pinned_dataset_files(self):
+        import config
+        assert len(config.INTEL_SPEC_SOURCE_URLS) == 2
+        assert all(u.endswith(".csv") for u in config.INTEL_SPEC_SOURCE_URLS)
+
+    def test_env_overrides_the_list(self, monkeypatch):
+        import importlib
+        import config
+        monkeypatch.setenv("TRACKAROO_INTEL_SPEC_URLS", " https://x/a_v1_9.csv , https://x/b_v1_11.csv ")
+        try:
+            assert importlib.reload(config).INTEL_SPEC_SOURCE_URLS == [
+                "https://x/a_v1_9.csv", "https://x/b_v1_11.csv"]
+        finally:
+            monkeypatch.delenv("TRACKAROO_INTEL_SPEC_URLS")
+            importlib.reload(config)
+
+    def test_fetch_uses_the_configured_list(self, monkeypatch):
+        monkeypatch.setattr(ss, "INTEL_SOURCE_URLS", ["https://x/only.csv"])
+        seen = []
+        monkeypatch.setattr(ss, "fetch_url", lambda url, **k: seen.append(url) or None)
+        with pytest.raises(ss.SourceFetchError):
+            ss.fetch_intel_records()
+        assert seen == ["https://x/only.csv"]
+
+
+class TestPendingSpecs:
+    """#20: a product added this week is 'pending', not an unexplained gap."""
+
+    def _product(self, created_at):
+        return {"id": 9, "model": "Ryzen 7 10700X", "created_at": created_at}
+
+    def test_recent_product_is_pending(self):
+        stats = {}
+        now = datetime(2026, 10, 5, tzinfo=timezone.utc)
+        ss.record_unmatched(stats, self._product("2026-10-01T03:00:00.000Z"), now=now)
+        assert stats.get("pending_specs") == [{"product_id": 9, "model": "Ryzen 7 10700X"}]
+        assert not stats.get("unmatched_products")
+
+    def test_product_older_than_seven_days_is_unmatched(self):
+        stats = {}
+        now = datetime(2026, 10, 5, tzinfo=timezone.utc)
+        ss.record_unmatched(stats, self._product("2026-09-27T03:00:00.000Z"), now=now)
+        assert stats.get("unmatched_products") == [{"product_id": 9, "model": "Ryzen 7 10700X"}]
+        assert not stats.get("pending_specs")
+
+    def test_missing_or_bad_date_is_unmatched(self):
+        stats = {}
+        ss.record_unmatched(stats, {"id": 9, "model": "X"})
+        ss.record_unmatched(stats, {"id": 10, "model": "Y", "created_at": "not a date"})
+        assert [u["product_id"] for u in stats["unmatched_products"]] == [9, 10]
+
+    def test_load_products_carries_created_at(self, db):
+        db.execute("INSERT INTO products (category, brand, model, cores, generation_tier, tracked)"
+                   " VALUES ('cpu', 'AMD', 'Ryzen 7 10700X', 8, 'current', 1)")
+        rows = ss.load_products(db)
+        assert rows and rows[0]["created_at"]
+
+    def test_report_counts_pending_separately(self):
+        st = {"source": "s", "matched_new": 0, "matched_unchanged": 0, "conflicts": [],
+              "unmatched_products": [], "pending_specs": [{"product_id": 1, "model": "A"}]}
+        report = ss.build_report("t", False, [st], [])
+        assert report["summary"]["unmatched"] == 0
+        assert report["summary"]["pending"] == 1
+
 
 # ── fetch_url ─────────────────────────────────────────────────────────
 
@@ -416,6 +498,14 @@ class TestSyncSource:
         assert len(stats["unmatched_products"]) == 1
         assert stats["unmatched_products"][0]["model"] == "Radeon RX 9070 XTX"
         assert db.execute("SELECT COUNT(*) FROM specs").fetchone()[0] == 0
+
+    def test_product_added_today_is_pending_not_unmatched(self, db):
+        _insert_product(db, "gpu", "AMD", "Radeon RX 9070 XTX", vram_gb=32,
+                        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"))
+        stats = ss.sync_source("gpu", ss.SOURCE_GPU, ss.parse_gpu_records(GPU_JSON),
+                               db, ss.load_products(db, "gpu"))
+        assert stats["unmatched_products"] == []
+        assert [p["model"] for p in stats["pending_specs"]] == ["Radeon RX 9070 XTX"]
 
     def test_dry_run_no_writes(self, db):
         _insert_product(db, "gpu", "NVIDIA", "GeForce RTX 4070 Super", vram_gb=12)

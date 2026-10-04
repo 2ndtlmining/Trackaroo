@@ -23,6 +23,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.watchlist import (  # noqa: E402
+    DEFAULT_WATCHLIST_PATH,
     WatchlistRowError,
     load_watchlist,
     load_watchlist_products,
@@ -30,9 +31,9 @@ from db.watchlist import (  # noqa: E402
     validate_row,
 )
 
-HEADER = "category,brand,model,spec,gen_tier,search_aliases\n"
-GOOD = 'gpu,NVIDIA,GeForce RTX 5070,12GB,current,"rtx 5070|5070 nvidia"\n'
-GOOD_CPU = 'cpu,AMD,Ryzen 5 9600X,6c,current,"ryzen 5 9600x|r5 9600x"\n'
+HEADER = "category,brand,model,spec,gen_tier\n"
+GOOD = 'gpu,NVIDIA,GeForce RTX 5070,12GB,current\n'
+GOOD_CPU = 'cpu,AMD,Ryzen 5 9600X,6c,current\n'
 
 
 def _csv(tmp_path, *rows, comment=True):
@@ -72,7 +73,6 @@ class TestValidateRow:
             "model": "GeForce RTX 5070",
             "spec": "12GB",
             "gen_tier": "current",
-            "search_aliases": "rtx 5070",
         }
         row.update(over)
         return row
@@ -87,7 +87,6 @@ class TestValidateRow:
             ("brand", "Gigabyte"),
             ("gen_tier", "current-3"),
             ("model", ""),
-            ("search_aliases", ""),
             ("spec", "12"),
         ],
     )
@@ -110,31 +109,66 @@ class TestValidateRow:
             validate_row(row, line_no=3)
 
 
+class TestSearchAliasesRetired:
+    """#20: matching is chip-key only, so the alias column was dropped."""
+
+    def test_a_row_needs_no_alias_column(self):
+        row = {"category": "gpu", "brand": "NVIDIA", "model": "GeForce RTX 5070",
+               "spec": "12GB", "gen_tier": "current"}
+        out = validate_row(row, line_no=2)
+        assert out["vram_gb"] == 12
+        assert "search_terms" not in out
+
+    def test_a_legacy_csv_with_the_alias_column_still_loads(self, tmp_path):
+        p = tmp_path / "watchlist.csv"
+        p.write_text("category,brand,model,spec,gen_tier,search_aliases\n"
+                     'gpu,NVIDIA,GeForce RTX 5070,12GB,current,"rtx 5070"\n', encoding="utf-8")
+        assert [w["model"] for w in load_watchlist(str(p))] == ["GeForce RTX 5070"]
+
+    def test_the_real_csv_has_no_alias_column_and_says_how_matching_works(self):
+        text = Path(DEFAULT_WATCHLIST_PATH).read_text(encoding="utf-8")
+        header = next(line for line in text.splitlines() if line and not line.startswith("#"))
+        assert header == "category,brand,model,spec,gen_tier"
+        assert "search_aliases" not in text
+        assert "chip key" in text
+        assert "NOT overwritten" not in text
+
+    @pytest.mark.parametrize("title,category,model", [
+        ("Radeon RX 9070GRE", "gpu", "Radeon RX 9070 GRE"),
+        ("RTX5070 Ti", "gpu", "GeForce RTX 5070 Ti"),
+        ("Core i5-14400F", "cpu", "Core i5-14400F"),
+    ])
+    def test_retailer_spellings_resolve_to_the_watchlist_row(self, title, category, model):
+        from scraper.chip_key import chip_key
+        assert chip_key(title, category) == chip_key(model, category)
+        assert any(w["model"] == model for w in load_watchlist())
+
+
 class TestLoadWatchlistSkipsBadRows:
     def test_a_bad_row_does_not_take_down_the_load(self, tmp_path):
-        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current,"broken"\n', GOOD_CPU)
+        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current\n', GOOD_CPU)
         products = load_watchlist(path)
         assert [p["model"] for p in products] == ["GeForce RTX 5070", "Ryzen 5 9600X"]
 
     def test_the_seeder_loader_skips_it_too(self, tmp_path):
-        path = _csv(tmp_path, GOOD, 'cpu,AMD,Broken,,current,"broken"\n')
+        path = _csv(tmp_path, GOOD, 'cpu,AMD,Broken,,current\n')
         products = load_watchlist_products(path)
         assert [p["model"] for p in products] == ["GeForce RTX 5070"]
 
     def test_the_skipped_row_is_reported(self, tmp_path, caplog):
         """Silently dropping a product would be its own kind of bug."""
-        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current,"broken"\n')
+        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current\n')
         with caplog.at_level("ERROR"):
             load_watchlist(path)
         assert any("Broken" in r.message or "16gib" in r.message for r in caplog.records)
 
     def test_strict_mode_raises_instead(self, tmp_path):
-        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current,"broken"\n')
+        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current\n')
         with pytest.raises(WatchlistRowError):
             load_watchlist(path, strict=True)
 
     def test_an_all_bad_file_yields_nothing_rather_than_raising(self, tmp_path):
-        path = _csv(tmp_path, 'gpu,NVIDIA,Broken,16gib,current,"broken"\n')
+        path = _csv(tmp_path, 'gpu,NVIDIA,Broken,16gib,current\n')
         assert load_watchlist(path) == []
 
 
@@ -200,3 +234,13 @@ class TestKnownMissingSpecsAreSeparated:
 
         assert [u["model"] for u in stats["unmatched_products"]] == ["GeForce RTX 5070"]
         assert [u["model"] for u in stats["known_missing"]] == ["Ryzen 5 5500"]
+
+
+def test_every_launch_msrp_key_names_a_watchlist_model():
+    """db/launch_msrp.json is keyed by products.model and edited by hand next
+    to watchlist.csv (#20): a typo there would silently never apply."""
+    import json
+
+    msrp = json.loads((Path(DEFAULT_WATCHLIST_PATH).parent / "launch_msrp.json").read_text(encoding="utf-8"))
+    models = {w["model"] for w in load_watchlist()}
+    assert sorted(k for k in msrp if k not in models) == []

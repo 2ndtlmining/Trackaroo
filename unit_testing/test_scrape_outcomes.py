@@ -7,9 +7,9 @@ from scraper.run_report import EXIT_AUTH, EXIT_DEGRADED, EXIT_OK, EXIT_SKIPPED
 
 WATCHLIST = [
     {"model": "Ryzen 7 9800X3D", "category": "cpu", "brand": "AMD", "gen_tier": "current",
-     "vram_gb": None, "search_terms": ["ryzen 7 9800x3d"]},
+     "vram_gb": None},
     {"model": "GeForce RTX 5070", "category": "gpu", "brand": "NVIDIA", "gen_tier": "current",
-     "vram_gb": 12, "search_terms": ["rtx 5070"]},
+     "vram_gb": 12},
 ]
 
 

@@ -29,7 +29,7 @@ import re
 import sqlite3
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -38,6 +38,9 @@ from bs4 import BeautifulSoup
 
 from config import (
     AMD_FETCH_DELAY_SECONDS,
+    AMD_SERIES_PATHS,
+    INTEL_SPEC_SOURCE_URLS,
+    SPEC_PENDING_DAYS,
     DATA_DIR,
     DB_PATH,
     SPEC_FETCH_TIMEOUT_SECONDS,
@@ -56,12 +59,7 @@ GPU_SOURCE_URL = (
     "https://raw.githubusercontent.com/RightNow-AI/RightNow-GPU-Database/"
     "main/data/all-gpus.json"
 )
-INTEL_SOURCE_URLS = [
-    "https://raw.githubusercontent.com/toUpperCase78/intel-processors/master/"
-    "intel_core_processors_v1_8.csv",
-    "https://raw.githubusercontent.com/toUpperCase78/intel-processors/master/"
-    "Intel_Core_Ultra_Processors_v1_10.csv",
-]
+INTEL_SOURCE_URLS = list(INTEL_SPEC_SOURCE_URLS)  # config: TRACKAROO_INTEL_SPEC_URLS
 AMD_BASE_URL = "https://www.amd.com/en/products/processors/desktops/ryzen"
 # amd.com blocks the default python-requests UA; a browser UA is required.
 AMD_UA = {
@@ -373,28 +371,50 @@ SPECS_UNAVAILABLE_UPSTREAM: Dict[str, str] = {
 }
 
 
-def record_unmatched(stats: Dict[str, Any], product: Dict[str, Any]) -> None:
+def record_unmatched(
+    stats: Dict[str, Any], product: Any, now: Optional[datetime] = None
+) -> None:
     """File a product that matched no spec record.
 
-    Products in SPECS_UNAVAILABLE_UPSTREAM go to ``known_missing`` instead, so
-    ``unmatched_products`` only ever contains gaps worth investigating.
+    Products in SPECS_UNAVAILABLE_UPSTREAM go to ``known_missing``, and products
+    added within SPEC_PENDING_DAYS go to ``pending_specs`` (the upstream sources
+    usually lag a launch, #20), so ``unmatched_products`` only ever contains
+    gaps worth investigating.
     """
     entry = {"product_id": product["id"], "model": product["model"]}
     if product["model"] in SPECS_UNAVAILABLE_UPSTREAM:
         stats.setdefault("known_missing", []).append(entry)
+    elif _added_recently(product, now or datetime.now(timezone.utc)):
+        stats.setdefault("pending_specs", []).append(entry)
     else:
         stats.setdefault("unmatched_products", []).append(entry)
 
 
+def _added_recently(product: Any, now: datetime) -> bool:
+    """True when products.created_at is within SPEC_PENDING_DAYS of ``now``."""
+    try:
+        raw = product["created_at"]
+    except (KeyError, IndexError):
+        return False
+    try:
+        created = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return now - created <= timedelta(days=SPEC_PENDING_DAYS)
+
+
 def amd_series_for(model: str) -> Optional[str]:
-    """Map an AMD model to its amd.com series path segment (e.g. '9000-series')."""
-    m = re.search(r"(\d{4})", model)
+    """Map an AMD model to its amd.com series path segment (e.g. '9000-series').
+
+    The series is the model number without its last three digits ("9950X3D"
+    -> "9", "10700X" -> "10"), looked up in config.AMD_SERIES_PATHS.
+    """
+    m = re.search(r"(?<!\d)(\d{4,5})(?!\d)", model)
     if not m:
         return None
-    first = m.group(1)[0]
-    if first in "5789":
-        return f"{first}000-series"
-    return None
+    return AMD_SERIES_PATHS.get(m.group(1)[:-3])
 
 
 def amd_url_for(model: str) -> Optional[str]:
@@ -490,7 +510,7 @@ def _specs_table_exists(conn: sqlite3.Connection) -> bool:
 def load_products(conn: sqlite3.Connection, category: Optional[str] = None) -> List[sqlite3.Row]:
     """Load products (tracked and untracked — spec data for historical
     products is still valid to have)."""
-    sql = "SELECT id, category, brand, model, vram_gb FROM products"
+    sql = "SELECT id, category, brand, model, vram_gb, created_at FROM products"
     params: Tuple = ()
     if category:
         sql += " WHERE category = ?"
@@ -737,6 +757,7 @@ def sync_source(
         "matched_unchanged": 0,
         "conflicts": [],
         "unmatched_products": [],
+        "pending_specs": [],
         "known_missing": [],
         "fetch_failed": fetch_failed or [],
     }
@@ -796,6 +817,7 @@ def build_report(
             "matched_unchanged": sum(s["matched_unchanged"] for s in source_stats),
             "conflicts": sum(len(s["conflicts"]) for s in source_stats),
             "unmatched": sum(len(s["unmatched_products"]) for s in source_stats),
+            "pending": sum(len(s.get("pending_specs", [])) for s in source_stats),
         },
     }
 
@@ -866,9 +888,9 @@ def _run_amd_source(
 def _log_summary(source_stats: List[Dict[str, Any]], failed_sources: List[Dict[str, str]]) -> None:
     s = build_report("", False, source_stats, failed_sources)["summary"]
     LOGGER.info(
-        "\n%s\nSpec sync summary: %d new, %d unchanged, %d conflicts, %d unmatched\n%s",
+        "\n%s\nSpec sync summary: %d new, %d unchanged, %d conflicts, %d unmatched, %d pending\n%s",
         "=" * 60, s["matched_new"], s["matched_unchanged"], s["conflicts"],
-        s["unmatched"], "=" * 60,
+        s["unmatched"], s["pending"], "=" * 60,
     )
     for st in source_stats:
         LOGGER.info(
@@ -882,6 +904,9 @@ def _log_summary(source_stats: List[Dict[str, Any]], failed_sources: List[Dict[s
                            c["model"], c["product_id"], c["source_record_key"])
         for u in st["unmatched_products"]:
             LOGGER.info("    unmatched: %s (product %d)", u["model"], u["product_id"])
+        for u in st.get("pending_specs", []):
+            LOGGER.info("    pending (added in the last %d days): %s (product %d)",
+                        SPEC_PENDING_DAYS, u["model"], u["product_id"])
         for u in st.get("known_missing", []):
             LOGGER.info(
                 "    no upstream specs (known): %s - %s",

@@ -28,7 +28,10 @@ WatchlistProduct = Dict[str, Any]
 
 DEFAULT_WATCHLIST_PATH = str(WATCHLIST_PATH)
 
-REQUIRED_COLUMNS = ("category", "brand", "model", "spec", "gen_tier", "search_aliases")
+# The old sixth column, search_aliases, was retired in #20: matching is exact
+# chip-key equality on the model name (scraper/chip_key.py), so aliases were
+# never read. A CSV that still has the column loads fine; it is ignored.
+REQUIRED_COLUMNS = ("category", "brand", "model", "spec", "gen_tier")
 VALID_CATEGORIES = ("cpu", "gpu")
 VALID_BRANDS = ("AMD", "Intel", "NVIDIA")
 VALID_GEN_TIERS = ("current", "current-1", "current-2")
@@ -92,7 +95,7 @@ def validate_row(row: Dict[str, str], line_no: Optional[int] = None) -> Dict[str
         line_no: CSV line number, for the error message.
 
     Returns:
-        The row plus ``cores``, ``vram_gb`` and ``search_terms``.
+        The row plus ``cores`` and ``vram_gb``.
 
     Raises:
         WatchlistRowError: naming the offending field, so the CSV can be fixed
@@ -124,25 +127,16 @@ def validate_row(row: Dict[str, str], line_no: Optional[int] = None) -> Dict[str
             f"{row['gen_tier']!r} is not one of {VALID_GEN_TIERS}", line_no, "gen_tier"
         )
 
-    search_terms = _parse_search_terms(row["search_aliases"])
-    if not search_terms:
-        raise WatchlistRowError(
-            "no search aliases; the scrapers would never match this product",
-            line_no,
-            "search_aliases",
-        )
-
     spec_fields = parse_spec(row["spec"], category, line_no)
 
     return {
-        **row,
+        **{k: v for k, v in row.items() if k != "search_aliases"},
         "category": category,
         "brand": brand,
         "model": model,
         "gen_tier": gen_tier,
         "cores": spec_fields["cores"],
         "vram_gb": spec_fields["vram_gb"],
-        "search_terms": search_terms,
     }
 
 
@@ -205,7 +199,7 @@ def load_watchlist(
     """Load the watchlist for scraper use.
 
     Returns rows enriched with parsed ``cores``/``vram_gb`` (from the spec
-    column) and ``search_terms`` (from the search_aliases column, lowercased).
+    column).
 
     Args:
         path: Path to the watchlist CSV (default db/watchlist.csv).
@@ -216,11 +210,6 @@ def load_watchlist(
         List of watchlist product dicts, excluding any unusable rows.
     """
     return _valid_rows(path, strict)
-
-
-def _parse_search_terms(raw: str) -> List[str]:
-    """Split a search_aliases column into lowercased, trimmed terms."""
-    return [t.strip().lower() for t in (raw or "").split("|") if t.strip()]
 
 
 def load_watchlist_products(

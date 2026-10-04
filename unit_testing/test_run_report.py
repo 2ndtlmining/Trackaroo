@@ -16,9 +16,9 @@ from scraper.snapshot_io import save_category_snapshot
 
 WATCHLIST = [
     {"model": "Ryzen 7 9800X3D", "category": "cpu", "brand": "AMD", "gen_tier": "current",
-     "vram_gb": None, "search_terms": ["ryzen 7 9800x3d"]},
+     "vram_gb": None},
     {"model": "GeForce RTX 5070", "category": "gpu", "brand": "NVIDIA", "gen_tier": "current",
-     "vram_gb": 12, "search_terms": ["rtx 5070"]},
+     "vram_gb": 12},
 ]
 
 CPU_CARD = {"name": "amd ryzen 7 9800x3d desktop processor", "full_description": "AMD Ryzen 7 9800X3D",

@@ -75,7 +75,7 @@ def test_scrape_category_spends_exactly_one_query_per_category(monkeypatch):
 
     watchlist = [
         {"category": "gpu", "model": f"GeForce RTX 507{i}", "brand": "NVIDIA",
-         "gen_tier": "current", "search_terms": [f"rtx 507{i}"], "vram_gb": 12}
+         "gen_tier": "current", "vram_gb": 12}
         for i in range(3)
     ]
     scrape_category("gpu", watchlist)
@@ -94,10 +94,8 @@ def test_full_watchlist_run_stays_well_under_the_hourly_key_limit(monkeypatch):
     monkeypatch.setattr("scraper.pccg._write_cooldown", lambda reason: None)
 
     watchlist = (
-        [{"category": "gpu", "model": f"GPU {i}", "brand": "NVIDIA", "gen_tier": "current",
-          "search_terms": [f"gpu{i}"], "vram_gb": 12} for i in range(47)]
-        + [{"category": "cpu", "model": f"CPU {i}", "brand": "AMD", "gen_tier": "current",
-            "search_terms": [f"cpu{i}"]} for i in range(53)]
+        [{"category": "gpu", "model": f"GPU {i}", "brand": "NVIDIA", "gen_tier": "current", "vram_gb": 12} for i in range(47)]
+        + [{"category": "cpu", "model": f"CPU {i}", "brand": "AMD", "gen_tier": "current"} for i in range(53)]
     )
     scrape_category("gpu", watchlist)
     scrape_category("cpu", watchlist)
@@ -146,7 +144,7 @@ def test_empty_catalogue_trips_the_breaker_and_writes_cooldown(monkeypatch):
     monkeypatch.setattr("scraper.pccg._write_cooldown", lambda reason: written.append(reason))
 
     watchlist = [{"category": "gpu", "model": "GPU 1", "brand": "NVIDIA",
-                  "gen_tier": "current", "search_terms": ["gpu 1"], "vram_gb": 12}]
+                  "gen_tier": "current", "vram_gb": 12}]
     results, matched, tripped = scrape_category("gpu", watchlist)
 
     assert tripped is True
@@ -168,9 +166,9 @@ def test_catalogue_matching_keeps_the_variant_guard(monkeypatch):
 
     watchlist = [
         {"category": "gpu", "model": "GeForce RTX 5070", "brand": "NVIDIA",
-         "gen_tier": "current", "search_terms": ["rtx 5070"], "vram_gb": 12},
+         "gen_tier": "current", "vram_gb": 12},
         {"category": "gpu", "model": "GeForce RTX 5070 Ti", "brand": "NVIDIA",
-         "gen_tier": "current", "search_terms": ["rtx 5070 ti"], "vram_gb": 16},
+         "gen_tier": "current", "vram_gb": 16},
     ]
     results, matched, tripped = scrape_category("gpu", watchlist)
 
@@ -189,7 +187,7 @@ def test_out_of_stock_listings_are_still_recorded(monkeypatch):
     ])
 
     watchlist = [{"category": "gpu", "model": "GeForce RTX 5090", "brand": "NVIDIA",
-                  "gen_tier": "current", "search_terms": ["rtx 5090"], "vram_gb": 32}]
+                  "gen_tier": "current", "vram_gb": 32}]
     results, matched, tripped = scrape_category("gpu", watchlist)
 
     assert matched == {0}

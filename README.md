@@ -214,12 +214,12 @@ does not change the watchlist by itself: it produces the CSV row you add in a PR
    listing). Click the name to see real listing titles, to check it is the card
    you think it is.
 3. Click **Track**. The part moves to **Requested**, which shows the row to add:
-   `gpu,NVIDIA,GeForce RTX 5050,8GB,current,"geforce rtx 5050|rtx 5050"`.
+   `gpu,NVIDIA,GeForce RTX 5050,8GB,current`.
    **Copy row** copies it; **Undo** puts the part back under Untracked.
 4. Add that row to `db/watchlist.csv` on a branch and open a PR (or ask Claude to).
    Two rows need a human to finish them, and the pipeline will not guess:
    - A **CPU** row has `?c` as its spec, e.g.
-     `cpu,AMD,Ryzen 5 5600GT,?c,current-2,"ryzen 5 5600gt|ryzen 5600gt"`. Shop
+     `cpu,AMD,Ryzen 5 5600GT,?c,current-2`. Shop
      titles rarely give core counts, so replace `?c` with the real count
      (`6c`) from the manufacturer's spec page.
    - A **GPU** whose titles never state VRAM has `?GB` (e.g.
@@ -229,6 +229,10 @@ does not change the watchlist by itself: it produces the CSV row you add in a PR
    the pipeline skips that one row with a logged error and carries on, so nothing
    crashes but the part is not tracked. Model names use "Super" title case
    (`GeForce RTX 5070 Ti Super`), as in the existing rows.
+   In the same PR, add the part's US launch MSRP to `db/launch_msrp.json`
+   (keyed by the exact model name); it is applied on every container boot.
+   Specs follow on the next weekly sync, and until then (7 days) the spec
+   report lists the part as pending rather than unmatched.
 5. CI checks the row (`unit_testing/test_watchlist_validation.py`,
    `unit_testing/test_discover_rules.py`). Merge the PR.
 6. On the server, outside 04:00-09:59 Melbourne (the daily scrape window):
