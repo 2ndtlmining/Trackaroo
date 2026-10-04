@@ -349,6 +349,38 @@ describe('MSRP data (#32)', () => {
 	it('/product/[id] returns matchup (null or a well-formed pair)', async () => {
 		const { load } = await import('../src/routes/product/[id]/+page.server');
 		const { getDb } = await import('../src/lib/server/db');
+		// The seeded DB is built from the gitignored data/, which CI does not
+		// have, so add one qualifying pair here (perf index: RTX 5070 Ti 60,
+		// RX 9070 XT 57, both 16GB) rather than depend on what data/ holds.
+		const w = new Database(seeded.file);
+		let pairId: number;
+		try {
+			const product = w.prepare(
+				`INSERT INTO products (category, brand, model, vram_gb, generation_tier, tracked)
+				 VALUES ('gpu', ?, ?, 16, 'current', 1)`
+			);
+			const listing = w.prepare(
+				`INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status)
+				 VALUES (?, 'scorptec', ?, ?, 'active')`
+			);
+			const snapshot = w.prepare(
+				`INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at)
+				 VALUES (?, '2026-10-03', ?, 'in_stock', '2026-10-03T04:00:00.000Z')`
+			);
+			const add = (brand: string, model: string, price: number) => {
+				const id = Number(product.run(brand, model).lastInsertRowid);
+				const lid = Number(listing.run(id, `${model} matchup fixture`, `https://x/matchup-${id}`).lastInsertRowid);
+				snapshot.run(lid, price);
+				return id;
+			};
+			pairId = add('NVIDIA', 'GeForce RTX 5070 Ti', 1399);
+			add('AMD', 'Radeon RX 9070 XT', 1099);
+		} finally {
+			w.close();
+		}
+		const pair = load({ params: { id: String(pairId) } } as any).matchup;
+		expect(pair?.rival.name).toMatch(/^Radeon RX 9070 XT/);
+
 		const ids = getDb().prepare('SELECT id FROM products WHERE tracked = 1 ORDER BY id').all() as { id: number }[];
 		let seen = 0;
 		for (const { id } of ids) {
@@ -362,8 +394,8 @@ describe('MSRP data (#32)', () => {
 			expect(m.lines.length).toBeGreaterThan(0);
 			expect(m.lines[0].metric).toBe(m.metric);
 		}
-		// The seeded DB has in-stock NVIDIA and AMD GPUs with perf data.
-		expect(seen).toBeGreaterThan(0);
+		// At least the fixture pair above, from both of its sides.
+		expect(seen).toBeGreaterThanOrEqual(2);
 	});
 
 	it('getLaunchMsrps reads positive MSRPs per category', async () => {
