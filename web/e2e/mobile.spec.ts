@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getMatchup } from '../src/lib/server/queries/matchups';
 
 /**
  * Mobile viewport regression tests.
@@ -22,6 +23,21 @@ const PHONE = { width: 390, height: 844 };
 const NARROW = { width: 320, height: 844 };
 
 const ROUTES = ['/', '/products?category=gpu', '/products?category=cpu', '/deals', '/movers', '/compare', '/product/1', '/value'];
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+function matchupProductId(): number {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		const ids = db
+			.prepare("SELECT id FROM products WHERE category = 'gpu' AND tracked = 1 AND brand IN ('NVIDIA', 'AMD') ORDER BY id")
+			.all() as { id: number }[];
+		const hit = ids.find(({ id }) => getMatchup(db as any, id) !== null);
+		if (!hit) throw new Error('seeded e2e.db has no product with a matchup');
+		return hit.id;
+	} finally {
+		db.close();
+	}
+}
 
 async function goto(page: Page, path: string) {
 	await page.goto(path);
@@ -249,6 +265,13 @@ test.describe('PageHeader with the longest product name (#22)', () => {
 		db.close();
 		await goto(page, `/product/${row.id}`);
 		await expect(page.locator('h1')).toHaveCount(1);
+		const { viewport, scrollWidth } = await horizontalOverflow(page);
+		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
+	});
+
+	test('the product page with a head-to-head panel does not overflow at 320px (#60)', async ({ page }) => {
+		await goto(page, `/product/${matchupProductId()}`);
+		await expect(page.getByTestId('matchup')).toBeVisible();
 		const { viewport, scrollWidth } = await horizontalOverflow(page);
 		expect(scrollWidth).toBeLessThanOrEqual(viewport + 1);
 	});

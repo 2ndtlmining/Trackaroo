@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getMatchup } from '../src/lib/server/queries/matchups';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,6 +37,21 @@ function ozbProductId(): number {
 	}
 }
 
+const MATCHUP_PRODUCT = '/product/<matchup>';
+function matchupProductId(): number {
+	const db = new Database(path.join(here, 'e2e.db'), { readonly: true });
+	try {
+		const ids = db
+			.prepare("SELECT id FROM products WHERE category = 'gpu' AND tracked = 1 AND brand IN ('NVIDIA', 'AMD') ORDER BY id")
+			.all() as { id: number }[];
+		const hit = ids.find(({ id }) => getMatchup(db as any, id) !== null);
+		if (!hit) throw new Error('seeded e2e.db has no product with a matchup');
+		return hit.id;
+	} finally {
+		db.close();
+	}
+}
+
 async function scan(page: Page, theme: 'light' | 'dark', route: string) {
 	// The site themes via a stored preference, not prefers-color-scheme.
 	await page.addInitScript((t) => localStorage.setItem('trackaroo-theme', t), theme);
@@ -59,7 +75,8 @@ const PAGES = [
 	'/value',
 	'/value?category=cpu',
 	'/product/999999',
-	OZB_PRODUCT
+	OZB_PRODUCT,
+	MATCHUP_PRODUCT
 ];
 
 test('the two themes really render different backgrounds', async ({ browser }) => {
@@ -87,6 +104,7 @@ for (const theme of ['light', 'dark'] as const) {
 					target = `/compare?ids=${a},${b}`;
 				}
 				if (route === OZB_PRODUCT) target = `/product/${ozbProductId()}`;
+				if (route === MATCHUP_PRODUCT) target = `/product/${matchupProductId()}`;
 				await scan(page, theme, target);
 			});
 		}

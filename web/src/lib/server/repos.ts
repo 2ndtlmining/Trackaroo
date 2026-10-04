@@ -13,3 +13,4 @@ export * from './queries/health';
 export * from './queries/fx';
 export * from './queries/ozbargain';
 export * from './queries/value';
+export * from './queries/matchups';

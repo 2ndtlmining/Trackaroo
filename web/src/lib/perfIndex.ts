@@ -1,7 +1,8 @@
 // Curated performance index (#33): relative % from published tables, one
 // source per metric. Client-safe; the JSON is the same file the Python tests
 // verify (db/perf_index.json), so no value here is ever typed by hand.
-import index from '../../../db/perf_index.json';
+// The attribute is needed so Playwright's native ESM loader can import this module from e2e specs (#60).
+import index from '../../../db/perf_index.json' with { type: 'json' };
 
 export type MetricKey = 'gpu_raster_1440p' | 'gpu_rt_1440p' | 'cpu_gaming_1080p';
 

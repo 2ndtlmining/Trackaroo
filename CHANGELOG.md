@@ -11,6 +11,9 @@ How it works:
 
 ## Unreleased
 
+### Added
+- Head to head on product pages (#60): how a GPU or CPU's cost per frame in AU today compares with its closest rival from the other brand (NVIDIA vs AMD, AMD vs Intel), with ray tracing shown separately and the performance source cited.
+
 ### Fixed
 - A price alert can only be deleted from its own product page, and a target price is rounded to cents and capped at $100,000 (#15).
 

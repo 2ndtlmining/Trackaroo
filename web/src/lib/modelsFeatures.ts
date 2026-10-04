@@ -1,6 +1,8 @@
 // Client-safe DTO types for alerts, FX, OzBargain and value (#61). Re-exported
 // from $lib/models; import them from there. Types only, like models.ts.
 import type { AlertChannel } from './types';
+import type { MetricKey } from './perfIndex';
+import type { MatchupLine } from './matchups';
 
 export interface AlertRow {
 	id: number;
@@ -39,6 +41,7 @@ export interface OzbDeal {
 // date (null when nothing is in stock). Feeds the value maths (#33).
 export interface ValueRow {
 	id: number;
+	brand: string;
 	name: string;
 	model: string;
 	vramGb: number | null;
@@ -55,4 +58,23 @@ export interface ValueCoverage {
 	withPerfAndPrice: number;
 	/** Has performance data but no in-stock price today: left off the charts. */
 	noPrice: number;
+}
+
+// One side of a head-to-head matchup (#60): display name, today's price by the
+// one price rule, and Perf per A$1,000 on the main metric.
+export interface MatchupSide {
+	id: number;
+	name: string;
+	price: number;
+	perfPerKilo: number;
+}
+
+// The product page's "Head to head" panel. null on the page when no rival
+// qualifies (spec §2).
+export interface Matchup {
+	category: 'gpu' | 'cpu';
+	metric: MetricKey;
+	product: MatchupSide;
+	rival: MatchupSide;
+	lines: MatchupLine[];
 }

@@ -8,7 +8,8 @@ import {
 	getProductHistory,
 	getRetailerLatest,
 	upsertAlert,
-	deleteAlert
+	deleteAlert,
+	getMatchup
 } from '$lib/server/repos';
 import { getDb, getWriteDb } from '$lib/server/db';
 import { memo } from '$lib/server/cache';
@@ -17,6 +18,16 @@ import { MAX_TARGET_PRICE, parseTargetPrice } from '$lib/alertTarget';
 import type { AlertChannel } from '$lib/types';
 
 const CHANNELS: AlertChannel[] = ['discord', 'email', 'webhook'];
+
+// A matchup failure must never 500 the product page (#60).
+function safeMatchup(db: ReturnType<typeof getDb>, id: number) {
+	try {
+		return getMatchup(db, id);
+	} catch (err) {
+		console.error('getMatchup failed', id, err);
+		return null;
+	}
+}
 
 // The product page itself is deliberately NOT memoised or cache-control'd:
 // alert state must show up immediately after the create/delete redirect back
@@ -45,6 +56,8 @@ export function load({ params }: { params: { id: string } }) {
 		ozb: getOzbDeals(db, id, now),
 		ozbBest: getBestInStockPrice(db, id),
 		ozbNow: now.toISOString(),
+		// Head-to-head with the nearest other-brand rival (#60); null when none qualifies.
+		matchup: safeMatchup(db, id),
 		// Computed once on the server so a render near Melbourne midnight cannot
 		// differ between server and client (sale badge).
 		today: melbourneTodayIso(new Date())

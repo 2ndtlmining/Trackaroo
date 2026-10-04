@@ -4,6 +4,7 @@
 	import SpecPanel from '$lib/components/SpecPanel.svelte';
 	import ProductHeadline from '$lib/components/ProductHeadline.svelte';
 	import BuyPanel from '$lib/components/BuyPanel.svelte';
+	import MatchupPanel from '$lib/components/MatchupPanel.svelte';
 	import OzbDealsPanel from '$lib/components/OzbDealsPanel.svelte';
 	import OfferList from '$lib/components/OfferList.svelte';
 	import BrandIcon from '$lib/components/BrandIcon.svelte';
@@ -22,7 +23,7 @@
 	import { toListingDisplays } from '$lib/listingsPanel';
 	import { asOfDate, buildSignals, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import { type ProductHistory, type AlertRow, type FxRate, type ProductIndexEntry, type OzbDeal } from '$lib/models';
+	import { type ProductHistory, type AlertRow, type FxRate, type ProductIndexEntry, type OzbDeal, type Matchup } from '$lib/models';
 
 	let {
 		data,
@@ -37,6 +38,7 @@
 			ozb: { live: OzbDeal[]; expired: OzbDeal[] };
 			ozbBest: number | null;
 			ozbNow: string;
+			matchup: Matchup | null;
 		};
 		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
 	} = $props();
@@ -192,6 +194,10 @@ label:
 	</div>
 
 	<BuyPanel {low} windows={buyWindows} {where} {signals} />
+
+	{#if data.matchup}
+		<MatchupPanel matchup={data.matchup} />
+	{/if}
 
 	<OzbDealsPanel live={data.ozb.live} expired={data.ozb.expired} best={data.ozbBest} now={data.ozbNow} />
 
