@@ -81,9 +81,11 @@ class TestEnvOverrides:
         out = _config_value_with_env("TRACKAROO_MATCH_THRESHOLDS_JSON", raw, "MATCH_THRESHOLDS")
         assert "'min_total': 180" in out and "'min_per_category': 60" in out
 
-    def test_batch_size_env_override(self):
-        out = _config_value_with_env("TRACKAROO_BATCH_SIZE", "32", "BATCH_SIZE")
-        assert out == "32"
+    def test_dead_algolia_knobs_are_gone(self):
+        # #15: unused since the whole-catalogue fetch; a stale .env line must
+        # not look like it still tunes anything.
+        for name in ("BATCH_SIZE", "BATCH_DELAY", "ALGOLIA_BATCH_MAX_PAGES", "ALGOLIA_CIRCUIT_BREAKER_LIMIT"):
+            assert not hasattr(config, name), name
 
     def test_backup_keep_env_override(self):
         out = _config_value_with_env("TRACKAROO_BACKUP_KEEP", "30", "BACKUP_KEEP")
@@ -154,16 +156,10 @@ class TestSharedConsumption:
         assert ingest.DB_PATH == config.DB_PATH
         assert ingest.SCHEMA_PATH == config.SCHEMA_PATH
 
-    def test_pccg_batch_tuning_imports_config(self):
-        import scraper.pccg as pccg
-        assert pccg.BATCH_SIZE == config.BATCH_SIZE
-        assert pccg.BATCH_DELAY == config.BATCH_DELAY
-
     def test_pccg_pagination_imports_config(self):
         import scraper.pccg as pccg
         assert pccg.ALGOLIA_HITS_PER_PAGE == config.ALGOLIA_HITS_PER_PAGE
         assert pccg.ALGOLIA_MAX_PAGES == config.ALGOLIA_MAX_PAGES
-        assert pccg.ALGOLIA_BATCH_MAX_PAGES == config.ALGOLIA_BATCH_MAX_PAGES
         assert pccg.ALGOLIA_PAGE_DELAY == config.ALGOLIA_PAGE_DELAY
 
     def test_scorptec_tuning_imports_config(self):

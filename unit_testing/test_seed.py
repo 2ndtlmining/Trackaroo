@@ -50,25 +50,32 @@ WATCHLIST_PATH = PROJECT_ROOT / "db" / "watchlist.csv"
 class TestLoadWatchlist:
     """Test watchlist CSV loading."""
 
-    def test_loads_all_products(self):
-        # 99 after RX 9070 XTX was retired on 30-Aug-2026 (see
-        # migrate.RETIRED_PRODUCTS), then 100 when Core i9-14900 was added on
-        # 31-Aug: PCCG stocks the non-F/non-K part and it was absent from the
-        # watchlist entirely. These counts are a guard against the watchlist
-        # being truncated or corrupted, so update them deliberately.
-        # 105 on 28-Sep-2026: 245K and the four memory/GRE variants (#1, #2)
-        products = load_watchlist(WATCHLIST_PATH)
-        assert len(products) == 105
+    # #20: invariants, not exact counts, so adding or retiring a product needs
+    # no test edit while a truncated or half-deleted file still fails.
+    def test_every_data_line_loads(self):
+        """Rows loaded == data lines in the file: nothing silently skipped."""
+        lines = [
+            line
+            for line in WATCHLIST_PATH.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+        assert len(load_watchlist(WATCHLIST_PATH)) == len(lines) - 1  # minus the header
 
-    def test_cpu_count(self):
+    def test_truncation_floor(self):
         products = load_watchlist(WATCHLIST_PATH)
-        cpus = [p for p in products if p["category"] == "cpu"]
-        assert len(cpus) == 55
+        for category in ("cpu", "gpu"):
+            assert len([p for p in products if p["category"] == category]) >= 35, category
 
-    def test_gpu_count(self):
+    def test_every_category_covers_every_tier(self):
         products = load_watchlist(WATCHLIST_PATH)
-        gpus = [p for p in products if p["category"] == "gpu"]
-        assert len(gpus) == 50
+        for category in ("cpu", "gpu"):
+            tiers = {p["generation_tier"] for p in products if p["category"] == category and p["tracked"]}
+            assert tiers == {"current", "current-1", "current-2"}, category
+
+    def test_no_duplicate_products(self):
+        products = load_watchlist(WATCHLIST_PATH)
+        keys = [(p["category"], p["brand"], p["model"]) for p in products]
+        assert len(keys) == len(set(keys))
 
     def test_all_have_brand(self):
         products = load_watchlist(WATCHLIST_PATH)
