@@ -363,9 +363,14 @@ describe('MSRP data (#32)', () => {
 				`INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url, status)
 				 VALUES (?, 'scorptec', ?, ?, 'active')`
 			);
+			// Dated at the DB's latest snapshot, not a fixed day: prices skip a
+			// listing more than 7 days older than its retailer's latest (#70), and
+			// an earlier test in this file adds a 2099 snapshot that, on CI's
+			// synthetic data, lands at Scorptec too.
 			const snapshot = w.prepare(
 				`INSERT INTO price_snapshots (retailer_listing_id, snapshot_date, price_aud, stock_status, scraped_at)
-				 VALUES (?, '2026-10-03', ?, 'in_stock', '2026-10-03T04:00:00.000Z')`
+				 SELECT ?, MAX(snapshot_date), ?, 'in_stock', MAX(snapshot_date) || 'T04:00:00.000Z'
+				 FROM price_snapshots`
 			);
 			const add = (brand: string, model: string, price: number) => {
 				const id = Number(product.run(brand, model).lastInsertRowid);
