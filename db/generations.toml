@@ -1,0 +1,56 @@
+# Trackaroo product generations -- the ONE list of series per product line (#17).
+#
+# Series are newest first. Position decides the tier: 0 = current,
+# 1 = current-1, 2 = current-2; position 3 or later is out of scope and every
+# watchlist row in it is untracked by seed.py. keep_all = true keeps every
+# series of a line in scope (Intel Arc).
+#
+# A launch: add the new series at the TOP of its line (or run
+# `python manage_watchlist.py rollover ...`), add the SKU rows to
+# db/watchlist.csv with that series key, then seed.py --allow-bulk.
+#
+# key    -- what db/watchlist.csv's `series` column refers to (unique in file)
+# label  -- shown on the dashboard (group headers, breadcrumbs, filters)
+# chips  -- "family:gen" tokens discovery uses to place an untracked part in a
+#           series (discover_rules.py): rtx:5 = RTX 50xx, ryzen:9 = Ryzen 9xxx,
+#           core:14 = Core i 14xxx, ultra:2 = Core Ultra 2xx, arc:b = Arc Bxxx
+
+[[line]]
+id = "amd-cpu"
+series = [
+  { key = "zen5", label = "Ryzen 9000 (Zen 5)", chips = ["ryzen:9"] },
+  { key = "zen4", label = "Ryzen 7000 (Zen 4)", chips = ["ryzen:7", "ryzen:8"] },
+  { key = "zen3", label = "Ryzen 5000 (Zen 3)", chips = ["ryzen:5"] },
+]
+
+[[line]]
+id = "intel-cpu"
+series = [
+  { key = "arrow-lake", label = "Core Ultra 200 (Arrow Lake)", chips = ["ultra:2"] },
+  { key = "core-14", label = "Core 14th Gen", chips = ["core:14"] },
+  { key = "core-13", label = "Core 13th Gen", chips = ["core:13"] },
+]
+
+[[line]]
+id = "nvidia-gpu"
+series = [
+  { key = "rtx50", label = "RTX 50 (Blackwell)", chips = ["rtx:5"] },
+  { key = "rtx40", label = "RTX 40 (Ada)", chips = ["rtx:4"] },
+  { key = "rtx30", label = "RTX 30 (Ampere)", chips = ["rtx:3"] },
+]
+
+[[line]]
+id = "amd-gpu"
+series = [
+  { key = "rx9000", label = "RX 9000 (RDNA 4)", chips = ["rx:9"] },
+  { key = "rx7000", label = "RX 7000 (RDNA 3)", chips = ["rx:7"] },
+  { key = "rx6000", label = "RX 6000 (RDNA 2)", chips = ["rx:6"] },
+]
+
+[[line]]
+id = "intel-gpu"
+keep_all = true
+series = [
+  { key = "arc-b", label = "Arc B (Battlemage)", chips = ["arc:b"] },
+  { key = "arc-a", label = "Arc A (Alchemist)", chips = ["arc:a"] },
+]

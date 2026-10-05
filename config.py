@@ -118,6 +118,7 @@ DATA_DIR = _env_path("TRACKAROO_DATA_DIR", BASE_DIR / "data")
 DB_PATH = _env_path("TRACKAROO_DB", BASE_DIR / "db" / "trackaroo.db")
 SCHEMA_PATH = _env_path("TRACKAROO_SCHEMA", BASE_DIR / "db" / "schema.sql")
 WATCHLIST_PATH = _env_path("TRACKAROO_WATCHLIST", BASE_DIR / "db" / "watchlist.csv")
+GENERATIONS_PATH = WATCHLIST_PATH.parent / "generations.toml"
 BACKUP_DIR = _env_path("TRACKAROO_BACKUP_DIR", BASE_DIR / "db" / "backups")
 
 # ── Date / filename formats ───────────────────────────────────────────
