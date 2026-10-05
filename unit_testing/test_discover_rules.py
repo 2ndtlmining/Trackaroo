@@ -3,8 +3,12 @@
 import pytest
 
 import discover_rules as r
+from db.generations import parse_generations
 from db.watchlist import load_watchlist
 from scraper.chip_key import chip_key
+
+ZEN6 = open("db/generations.toml", encoding="utf-8").read().replace(
+    '{ key = "zen5"', '{ key = "zen6", label = "Ryzen 10000 (Zen 6)", chips = ["ryzen:10"] },\n  { key = "zen5"', 1)
 
 
 @pytest.mark.parametrize("title", [
@@ -47,11 +51,33 @@ def test_consumer_geforce_numbers_stay_in_scope(key):
     assert r.series_tier("gpu", key) is not None
 
 
-def test_every_watchlist_row_is_in_scope_at_its_own_tier():
-    # The scope table must agree with db/watchlist.csv (and so ARCHITECTURE Part 2).
-    for wp in load_watchlist():
-        key = chip_key(wp["model"], wp["category"])
-        assert r.series_tier(wp["category"], key) == wp["gen_tier"], wp["model"]
+@pytest.mark.parametrize("key, token", [
+    ("rtx 5070", ("rtx", "5")), ("rx 9070", ("rx", "9")), ("ryzen 9800x3d", ("ryzen", "9")),
+    ("ryzen 8600g", ("ryzen", "8")), ("ryzen 10700x", ("ryzen", "10")), ("ultra 265k", ("ultra", "2")),
+    ("core 14400f", ("core", "14")), ("arc b580", ("arc", "b")), ("rtx 6000", None), ("core 400", None),
+])
+def test_chip_token(key, token):
+    assert r.chip_token("gpu" if key.split()[0] in ("rtx", "rx", "arc") else "cpu", key) == token
+
+
+@pytest.mark.parametrize("key, tier", [
+    ("rtx 5070", "current"), ("rtx 4070", "current-1"), ("rtx 3060", "current-2"), ("rtx 2060", None),
+    ("rx 9070", "current"), ("rx 5700", None), ("ryzen 9700x", "current"), ("ryzen 8600g", "current-1"),
+    ("ryzen 5600", "current-2"), ("ryzen 3600", None), ("ryzen 10700x", "current"),
+    ("ultra 265k", "current"), ("core 14400f", "current-1"), ("core 12400f", None),
+    ("arc b580", "current"), ("arc a770", "current-1"), ("arc c770", "current"),
+])
+def test_series_tier_today_matches_previous_behaviour(key, tier):
+    category = "gpu" if key.split()[0] in ("rtx", "rx", "arc") else "cpu"
+    assert r.series_tier(category, key) == tier
+
+
+def test_after_a_zen6_rollover():
+    g = parse_generations(ZEN6)
+    assert r.series_tier("cpu", "ryzen 5600", g) is None
+    assert r.series_tier("cpu", "ryzen 9700x", g) == "current-1"
+    assert r.series_tier("cpu", "ryzen 10700x", g) == "current"
+    assert r.series_tier("cpu", "ryzen 11700x", g) == "current"   # newer than anything known still surfaces
 
 
 def test_part_key():
