@@ -78,3 +78,13 @@ def test_ci_runs_watchlist_check():
     text = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "python manage_watchlist.py check" in text
     assert text.index("python -m pytest -q") < text.index("python manage_watchlist.py check")
+
+
+def test_ci_smoke_checks_form_post_origin():
+    """Every form POST 403'd on the plain-http prod server (6-Oct-2026); the
+    production-entry smoke test must keep proving same-origin POSTs get through
+    and cross-site ones do not."""
+    text = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "discover?/ignore" in text
+    assert 'test "$same" = 400' in text
+    assert 'test "$cross" = 403' in text

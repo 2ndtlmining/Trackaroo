@@ -533,14 +533,20 @@ TRACKAROO_DB=../db/trackaroo.db PORT=3000 HOST=0.0.0.0 node server.js
 Put this behind a reverse proxy (Caddy / nginx / Traefik) for TLS if the host
 is internet-facing.
 
-**Behind a reverse proxy, set `ORIGIN`.** adapter-node checks every form POST
-(the product-page price alerts, Discover's Track / Ignore) against the origin it
-thinks it is serving. Behind a proxy it sees the internal address, so those
-forms fail with `403 Cross-site POST form submissions are forbidden`. Set the
-public URL, e.g. `ORIGIN=https://trackaroo.example.com`, in `.env` (compose) or
-the environment above. Alternatively set `PROTOCOL_HEADER=x-forwarded-proto` and
-`HOST_HEADER=x-forwarded-host` if the proxy sends those. No proxy is used today,
-so nothing needs setting on the LAN.
+**Form POSTs and the origin check.** adapter-node checks every form POST (the
+product-page price alerts, Discover's Track / Ignore / Retire / Keep) against the
+origin it thinks it is serving, and on its own it assumes **https**. Over plain
+http that made every form fail with `403 Cross-site POST form submissions are
+forbidden` (fixed 6-Oct-2026): `web/server.js` now stamps the real protocol
+(`http`) on each request and points adapter-node at it, so the LAN deploy needs
+nothing set, whichever hostname or IP you browse with. CI's production-server
+smoke test pins this (a same-origin POST must get past the check, a cross-site
+one must still get 403).
+
+**Behind a reverse proxy, set `ORIGIN`** to the public URL, e.g.
+`ORIGIN=https://trackaroo.example.com`, in `.env` (compose) or the environment
+above, or set `PROTOCOL_HEADER=x-forwarded-proto` and `HOST_HEADER=x-forwarded-host`
+if the proxy sends those. Either one turns the wrapper's default off.
 
 ---
 
