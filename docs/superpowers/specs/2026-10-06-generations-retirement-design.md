@@ -255,6 +255,21 @@ Playwright) and adding a CHANGELOG `## Unreleased` line:
 **Prod check after PR 1 deploy:** seed log shows 0 tracked flips; `/products`
 headers unchanged.
 
+## Refinements made while planning (2026-10-06)
+
+- A CSV row with an unknown or wrong-line `series` is a **row error** (logged
+  and skipped, like every other bad row), not a fatal seed error; a skipped
+  row is never untracked. A broken `generations.toml` is still fatal for seed.
+- Boot runs `seed.py` before `migrate.py`, so seed calls the new migration
+  step itself. Seed exits 1 on a bulk refusal or a broken toml, and both
+  entrypoints now tolerate a non-zero seed (it wrote nothing to `products`),
+  so a rollover deployed without `--allow-bulk` cannot stop the container.
+- The web gets labels as a per-line `{tier: label}` map in the root layout's
+  data (from `generations`, positions 0-2), not a per-product `seriesLabel`
+  DTO field. Same result, far fewer files touched.
+- The e2e seeder reads the toml with the `smol-toml` web devDependency
+  (the web CI job has no Python).
+
 ## Out of scope
 
 - Automatic untracking of any kind.
