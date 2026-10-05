@@ -128,9 +128,25 @@ def test_display_name_adds_vram_for_gpus():
 
 def test_suggested_rows():
     assert r.suggested_row("gpu", "rtx 5050", 8, [], vram_in_model=False) == \
-        'gpu,NVIDIA,GeForce RTX 5050,8GB,current'
+        'gpu,NVIDIA,GeForce RTX 5050,8GB,rtx50,active'
     assert r.suggested_row("gpu", "rtx 5060", 8, [], vram_in_model=True) == \
-        'gpu,NVIDIA,GeForce RTX 5060 8GB,8GB,current'
+        'gpu,NVIDIA,GeForce RTX 5060 8GB,8GB,rtx50,active'
     assert r.suggested_row("cpu", "ryzen 5600gt", None, [], vram_in_model=False) == \
-        'cpu,AMD,Ryzen 5 5600GT,?c,current-2'
+        'cpu,AMD,Ryzen 5 5600GT,?c,zen3,active'
     assert r.suggested_row("gpu", "rtx 5050", None, [], vram_in_model=False).split(",")[3] == "?GB"
+
+
+def test_suggested_row_for_a_chip_newer_than_every_series_uses_placeholder():
+    row = r.suggested_row("gpu", "rtx 6070", 12, [], vram_in_model=False)
+    assert row == "gpu,NVIDIA,GeForce RTX 6070,12GB,NEW-SERIES,active"
+
+
+@pytest.mark.parametrize("category,key,vram", [
+    ("gpu", "rtx 5050", 8), ("gpu", "rtx 5060", 8), ("gpu", "rx 9060 xt", 16), ("gpu", "arc b580", 12)])
+def test_suggested_row_passes_watchlist_validation_against_real_toml(category, key, vram):
+    """The guard that was missing: the copyable row must be a valid CSV row."""
+    from db.watchlist import validate_row
+    cells = r.suggested_row(category, key, vram, [], vram_in_model=False).split(",")
+    row = dict(zip(["category", "brand", "model", "spec", "series", "status"], cells))
+    out = validate_row(row)
+    assert out["tracked"] == 1 and out["series"] == cells[4]

@@ -9,7 +9,7 @@ Usage:
 Syncs the `products` and `generations` tables. The watchlist is the source of
 truth: tier, spec facts, series and `tracked` (both ways) follow it. Products
 missing from the CSV are reported, never retired. Changing `tracked` on more
-than max(5, 10%) of the products at once is refused unless --allow-bulk is given.
+than 5 products at once is refused unless --allow-bulk is given.
 """
 from __future__ import annotations
 
@@ -46,8 +46,11 @@ class BulkChangeError(RuntimeError):
         )
 
 
-def bulk_limit(total_products: int) -> int:
-    return max(5, total_products // 10)
+# Flat limit, deliberately not a percentage: a rollover must always need
+# --allow-bulk (Zen 3 = 8 flips, Core 13 = 9, RX 6000 = 8, RTX 30 = 10). A
+# truncated CSV, which the old 10% clause guarded against, flips nothing now
+# because rows missing from the CSV are reported, never untracked.
+BULK_FLIP_LIMIT = 5
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
@@ -120,7 +123,7 @@ def seed_products(
         conn: Open SQLite connection.
         products: Product dicts from ``load_watchlist_products``.
         dry_run: When True, only report what would happen without writing.
-        allow_bulk: Permit more than ``bulk_limit`` tracked flips (a rollover).
+        allow_bulk: Permit more than ``BULK_FLIP_LIMIT`` tracked flips (a rollover).
 
     Returns:
         Stats dict: inserted/skipped/updated/errors counts and ``flips`` (a list
@@ -152,8 +155,7 @@ def seed_products(
             stats["flips"].append((p["model"], tracked, p["tracked"]))
         updates.append((*wanted, pid))
 
-    total = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
-    limit = bulk_limit(total)
+    limit = BULK_FLIP_LIMIT
     if len(stats["flips"]) > limit and not allow_bulk and not dry_run:
         raise BulkChangeError(stats["flips"], limit)
 
@@ -226,6 +228,18 @@ def main(argv: Optional[List[str]] = None) -> None:
         conn.close()
         return
 
+    # Runs before the product sync so a refused bulk change (or insert errors)
+    # still refreshes the retailer list. The container runs seed.py on every boot, so this keeps the dashboard's
+    # retailer list (active_retailers) equal to config even before the first
+    # daily run on a new build (R1). Wrapped: this runs under `set -e` at
+    # boot, so a sync failure must log a WARNING and let the boot continue,
+    # never crash-loop the container (F20).
+    if not args.dry_run:
+        try:
+            sync_active_retailers(conn, ACTIVE_RETAILERS)
+        except Exception as e:  # noqa: BLE001 - best-effort, boot must not crash-loop
+            LOGGER.warning("Active-retailer sync failed (best-effort; boot continues): %s", e)
+
     try:
         stats = seed_products(conn, products, dry_run=args.dry_run, allow_bulk=args.allow_bulk)
     except BulkChangeError as e:
@@ -236,17 +250,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     # Mirror labels only once the product sync is applied: the web joins
     # generations to products, so a refused rollover must keep the OLD mirror.
     sync_generations(conn, gens, dry_run=args.dry_run)
-
-    # The container runs seed.py on every boot, so this keeps the dashboard's
-    # retailer list (active_retailers) equal to config even before the first
-    # daily run on a new build (R1). Wrapped: this runs under `set -e` at
-    # boot, so a sync failure must log a WARNING and let the boot continue,
-    # never crash-loop the container (F20).
-    if not args.dry_run:
-        try:
-            sync_active_retailers(conn, ACTIVE_RETAILERS)
-        except Exception as e:  # noqa: BLE001 - best-effort, boot must not crash-loop
-            LOGGER.warning("Active-retailer sync failed (best-effort; boot continues): %s", e)
 
     LOGGER.info("\nResults:")
     LOGGER.info("  Inserted: %d", stats["inserted"])

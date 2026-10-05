@@ -133,7 +133,7 @@ Per run:
    `vram_gb`, `cores` and **`tracked` in both directions** (setting `status`
    back to `active` un-retires).
 4. **Bulk guard:** if the run would flip `tracked` on more than
-   `max(5, 10% of products)`, abort before writing and list every flip, unless
+   5 products (flat limit, see Refinements: R7), abort before writing and list every flip, unless
    `--allow-bulk` is passed. `--dry-run` always lists the flips.
 5. **Products in the DB but not in the CSV** (excluding brand `Unmatched`) are
    reported as warnings and never changed.
@@ -237,7 +237,8 @@ Playwright) and adding a CHANGELOG `## Unreleased` line:
   the loader with a seeded `generations` row).
 - Seeding the real CSV + toml over a DB at today's state gives 0 tracked flips
   and identical tiers.
-- A truncated CSV is refused without `--allow-bulk`.
+- A rollover (more than 5 flips, e.g. Zen 3 = 8) is refused without `--allow-bulk`,
+  including on a prod-sized DB; a truncated CSV flips nothing (missing rows are never untracked).
 - A scraper given a retired row drops its matches (the listing does not fall
   through to a sibling, and no snapshot is written for it).
 - Discovery: after a temp `zen6` rollover, a Ryzen 5000 chip is out of scope,
@@ -267,6 +268,11 @@ headers unchanged.
 - The web gets labels as a per-line `{tier: label}` map in the root layout's
   data (from `generations`, positions 0-2), not a per-product `seriesLabel`
   DTO field. Same result, far fewer files touched.
+- The bulk guard limit is a flat 5 flips, not `max(5, 10%)` (final review, R7):
+  every real rollover (Zen 3 = 8, Core 13 = 9, RX 6000 = 8, RTX 30 = 10) must
+  need `--allow-bulk`, which a 10% limit on ~108 products (limit 10) did not
+  guarantee. The 10% clause guarded a truncated CSV, which no longer flips
+  anything because rows missing from the CSV are never untracked.
 - The e2e seeder reads the toml with the `smol-toml` web devDependency
   (the web CI job has no Python).
 

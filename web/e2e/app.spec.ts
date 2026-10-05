@@ -1770,7 +1770,7 @@ test.describe.serial('/discover (#16)', () => {
 		await row.getByRole('button', { name: 'Track' }).click();
 		await page.waitForLoadState('networkidle');
 		const requested = page.getByTestId('discover-requested');
-		await expect(requested.getByText('gpu,NVIDIA,GeForce RTX 5050,8GB,current')).toBeVisible();
+		await expect(requested.getByText('gpu,NVIDIA,GeForce RTX 5050,8GB,rtx50,active')).toBeVisible();
 		await requested.locator('li', { hasText: 'GeForce RTX 5050 8GB' }).getByRole('button', { name: 'Undo' }).click();
 		await page.waitForLoadState('networkidle');
 		await expect(page.getByTestId('discover-untracked').getByText('GeForce RTX 5050 8GB')).toBeVisible();

@@ -137,6 +137,15 @@ def test_check_fails_on_chip_collision(files, capsys):
     assert "Ryzen 7 9700X" in out and "Ryzen 7 9700X Boxed" in out and "collision" in out
 
 
+def test_check_cpu_chip_key_collision_with_different_core_counts(files, capsys):
+    """The Matcher drops CPU rows sharing a chip key whatever their spec says."""
+    with open(files.csv, "a", encoding="utf-8", newline="") as f:
+        f.write("cpu,AMD,Ryzen 7 9700X Tray,6c,zen5,active\n")
+    assert main(["check"]) == 1
+    out = capsys.readouterr().out
+    assert "collision" in out and "Ryzen 7 9700X Tray" in out and "Ryzen 7 9700X" in out
+
+
 def test_check_collects_all_problems(files, capsys):
     with open(files.csv, "a", encoding="utf-8", newline="") as f:
         f.write("cpu,AMD,Ryzen 7 9700X Boxed,8c,zen5,retired\n")

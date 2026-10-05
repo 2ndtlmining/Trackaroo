@@ -213,13 +213,19 @@ does not change the watchlist by itself: it produces the CSV row you add in a PR
    the listing count, the retailers and the lowest price (a link to that
    listing). Click the name to see real listing titles, to check it is the card
    you think it is.
-3. Click **Track**. The part moves to **Requested**, which shows the row to add:
-   `gpu,NVIDIA,GeForce RTX 5050,8GB,current`.
+3. Click **Track**. The part moves to **Requested**, which shows the row to add
+   (columns `category,brand,model,spec,series,status`):
+   `gpu,NVIDIA,GeForce RTX 5050,8GB,rtx50,active`.
+   The `series` is the key from `db/generations.toml` that the chip belongs to.
+   If it reads `NEW-SERIES` the chip is a new generation with no series yet: run
+   `python manage_watchlist.py rollover ...` first and use the key it creates.
+   The equivalent command for an existing series is
+   `python manage_watchlist.py add "GeForce RTX 5050" --spec 8GB --series rtx50`.
    **Copy row** copies it; **Undo** puts the part back under Untracked.
 4. Add that row to `db/watchlist.csv` on a branch and open a PR (or ask Claude to).
    Two rows need a human to finish them, and the pipeline will not guess:
    - A **CPU** row has `?c` as its spec, e.g.
-     `cpu,AMD,Ryzen 5 5600GT,?c,current-2`. Shop
+     `cpu,AMD,Ryzen 5 5600GT,?c,zen3,active`. Shop
      titles rarely give core counts, so replace `?c` with the real count
      (`6c`) from the manufacturer's spec page.
    - A **GPU** whose titles never state VRAM has `?GB` (e.g.

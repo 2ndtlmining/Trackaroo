@@ -5,7 +5,7 @@ import pytest
 
 from config import SCHEMA_PATH
 from db.generations import parse_generations
-from seed import BulkChangeError, bulk_limit, report_missing, seed_products, sync_generations
+from seed import BULK_FLIP_LIMIT, BulkChangeError, report_missing, seed_products, sync_generations
 
 TOML_TODAY = """
 [[line]]
@@ -44,9 +44,26 @@ def _tracked(conn):
     return dict(conn.execute("SELECT model, tracked FROM products"))
 
 
-def test_bulk_limit():
-    assert bulk_limit(20) == 5
-    assert bulk_limit(135) == 13
+def test_bulk_limit_is_flat():
+    assert BULK_FLIP_LIMIT == 5
+
+
+def test_rollover_on_prod_sized_db_needs_allow_bulk():
+    """~112 products: the old max(5, 10%) limit was 11, so an 8-flip rollover slipped through."""
+    conn = _db()
+    for i in range(100):
+        conn.execute("INSERT INTO products (category, brand, model, cores, generation_tier, tracked)"
+                     " VALUES ('cpu', 'Intel', ?, 8, 'current', 1)", (f"Filler {i}",))
+    conn.commit()
+    seed_products(conn, _rows(TOML_TODAY))
+    assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 112
+    with pytest.raises(BulkChangeError) as exc:
+        seed_products(conn, _rows(TOML_ZEN6))
+    assert len(exc.value.flips) == 8 and exc.value.limit == 5
+    assert all(t == 1 for t in _tracked(conn).values())
+    stats = seed_products(conn, _rows(TOML_ZEN6), allow_bulk=True)
+    assert len(stats["flips"]) == 8
+    assert sum(1 for t in _tracked(conn).values() if t == 0) == 8
 
 
 def test_zen6_rollover_retags_and_untracks_zen3_with_allow_bulk():
@@ -172,3 +189,24 @@ def test_main_mirrors_generations_only_when_product_sync_applies(tmp_path, monke
     assert keys() == {"zen5", "zen4", "zen3"}
     seed.main(["--allow-bulk"])
     assert keys() == {"zen6", "zen5", "zen4", "zen3"}
+
+
+def test_main_syncs_active_retailers_even_when_bulk_change_refused(tmp_path, monkeypatch):
+    import seed
+    db_path = tmp_path / "t.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    seed.seed_products(conn, _rows(TOML_TODAY))
+    conn.close()
+    monkeypatch.setattr(seed, "DB_PATH", db_path)
+    monkeypatch.setattr(seed, "ACTIVE_RETAILERS", ["alpha", "beta"])
+    monkeypatch.setattr(seed, "load_generations", lambda: parse_generations(TOML_ZEN6))
+    monkeypatch.setattr(seed, "load_watchlist", lambda *_a, **_k: _rows(TOML_ZEN6))
+    with pytest.raises(SystemExit):
+        seed.main([])
+    c = sqlite3.connect(str(db_path))
+    try:
+        got = [r[0] for r in c.execute("SELECT retailer FROM active_retailers ORDER BY position")]
+    finally:
+        c.close()
+    assert got == ["alpha", "beta"]

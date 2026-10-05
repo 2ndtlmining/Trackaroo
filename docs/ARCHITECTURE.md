@@ -341,8 +341,8 @@ docker compose exec trackaroo python seed.py --allow-bulk
 
 **The bulk guard.** A rollover flips many `tracked` values at once, which is
 also what a corrupted CSV looks like. If a seed run would change `tracked` on
-more than `max(5, total_products // 10)` products it refuses, writes nothing
-(the CSV mirror is only written after a successful product sync) and logs the
+more than 5 products (a flat limit, so every real rollover needs it) it refuses, writes nothing
+(the `generations` table mirror is only written after a successful product sync) and logs the
 refusal; the container still boots (the entrypoints tolerate a seed refusal).
 `--allow-bulk` is the deliberate override. On a normal boot the seed log says
 `Tracked changes: 0`.
@@ -653,4 +653,4 @@ Supersedes the 17-Aug "Compare view: read-only, no value score" note for this tr
 4-Oct-2026: head-to-head rivals are automatic (nearest other-brand main-metric score within 15%, VRAM tie-break), GPUs NVIDIA vs AMD only, CPUs AMD vs Intel; curated pairs rejected (#60).
 
 #### Generations config + retirement status (2026-10-06, #17 #18 #19)
-A launch used to mean a 10-12 file hand edit (watchlist retags, `migrate.RETIRED_PRODUCTS`, `tiers.ts` labels, discovery tables) and retiring a part meant deleting its CSV row plus a code change. Now `db/generations.toml` is the one list of series per line (position = tier, labels, discovery `chips`), the watchlist carries `series` and `status` columns, and `seed.py` syncs both ways (tier and `tracked`) with a bulk guard (`max(5, total // 10)` flips, `--allow-bulk` to override). Retirement is `tracked = 0`, never a deletion; `RETIRED_PRODUCTS` is gone. Scrapers, discovery and `repair_listings` treat retired rows as matcher sinks so a retired part's listings stay filed under it instead of becoming "new parts". The web labels come from a `generations` table, so a rollover changes no code. Stale tracked parts are only suggested (`retire_suggest.py`, /discover "Ready to retire", Keep = 90 days); the owner retires via `manage_watchlist.py` and a PR, so nothing untracks without the CSV changing. Tier values and the `products.generation_tier` CHECK are unchanged.
+A launch used to mean a 10-12 file hand edit (watchlist retags, `migrate.RETIRED_PRODUCTS`, `tiers.ts` labels, discovery tables) and retiring a part meant deleting its CSV row plus a code change. Now `db/generations.toml` is the one list of series per line (position = tier, labels, discovery `chips`), the watchlist carries `series` and `status` columns, and `seed.py` syncs both ways (tier and `tracked`) with a bulk guard (more than 5 `tracked` flips are refused, `--allow-bulk` to override). Retirement is `tracked = 0`, never a deletion; `RETIRED_PRODUCTS` is gone. Scrapers, discovery and `repair_listings` treat retired rows as matcher sinks so a retired part's listings stay filed under it instead of becoming "new parts". The web labels come from a `generations` table, so a rollover changes no code. Stale tracked parts are only suggested (`retire_suggest.py`, /discover "Ready to retire", Keep = 90 days); the owner retires via `manage_watchlist.py` and a PR, so nothing untracks without the CSV changing. Tier values and the `products.generation_tier` CHECK are unchanged.

@@ -25,14 +25,14 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
-from typing import Dict, List
+from typing import List, Optional
 
 import config
 from backup_db import backup_database
 from config import GENERATIONS_PATH, WATCHLIST_PATH
 from db.generations import GenerationsError, parse_generations
 from db.watchlist import WatchlistRowError, read_watchlist_rows, validate_row
-from scraper.chip_key import chip_key
+from scraper.chip_key import Matcher, chip_key
 from watchlist_edit import CSV_COLUMNS, append_row, insert_series, set_status, unified
 
 CSV_PATH = str(WATCHLIST_PATH)
@@ -136,21 +136,19 @@ def cmd_retire(args) -> int:
     return 0
 
 
-def _group_key(v: dict):
-    """(category, chip key, spec) for a validated row, or None when it has no chip key."""
-    key = chip_key(v["model"], v["category"])
-    if key is None:
-        return None
-    return (v["category"], key, v["spec"].strip().lower())
+def _matcher_row(v: dict) -> dict:
+    """The fields scraper.chip_key.Matcher reads from a validated row."""
+    return {"category": v["category"], "model": v["model"], "vram_gb": v["vram_gb"]}
 
 
-def _collision_problems(groups: Dict[tuple, List[str]]) -> List[str]:
-    return [
-        f"collision: {' and '.join(names)} share {cat} chip key {key!r} with spec {spec!r}; "
-        "the matcher would drop their listings"
-        for (cat, key, spec), names in groups.items()
-        if len(names) > 1
-    ]
+def _collision_problems(rows: List[dict], only_key: Optional[str] = None) -> List[str]:
+    """Matcher.collisions() over validated rows, so `check`/`add` use the exact
+    rule the scrapers apply (CPU rows sharing a chip key always collide; GPU rows
+    need distinct VRAM). ``only_key`` keeps just that chip key's problems."""
+    problems = Matcher(rows).collisions()
+    if only_key is not None:
+        problems = [p for p in problems if p.startswith(f"{only_key}:")]
+    return [f"collision: {p}; the matcher would drop their listings" for p in problems]
 
 
 def cmd_check(args) -> int:
@@ -162,9 +160,9 @@ def cmd_check(args) -> int:
     except (GenerationsError, OSError) as e:
         print(f"PROBLEM: {e}")
         return 1
-    # Collisions span ALL rows, retired included: two rows with one
-    # (category, chip key, spec) make the Matcher drop the listing silently.
-    groups: Dict[tuple, List[str]] = {}
+    # Collisions span ALL rows, retired included: rows the Matcher cannot tell
+    # apart make it drop the listing silently.
+    matcher_rows: List[dict] = []
     models = set()
     n = 0
     for row in read_watchlist_rows(CSV_PATH):
@@ -176,12 +174,11 @@ def cmd_check(args) -> int:
             problems.append(str(e))
             continue
         models.add(v["model"])
-        gk = _group_key(v)
-        if gk is None:
+        if chip_key(v["model"], v["category"]) is None:
             problems.append(f"watchlist row {line_no} [model]: no chip key for {v['model']!r}")
             continue
-        groups.setdefault(gk, []).append(v["model"])
-    problems.extend(_collision_problems(groups))
+        matcher_rows.append(_matcher_row(v))
+    problems.extend(_collision_problems(matcher_rows))
     for name in SPECS_UNAVAILABLE_UPSTREAM:
         if name not in models:
             problems.append(f"SPECS_UNAVAILABLE_UPSTREAM names {name!r}, which is not in the watchlist")
@@ -222,24 +219,23 @@ def cmd_add(args) -> int:
     except WatchlistRowError as e:
         print(f"ERROR: {e}")
         return 1
-    new_key = _group_key(new)
+    new_key = chip_key(new["model"], new["category"])
     if new_key is None:
         print(f"ERROR: no chip key for {new['model']!r}")
         return 1
     # Same rule as `check`: every existing row counts, retired included.
     old_csv = _read(CSV_PATH)
-    groups: Dict[tuple, List[str]] = {}
+    matcher_rows = []
     for existing in read_watchlist_rows(CSV_PATH):
         line_no = existing.pop("_line_no", None)
         try:
             v = validate_row(existing, line_no, gens)
         except WatchlistRowError:
             continue  # `check` reports bad rows
-        gk = _group_key(v)
-        if gk is not None:
-            groups.setdefault(gk, []).append(v["model"])
-    groups.setdefault(new_key, []).append(new["model"])
-    collisions = _collision_problems({new_key: groups[new_key]})
+        if chip_key(v["model"], v["category"]) is not None:
+            matcher_rows.append(_matcher_row(v))
+    matcher_rows.append(_matcher_row(new))
+    collisions = _collision_problems(matcher_rows, only_key=new_key)
     if collisions:
         for p in collisions:
             print(f"ERROR: {p}")

@@ -39,7 +39,7 @@ log() {
 # seed.py exits 1 when it refuses a bulk tracked change (a rollover needs
 # --allow-bulk, run by hand after reviewing the dry run) or on a broken
 # generations.toml. Either way it wrote nothing to products: boot on.
-python seed.py || echo "[trackaroo] $(date '+%Y-%m-%d %H:%M:%S') ERROR: seed.py exited non-zero (see above) - products unchanged; run 'python seed.py --dry-run' then '--allow-bulk' if intended"
+python seed.py || echo "[trackaroo] $(date '+%Y-%m-%d %H:%M:%S') ERROR: seed.py exited non-zero (see the log above). If it refused a bulk tracked change, run 'python seed.py --dry-run' then '--allow-bulk'."
 trackaroo-bootstrap-data
 
 # run_daily.py decides what is left to do (#8): --pending-only scrapes only the

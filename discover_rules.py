@@ -16,6 +16,9 @@ from typing import List, Optional, Sequence, Tuple
 from db.generations import Generations, default_generations
 from scraper.chip_key import is_excluded, normalise
 
+# suggested_row's series column for a chip no series lists yet (a new launch).
+NEW_SERIES_PLACEHOLDER = "NEW-SERIES"
+
 _EXTRA_EXCLUDE = re.compile(
     r"\b(?:refurb\w*|open box|ex demo|demo unit|rtx pro|radeon pro|quadro|threadripper|xeon|epyc|workstation)\b"
 )
@@ -144,10 +147,16 @@ def display_name(category: str, key: str, vram: Optional[int], titles: Sequence[
 def suggested_row(
     category: str, key: str, vram: Optional[int], titles: Sequence[str], vram_in_model: bool
 ) -> str:
-    """A db/watchlist.csv line. CPU cores are rarely in shop titles: '?c' is
-    filled from the spec source when the row is added (README)."""
+    """A db/watchlist.csv line (category,brand,model,spec,series,status).
+
+    CPU cores are rarely in shop titles: '?c' is filled from the spec source
+    when the row is added (README). A chip newer than every known gen has no
+    series yet, so it gets the placeholder NEW_SERIES_PLACEHOLDER: run
+    `manage_watchlist.py rollover` first and use the series key it creates."""
     base = model_name(category, key, titles)
     model = f"{base} {vram}GB" if category == "gpu" and vram and vram_in_model else base
     spec = (f"{vram}GB" if vram else "?GB") if category == "gpu" else "?c"
-    tier = series_tier(category, key) or "current"
-    return f"{category},{brand_for(key)},{model},{spec},{tier}"
+    token = chip_token(category, key)
+    series = default_generations().chip_series(*token) if token else None
+    series_key = series.key if series else NEW_SERIES_PLACEHOLDER
+    return f"{category},{brand_for(key)},{model},{spec},{series_key},active"
