@@ -23,7 +23,7 @@
 	import { toListingDisplays } from '$lib/listingsPanel';
 	import { asOfDate, buildSignals, dailyLows, lowSummary, whereToBuy, windowStats } from '$lib/buySignals';
 	import { buildDisplayNames, displayName } from '$lib/displayName';
-	import { type ProductHistory, type AlertRow, type FxRate, type ProductIndexEntry, type OzbDeal, type Matchup } from '$lib/models';
+	import { type ProductHistory, type AlertRow, type FxRate, type ProductIndexEntry, type OzbDeal, type Matchup, type TierLabels } from '$lib/models';
 
 	let {
 		data,
@@ -39,6 +39,7 @@
 			ozbBest: number | null;
 			ozbNow: string;
 			matchup: Matchup | null;
+			tierLabels: TierLabels;
 		};
 		form: { error?: string; target_price?: string; channel?: AlertChannel } | null;
 	} = $props();
@@ -150,7 +151,7 @@ label:
 	<div>
 		<PageHeader
 			title={`${name}${product.variant ? ` · ${product.variant}` : ''}`}
-			crumbs={productBreadcrumbs({ ...product, model: name })}
+			crumbs={productBreadcrumbs({ ...product, model: name }, data.tierLabels)}
 		>
 			{#snippet meta()}
 				<p class="flex items-center gap-1.5 font-medium text-text" data-testid="product-brand">
@@ -161,7 +162,7 @@ label:
 					{product.category?.toUpperCase()}
 					{#if specLabel}· {specLabel}{/if}
 					{#if product.generation_tier}
-						· {generationTierLabel(product.brand, product.category, product.generation_tier) ??
+						· {generationTierLabel(data.tierLabels, product.brand, product.category, product.generation_tier) ??
 							product.generation_tier}
 					{/if}
 				</p>

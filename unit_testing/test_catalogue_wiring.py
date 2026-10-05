@@ -32,7 +32,7 @@ def test_scorptec_main_saves_both_categories(tmp_path, monkeypatch):
     monkeypatch.setattr(scorptec, "analyze_unmatched", lambda *a, **k: None)
     monkeypatch.setattr(
         scorptec, "scrape_scorptec",
-        lambda wl, only_category, report: ([], set(), {f"{only_category}_x": SCRAPED}),
+        lambda wl, only_category, report, retired=(): ([], set(), {f"{only_category}_x": SCRAPED}),
     )
     scorptec.main()
     names = sorted(p.name for p in (tmp_path / "catalogue").iterdir())
@@ -45,7 +45,7 @@ def test_umart_main_saves_both_categories(tmp_path, monkeypatch):
     monkeypatch.setattr(umart, "save_category_snapshot", lambda *a, **k: None)
     monkeypatch.setattr(
         umart, "scrape_umart",
-        lambda wl, only_category, report: ([], set(), {only_category: SCRAPED}),
+        lambda wl, only_category, report, retired=(): ([], set(), {only_category: SCRAPED}),
     )
     umart.main()
     assert len(list((tmp_path / "catalogue").glob("umart_*.json"))) == 2

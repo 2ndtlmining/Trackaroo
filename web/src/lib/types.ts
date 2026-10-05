@@ -47,6 +47,21 @@ export interface DiscoveredPart {
 	suggestedRow: string;
 }
 
+export type RetireDecision = 'pending' | 'requested' | 'kept';
+export type RetireAction = 'retire' | 'keep' | 'undo';
+
+export interface RetireSuggestion {
+	productId: number;
+	brand: string;
+	category: 'cpu' | 'gpu';
+	model: string;
+	firstFlagged: string;
+	lastSeen: string | null;
+	lastSeenRetailer: string | null;
+	decision: RetireDecision;
+	keepUntil: string | null;
+}
+
 export interface DiscoveryConflict {
 	listingId: number;
 	retailer: string;

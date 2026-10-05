@@ -163,14 +163,14 @@ describe('watchlist coverage via perfKey', () => {
 		.filter((l) => l.trim() && !l.startsWith('#'))
 		.slice(1)
 		.map((l) => {
-			const [category, , model, spec, tier] = l.split(',');
-			return { category: category as 'gpu' | 'cpu', model, spec, tier };
+			const [category, , model, spec, , status] = l.split(',');
+			return { category: category as 'gpu' | 'cpu', model, spec, status };
 		});
 
-	it('resolves every required (current, current-1) product to an indexed key', () => {
+	it('resolves every active watchlist product to an indexed key', () => {
 		expect(rows.length).toBeGreaterThan(70);
 		const missing = rows
-			.filter((r) => r.tier !== 'current-2')
+			.filter((r) => r.status !== 'retired')
 			.filter((r) => {
 				const vramGb = r.category === 'gpu' ? Number(r.spec.replace(/GB$/, '')) : null;
 				return !isIndexed(perfKey({ category: r.category, model: r.model, vramGb }));

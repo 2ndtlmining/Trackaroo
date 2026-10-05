@@ -201,54 +201,29 @@ In other words: `current`, `current - 1`, `current - 2` are tracked. `current - 
 
 This rule applies independently per product line (AMD CPU, Intel CPU, NVIDIA GPU, AMD GPU), since each moves on its own release cadence. It is **not** a fixed calendar cutoff — it moves forward as new generations launch, and this file should be revisited/updated when that happens (see §6).
 
-### 1. AMD Ryzen desktop CPUs
+### 1-5. Which series are in scope: `db/generations.toml`
 
-| Tier | Series | Architecture | Socket |
-|---|---|---|---|
-| Current | Ryzen 9000 | Zen 5 | AM5 |
-| −1 | Ryzen 7000 (incl. 8000G APUs — see note) | Zen 4 | AM5 |
-| −2 | Ryzen 5000 | Zen 3 | AM4 |
-| **Excluded (−3)** | Ryzen 3000 and older (e.g. 3900X) | Zen 2 and older | AM4 |
+The per-line tier tables that used to live here moved to **`db/generations.toml`**
+(#17), the one list of series per product line (AMD CPU, Intel CPU, NVIDIA GPU,
+AMD GPU, Intel Arc), newest first. A series' position decides its tier
+(0 = `current`, 1 = `current-1`, 2 = `current-2`); anything at position 3 or later
+is out of scope and `seed.py` untracks its watchlist rows. Each series also carries
+its dashboard label and the `chips` tokens discovery uses to place an untracked
+part. `db/watchlist.csv` rows refer to a series by key (`series` column) and carry
+a `status` of `active` or `retired`. Read the toml for the current list; do not
+copy it back into this file.
 
-**Note on naming:** the Ryzen 8000G series is a desktop APU line built on Zen 4 silicon, not a new architecture — despite the "8000" number, it sits in the same generation tier as the 7000 series (−1), not its own tier.
+The prose rules that the toml encodes:
 
-### 2. Intel desktop CPUs
-
-| Tier | Series | Codename | Socket |
-|---|---|---|---|
-| Current | Core Ultra 200 series | Arrow Lake | LGA1851 |
-| −1 | Core 14th Gen | Raptor Lake Refresh | LGA1700 |
-| −2 | Core 13th Gen | Raptor Lake | LGA1700 |
-| **Excluded (−3)** | Core 12th Gen and older | Alder Lake and older | LGA1700 and older |
-
-**Note:** Intel's Core Ultra 300 series ("Panther Lake") launched in Jan 2026 but is a mobile/laptop-first platform — no desktop socket parts as of this writing. Desktop stays on Core Ultra 200 as current until a desktop Panther Lake or Nova Lake part ships; revisit this file when that happens.
-
-### 3. NVIDIA GeForce GPUs
-
-| Tier | Series | Architecture |
-|---|---|---|
-| Current | RTX 50 series | Blackwell |
-| −1 | RTX 40 series | Ada Lovelace |
-| −2 | RTX 30 series | Ampere |
-| **Excluded (−3)** | RTX 20 series and older | Turing and older |
-
-### 4. AMD Radeon GPUs
-
-| Tier | Series | Architecture |
-|---|---|---|
-| Current | RX 9000 series | RDNA 4 |
-| −1 | RX 7000 series | RDNA 3 |
-| −2 | RX 6000 series | RDNA 2 |
-| **Excluded (−3)** | RX 5000 series and older | RDNA 1 and older |
-
-### 5. Intel Arc GPUs
-
-Intel's discrete GPU line is younger and has had far fewer generations than AMD/NVIDIA, so the strict 2-gen rule isn't meaningful yet. **Track all current Arc desktop GPUs (Alchemist A-series and Battlemage B-series) without an exclusion tier.** Revisit this exception once Arc has 3+ generations on the market.
+- **Ryzen 8000G** is a desktop APU line on Zen 4 silicon, not a new architecture: it sits in the Zen 4 (7000) series, not its own tier.
+- **Intel** desktop stays on Core Ultra 200 as current until a desktop Panther Lake or Nova Lake part ships (Core Ultra 300 is mobile-first); revisit when that happens.
+- **Intel Arc** has had far fewer generations, so the strict 2-gen rule is not meaningful yet: the Arc line sets `keep_all = true` and every series stays in scope, with no exclusion tier. Revisit once Arc has 3+ generations on the market.
+- Excluded (current - 3 and older): Ryzen 3000 and older, Core 12th Gen and older, RTX 20 and older, RX 5000 and older.
 
 ### 6. Maintenance of this file
 
-- When a new generation launches for any product line (new Ryzen/Core/GeForce/Radeon series), update the relevant table: promote the new series to "Current," shift the others down one tier, and drop the oldest tier from tracking.
-- Dropping a generation from scope means: stop taking new snapshots for those products going forward. Existing historical price data for dropped products should be retained, not deleted, in case it's useful later — just excluded from the active watchlist / "biggest movers" views.
+- When a new generation launches, follow §7 (launch day): the toml and the CSV change, never this file's prose and never hand-edited tiers.
+- Dropping a generation from scope means: stop taking new snapshots for those products going forward. Existing historical price data for dropped products is retained, never deleted, just excluded from the active watchlist / "biggest movers" views (`tracked = 0`).
 - Workstation/server CPUs (Threadripper, Xeon, EPYC) and professional GPUs (RTX PRO/Ada, Radeon Pro) remain **out of scope entirely**, per §3 of the main spec — this file only governs the consumer desktop CPU/GPU lines listed above.
 
 ### 7. Adding or removing a product — the actual steps
@@ -258,12 +233,16 @@ Most additions start on **/discover** (README, 'Discovering and adding new parts
 Part 2 above says *what* belongs in the watchlist. This section is *how*, because
 three things about the process are not obvious from the CSV.
 
-**1. Edit `db/watchlist.csv`.** One row per product:
+**1. Edit `db/watchlist.csv`** (or run `python manage_watchlist.py add "GeForce RTX 5070" --spec 12GB --series rtx50`). One row per product:
 
 ```
-category,brand,model,spec,gen_tier
-gpu,NVIDIA,GeForce RTX 5070,12GB,current
+category,brand,model,spec,series,status
+gpu,NVIDIA,GeForce RTX 5070,12GB,rtx50,active
 ```
+
+`series` is a key from `db/generations.toml`; the tier is derived from the
+series' position there, so there is no tier column to maintain. `status` is
+`active` or `retired`; rows are never deleted.
 
 `spec` is cores for a CPU (`16c`) or VRAM for a GPU (`16GB`). Case and spacing
 are tolerated — `16c`, `16C` and ` 16 c ` all work — but the unit is required,
@@ -290,8 +269,10 @@ a key only for memory variants (`GeForce RTX 5060 Ti` 16GB and
 genuinely new suffix needs a pattern change in `chip_key.py`, with a test.
 
 **3. Run the seeder.** `python seed.py` inserts new rows, and on existing rows
-(same category + brand + model) syncs `gen_tier` and the spec facts (cores /
-VRAM); identity columns are never touched, so re-running is safe.
+(same category + brand + model) syncs `series`, the derived tier, `tracked`
+(retired or fallen-off-the-end rows become `tracked = 0`, and come back on
+re-activation) and the spec facts (cores / VRAM); identity columns are never
+touched, so re-running is safe.
 
 ```bash
 python seed.py            # Inserted: 1, Skipped (already exists): 99
@@ -338,10 +319,86 @@ that no retailer stocks is normal — it will show on `/products` with a
 "never listed" marker and count against available coverage on the dashboard,
 which is the honest reading rather than a bug.
 
-**Removing** a product: delete its row *and* add the model to
-`migrate.RETIRED_PRODUCTS`. Deleting the row alone is not enough — `seed.py`
-only ever INSERTs, so an existing database keeps `tracked=1` forever. Never
-delete price history; retired products get `tracked=0`.
+#### Launch day (a new generation)
+
+```bash
+python manage_watchlist.py rollover nvidia-gpu --new rtx60 --label "GeForce RTX 60" --chips rtx:6 --dry-run
+python manage_watchlist.py rollover nvidia-gpu --new rtx60 --label "GeForce RTX 60" --chips rtx:6
+python manage_watchlist.py add "GeForce RTX 6090" --spec 32GB --series rtx60   # one per SKU
+# add launch MSRPs (db/launch_msrp.json) and perf entries (db/perf_index.json)
+python manage_watchlist.py check
+```
+
+`rollover` edits `db/generations.toml` only (new series at the top of the line);
+the CSV is untouched. The series that falls to position 3 goes out of scope, and
+the next seed untracks its rows. Open a PR, merge, redeploy outside 04:00-09:59
+Melbourne, then on the host:
+
+```bash
+docker compose exec trackaroo python seed.py --dry-run
+docker compose exec trackaroo python seed.py --allow-bulk
+```
+
+**The bulk guard.** A rollover flips many `tracked` values at once, which is
+also what a corrupted CSV looks like. If a seed run would change `tracked` on
+more than 5 products (a flat limit, so every real rollover needs it) it refuses, writes nothing
+(the `generations` table mirror is only written after a successful product sync) and logs the
+refusal; the container still boots (the entrypoints tolerate a seed refusal).
+`--allow-bulk` is the deliberate override. On a normal boot the seed log says
+`Tracked changes: 0`.
+
+#### Retiring one part
+
+`python manage_watchlist.py retire "Ryzen 7 5800X3D"` (or `retire --series zen3`
+for a whole series, or `retire --stale` for every pending/requested suggestion
+below) sets the row's `status` to `retired`; every writing subcommand takes
+`--dry-run`. The daily `retire_suggest.py` step (best-effort, after Discovery)
+lists tracked parts no retailer has had a snapshot for in
+`TRACKAROO_RETIRE_STALE_DAYS` (default 30) days in the **Ready to retire**
+section of **/discover**. **Retire** records a request (the dashboard cannot edit
+the CSV), **Keep** hides the part for 90 days, **Undo** reverses either. A
+Requested suggestion stays on the list (and is not re-announced) until the CSV
+change lands; a part that goes live again and later goes stale again is announced
+again (a new episode). Nothing ever untracks a product without the CSV changing.
+
+Applying a request is a two-step flow across two machines:
+
+1. On the host, list what was requested (read-only):
+   `docker compose exec trackaroo python manage_watchlist.py retire --stale --dry-run`
+   (or read /discover). `retire --stale` reads `retire_suggestions` from the DB at
+   `TRACKAROO_DB`, which only the host's DB has; the PC's dev DB never sees the
+   /discover clicks.
+2. On the PC (the repo checkout), apply each one:
+   `python manage_watchlist.py retire "<model>"` (or `--series`), then
+   `python manage_watchlist.py check`, and open a PR. The next redeploy's seed
+   applies it and the row leaves the Ready to retire list.
+
+Never run the CLI's writing commands (`rollover`, `add`, `retire` without
+`--dry-run`) on the prod host: they edit the host checkout's files and leave it
+dirty, which blocks `deploy/redeploy.sh`. `reassign` is the only command meant to
+write on the host (it writes the DB, not files).
+
+#### Un-retiring
+
+Set the row's `status` back to `active` in the CSV (and, if its series has fallen
+out of scope in the toml, give it a series that is in scope). The next seed sets
+`tracked = 1` again; history was never touched.
+
+#### A listing filed under the wrong product
+
+`python manage_watchlist.py reassign <listing_id> "<exact model>" [--dry-run]`
+moves one listing to another product in the database. It edits the DB, so run it
+on the host: `docker compose exec trackaroo python manage_watchlist.py reassign ...`.
+For many listings at once use `repair_listings.py` (README, Conflicts).
+
+#### CI
+
+`python manage_watchlist.py check` validates `db/generations.toml` and
+`db/watchlist.csv` and runs in the backend CI job after pytest. Run it on the
+host after a deploy too.
+
+Never delete price history or watchlist rows: retired products get `tracked = 0`.
+
 ---
 
 ## Part 3 — Decision log
@@ -594,3 +651,6 @@ Supersedes the 17-Aug "Compare view: read-only, no value score" note for this tr
 
 #### Head-to-head matchups (2026-10-04, #60)
 4-Oct-2026: head-to-head rivals are automatic (nearest other-brand main-metric score within 15%, VRAM tie-break), GPUs NVIDIA vs AMD only, CPUs AMD vs Intel; curated pairs rejected (#60).
+
+#### Generations config + retirement status (2026-10-06, #17 #18 #19)
+A launch used to mean a 10-12 file hand edit (watchlist retags, `migrate.RETIRED_PRODUCTS`, `tiers.ts` labels, discovery tables) and retiring a part meant deleting its CSV row plus a code change. Now `db/generations.toml` is the one list of series per line (position = tier, labels, discovery `chips`), the watchlist carries `series` and `status` columns, and `seed.py` syncs both ways (tier and `tracked`) with a bulk guard (more than 5 `tracked` flips are refused, `--allow-bulk` to override). Retirement is `tracked = 0`, never a deletion; `RETIRED_PRODUCTS` is gone. Scrapers, discovery and `repair_listings` treat retired rows as matcher sinks so a retired part's listings stay filed under it instead of becoming "new parts". The web labels come from a `generations` table, so a rollover changes no code. Stale tracked parts are only suggested (`retire_suggest.py`, /discover "Ready to retire", Keep = 90 days); the owner retires via `manage_watchlist.py` and a PR, so nothing untracks without the CSV changing. Tier values and the `products.generation_tier` CHECK are unchanged.

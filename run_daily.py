@@ -751,6 +751,13 @@ def run(args: argparse.Namespace) -> int:
 
             best_effort("Discovery", _run_discovery)
 
+            # ── Ready-to-retire list (#17): suggests only, never untracks ──
+            def _run_retire_suggest() -> Any:
+                import retire_suggest
+                return retire_suggest.run(notify=notify_enabled(args))
+
+            best_effort("Retire suggestions", _run_retire_suggest)
+
             # ── AUD/USD rate cache (#32): one request a day, best-effort ──
             def _run_fx() -> Any:
                 import fx

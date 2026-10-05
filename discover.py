@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import discover_rules as rules
 from config import ACTIVE_RETAILERS, DATA_DIR, DB_PATH, FILE_DATE_FORMAT
-from db.watchlist import load_watchlist
+from db.watchlist import load_retired, load_watchlist
 from migrate import migrate_add_discovery_tables
 from scraper.catalogue_io import load_catalogues, prune_catalogues
 from scraper.chip_key import Matcher, chip_key, parse_vram
@@ -54,7 +54,12 @@ def _group_key(category: str, title: str) -> Optional[Tuple[str, Optional[int]]]
 
 def _classify(envelopes, matcher, watchlist=()) -> Tuple[Dict[Tuple[str, str], Dict[str, Any]], Set[Tuple[str, str]], List[str]]:
     """(untracked groups by (category, part_key), part keys now tracked, unrecognised titles)."""
-    tracked_chips = {(wp["category"], chip_key(wp["model"], wp["category"])) for wp in watchlist}
+    # Retired rows are known chips (not new parts), but they are not 'tracked': a
+    # retired part must not flip its discovered_parts row to status 'tracked'.
+    known_chips = {(wp["category"], chip_key(wp["model"], wp["category"])) for wp in watchlist}
+    tracked_chips = {
+        (wp["category"], chip_key(wp["model"], wp["category"])) for wp in watchlist if wp.get("tracked", True)
+    }
     groups: Dict[Tuple[str, str], Dict[str, Any]] = {}
     tracked: Set[Tuple[str, str]] = set()
     unrecognised: List[str] = []
@@ -77,12 +82,15 @@ def _classify(envelopes, matcher, watchlist=()) -> Tuple[Dict[Tuple[str, str], D
             if rules.series_tier(category, key) is None:
                 continue
             pkey = rules.part_key(category, key, vram)
-            if matcher.resolve(title, category) is not None:
-                tracked.add((category, pkey))
+            idx = matcher.resolve(title, category)
+            if idx is not None:
+                if matcher.watchlist[idx].get("tracked", True):
+                    tracked.add((category, pkey))
                 continue
-            if vram is None and (category, key) in tracked_chips:
-                tracked.add((category, pkey))  # flips a bare-key part created before the VRAM rows existed
-                continue  # chip is tracked; the title just omits the VRAM, so Matcher cannot pick a row
+            if vram is None and (category, key) in known_chips:
+                if (category, key) in tracked_chips:
+                    tracked.add((category, pkey))  # flips a bare-key part created before the VRAM rows existed
+                continue  # chip is known; the title just omits the VRAM, so Matcher cannot pick a row
             g = groups.setdefault((category, pkey), {
                 "key": key, "vram": vram, "titles": [], "retailers": set(), "count": 0,
                 "min_price": None, "min_url": None,
@@ -267,7 +275,7 @@ def run(
             migrate_add_discovery_tables(conn)
         unrecognised: List[str] = []
         if envelopes:
-            wl = watchlist if watchlist is not None else load_watchlist()
+            wl = watchlist if watchlist is not None else load_watchlist() + load_retired()
             groups, tracked, unrecognised = _classify(envelopes, Matcher(wl), wl)
             _upsert(conn, groups, wl, today_iso)
             _flip_tracked(conn, tracked)

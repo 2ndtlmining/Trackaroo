@@ -118,6 +118,7 @@ DATA_DIR = _env_path("TRACKAROO_DATA_DIR", BASE_DIR / "data")
 DB_PATH = _env_path("TRACKAROO_DB", BASE_DIR / "db" / "trackaroo.db")
 SCHEMA_PATH = _env_path("TRACKAROO_SCHEMA", BASE_DIR / "db" / "schema.sql")
 WATCHLIST_PATH = _env_path("TRACKAROO_WATCHLIST", BASE_DIR / "db" / "watchlist.csv")
+GENERATIONS_PATH = WATCHLIST_PATH.parent / "generations.toml"
 BACKUP_DIR = _env_path("TRACKAROO_BACKUP_DIR", BASE_DIR / "db" / "backups")
 
 # ── Date / filename formats ───────────────────────────────────────────
@@ -163,6 +164,10 @@ STALE_THRESHOLD_DAYS = _env_int("TRACKAROO_STALE_THRESHOLD_DAYS", 3)
 # never against now: a retailer in cooldown is silent but healthy, and
 # comparing against now would mark its whole catalogue stale in one pass.
 STALE_LISTING_DAYS = _env_int("TRACKAROO_STALE_LISTING_DAYS", 7)
+# Ready-to-retire list (#17): a tracked product no retailer has listed for this many days is
+# suggested for retirement; "Keep" hides the suggestion for RETIRE_KEEP_DAYS.
+RETIRE_STALE_DAYS = _env_int("TRACKAROO_RETIRE_STALE_DAYS", 30)
+RETIRE_KEEP_DAYS = 90
 
 # Price anomaly: flag if a price deviates more than this many standard
 # deviations from the historical mean for that product+retailer combo

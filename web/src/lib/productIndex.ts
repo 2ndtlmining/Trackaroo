@@ -2,7 +2,7 @@
 // tests rather than by how the page happens to render.
 import { GENERIC_TIER_LABELS, generationTierLabel } from './tiers';
 import type { Category, GenerationTier, Retailer } from './types';
-import type { ProductGroup } from './models';
+import type { ProductGroup, TierLabels } from './models';
 import type { MetricKey } from './perfIndex';
 
 // One /products row: a product group without its listings (#28), plus the
@@ -49,7 +49,7 @@ interface Groupable {
 // with no generation is a watchlist gap, not a reason to hide it.
 const TIER_ORDER: Record<string, number> = { current: 0, 'current-1': 1, 'current-2': 2 };
 
-export function groupForIndex<T extends Groupable>(items: T[]): IndexGroup<T>[] {
+export function groupForIndex<T extends Groupable>(items: T[], labels: TierLabels): IndexGroup<T>[] {
 	const byKey = new Map<string, IndexGroup<T>>();
 	const brandCount = new Map<string, number>();
 
@@ -60,7 +60,7 @@ export function groupForIndex<T extends Groupable>(items: T[]): IndexGroup<T>[] 
 		let group = byKey.get(key);
 		if (!group) {
 			const label =
-				generationTierLabel(item.brand, item.category, item.generationTier) ??
+				generationTierLabel(labels, item.brand, item.category, item.generationTier) ??
 				GENERIC_TIER_LABELS.current;
 			group = { key, brand: item.brand, label, items: [] };
 			byKey.set(key, group);

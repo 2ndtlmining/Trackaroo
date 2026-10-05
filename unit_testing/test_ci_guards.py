@@ -72,3 +72,9 @@ def test_ozb_loop_is_scheduled_only_past_the_skip_pipeline_exit():
     assert 'case ",$OZB_POLL_HOURS," in' in text
     assert 'stamp="$(date \'+%Y-%m-%d\')T$hour"' in text
     assert '"$last_run" != "$stamp"' in text
+
+
+def test_ci_runs_watchlist_check():
+    text = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "python manage_watchlist.py check" in text
+    assert text.index("python -m pytest -q") < text.index("python manage_watchlist.py check")

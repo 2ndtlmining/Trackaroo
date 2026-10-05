@@ -3,8 +3,12 @@
 import pytest
 
 import discover_rules as r
+from db.generations import parse_generations
 from db.watchlist import load_watchlist
 from scraper.chip_key import chip_key
+
+ZEN6 = open("db/generations.toml", encoding="utf-8").read().replace(
+    '{ key = "zen5"', '{ key = "zen6", label = "Ryzen 10000 (Zen 6)", chips = ["ryzen:10"] },\n  { key = "zen5"', 1)
 
 
 @pytest.mark.parametrize("title", [
@@ -47,11 +51,41 @@ def test_consumer_geforce_numbers_stay_in_scope(key):
     assert r.series_tier("gpu", key) is not None
 
 
-def test_every_watchlist_row_is_in_scope_at_its_own_tier():
-    # The scope table must agree with db/watchlist.csv (and so ARCHITECTURE Part 2).
-    for wp in load_watchlist():
-        key = chip_key(wp["model"], wp["category"])
-        assert r.series_tier(wp["category"], key) == wp["gen_tier"], wp["model"]
+@pytest.mark.parametrize("key, token", [
+    ("rtx 5070", ("rtx", "5")), ("rx 9070", ("rx", "9")), ("ryzen 9800x3d", ("ryzen", "9")),
+    ("ryzen 8600g", ("ryzen", "8")), ("ryzen 10700x", ("ryzen", "10")), ("ultra 265k", ("ultra", "2")),
+    ("core 14400f", ("core", "14")), ("arc b580", ("arc", "b")), ("rtx 6000", None), ("core 400", None),
+])
+def test_chip_token(key, token):
+    assert r.chip_token("gpu" if key.split()[0] in ("rtx", "rx", "arc") else "cpu", key) == token
+
+
+@pytest.mark.parametrize("key, tier", [
+    ("rtx 5070", "current"), ("rtx 4070", "current-1"), ("rtx 3060", "current-2"), ("rtx 2060", None),
+    ("rx 9070", "current"), ("rx 5700", None), ("ryzen 9700x", "current"), ("ryzen 8600g", "current-1"),
+    ("ryzen 5600", "current-2"), ("ryzen 3600", None), ("ryzen 10700x", "current"),
+    ("ultra 265k", "current"), ("core 14400f", "current-1"), ("core 12400f", None),
+    ("arc b580", "current"), ("arc a770", "current-1"), ("arc c770", "current"),
+    ("arc 140v", None),   # Lunar Lake laptop iGPU: no generation letter, out of scope
+])
+def test_series_tier_today_matches_previous_behaviour(key, tier):
+    category = "gpu" if key.split()[0] in ("rtx", "rx", "arc") else "cpu"
+    assert r.series_tier(category, key) == tier
+
+
+def test_after_a_zen6_rollover():
+    g = parse_generations(ZEN6)
+    assert r.series_tier("cpu", "ryzen 5600", g) is None
+    assert r.series_tier("cpu", "ryzen 9700x", g) == "current-1"
+    assert r.series_tier("cpu", "ryzen 10700x", g) == "current"
+    assert r.series_tier("cpu", "ryzen 11700x", g) == "current"   # newer than anything known still surfaces
+
+
+def test_every_tracked_watchlist_row_is_in_scope_at_its_own_tier():
+    # generations.toml chips + series position must agree with db/watchlist.csv.
+    bad = [wp["model"] for wp in load_watchlist()
+           if r.series_tier(wp["category"], chip_key(wp["model"], wp["category"])) != wp["gen_tier"]]
+    assert bad == []
 
 
 def test_part_key():
@@ -94,9 +128,25 @@ def test_display_name_adds_vram_for_gpus():
 
 def test_suggested_rows():
     assert r.suggested_row("gpu", "rtx 5050", 8, [], vram_in_model=False) == \
-        'gpu,NVIDIA,GeForce RTX 5050,8GB,current'
+        'gpu,NVIDIA,GeForce RTX 5050,8GB,rtx50,active'
     assert r.suggested_row("gpu", "rtx 5060", 8, [], vram_in_model=True) == \
-        'gpu,NVIDIA,GeForce RTX 5060 8GB,8GB,current'
+        'gpu,NVIDIA,GeForce RTX 5060 8GB,8GB,rtx50,active'
     assert r.suggested_row("cpu", "ryzen 5600gt", None, [], vram_in_model=False) == \
-        'cpu,AMD,Ryzen 5 5600GT,?c,current-2'
+        'cpu,AMD,Ryzen 5 5600GT,?c,zen3,active'
     assert r.suggested_row("gpu", "rtx 5050", None, [], vram_in_model=False).split(",")[3] == "?GB"
+
+
+def test_suggested_row_for_a_chip_newer_than_every_series_uses_placeholder():
+    row = r.suggested_row("gpu", "rtx 6070", 12, [], vram_in_model=False)
+    assert row == "gpu,NVIDIA,GeForce RTX 6070,12GB,NEW-SERIES,active"
+
+
+@pytest.mark.parametrize("category,key,vram", [
+    ("gpu", "rtx 5050", 8), ("gpu", "rtx 5060", 8), ("gpu", "rx 9060 xt", 16), ("gpu", "arc b580", 12)])
+def test_suggested_row_passes_watchlist_validation_against_real_toml(category, key, vram):
+    """The guard that was missing: the copyable row must be a valid CSV row."""
+    from db.watchlist import validate_row
+    cells = r.suggested_row(category, key, vram, [], vram_in_model=False).split(",")
+    row = dict(zip(["category", "brand", "model", "spec", "series", "status"], cells))
+    out = validate_row(row)
+    assert out["tracked"] == 1 and out["series"] == cells[4]

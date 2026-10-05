@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { groupForIndex } from '../src/lib/productIndex';
+import { LABELS } from './helpers/tierLabels';
 
 const p = (brand: string, model: string, tier: string | null) =>
 	({ brand, model, generationTier: tier, category: 'gpu' }) as never;
@@ -14,40 +15,40 @@ const items = [
 
 describe('groupForIndex', () => {
 	it('keeps a brand together, biggest catalogue first', () => {
-		expect(groupForIndex(items).map((g) => g.brand)).toEqual(['NVIDIA', 'NVIDIA', 'AMD', 'AMD']);
+		expect(groupForIndex(items, LABELS).map((g) => g.brand)).toEqual(['NVIDIA', 'NVIDIA', 'AMD', 'AMD']);
 	});
 
 	it('puts the newest generation first within a brand', () => {
-		const nvidia = groupForIndex(items).filter((g) => g.brand === 'NVIDIA');
+		const nvidia = groupForIndex(items, LABELS).filter((g) => g.brand === 'NVIDIA');
 		expect(nvidia[0].label).toContain('RTX 50');
 		expect(nvidia[1].label).toContain('RTX 40');
 	});
 
 	it('labels groups from the shared generation labels', () => {
-		expect(groupForIndex(items)[0].label).toBe('RTX 50 (Blackwell)');
+		expect(groupForIndex(items, LABELS)[0].label).toBe('RTX 50 (Blackwell)');
 	});
 
 	it('sorts models within a group', () => {
-		expect(groupForIndex(items)[0].items.map((i: { model: string }) => i.model)).toEqual([
+		expect(groupForIndex(items, LABELS)[0].items.map((i: { model: string }) => i.model)).toEqual([
 			'GeForce RTX 5060',
 			'GeForce RTX 5070'
 		]);
 	});
 
 	it('loses nothing — every product lands in exactly one group', () => {
-		const groups = groupForIndex(items);
+		const groups = groupForIndex(items, LABELS);
 		expect(groups.reduce((n, g) => n + g.items.length, 0)).toBe(items.length);
 	});
 
 	it('keeps an untagged product visible under a fallback heading', () => {
-		const g = groupForIndex([p('Intel', 'Arc B580', null)]);
+		const g = groupForIndex([p('Intel', 'Arc B580', null)], LABELS);
 		expect(g).toHaveLength(1);
 		expect(g[0].items).toHaveLength(1);
 		expect(g[0].label).toBeTruthy();
 	});
 
 	it('handles an empty catalogue', () => {
-		expect(groupForIndex([])).toEqual([]);
+		expect(groupForIndex([], LABELS)).toEqual([]);
 	});
 });
 
@@ -58,7 +59,7 @@ describe('groupForIndex never-listed ordering (#23)', () => {
 			{ ...(p('NVIDIA', 'GeForce RTX 5090', 'current') as object), neverListed: false },
 			{ ...(p('NVIDIA', 'GeForce RTX 5070', 'current') as object), neverListed: false }
 		] as never[];
-		expect(groupForIndex(rows)[0].items.map((i: { model: string }) => i.model)).toEqual([
+		expect(groupForIndex(rows, LABELS)[0].items.map((i: { model: string }) => i.model)).toEqual([
 			'GeForce RTX 5070',
 			'GeForce RTX 5090',
 			'GeForce RTX 5060'

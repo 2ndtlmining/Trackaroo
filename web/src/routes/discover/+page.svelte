@@ -2,6 +2,7 @@
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import RetireSuggestions from '$lib/components/RetireSuggestions.svelte';
 	import { copyText } from '$lib/clipboard';
 	import { formatAud, formatShortDate } from '$lib/formats';
 	import type { DiscoveredPart } from '$lib/types';
@@ -85,7 +86,9 @@
 		<h2 id="requested-h" class="mb-2 text-sm font-semibold text-text">Requested ({data.requested.length})</h2>
 		<p class="mb-2 text-xs text-text-muted">
 			These rows get added to <code>db/watchlist.csv</code> in a PR; the part is tracked after the next
-			<code>deploy/redeploy.sh</code>. See README, "Discovering and adding new parts".
+			<code>deploy/redeploy.sh</code>. See README, "Discovering and adding new parts". A row whose series is
+			<code>NEW-SERIES</code> is a new generation: run <code>python manage_watchlist.py rollover</code> first,
+			then put the series key it creates in that column.
 		</p>
 		<ul data-testid="discover-requested" class="space-y-2">
 			{#each data.requested as p (p.id)}
@@ -102,6 +105,8 @@
 			{/each}
 		</ul>
 	</section>
+
+	<RetireSuggestions suggestions={data.retire} />
 
 	<section aria-labelledby="conflicts-h">
 		<h2 id="conflicts-h" class="mb-2 text-sm font-semibold text-text">Conflicts ({data.conflicts.length})</h2>

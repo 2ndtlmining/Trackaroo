@@ -26,7 +26,7 @@ import logging
 import re
 import time
 from datetime import date
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urljoin
 
 import requests
@@ -42,7 +42,7 @@ from config import (
     UMART_TIMEOUT_SECONDS,
     setup_logging,
 )
-from db.watchlist import load_watchlist, WatchlistProduct
+from db.watchlist import load_retired, load_watchlist, WatchlistProduct
 from scraper.catalogue_io import catalogue_item, save_catalogue
 from scraper.chip_key import Matcher
 from scraper.run_report import EXIT_OK, RunReport, exit_code_for
@@ -237,6 +237,7 @@ def scrape_umart(
     watchlist: List[WatchlistProduct],
     only_category: Optional[str] = None,
     report: Optional[RunReport] = None,
+    retired: Sequence[WatchlistProduct] = (),
 ) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Umart and match the watchlist against it.
 
@@ -248,12 +249,15 @@ def scrape_umart(
 
     Args:
         watchlist: Watchlist entries to match against.
+        retired: Untracked rows, matched as sinks: a listing that resolves to one
+            is dropped, so it cannot be mis-filed under a tracked sibling (#18).
         only_category: "cpu" or "gpu" to scrape one category; None for both.
 
     Returns:
         (results, matched watchlist indices, all scraped products per category).
     """
-    matcher = Matcher(watchlist)
+    matcher = Matcher([*watchlist, *retired])  # retired rows are sinks (#18)
+    dropped = 0
 
     results: List[Dict[str, Any]] = []
     matched_ids: Set[int] = set()
@@ -270,6 +274,9 @@ def scrape_umart(
         for product in scraped:
             i = matcher.resolve(product["name"], category, product.get("full_description", ""))
             if i is None:
+                continue
+            if i >= len(watchlist):
+                dropped += 1
                 continue
             wp = watchlist[i]
             results.append(
@@ -288,6 +295,8 @@ def scrape_umart(
             )
             matched_ids.add(i)
 
+    if dropped:
+        logger.info("dropped %d listing(s) matched to retired products", dropped)
     return results, matched_ids, all_scraped
 
 
@@ -304,6 +313,7 @@ def main() -> int:
     setup_logging()
     logger.info("Loading watchlist...")
     watchlist = load_watchlist()
+    retired = load_retired()
     logger.info("  %d products in watchlist", len(watchlist))
 
     report = RunReport("umart")
@@ -312,7 +322,7 @@ def main() -> int:
 
     for category in ("cpu", "gpu"):
         logger.info("\nScraping Umart %s...", category.upper())
-        products, matched_ids, cat_scraped = scrape_umart(watchlist, only_category=category, report=report)
+        products, matched_ids, cat_scraped = scrape_umart(watchlist, only_category=category, report=report, retired=retired)
         # Saved per category so a timeout during GPUs keeps the CPUs (R2).
         save_category_snapshot(DATA_DIR, "umart", category, today, watchlist, products, matched_ids)
         try:

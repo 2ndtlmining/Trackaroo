@@ -1,4 +1,4 @@
-import { getHeaderStats, getProductIndex } from '$lib/server/repos';
+import { getHeaderStats, getProductIndex, getTierLabels } from '$lib/server/repos';
 import { getDb } from '$lib/server/db';
 import { getDiscoverPendingCount } from '$lib/server/discover';
 import { memo } from '$lib/server/cache';
@@ -12,6 +12,7 @@ export function load() {
 	return {
 		stats: memo(db, 'headerStats', () => getHeaderStats(db)),
 		productIndex: memo(db, 'productIndex', () => getProductIndex(db)),
+		tierLabels: memo(db, 'tierLabels', () => getTierLabels(db)),
 		// A constant for the process: not memoised (#3).
 		version: buildVersion(),
 		release: releaseVersion(),

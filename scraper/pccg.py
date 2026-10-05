@@ -18,7 +18,7 @@ import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 import requests
@@ -40,7 +40,7 @@ from config import (
     PCCG_COOLDOWN_HOURS,
     setup_logging,
 )
-from db.watchlist import load_watchlist, WatchlistProduct
+from db.watchlist import load_retired, load_watchlist, WatchlistProduct
 from scraper.catalogue_io import catalogue_item, save_catalogue
 from scraper import pccg_key
 from scraper.chip_key import Matcher
@@ -643,6 +643,7 @@ def scrape_category(
     report: Optional[RunReport] = None,
     catalogue_dir: Optional[Path] = None,
     file_date: Optional[str] = None,
+    retired: Sequence[WatchlistProduct] = (),
 ) -> Tuple[list[Dict[str, Any]], set[int], bool]:
     """Scrape a single category (cpu or gpu) from PCCG via Algolia API.
 
@@ -693,13 +694,19 @@ def scrape_category(
     # VRAM used only to disambiguate GPU rows that share a key. One listing,
     # one product — unlike the old per-watchlist-entry substring scan, a
     # product can no longer be claimed by two different watchlist rows (#1).
-    matcher = Matcher(category_watchlist)
+    # Retired rows are sinks (#18): a listing resolving to one is dropped.
+    category_retired = [r for r in retired if r["category"] == category]
+    matcher = Matcher(category_watchlist + category_retired)
+    dropped = 0
     all_matches: dict[int, list[Dict[str, Any]]] = {}  # global_idx -> matched product dicts
     for prod in catalogue:
         if _is_bundle_product(prod["name"], prod.get("url", "")):
             continue
         local = matcher.resolve(prod["name"], category)
         if local is None:
+            continue
+        if local >= len(category_watchlist):
+            dropped += 1
             continue
         wp = category_watchlist[local]
         global_idx = model_to_global.get(wp["model"])
@@ -733,6 +740,8 @@ def scrape_category(
             wp_model = watchlist[global_idx]["model"]
             LOGGER.info("  %s: %d variants saved", wp_model, len(matches))
 
+    if dropped:
+        LOGGER.info("dropped %d listing(s) matched to retired products", dropped)
     return results, matched_global, breaker_tripped
 
 
@@ -741,6 +750,7 @@ def main() -> int:
     setup_logging()
     LOGGER.info("Loading watchlist...")
     watchlist = load_watchlist()
+    retired = load_retired()
     LOGGER.info("  %d products", len(watchlist))
 
     report = RunReport("pccg")
@@ -773,14 +783,16 @@ def main() -> int:
         for i, category in enumerate(["cpu", "gpu"]):
             try:
                 results, matched, tripped = scrape_category(
-                    category, watchlist, report=report, catalogue_dir=DATA_DIR, file_date=today)
+                    category, watchlist, report=report, catalogue_dir=DATA_DIR, file_date=today,
+                    retired=retired)
             except AlgoliaAuthError:
                 # One discovery and one retry per run, never a loop (#11b).
                 if rotated or not _rotate_key(report):
                     raise
                 rotated = True
                 results, matched, tripped = scrape_category(
-                    category, watchlist, report=report, catalogue_dir=DATA_DIR, file_date=today)
+                    category, watchlist, report=report, catalogue_dir=DATA_DIR, file_date=today,
+                    retired=retired)
             # Saved per category so a timeout during GPUs keeps the CPUs (R2).
             save_category_snapshot(DATA_DIR, "pccg", category, today, watchlist, results, matched)
             report.set(category, matched=len(results))

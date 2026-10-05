@@ -20,21 +20,23 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from config import WATCHLIST_PATH
+from config import GENERATIONS_PATH, WATCHLIST_PATH
+from db.generations import Generations, line_id, load_generations
 
 logger = logging.getLogger(__name__)
 
 WatchlistProduct = Dict[str, Any]
 
 DEFAULT_WATCHLIST_PATH = str(WATCHLIST_PATH)
+DEFAULT_GENERATIONS_PATH = str(GENERATIONS_PATH)
 
 # The old sixth column, search_aliases, was retired in #20: matching is exact
 # chip-key equality on the model name (scraper/chip_key.py), so aliases were
 # never read. A CSV that still has the column loads fine; it is ignored.
-REQUIRED_COLUMNS = ("category", "brand", "model", "spec", "gen_tier")
+REQUIRED_COLUMNS = ("category", "brand", "model", "spec", "series", "status")
 VALID_CATEGORIES = ("cpu", "gpu")
 VALID_BRANDS = ("AMD", "Intel", "NVIDIA")
-VALID_GEN_TIERS = ("current", "current-1", "current-2")
+VALID_STATUSES = ("active", "retired")
 
 # '16c' / '16 C' for CPUs, '16GB' / '16 gb' for GPUs. The unit is required:
 # a bare '12' is ambiguous between cores and gigabytes, so it is rejected
@@ -87,15 +89,21 @@ def parse_spec(spec: str, category: str, line_no: Optional[int] = None) -> Dict[
     return {"cores": None, "vram_gb": int(match.group(1))}
 
 
-def validate_row(row: Dict[str, str], line_no: Optional[int] = None) -> Dict[str, Any]:
-    """Validate one raw CSV row and return it with the spec parsed.
+def validate_row(
+    row: Dict[str, str],
+    line_no: Optional[int] = None,
+    generations: Optional[Generations] = None,
+) -> Dict[str, Any]:
+    """Validate one raw CSV row and return it with spec, tier and tracked derived.
 
     Args:
         row: Raw row dict from csv.DictReader.
         line_no: CSV line number, for the error message.
+        generations: Parsed db/generations.toml (default: the shared one).
 
     Returns:
-        The row plus ``cores`` and ``vram_gb``.
+        The row plus ``cores``, ``vram_gb``, ``gen_tier`` (None when the series
+        is out of scope) and ``tracked`` (1 only for an active, in-scope row).
 
     Raises:
         WatchlistRowError: naming the offending field, so the CSV can be fixed
@@ -121,11 +129,20 @@ def validate_row(row: Dict[str, str], line_no: Optional[int] = None) -> Dict[str
     if not model:
         raise WatchlistRowError("model is empty", line_no, "model")
 
-    gen_tier = (row["gen_tier"] or "").strip()
-    if gen_tier not in VALID_GEN_TIERS:
+    gens = generations if generations is not None else load_generations()
+    series = (row["series"] or "").strip()
+    if series not in gens.series:
+        raise WatchlistRowError(f"{row['series']!r} is not a series in generations.toml", line_no, "series")
+    expected_line = line_id(brand, category)
+    if gens.series[series].line_id != expected_line:
         raise WatchlistRowError(
-            f"{row['gen_tier']!r} is not one of {VALID_GEN_TIERS}", line_no, "gen_tier"
+            f"series {series!r} belongs to {gens.series[series].line_id}, not {expected_line}", line_no, "series"
         )
+    status = (row["status"] or "").strip().lower()
+    if status not in VALID_STATUSES:
+        raise WatchlistRowError(f"{row['status']!r} is not one of {VALID_STATUSES}", line_no, "status")
+    gen_tier = gens.tier(series)
+    tracked = 1 if status == "active" and gens.in_scope(series) else 0
 
     spec_fields = parse_spec(row["spec"], category, line_no)
 
@@ -134,7 +151,10 @@ def validate_row(row: Dict[str, str], line_no: Optional[int] = None) -> Dict[str
         "category": category,
         "brand": brand,
         "model": model,
+        "series": series,
+        "status": status,
         "gen_tier": gen_tier,
+        "tracked": tracked,
         "cores": spec_fields["cores"],
         "vram_gb": spec_fields["vram_gb"],
     }
@@ -165,19 +185,20 @@ def read_watchlist_rows(path: str = DEFAULT_WATCHLIST_PATH) -> List[Dict[str, st
     return rows
 
 
-def _valid_rows(path: str, strict: bool) -> List[Dict[str, Any]]:
+def _valid_rows(path: str, strict: bool, generations_path: str) -> List[Dict[str, Any]]:
     """Validate every row, skipping (and reporting) the ones that fail.
 
     Skipping rather than raising is deliberate: a typo in one row should cost
     that one product, not stop the container from booting.
     """
+    gens = load_generations(generations_path)  # a GenerationsError is whole-file: let it raise
     validated: List[Dict[str, Any]] = []
     skipped = 0
 
     for row in read_watchlist_rows(path):
         line_no = row.pop("_line_no", None)
         try:
-            validated.append(validate_row(row, line_no))
+            validated.append(validate_row(row, line_no, gens))
         except WatchlistRowError as exc:
             if strict:
                 raise
@@ -193,51 +214,64 @@ def _valid_rows(path: str, strict: bool) -> List[Dict[str, Any]]:
     return validated
 
 
-def load_watchlist(
-    path: str = DEFAULT_WATCHLIST_PATH, strict: bool = False
+def load_all_rows(
+    path: str = DEFAULT_WATCHLIST_PATH,
+    strict: bool = False,
+    generations_path: str = DEFAULT_GENERATIONS_PATH,
 ) -> List[WatchlistProduct]:
-    """Load the watchlist for scraper use.
-
-    Returns rows enriched with parsed ``cores``/``vram_gb`` (from the spec
-    column).
-
-    Args:
-        path: Path to the watchlist CSV (default db/watchlist.csv).
-        strict: Raise on the first bad row instead of skipping it. For tooling
-            that wants to validate the file, not for the pipeline.
-
-    Returns:
-        List of watchlist product dicts, excluding any unusable rows.
-    """
-    return _valid_rows(path, strict)
-
-
-def load_watchlist_products(
-    path: str = DEFAULT_WATCHLIST_PATH, strict: bool = False
-) -> List[WatchlistProduct]:
-    """Load the watchlist for database seeding.
-
-    Returns dicts shaped for the ``products`` table (category, brand, model,
-    vram_gb, cores, generation_tier, tracked).
+    """Every usable row, active and retired, with series/status/gen_tier/tracked.
 
     Args:
         path: Path to the watchlist CSV (default db/watchlist.csv).
         strict: Raise on the first bad row instead of skipping it.
+        generations_path: Path to generations.toml.
+    """
+    return _valid_rows(path, strict, generations_path)
 
-    Returns:
-        List of product dicts suitable for seeding the DB.
+
+def load_watchlist(
+    path: str = DEFAULT_WATCHLIST_PATH,
+    strict: bool = False,
+    generations_path: str = DEFAULT_GENERATIONS_PATH,
+) -> List[WatchlistProduct]:
+    """Tracked rows only: what the scrapers write snapshots for.
+
+    Rows carry parsed ``cores``/``vram_gb`` and a derived ``gen_tier``.
+    ``strict`` raises on the first bad row (for validation tooling).
+    """
+    return [r for r in _valid_rows(path, strict, generations_path) if r["tracked"]]
+
+
+def load_retired(
+    path: str = DEFAULT_WATCHLIST_PATH,
+    generations_path: str = DEFAULT_GENERATIONS_PATH,
+) -> List[WatchlistProduct]:
+    """Untracked rows: still matched by the scrapers as sinks, never written (#18)."""
+    return [r for r in _valid_rows(path, False, generations_path) if not r["tracked"]]
+
+
+def load_watchlist_products(
+    path: str = DEFAULT_WATCHLIST_PATH,
+    strict: bool = False,
+    generations_path: str = DEFAULT_GENERATIONS_PATH,
+) -> List[WatchlistProduct]:
+    """Every row shaped for the ``products`` table, tracked or not.
+
+    Keys: category, brand, model, vram_gb, cores, generation_tier (None when the
+    series is out of scope), tracked (0/1), series.
     """
     return [
         {
-            "category": row["category"],
-            "brand": row["brand"],
-            "model": row["model"],
-            "vram_gb": row["vram_gb"],
-            "cores": row["cores"],
-            "generation_tier": row["gen_tier"],
-            "tracked": 1,  # All watchlist products are tracked by definition
+            "category": r["category"],
+            "brand": r["brand"],
+            "model": r["model"],
+            "vram_gb": r["vram_gb"],
+            "cores": r["cores"],
+            "generation_tier": r["gen_tier"],
+            "tracked": r["tracked"],
+            "series": r["series"],
         }
-        for row in _valid_rows(path, strict)
+        for r in _valid_rows(path, strict, generations_path)
     ]
 
 

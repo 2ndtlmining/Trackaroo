@@ -74,3 +74,9 @@ def test_shell_script_shebang_is_clean(script: Path):
         f"look for an interpreter named {first_line[2:].decode(errors='replace')!r} "
         "and fail with a misleading 'No such file or directory'."
     )
+
+
+@pytest.mark.parametrize("name", ["entrypoint.sh", "entrypoint-single.sh"])
+def test_entrypoints_tolerate_a_seed_refusal(name: str):
+    """seed.py exits 1 on a bulk-change refusal; under `set -e` that must not stop boot."""
+    assert "python seed.py ||" in (REPO_ROOT / "deploy" / name).read_text(encoding="utf-8")
