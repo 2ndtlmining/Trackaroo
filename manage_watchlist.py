@@ -13,6 +13,12 @@ applies the tier changes. retire edits db/watchlist.csv (status retired); add
 appends one active row to it. reassign moves one listing to another product in
 the DB (run it on the host: docker compose exec trackaroo python manage_watchlist.py ...).
 Every writing command takes --dry-run, which prints the diff and writes nothing.
+
+Where to run what: retire --stale reads the retire requests clicked on /discover from
+the DB at TRACKAROO_DB, so list them on the host with --dry-run. Apply every file edit
+(rollover, add, retire) on the PC checkout and open a PR; never run those without
+--dry-run on the prod host (a dirty checkout blocks deploy/redeploy.sh). reassign is
+the only command meant to write on the host (it writes the DB, not files).
 """
 from __future__ import annotations
 
@@ -312,7 +318,7 @@ def main(argv=None) -> int:
     t = sub.add_parser("retire", help="set rows to retired (edits watchlist.csv)")
     t.add_argument("model", nargs="?")
     t.add_argument("--series")
-    t.add_argument("--stale", action="store_true", help="every pending/requested retire suggestion")
+    t.add_argument("--stale", action="store_true", help="every pending/requested retire suggestion (reads the DB at TRACKAROO_DB; normally run on the host with --dry-run)")
     t.add_argument("--dry-run", action="store_true")
     t.set_defaults(func=cmd_retire)
 

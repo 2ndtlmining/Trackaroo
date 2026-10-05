@@ -356,10 +356,27 @@ below) sets the row's `status` to `retired`; every writing subcommand takes
 lists tracked parts no retailer has had a snapshot for in
 `TRACKAROO_RETIRE_STALE_DAYS` (default 30) days in the **Ready to retire**
 section of **/discover**. **Retire** records a request (the dashboard cannot edit
-the CSV, so the PR is still yours: run `retire --stale` or `retire <model>`),
-**Keep** hides the part for 90 days, **Undo** reverses either. A part that goes
-live again and later goes stale again is announced again (a new episode). Nothing
-ever untracks a product without the CSV changing.
+the CSV), **Keep** hides the part for 90 days, **Undo** reverses either. A
+Requested suggestion stays on the list (and is not re-announced) until the CSV
+change lands; a part that goes live again and later goes stale again is announced
+again (a new episode). Nothing ever untracks a product without the CSV changing.
+
+Applying a request is a two-step flow across two machines:
+
+1. On the host, list what was requested (read-only):
+   `docker compose exec trackaroo python manage_watchlist.py retire --stale --dry-run`
+   (or read /discover). `retire --stale` reads `retire_suggestions` from the DB at
+   `TRACKAROO_DB`, which only the host's DB has; the PC's dev DB never sees the
+   /discover clicks.
+2. On the PC (the repo checkout), apply each one:
+   `python manage_watchlist.py retire "<model>"` (or `--series`), then
+   `python manage_watchlist.py check`, and open a PR. The next redeploy's seed
+   applies it and the row leaves the Ready to retire list.
+
+Never run the CLI's writing commands (`rollover`, `add`, `retire` without
+`--dry-run`) on the prod host: they edit the host checkout's files and leave it
+dirty, which blocks `deploy/redeploy.sh`. `reassign` is the only command meant to
+write on the host (it writes the DB, not files).
 
 #### Un-retiring
 
