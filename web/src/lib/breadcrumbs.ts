@@ -1,6 +1,7 @@
 // Product pages were dead ends: no nav item lit up and nothing led back to the
 // category (#26). The middle crumb searches the index for the brand -- the
 // index has no brand facet, and its search matches brands.
+import type { TierLabels } from './models';
 import { generationTierLabel } from './tiers';
 import type { Category, GenerationTier } from './types';
 
@@ -14,8 +15,8 @@ export function productBreadcrumbs(p: {
 	brand: string;
 	model: string;
 	generation_tier: GenerationTier | null;
-}): Crumb[] {
-	const tier = generationTierLabel(p.brand, p.category, p.generation_tier);
+}, labels: TierLabels): Crumb[] {
+	const tier = generationTierLabel(labels, p.brand, p.category, p.generation_tier);
 	return [
 		{ label: p.category === 'cpu' ? 'CPUs' : 'GPUs', href: `/products?category=${p.category}` },
 		{

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LABELS } from './helpers/tierLabels';
 import {
 	ACTIVE_RETAILER_OPTIONS, activeFilterCount, applyCatalogView, brandOptions, catalogViewParams, earliestYear, genOptions,
 	parseCatalogView, shownPrice, shownStock,
@@ -130,23 +131,23 @@ describe('catalogue control helpers (#23)', () => {
 			{ brand: 'NVIDIA', category: 'gpu', generationTier: 'current' as const },
 			{ brand: 'NVIDIA', category: 'gpu', generationTier: null }
 		];
-		expect(genOptions(rows)).toEqual([
+		expect(genOptions(rows, [], LABELS)).toEqual([
 			{ value: 'current', label: 'RTX 50 / Arc B' },
 			{ value: 'current-1', label: 'RX 7000' }
 		]);
 	});
 	it('genOptions uses the CPU series names', () => {
-		expect(genOptions([{ brand: 'AMD', category: 'cpu', generationTier: 'current-2' as const }])).toEqual([
+		expect(genOptions([{ brand: 'AMD', category: 'cpu', generationTier: 'current-2' as const }], [], LABELS)).toEqual([
 			{ value: 'current-2', label: 'Ryzen 5000' }
 		]);
 	});
 	it('genOptions keeps a selected tier no row has, with its generic label (final review #6)', () => {
 		const rows = [{ brand: 'NVIDIA', category: 'gpu', generationTier: 'current' as const }];
-		expect(genOptions(rows, ['current-2'])).toEqual([
+		expect(genOptions(rows, ['current-2'], LABELS)).toEqual([
 			{ value: 'current', label: 'RTX 50' },
 			{ value: 'current-2', label: 'Two gens back' }
 		]);
-		expect(genOptions(rows, ['current'])).toEqual([{ value: 'current', label: 'RTX 50' }]);
+		expect(genOptions(rows, ['current'], LABELS)).toEqual([{ value: 'current', label: 'RTX 50' }]);
 	});
 	it('brandOptions lists brands present plus any selected, in canonical order (final review #6)', () => {
 		const rows = [{ brand: 'Intel' }, { brand: 'AMD' }];

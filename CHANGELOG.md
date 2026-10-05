@@ -11,6 +11,8 @@ How it works:
 
 ## Unreleased
 
+- Product generations now come from one config file (db/generations.toml); retiring a product is a status in the watchlist instead of a code change (#17, #18).
+
 ## 0.8.0 — 2026-10-05
 
 - Prices on /products, /compare, /value and Head to head now skip a listing its retailer has not shown for more than 7 days, the same rule the product page headline already used, so every page agrees on a product's price (#70).

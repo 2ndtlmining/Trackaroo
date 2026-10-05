@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
+import { seedGenerations } from './generations.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(here, '..');
@@ -266,6 +267,7 @@ export function seedE2eDb(dbPath = DB_PATH) {
 	db.pragma('busy_timeout = 5000');
 	db.pragma('foreign_keys = ON');
 	db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+	seedGenerations(db, webRoot);
 
 	const sources = loadSources();
 

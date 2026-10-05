@@ -27,7 +27,7 @@
 	import { buildDisplayNames, displayName } from '$lib/displayName';
 	import { METRICS, defaultMetric, sourceCitation } from '$lib/perfIndex';
 	import type { Category } from '$lib/types';
-	import type { FxRate, ProductIndexEntry } from '$lib/models';
+	import type { FxRate, ProductIndexEntry, TierLabels } from '$lib/models';
 
 	let {
 		data
@@ -42,6 +42,7 @@
 			groups: (CatalogRow & CatalogRowInput)[];
 			// From the root layout's load (merged into page data).
 			productIndex: ProductIndexEntry[];
+			tierLabels: TierLabels;
 		};
 	} = $props();
 
@@ -92,12 +93,12 @@
 	const matches = $derived(applyCatalogView(searchProducts(named, query), { ...view, sort: null }, { fx: data.fx }));
 	const activeCount = $derived(activeFilterCount(view));
 	// Default order keeps the series groups; any sort flattens them.
-	const groups = $derived(searching || view.sort ? [] : groupForIndex(shown));
+	const groups = $derived(searching || view.sort ? [] : groupForIndex(shown, data.tierLabels));
 
 	// A ticked brand or tier keeps its control even when no row has it (the
 	// server's in_stock narrowing can empty it), so a filter is never stuck on.
 	const brandsPresent = $derived(brandOptions(data.groups, view.brands));
-	const gens = $derived(genOptions(data.groups, view.gens));
+	const gens = $derived(genOptions(data.groups, view.gens, data.tierLabels));
 	const columns = $derived(
 		catalogColumns(data.category, view.retailer ? retailerLabel(view.retailer) : null)
 	);

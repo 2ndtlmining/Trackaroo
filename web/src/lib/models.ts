@@ -311,3 +311,7 @@ export interface CompareEntry {
 
 // Alerts, FX, OzBargain and value DTOs (#61: split to keep this file under the cap).
 export type * from './modelsFeatures';
+
+// Series label per tier, keyed by product line ("nvidia-gpu"); read from the
+// generations table (getTierLabels) and carried in the root layout's data.
+export type TierLabels = Record<string, Partial<Record<GenerationTier, string>>>;

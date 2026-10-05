@@ -1,5 +1,5 @@
 import { RETAILER_OPTIONS, TIER_OPTIONS } from './filters';
-import type { FxRate } from './models';
+import type { FxRate, TierLabels } from './models';
 import { msrpAud, msrpDelta } from './msrp';
 import { perfPerKilo } from './value';
 import { generationTierLabel } from './tiers';
@@ -221,7 +221,8 @@ interface GenSource {
 // narrowing can leave a selected tier with no rows).
 export function genOptions(
 	rows: GenSource[],
-	selected: readonly GenerationTier[] = []
+	selected: readonly GenerationTier[] = [],
+	labels: TierLabels
 ): { value: GenerationTier; label: string }[] {
 	const out: { value: GenerationTier; label: string }[] = [];
 	for (const tier of GENS as GenerationTier[]) {
@@ -235,7 +236,7 @@ export function genOptions(
 		const names: string[] = [];
 		for (const brand of BRANDS) {
 			const r = inTier.find((x) => x.brand === brand);
-			const label = r ? generationTierLabel(r.brand, r.category, tier) : null;
+			const label = r ? generationTierLabel(labels, r.brand, r.category, tier) : null;
 			const short = label?.replace(/\s*\(.*\)$/, '');
 			if (short && !names.includes(short)) names.push(short);
 		}

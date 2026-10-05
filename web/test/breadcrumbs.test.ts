@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { productBreadcrumbs } from '../src/lib/breadcrumbs';
+import { LABELS } from './helpers/tierLabels';
 
 describe('productBreadcrumbs (#26)', () => {
 	it('walks back to the category, then the brand and generation', () => {
@@ -9,7 +10,7 @@ describe('productBreadcrumbs (#26)', () => {
 				brand: 'NVIDIA',
 				model: 'GeForce RTX 5070 Ti',
 				generation_tier: 'current'
-			})
+			}, LABELS)
 		).toEqual([
 			{ label: 'GPUs', href: '/products?category=gpu' },
 			{ label: 'NVIDIA RTX 50 (Blackwell)', href: '/products?category=gpu&q=NVIDIA' },
@@ -18,7 +19,7 @@ describe('productBreadcrumbs (#26)', () => {
 	});
 
 	it('falls back to the brand alone without a tier', () => {
-		const crumbs = productBreadcrumbs({ category: 'cpu', brand: 'AMD', model: 'Ryzen 5 5600', generation_tier: null });
+		const crumbs = productBreadcrumbs({ category: 'cpu', brand: 'AMD', model: 'Ryzen 5 5600', generation_tier: null }, LABELS);
 		expect(crumbs[0]).toEqual({ label: 'CPUs', href: '/products?category=cpu' });
 		expect(crumbs[1].label).toBe('AMD');
 	});
