@@ -43,6 +43,7 @@ def chip_token(category: str, key: str) -> Optional[Tuple[str, str]]:
             return None
         return family, str(int(digits[:4]) // 1000)
     if family == "arc":
+        # No letter ("arc", "arc 140v" Lunar Lake iGPU) is a laptop part: out of scope.
         return ("arc", rest[:1]) if rest[:1].isalpha() else None
     if family == "ryzen":
         return ("ryzen", str(int(digits) // 1000)) if digits else None
@@ -67,7 +68,7 @@ def series_tier(category: str, key: str, generations: Optional[Generations] = No
     'current', so a launch surfaces instead of being dropped; an older unknown
     gen is out of scope.
     """
-    gens = generations or default_generations()
+    gens = generations if generations is not None else default_generations()
     token = chip_token(category, key)
     if token is None:
         return None

@@ -66,6 +66,7 @@ def test_chip_token(key, token):
     ("ryzen 5600", "current-2"), ("ryzen 3600", None), ("ryzen 10700x", "current"),
     ("ultra 265k", "current"), ("core 14400f", "current-1"), ("core 12400f", None),
     ("arc b580", "current"), ("arc a770", "current-1"), ("arc c770", "current"),
+    ("arc 140v", None),   # Lunar Lake laptop iGPU: no generation letter, out of scope
 ])
 def test_series_tier_today_matches_previous_behaviour(key, tier):
     category = "gpu" if key.split()[0] in ("rtx", "rx", "arc") else "cpu"
@@ -78,6 +79,13 @@ def test_after_a_zen6_rollover():
     assert r.series_tier("cpu", "ryzen 9700x", g) == "current-1"
     assert r.series_tier("cpu", "ryzen 10700x", g) == "current"
     assert r.series_tier("cpu", "ryzen 11700x", g) == "current"   # newer than anything known still surfaces
+
+
+def test_every_tracked_watchlist_row_is_in_scope_at_its_own_tier():
+    # generations.toml chips + series position must agree with db/watchlist.csv.
+    bad = [wp["model"] for wp in load_watchlist()
+           if r.series_tier(wp["category"], chip_key(wp["model"], wp["category"])) != wp["gen_tier"]]
+    assert bad == []
 
 
 def test_part_key():
