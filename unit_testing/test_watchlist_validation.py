@@ -31,9 +31,9 @@ from db.watchlist import (  # noqa: E402
     validate_row,
 )
 
-HEADER = "category,brand,model,spec,gen_tier\n"
-GOOD = 'gpu,NVIDIA,GeForce RTX 5070,12GB,current\n'
-GOOD_CPU = 'cpu,AMD,Ryzen 5 9600X,6c,current\n'
+HEADER = "category,brand,model,spec,series,status\n"
+GOOD = 'gpu,NVIDIA,GeForce RTX 5070,12GB,rtx50,active\n'
+GOOD_CPU = 'cpu,AMD,Ryzen 5 9600X,6c,zen5,active\n'
 
 
 def _csv(tmp_path, *rows, comment=True):
@@ -72,7 +72,8 @@ class TestValidateRow:
             "brand": "NVIDIA",
             "model": "GeForce RTX 5070",
             "spec": "12GB",
-            "gen_tier": "current",
+            "series": "rtx50",
+            "status": "active",
         }
         row.update(over)
         return row
@@ -85,7 +86,9 @@ class TestValidateRow:
         [
             ("category", "ram"),
             ("brand", "Gigabyte"),
-            ("gen_tier", "current-3"),
+            ("series", "zen5"),  # a CPU series on a GPU row
+            ("series", "nope"),
+            ("status", "gone"),
             ("model", ""),
             ("spec", "12"),
         ],
@@ -104,7 +107,7 @@ class TestValidateRow:
 
     def test_a_missing_column_is_a_row_error_not_a_keyerror(self):
         row = self._row()
-        del row["gen_tier"]
+        del row["series"]
         with pytest.raises(WatchlistRowError):
             validate_row(row, line_no=3)
 
@@ -114,21 +117,21 @@ class TestSearchAliasesRetired:
 
     def test_a_row_needs_no_alias_column(self):
         row = {"category": "gpu", "brand": "NVIDIA", "model": "GeForce RTX 5070",
-               "spec": "12GB", "gen_tier": "current"}
+               "spec": "12GB", "series": "rtx50", "status": "active"}
         out = validate_row(row, line_no=2)
         assert out["vram_gb"] == 12
         assert "search_terms" not in out
 
     def test_a_legacy_csv_with_the_alias_column_still_loads(self, tmp_path):
         p = tmp_path / "watchlist.csv"
-        p.write_text("category,brand,model,spec,gen_tier,search_aliases\n"
-                     'gpu,NVIDIA,GeForce RTX 5070,12GB,current,"rtx 5070"\n', encoding="utf-8")
+        p.write_text("category,brand,model,spec,series,status,search_aliases\n"
+                     'gpu,NVIDIA,GeForce RTX 5070,12GB,rtx50,active,"rtx 5070"\n', encoding="utf-8")
         assert [w["model"] for w in load_watchlist(str(p))] == ["GeForce RTX 5070"]
 
     def test_the_real_csv_has_no_alias_column_and_says_how_matching_works(self):
         text = Path(DEFAULT_WATCHLIST_PATH).read_text(encoding="utf-8")
         header = next(line for line in text.splitlines() if line and not line.startswith("#"))
-        assert header == "category,brand,model,spec,gen_tier"
+        assert header == "category,brand,model,spec,series,status"
         assert "search_aliases" not in text
         assert "chip key" in text
         assert "NOT overwritten" not in text
@@ -146,29 +149,29 @@ class TestSearchAliasesRetired:
 
 class TestLoadWatchlistSkipsBadRows:
     def test_a_bad_row_does_not_take_down_the_load(self, tmp_path):
-        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current\n', GOOD_CPU)
+        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,rtx50,active\n', GOOD_CPU)
         products = load_watchlist(path)
         assert [p["model"] for p in products] == ["GeForce RTX 5070", "Ryzen 5 9600X"]
 
     def test_the_seeder_loader_skips_it_too(self, tmp_path):
-        path = _csv(tmp_path, GOOD, 'cpu,AMD,Broken,,current\n')
+        path = _csv(tmp_path, GOOD, 'cpu,AMD,Broken,,zen5,active\n')
         products = load_watchlist_products(path)
         assert [p["model"] for p in products] == ["GeForce RTX 5070"]
 
     def test_the_skipped_row_is_reported(self, tmp_path, caplog):
         """Silently dropping a product would be its own kind of bug."""
-        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current\n')
+        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,rtx50,active\n')
         with caplog.at_level("ERROR"):
             load_watchlist(path)
         assert any("Broken" in r.message or "16gib" in r.message for r in caplog.records)
 
     def test_strict_mode_raises_instead(self, tmp_path):
-        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,current\n')
+        path = _csv(tmp_path, GOOD, 'gpu,NVIDIA,Broken,16gib,rtx50,active\n')
         with pytest.raises(WatchlistRowError):
             load_watchlist(path, strict=True)
 
     def test_an_all_bad_file_yields_nothing_rather_than_raising(self, tmp_path):
-        path = _csv(tmp_path, 'gpu,NVIDIA,Broken,16gib,current\n')
+        path = _csv(tmp_path, 'gpu,NVIDIA,Broken,16gib,rtx50,active\n')
         assert load_watchlist(path) == []
 
 

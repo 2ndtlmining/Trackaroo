@@ -85,7 +85,8 @@ class TestLoadWatchlist:
     def test_all_have_valid_tier(self):
         products = load_watchlist(WATCHLIST_PATH)
         for p in products:
-            assert p["generation_tier"] in ("current", "current-1", "current-2")
+            if p["tracked"]:
+                assert p["generation_tier"] in ("current", "current-1", "current-2")
 
     def test_all_cpus_have_cores(self):
         products = load_watchlist(WATCHLIST_PATH)
@@ -101,10 +102,12 @@ class TestLoadWatchlist:
                 assert p["vram_gb"] is not None
                 assert p["cores"] is None
 
-    def test_tracked_is_true(self):
-        products = load_watchlist(WATCHLIST_PATH)
-        for p in products:
-            assert p["tracked"] == 1
+    def test_active_in_scope_rows_are_tracked_and_retired_are_not(self):
+        products = {p["model"]: p for p in load_watchlist(WATCHLIST_PATH)}
+        assert products["Radeon RX 9070 XTX"]["tracked"] == 0
+        for p in products.values():
+            if p["model"] != "Radeon RX 9070 XTX":
+                assert p["tracked"] == 1, p["model"]
 
 
 class TestSeedProducts:
