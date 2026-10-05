@@ -235,12 +235,16 @@ does not change the watchlist by itself: it produces the CSV row you add in a PR
    the pipeline skips that one row with a logged error and carries on, so nothing
    crashes but the part is not tracked. Model names use "Super" title case
    (`GeForce RTX 5070 Ti Super`), as in the existing rows.
-   In the same PR, add the part's US launch MSRP to `db/launch_msrp.json`
+   In the same PR, add the part to `db/perf_index.json`: its figures under
+   `products`, or its name (e.g. `Radeon RX 9050 8GB`) in each `not_in_source`
+   list if TechPowerUp has no figure yet. CI fails without it. Also add the
+   part's US launch MSRP to `db/launch_msrp.json`
    (keyed by the exact model name); it is applied on every container boot.
    Specs follow on the next weekly sync, and until then (7 days) the spec
    report lists the part as pending rather than unmatched.
 5. CI checks the row (`unit_testing/test_watchlist_validation.py`,
-   `unit_testing/test_discover_rules.py`). Merge the PR.
+   `unit_testing/test_discover_rules.py`, `unit_testing/test_perf_index.py`,
+   `manage_watchlist.py check`). Merge the PR once all three CI jobs are green.
 6. On the server, outside 04:00-09:59 Melbourne (the daily scrape window):
    `cd ~/docker/Trackaroo && deploy/redeploy.sh`. The boot runs `seed.py`, which
    adds the product.
@@ -281,14 +285,61 @@ it shows up on /discover instead of disappearing. Then follow
 `docs/ARCHITECTURE.md` Part 2 section 7 (launch day): `python manage_watchlist.py rollover`,
 add the SKU rows, `check`, PR, redeploy, `seed.py --allow-bulk`.
 
-### Managing the watchlist
+### Managing the watchlist: the files, adding and retiring
 
-Generations, retirement and fixing mis-filed listings are handled with
-`python manage_watchlist.py` (rollover, add, retire, check, reassign; every
-writing command takes `--dry-run`). Series and tiers live in `db/generations.toml`;
-watchlist rows are never deleted, they get `status` retired. See
-`docs/ARCHITECTURE.md` Part 2 section 7. The **Ready to retire** section of
-/discover lists tracked parts no retailer has listed for 30 days.
+Every change to what Trackaroo tracks is a change to files in `db/`, made in a
+PR. The buttons on /discover (Track, Retire, Keep) only record a *request*;
+nothing changes until the files do.
+
+| File | What it holds | Touch it when |
+|---|---|---|
+| `db/watchlist.csv` | One row per product: `category,brand,model,spec,series,status` | **Always.** Adding = a new `active` row; retiring = set `status` to `retired`; un-retiring = set it back to `active`. Rows are never deleted. |
+| `db/perf_index.json` | Performance figures for the /value page and Head to head | **Adding a GPU or CPU.** Add its figures under `products`, or, if the source (TechPowerUp) has none yet, list it under `not_in_source` for each metric. `test_perf_index` fails the PR otherwise. |
+| `db/generations.toml` | The ordered series per product line (sets the tiers and labels) | Only when a **new generation** launches (`rollover`). |
+| `db/launch_msrp.json` | US launch MSRPs | Adding a part, when its MSRP is known (optional). |
+
+The CLI makes the CSV and toml edits for you, and each writing command takes
+`--dry-run` to preview the change:
+
+```bash
+python manage_watchlist.py add "<model>" --spec 8GB --series rx9000          # add a part (16c for a CPU)
+python manage_watchlist.py retire "<model>"                                  # retire one part
+python manage_watchlist.py retire --series zen3                              # retire a whole series
+python manage_watchlist.py rollover amd-cpu --new zen6 --label "Ryzen 10000 (Zen 6)" --chips ryzen:10
+python manage_watchlist.py check                                             # validate everything (CI runs it too)
+```
+
+Run these on your PC in the repo, not on the server: the server's checkout must
+stay clean for `deploy/redeploy.sh`. The one exception is `reassign` (moving a
+mis-filed listing), which writes the database and is run on the server with
+`docker compose exec trackaroo python manage_watchlist.py reassign ...`.
+
+**Adding a part:** Track it on /discover (or pick it yourself), then add the CSV
+row and its `perf_index.json` entry, plus the MSRP if known, in one PR. Example:
+PR #82 (RX 9050 8GB).
+
+**Retiring a part:** the **Ready to retire** section of /discover lists tracked
+parts that no retailer has listed for 30 days. Click **Retire** (or **Keep** to
+hide it for 90 days). Then set the row's `status` to `retired` in a PR with
+`manage_watchlist.py retire "<model>"`. To see what was requested, run this on
+the server: `docker compose exec trackaroo python manage_watchlist.py retire --stale --dry-run`.
+A retired part keeps all its price history; it just stops being scraped and shown.
+
+**How a merged change reaches the server.** The container reads `db/` from the
+server's checkout (compose mounts `./db`), and `seed.py` applies the CSV to the
+database at container start. So:
+
+- Normal route: `cd ~/docker/Trackaroo && deploy/redeploy.sh` (outside
+  04:00-09:59). It pulls, rebuilds, restarts and seeds, which covers everything.
+  A `perf_index.json` change needs this route, because that file is built into
+  the web app.
+- Quick route for a CSV-only change: `git pull` then
+  `docker compose exec trackaroo python seed.py`.
+- A change of more than 5 products at once (a rollover, or retiring a series)
+  is refused by seed's bulk guard. Run `docker compose exec trackaroo python seed.py --dry-run`,
+  check the list, then `docker compose exec trackaroo python seed.py --allow-bulk`.
+
+More detail: `docs/ARCHITECTURE.md` Part 2 section 7.
 
 ### Troubleshooting
 
@@ -368,7 +419,7 @@ without one, it just won't send notifications.
 
 | Host path | Container path | Contents |
 |---|---|---|
-| `./db` | `/app/db` | `trackaroo.db` (SQLite, WAL), `backups/`, `schema.sql`, `watchlist.csv` |
+| `./db` | `/app/db` | `trackaroo.db` (SQLite, WAL), `backups/`, `schema.sql`, `watchlist.csv`, `generations.toml` (read from the host checkout, so a `git pull` updates them) |
 | `./data` | `/app/data` | `{cpu,gpu}_{scorptec,pccg}_DD_Month_YYYY.json` daily snapshots |
 
 Both are gitignored. `data/*.json` is the backup the DB is rebuilt from, so map
@@ -390,7 +441,9 @@ docker run -d --name trackaroo -p 3000:3000 --restart unless-stopped \
 
 ### On boot
 
-1. Seeds the DB from `db/watchlist.csv` if it doesn't exist.
+1. Runs `seed.py`: creates the DB if it doesn't exist, and on every boot syncs
+   `products` with `db/watchlist.csv` and `db/generations.toml` (new rows added,
+   `retired` rows untracked; more than 5 tracked changes need `--allow-bulk`).
 2. Hydrates a fresh DB from the snapshot history baked into the image
    (skipped once the DB has data).
 3. Starts the dashboard on :3000.
