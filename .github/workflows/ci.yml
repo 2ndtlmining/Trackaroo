@@ -31,6 +31,7 @@ jobs:
           cache-dependency-path: requirements*.txt
       - run: pip install --require-hashes -r requirements.txt -r requirements-dev.txt
       - run: python -m pytest -q
+      - run: python manage_watchlist.py check
 
   web:
     runs-on: ubuntu-latest

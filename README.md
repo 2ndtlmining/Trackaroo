@@ -270,11 +270,19 @@ it is filed under, and why it looks wrong, for example:
 
 ### When a new generation launches (e.g. RTX 60)
 
-A series newer than the scope table is treated as in scope at `current`, so it
-shows up on /discover instead of disappearing. Then update the scope table in
-`discover_rules.py` (`_GPU_TIERS`, `_RYZEN_TIERS`, `_CORE_TIERS`) and
-`docs/ARCHITECTURE.md` Part 2 together, in one PR; `test_discover_rules.py`
-pins the table to `db/watchlist.csv`.
+A series newer than `db/generations.toml` is treated as in scope at `current`, so
+it shows up on /discover instead of disappearing. Then follow
+`docs/ARCHITECTURE.md` Part 2 section 7 (launch day): `python manage_watchlist.py rollover`,
+add the SKU rows, `check`, PR, redeploy, `seed.py --allow-bulk`.
+
+### Managing the watchlist
+
+Generations, retirement and fixing mis-filed listings are handled with
+`python manage_watchlist.py` (rollover, add, retire, check, reassign; every
+writing command takes `--dry-run`). Series and tiers live in `db/generations.toml`;
+watchlist rows are never deleted, they get `status` retired. See
+`docs/ARCHITECTURE.md` Part 2 section 7. The **Ready to retire** section of
+/discover lists tracked parts no retailer has listed for 30 days.
 
 ### Troubleshooting
 

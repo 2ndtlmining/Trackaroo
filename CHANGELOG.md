@@ -13,6 +13,7 @@ How it works:
 
 - Product generations now come from one config file (db/generations.toml); retiring a product is a status in the watchlist instead of a code change (#17, #18).
 - The Discover page lists tracked parts no retailer has sold for 30 days, to retire or keep.
+- A new `manage_watchlist.py` command handles generation launches and retirements (rollover, add, retire, check, reassign) instead of hand-editing files (#19).
 
 ## 0.8.0 — 2026-10-05
 

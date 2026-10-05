@@ -19,13 +19,13 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 1416 tests.
+**Backend** (repo root): `python -m pytest -q` — 1556 tests.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 1274 tests, ~15s)
+- **Unit tests**: `npm test` (Vitest, 1295 tests, ~15s)
 - **Watch mode**: `npm run test:watch`
-- **E2E tests**: `npm run test:e2e` (Playwright, 231 tests (+1 skipped), Chromium only, must be kept fast)
+- **E2E tests**: `npm run test:e2e` (Playwright, 233 tests (+1 skipped), Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.
   - `e2e.db`, `test-results/`, and `playwright-report/` are gitignored and regenerated on each run.
 - **Type + Svelte check**: `npm run check` (svelte-check, must report 0 errors)
@@ -111,8 +111,13 @@ Never delete price or product data. Products that roll out of scope get
   `try/except` that logs). Health checks go through `guarded_check()`, so a
   crashing check becomes an ERROR result. The backup runs in a `finally`.
 - `discover.py` runs after ingest through `best_effort`; `check_discovery` is
-  WARNING-only. The scope table in `discover_rules.py` must agree with
-  ARCHITECTURE Part 2 and `db/watchlist.csv` (`test_discover_rules.py`).
+  WARNING-only. `discover_rules.py` reads its scope from the `chips` in
+  `db/generations.toml`; `test_discover_rules.py` pins the tracked rows to it.
+  `retire_suggest.py` (stale tracked parts for /discover "Ready to retire") runs
+  right after Discovery, also best-effort.
+- Generations live in `db/generations.toml`; never hand-edit tiers or delete
+  watchlist rows (set `status` retired, or use `manage_watchlist.py`). Seed's bulk
+  guard needs `--allow-bulk` for a rollover.
 - The Discord digest is gated on zero ERROR-level health results. Checks that
   are informational must return WARNING, not ERROR, or they will suppress it.
 - Entry points call `config.setup_logging()`, not `logging.basicConfig` — it

@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-10-05
+**Last updated:** 2026-10-06
 
 **Current phase:** Phase 5 — frontend/UX improvements, pipeline robustness, and
 backup integrity.
@@ -14,6 +14,19 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-06 -- generations config + retirement status (#17, #18, #19), one branch `feat/2026-10-06-generations`.**
+  `db/generations.toml` is now the one list of series per product line (position = tier, labels, discovery
+  `chips`); `db/watchlist.csv` gained `series` and `status` columns and `migrate.RETIRED_PRODUCTS` is gone.
+  `seed.py` syncs series, tier and `tracked` two ways, with a bulk guard (`max(5, total // 10)` flips,
+  `--allow-bulk`; the CSV mirror is written only after the product sync, and the entrypoints tolerate a
+  refusal). Retired rows act as matcher sinks in the scrapers, discovery and `repair_listings`; web labels
+  come from the `generations` table. New daily best-effort `retire_suggest.py` plus a /discover "Ready to
+  retire" section (Retire / Keep / Undo; stale = 30 days via `TRACKAROO_RETIRE_STALE_DAYS`, Keep = 90 days).
+  New `manage_watchlist.py` (rollover, add, retire, check, reassign), run by CI after pytest. **Deploy
+  notes:** tables `generations` and `retire_suggestions` are created by migrate/seed automatically; the first
+  boot's seed log should say `Tracked changes: 0`; after a future rollover run
+  `docker compose exec trackaroo python seed.py --dry-run`, then `--allow-bulk`. Gate: pytest 1556, vitest
+  1295, Playwright 233 (+1 skipped), svelte-check 0/0, `manage_watchlist.py check` OK (106 rows, 14 series).
 - **2026-10-05 -- plan items 0-5 done: #70, #15, #20, #11, #29 (PRs #74-#78).**
   Housekeeping verified: prod runs v0.7.0 (57b2ad9) per `/healthz`, footer and `/changelog`; Head to
   head renders. Issue pass: #2 #23 #27 closed with evidence, #9 (heartbeat later) and #10 (backups
