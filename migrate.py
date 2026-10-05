@@ -692,6 +692,34 @@ def migrate_add_fx_rates_table(conn: sqlite3.Connection, dry_run: bool = False) 
     LOGGER.info("  [OK] fx_rates table created")
 
 
+RETIRE_SUGGESTIONS_TABLE_SQL = """
+CREATE TABLE retire_suggestions (
+    product_id          INTEGER PRIMARY KEY REFERENCES products(id),
+    first_flagged       TEXT    NOT NULL,                -- YYYY-MM-DD the product first went stale
+    last_seen           TEXT,                            -- latest snapshot_date at any retailer; NULL = never listed
+    last_seen_retailer  TEXT,
+    decision            TEXT    NOT NULL DEFAULT 'pending'
+                                CHECK (decision IN ('pending', 'requested', 'kept')),
+    keep_until          TEXT,                            -- YYYY-MM-DD; a 'kept' row reopens once this passes
+    notified            INTEGER NOT NULL DEFAULT 0       -- 0/1. Discord notice delivered
+)
+"""
+
+
+def migrate_add_retire_suggestions(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Create the retire_suggestions table (#17): additive, create-if-missing."""
+    if check_table_exists(conn, "retire_suggestions"):
+        LOGGER.info("  [SKIP] retire_suggestions table already exists")
+        return
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would create retire_suggestions table")
+        return
+    LOGGER.info("  [MIGRATE] Creating retire_suggestions table...")
+    conn.execute(RETIRE_SUGGESTIONS_TABLE_SQL)
+    conn.commit()
+    LOGGER.info("  [OK] retire_suggestions table created")
+
+
 OZB_TABLES_SQL = """
 CREATE TABLE ozb_deals (
     node_id        INTEGER PRIMARY KEY,
@@ -825,6 +853,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: OzBargain deal feed (#34)
         migrate_add_ozbargain_tables(conn, dry_run=args.dry_run)
+
+        # Migration: ready-to-retire suggestions (#17)
+        migrate_add_retire_suggestions(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify

@@ -190,7 +190,7 @@ def isolated_pipeline(monkeypatch, tmp_path):
     import run_daily
 
     calls = types.SimpleNamespace(
-        alerts=[], discovery_runs=[], digests=0, price_alert_runs=0, backups=0, delisted_runs=0, heartbeats=0, fx_runs=[],
+        alerts=[], discovery_runs=[], digests=0, price_alert_runs=0, backups=0, delisted_runs=0, heartbeats=0, fx_runs=[], retire_runs=[],
         db_path=tmp_path / "pipeline.db", data_dir=tmp_path / "data",
     )
     calls.data_dir.mkdir()
@@ -235,6 +235,7 @@ def isolated_pipeline(monkeypatch, tmp_path):
     monkeypatch.setattr("discover.run", lambda **k: calls.discovery_runs.append(k) or {})
     monkeypatch.setattr("backup_db.backup_database", fake_backup)
     monkeypatch.setattr("fx.run", lambda *a, **k: calls.fx_runs.append(a) or None)
+    monkeypatch.setattr("retire_suggest.run", lambda **k: calls.retire_runs.append(k) or {})
 
     def fake_ping(*a, **k):
         calls.heartbeats += 1

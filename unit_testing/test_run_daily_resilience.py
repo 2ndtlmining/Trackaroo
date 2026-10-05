@@ -289,6 +289,26 @@ class TestDiscoveryStep:
         assert "check_ozbargain" in [name for name, _ in run_daily._db_checks()]
 
 
+class TestRetireSuggestStep:
+    def test_retire_crash_does_not_break_the_run(self, isolated_pipeline, monkeypatch):
+        monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))
+        baseline = run_daily.run(_args())
+        assert len(isolated_pipeline.retire_runs) == 1
+        backups_before = isolated_pipeline.backups
+
+        import retire_suggest
+        monkeypatch.setattr(retire_suggest, "run", lambda **k: (_ for _ in ()).throw(RuntimeError("boom")))
+        code = run_daily.run(_args())
+
+        assert code == baseline
+        assert isolated_pipeline.backups == backups_before + 1
+
+    def test_dry_run_skips_retire_suggestions(self, isolated_pipeline, monkeypatch):
+        monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))
+        run_daily.run(_args("--dry-run"))
+        assert isolated_pipeline.retire_runs == []
+
+
 class TestFxStep:
     def test_fx_crash_does_not_break_the_run(self, isolated_pipeline, monkeypatch):
         monkeypatch.setattr(run_daily, "run_scraper", _outcome("ok"))

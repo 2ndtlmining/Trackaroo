@@ -311,3 +311,16 @@ CREATE TABLE ozb_polls (
     items      INTEGER NOT NULL DEFAULT 0,
     error      TEXT
 );
+
+-- Ready-to-retire suggestions (#17): tracked products no retailer has listed for
+-- RETIRE_STALE_DAYS. Suggests only; nothing untracks until the CSV changes.
+CREATE TABLE retire_suggestions (
+    product_id          INTEGER PRIMARY KEY REFERENCES products(id),
+    first_flagged       TEXT    NOT NULL,                -- YYYY-MM-DD the product first went stale
+    last_seen           TEXT,                            -- latest snapshot_date at any retailer; NULL = never listed
+    last_seen_retailer  TEXT,
+    decision            TEXT    NOT NULL DEFAULT 'pending'
+                                CHECK (decision IN ('pending', 'requested', 'kept')),
+    keep_until          TEXT,                            -- YYYY-MM-DD; a 'kept' row reopens once this passes
+    notified            INTEGER NOT NULL DEFAULT 0       -- 0/1. Discord notice delivered
+);

@@ -874,3 +874,33 @@ class TestOzbargainTables:
                         "product_id", "first_seen_at", "last_seen_at", "alerted_at"]
         assert [r[1] for r in db.execute("PRAGMA table_info(ozb_polls)")] == ["polled_at", "ok", "items", "error"]
         assert "idx_ozb_deals_product" in {r[1] for r in db.execute("PRAGMA index_list(ozb_deals)")}
+
+
+class TestRetireSuggestionsTable:
+    def _tables(self, conn):
+        return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+    def test_creates_table_and_is_idempotent(self):
+        import sqlite3
+        import migrate
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_retire_suggestions(conn)
+        migrate.migrate_add_retire_suggestions(conn)
+        assert "retire_suggestions" in self._tables(conn)
+
+    def test_dry_run_creates_nothing(self):
+        import sqlite3
+        import migrate
+        conn = sqlite3.connect(":memory:")
+        migrate.migrate_add_retire_suggestions(conn, dry_run=True)
+        assert "retire_suggestions" not in self._tables(conn)
+
+    def test_schema_sql_matches_migration(self):
+        import sqlite3
+        import migrate
+        schema = sqlite3.connect(":memory:")
+        schema.executescript((Path(__file__).resolve().parent.parent / "db" / "schema.sql").read_text(encoding="utf-8"))
+        mig = sqlite3.connect(":memory:")
+        migrate.migrate_add_retire_suggestions(mig)
+        cols = lambda c: c.execute("PRAGMA table_info(retire_suggestions)").fetchall()
+        assert cols(schema) == cols(mig)
