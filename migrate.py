@@ -300,18 +300,6 @@ def _latest_scraped_at(conn: sqlite3.Connection, listing_id: int) -> Optional[st
     return row[0]
 
 
-# Products deliberately removed from db/watchlist.csv.
-#
-# seed.py only ever INSERTs — it syncs generation_tier and otherwise leaves
-# existing rows alone — so deleting a watchlist row does nothing to a DB that
-# already has the product. It stays tracked=1 forever, counting toward the
-# dashboard's "N tracked" while never being able to have a listing.
-#
-# Per the never-delete-product-data rule these are untracked, not removed: the
-# row and any price history it accumulated stay put.
-#
-# Radeon RX 9070 XTX — announced-but-never-released card; no retailer will ever
-# stock it (retired 30-Aug-2026).
 # Every retailer slug the database will accept. This is deliberately the same
 # set `web/src/lib/types.ts:7` already declares, so the schema stops being the
 # one layer that has to be rebuilt to add a retailer.
@@ -325,44 +313,6 @@ def _latest_scraped_at(conn: sqlite3.Connection, listing_id: int) -> Optional[st
 # table and a join to buy nothing; one rebuild covering every remaining
 # candidate buys the same thing for less.
 PERMITTED_RETAILERS = ("scorptec", "pccg", "mwave", "umart", "centrecom", "ple")
-
-RETIRED_PRODUCTS = ("Radeon RX 9070 XTX",)
-
-
-def migrate_untrack_retired_products(conn: sqlite3.Connection, dry_run: bool = False) -> None:
-    """Set tracked=0 for products retired from the watchlist.
-
-    Idempotent: a second run finds nothing still tracked.
-
-    Args:
-        conn: Open SQLite connection.
-        dry_run: When True, only preview what would change without writing.
-    """
-    placeholders = ",".join("?" for _ in RETIRED_PRODUCTS)
-    still_tracked = [
-        row[0]
-        for row in conn.execute(
-            f"SELECT model FROM products WHERE tracked = 1 AND model IN ({placeholders})",
-            RETIRED_PRODUCTS,
-        )
-    ]
-
-    if not still_tracked:
-        LOGGER.info("  [SKIP] no retired products still tracked")
-        return
-
-    if dry_run:
-        LOGGER.info("  [DRY-RUN] Would untrack %d retired product(s): %s",
-                    len(still_tracked), ", ".join(still_tracked))
-        return
-
-    conn.execute(
-        f"UPDATE products SET tracked = 0 WHERE model IN ({placeholders})",
-        RETIRED_PRODUCTS,
-    )
-    conn.commit()
-    for model in still_tracked:
-        LOGGER.info("  [MIGRATE] Untracked retired product: %s", model)
 
 
 def _retailer_check_permits_all(conn: sqlite3.Connection) -> bool:
@@ -773,6 +723,37 @@ CREATE TABLE ozb_polls (
 """
 
 
+GENERATIONS_DDL = """CREATE TABLE IF NOT EXISTS generations (
+    series_key  TEXT    PRIMARY KEY,
+    line_id     TEXT    NOT NULL,
+    label       TEXT    NOT NULL,
+    position    INTEGER NOT NULL,
+    keep_all    INTEGER NOT NULL DEFAULT 0
+)"""
+
+
+def migrate_add_generations(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Add products.series and the generations table (#17). Idempotent.
+
+    seed.py calls this itself: at container boot seed runs BEFORE migrate.py,
+    and it needs both to exist on an old volume.
+    """
+    need_column = not check_column_exists(conn, "products", "series")
+    need_table = not check_table_exists(conn, "generations")
+    if not (need_column or need_table):
+        LOGGER.info("  [SKIP] products.series and generations already exist")
+        return
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would add products.series=%s generations=%s", need_column, need_table)
+        return
+    if need_column:
+        conn.execute("ALTER TABLE products ADD COLUMN series TEXT")
+    if need_table:
+        conn.execute(GENERATIONS_DDL)
+    conn.commit()
+    LOGGER.info("  [MIGRATE] Added products.series / generations table")
+
+
 def migrate_add_ozbargain_tables(conn: sqlite3.Connection, dry_run: bool = False) -> None:
     """Create ozb_deals and ozb_polls (#34): additive, create-if-missing."""
     for table in ("ozb_deals", "ozb_polls"):
@@ -825,9 +806,6 @@ def main(argv: Optional[List[str]] = None) -> None:
         # Migration: Merge duplicate listings forked by URL slug rewrites
         migrate_merge_duplicate_listings(conn, dry_run=args.dry_run)
 
-        # Migration: Untrack products retired from the watchlist
-        migrate_untrack_retired_products(conn, dry_run=args.dry_run)
-
         # Migration: Widen the retailer CHECK so a new retailer needs no rebuild
         migrate_widen_retailer_check(conn, dry_run=args.dry_run)
 
@@ -841,6 +819,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: AUD/USD rate cache (#32)
         migrate_add_fx_rates_table(conn, dry_run=args.dry_run)
+
+        # Migration: generations table and products.series column (#17)
+        migrate_add_generations(conn, dry_run=args.dry_run)
 
         # Migration: OzBargain deal feed (#34)
         migrate_add_ozbargain_tables(conn, dry_run=args.dry_run)

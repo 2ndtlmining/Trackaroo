@@ -20,12 +20,26 @@ CREATE TABLE products (
     generation_tier     TEXT    CHECK (generation_tier IN ('current', 'current-1', 'current-2')),
                                                           -- per SCOPE_RULES.md; kept even after a product rolls
                                                           -- out of scope, as a historical record of where it sat
+    series              TEXT,                            -- db/generations.toml key (#17); NULL for holding/unknown rows
     tracked             INTEGER NOT NULL DEFAULT 1,      -- 0/1. false once rolled out of scope per SCOPE_RULES.md
     last_snapshot_at    TEXT,                            -- ISO8601 UTC. auto-maintained by trigger below
     created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE INDEX idx_products_category_tracked ON products (category, tracked);
+
+-- ─────────────────────────────────────────────────────────────
+-- generations: Mirror of db/generations.toml, rewritten by seed.py on every run (#17).
+-- The dashboard reads series labels from here, so a relabel or a launch needs
+-- no web rebuild.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE generations (
+    series_key  TEXT    PRIMARY KEY,
+    line_id     TEXT    NOT NULL,
+    label       TEXT    NOT NULL,
+    position    INTEGER NOT NULL,
+    keep_all    INTEGER NOT NULL DEFAULT 0
+);
 
 -- ─────────────────────────────────────────────────────────────
 -- retailer_listings: a specific retailer's page for a product variant

@@ -23,8 +23,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import migrate
 from migrate import (
-    RETIRED_PRODUCTS,
-    migrate_untrack_retired_products,
     SPECS_EXTRA_COLUMNS,
     check_column_exists,
     check_table_exists,
@@ -537,77 +535,50 @@ class TestMain:
             conn.close()
 
 
-class TestMigrateUntrackRetiredProducts:
-    """Products removed from watchlist.csv must also stop being tracked.
+class TestAddGenerations:
+    """The products.series column and generations table migration."""
 
-    seed.py only ever INSERTs, so deleting a watchlist row leaves the product
-    tracked=1 in every existing DB. RX 9070 XTX is the first case: a card that
-    was never released, so it can never have a listing and only inflates the
-    dashboard's tracked count.
-    """
-
-    def _db(self, tmp_path, model="Radeon RX 9070 XTX", tracked=1):
-        db_path = tmp_path / "t.db"
+    def _old_db(self, tmp_path):
+        """A pre-generations database with products but no series column."""
+        db_path = tmp_path / "old.db"
         conn = sqlite3.connect(str(db_path))
-        conn.executescript(
-            (Path(__file__).resolve().parent.parent / "db" / "schema.sql").read_text(encoding="utf-8")
-        )
-        conn.execute(
-            "INSERT INTO products (category, brand, model, tracked) VALUES ('gpu', 'AMD', ?, ?)",
-            (model, tracked),
-        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("""CREATE TABLE products (id INTEGER PRIMARY KEY, category TEXT, brand TEXT, model TEXT,
+                        vram_gb INTEGER, cores INTEGER, generation_tier TEXT, tracked INTEGER NOT NULL DEFAULT 1)""")
         conn.commit()
         return conn
 
-    def test_untracks_a_retired_product(self, tmp_path):
-        conn = self._db(tmp_path)
-        migrate_untrack_retired_products(conn)
-        tracked = conn.execute(
-            "SELECT tracked FROM products WHERE model = 'Radeon RX 9070 XTX'"
-        ).fetchone()[0]
-        assert tracked == 0
-
-    def test_leaves_other_products_alone(self, tmp_path):
-        conn = self._db(tmp_path, model="Radeon RX 9070 XT")
-        migrate_untrack_retired_products(conn)
-        tracked = conn.execute(
-            "SELECT tracked FROM products WHERE model = 'Radeon RX 9070 XT'"
-        ).fetchone()[0]
-        assert tracked == 1
-
-    def test_never_deletes_the_product_row(self, tmp_path):
-        conn = self._db(tmp_path)
-        migrate_untrack_retired_products(conn)
-        assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 1
-
-    def test_dry_run_makes_no_change(self, tmp_path):
-        conn = self._db(tmp_path)
-        migrate_untrack_retired_products(conn, dry_run=True)
-        tracked = conn.execute(
-            "SELECT tracked FROM products WHERE model = 'Radeon RX 9070 XTX'"
-        ).fetchone()[0]
-        assert tracked == 1
+    def test_adds_series_column_and_generations_table(self, tmp_path):
+        from migrate import migrate_add_generations
+        conn = self._old_db(tmp_path)
+        migrate_add_generations(conn)
+        assert check_column_exists(conn, "products", "series")
+        assert check_table_exists(conn, "generations")
+        conn.close()
 
     def test_idempotent(self, tmp_path):
-        conn = self._db(tmp_path, tracked=0)
-        migrate_untrack_retired_products(conn)
-        tracked = conn.execute(
-            "SELECT tracked FROM products WHERE model = 'Radeon RX 9070 XTX'"
-        ).fetchone()[0]
-        assert tracked == 0
+        from migrate import migrate_add_generations
+        conn = self._old_db(tmp_path)
+        migrate_add_generations(conn)
+        migrate_add_generations(conn)  # no "duplicate column" error
+        conn.close()
 
-    def test_missing_product_is_not_an_error(self, tmp_path):
-        conn = self._db(tmp_path, model="GeForce RTX 5070")
-        migrate_untrack_retired_products(conn)  # must not raise
+    def test_dry_run_writes_nothing(self, tmp_path):
+        from migrate import migrate_add_generations
+        conn = self._old_db(tmp_path)
+        migrate_add_generations(conn, dry_run=True)
+        assert not check_column_exists(conn, "products", "series")
+        conn.close()
 
-    def test_retired_list_matches_the_watchlist(self):
-        """Anything in RETIRED_PRODUCTS must be gone from watchlist.csv, or the
-        next seed run would re-add it and the migration would fight the seed."""
-        csv = (Path(__file__).resolve().parent.parent / "db" / "watchlist.csv").read_text(
-            encoding="utf-8"
-        )
-        for model in RETIRED_PRODUCTS:
-            assert f",{model}," not in csv, f"{model} is retired but still in watchlist.csv"
+    def test_schema_sql_matches_migration(self, tmp_path):
+        """The schema.sql file must define both the series column and generations table."""
+        schema_path = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(schema_path.read_text(encoding="utf-8"))
+        assert check_column_exists(conn, "products", "series")
+        assert check_table_exists(conn, "generations")
+        conn.close()
 
 
 # ── Widening the retailer CHECK constraint ──────────────────────────
