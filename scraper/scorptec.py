@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import date
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -23,7 +23,7 @@ from config import (
     SCORPTEC_TIMEOUT_SECONDS,
     setup_logging,
 )
-from db.watchlist import load_watchlist, WatchlistProduct
+from db.watchlist import load_retired, load_watchlist, WatchlistProduct
 from scraper.catalogue_io import catalogue_item, save_catalogue
 from scraper.chip_key import Matcher, normalise
 from scraper.run_report import EXIT_OK, RunReport, exit_code_for
@@ -293,6 +293,7 @@ def scrape_scorptec(
     watchlist: List[WatchlistProduct],
     only_category: Optional[str] = None,
     report: Optional["RunReport"] = None,
+    retired: Sequence[WatchlistProduct] = (),
 ) -> Tuple[List[Dict[str, Any]], Set[int], Dict[str, List[Dict[str, Any]]]]:
     """Scrape Scorptec and match against watchlist.
 
@@ -307,11 +308,14 @@ def scrape_scorptec(
     Args:
         watchlist: List of watchlist product dicts.
         only_category: "cpu" or "gpu" to scrape one category; None for both.
+        retired: Untracked rows, matched as sinks: a listing that resolves to one
+            is dropped, so it cannot be mis-filed under a tracked sibling (#18).
 
     Returns:
         Tuple of (matched results, matched watchlist ids, all scraped products per category).
     """
-    matcher = Matcher(watchlist)
+    matcher = Matcher([*watchlist, *retired])  # retired rows are sinks (#18)
+    dropped = 0
 
     # Track ALL matches per watchlist item, then pick cheapest in-stock
     all_matches: Dict[int, List[Dict[str, Any]]] = {}  # watchlist_index -> list of matched product dicts
@@ -336,6 +340,9 @@ def scrape_scorptec(
                 continue
             i = matcher.resolve(scraped["name"], category, scraped.get("full_description", ""))
             if i is None:
+                continue
+            if i >= len(watchlist):
+                dropped += 1
                 continue
             wp = watchlist[i]
             match_dict = {
@@ -365,6 +372,8 @@ def scrape_scorptec(
         matched_watchlist_ids.add(i)
         logger.info("%s: %d variants saved", watchlist[i]["model"], len(matches))
 
+    if dropped:
+        logger.info("dropped %d listing(s) matched to retired products", dropped)
     return results, matched_watchlist_ids, all_scraped
 
 
@@ -500,6 +509,7 @@ def main() -> int:
     setup_logging()
     logger.info("Loading watchlist...")
     watchlist = load_watchlist()
+    retired = load_retired()
     logger.info("  %d products in watchlist", len(watchlist))
 
     report = RunReport("scorptec")
@@ -511,7 +521,7 @@ def main() -> int:
     all_scraped: Dict[str, List[Dict[str, Any]]] = {}
     for category in ("cpu", "gpu"):
         logger.info("\nScraping Scorptec %s...", category.upper())
-        cat_results, cat_ids, cat_scraped = scrape_scorptec(watchlist, only_category=category, report=report)
+        cat_results, cat_ids, cat_scraped = scrape_scorptec(watchlist, only_category=category, report=report, retired=retired)
         # Saved the moment the category is done. run_daily kills a scraper at
         # SCRAPER_TIMEOUT_SECONDS, and results used to be saved only at the very
         # end, so a slow GPU pass cost the finished CPUs as well (R2).

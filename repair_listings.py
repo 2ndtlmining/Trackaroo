@@ -10,6 +10,8 @@ script's work, but this script is still needed to fix everything already in
 the DB. This applies the same matcher to every listing already in the DB.
 
   * resolves to a different tracked product -> re-pointed there;
+  * resolves to a retired product (#18) -> re-pointed there if filed elsewhere,
+    left alone if already there; retired rows are sinks, never parked;
   * resolves to nothing (an untracked part such as a 5500GT, or an eGPU box)
     -> moved to a tracked=0 "Unmatched <CAT> listing" holding product and
        marked stale, so its prices leave the wrong product's history.
@@ -31,7 +33,7 @@ from typing import List, Optional, Sequence
 
 from backup_db import backup_database
 from config import DB_PATH
-from db.watchlist import WatchlistProduct, load_watchlist
+from db.watchlist import WatchlistProduct, load_retired, load_watchlist
 from scraper.chip_key import Matcher
 
 LOGGER = logging.getLogger(__name__)
@@ -51,8 +53,16 @@ def _holding_model(category: str) -> str:
     return f"Unmatched {category.upper()} listing"
 
 
-def plan_repairs(conn: sqlite3.Connection, watchlist: Sequence[WatchlistProduct]) -> List[Repair]:
-    matcher = Matcher(watchlist)
+def plan_repairs(
+    conn: sqlite3.Connection,
+    watchlist: Sequence[WatchlistProduct],
+    retired: Sequence[WatchlistProduct] = (),
+) -> List[Repair]:
+    # Retired rows are sinks: without them a listing of a retired part would be
+    # parked as 'unmatched', severing it from the product that owns its history.
+    # Only tracked=1 products are scanned, so a listing already on a retired
+    # product is never touched.
+    matcher = Matcher([*watchlist, *retired])
     rows = conn.execute(
         """SELECT l.id, l.retailer, l.variant_name, p.category, p.model
            FROM retailer_listings l JOIN products p ON p.id = l.product_id
@@ -120,7 +130,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     conn = sqlite3.connect(str(args.db))
-    repairs = plan_repairs(conn, load_watchlist(strict=True))
+    repairs = plan_repairs(conn, load_watchlist(strict=True), load_retired())
     print(f"{'APPLY' if args.apply else 'DRY RUN'}: {len(repairs)} listing(s) to re-point")
     for r in repairs:
         print(f"  [{r.retailer:8}] {r.from_model!r} -> {r.to_model or 'UNMATCHED (stale)'!r}  {r.title}")

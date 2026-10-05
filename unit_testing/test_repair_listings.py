@@ -100,3 +100,45 @@ def test_product_id_forces_existing_holding_row_untracked(conn):
     pid = rl._product_id(conn, "cpu", "Unmatched CPU listing", holding=True)
     tracked = conn.execute("SELECT tracked FROM products WHERE id = ?", (pid,)).fetchone()[0]
     assert tracked == 0
+
+
+# -- retired rows are sinks (#18) --------------------------------------
+
+RETIRED = [{"category": "gpu", "brand": "NVIDIA", "model": "GeForce RTX 3060 Ti", "vram_gb": 8, "cores": None}]
+TI_TITLE = "gigabyte geforce rtx 3060 ti gaming oc 8gb"
+
+
+def _retired_product(conn):
+    conn.execute("INSERT INTO products (category, brand, model, vram_gb, tracked) VALUES "
+                 "('gpu','NVIDIA','GeForce RTX 3060 Ti',8,0)")
+    return conn.execute("SELECT id FROM products WHERE model = 'GeForce RTX 3060 Ti'").fetchone()[0]
+
+
+def _listing(conn, product_id, title, n):
+    conn.execute("INSERT INTO retailer_listings (product_id, retailer, variant_name, listing_url) VALUES (?,?,?,?)",
+                 (product_id, "umart", title, f"https://r/{n}"))
+    conn.commit()
+
+
+def test_listing_on_a_retired_product_is_not_parked(conn):
+    _listing(conn, _retired_product(conn), TI_TITLE, 1)
+    assert not any(r.title == TI_TITLE for r in rl.plan_repairs(conn, WATCHLIST, RETIRED))
+    rl.apply_repairs(conn, rl.plan_repairs(conn, WATCHLIST, RETIRED))
+    model, status = conn.execute(
+        "SELECT p.model, l.status FROM retailer_listings l JOIN products p ON p.id = l.product_id "
+        "WHERE l.variant_name = ?", (TI_TITLE,)).fetchone()
+    assert model == "GeForce RTX 3060 Ti" and status != "stale"
+
+
+def test_misfiled_listing_matching_a_retired_row_goes_to_the_retired_product(conn):
+    retired_id = _retired_product(conn)
+    wrong = conn.execute("SELECT id FROM products WHERE model = 'GeForce RTX 5060 Ti'").fetchone()[0]
+    _listing(conn, wrong, TI_TITLE, 2)
+    plan = [r for r in rl.plan_repairs(conn, WATCHLIST, RETIRED) if r.title == TI_TITLE]
+    assert [(r.from_model, r.to_model) for r in plan] == [("GeForce RTX 5060 Ti", "GeForce RTX 3060 Ti")]
+    rl.apply_repairs(conn, plan)
+    pid, status = conn.execute(
+        "SELECT product_id, status FROM retailer_listings WHERE variant_name = ?", (TI_TITLE,)).fetchone()
+    assert pid == retired_id and status != "stale"
+    assert conn.execute("SELECT tracked FROM products WHERE id = ?", (retired_id,)).fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM products WHERE model = 'GeForce RTX 3060 Ti'").fetchone()[0] == 1
