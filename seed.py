@@ -220,7 +220,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     conn.row_factory = sqlite3.Row  # migrate's check_* helpers read columns by name
     migrate_add_generations(conn, dry_run=args.dry_run)
     conn.row_factory = None
-    sync_generations(conn, gens, dry_run=args.dry_run)
 
     if args.dry_run and not any(r[1] == "series" for r in conn.execute("PRAGMA table_info(products)")):
         LOGGER.info("Dry run on a DB without products.series: run without --dry-run to migrate first; product sync skipped")
@@ -233,6 +232,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         LOGGER.error("%s", e)
         conn.close()
         sys.exit(1)
+
+    # Mirror labels only once the product sync is applied: the web joins
+    # generations to products, so a refused rollover must keep the OLD mirror.
+    sync_generations(conn, gens, dry_run=args.dry_run)
 
     # The container runs seed.py on every boot, so this keeps the dashboard's
     # retailer list (active_retailers) equal to config even before the first

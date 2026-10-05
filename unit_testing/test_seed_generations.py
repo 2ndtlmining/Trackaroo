@@ -142,3 +142,33 @@ def test_first_seed_on_old_db_has_zero_flips(tmp_path, monkeypatch):
     assert dict(conn.execute("SELECT model, tracked FROM products")) == before  # zero flips
     assert conn.execute("SELECT COUNT(*) FROM products WHERE series IS NULL").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM generations").fetchone()[0] >= 14
+
+
+def test_main_mirrors_generations_only_when_product_sync_applies(tmp_path, monkeypatch):
+    """A refused rollover must leave the OLD generations mirror (labels follow products)."""
+    import seed
+    db_path = tmp_path / "t.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    seed.seed_products(conn, _rows(TOML_TODAY))
+    sync_generations(conn, parse_generations(TOML_TODAY))
+    conn.close()
+    monkeypatch.setattr(seed, "DB_PATH", db_path)
+    monkeypatch.setattr(seed, "load_generations", lambda: parse_generations(TOML_ZEN6))
+    monkeypatch.setattr(seed, "load_watchlist", lambda *_a, **_k: _rows(TOML_ZEN6))
+
+    def keys():
+        c = sqlite3.connect(str(db_path))
+        try:
+            return {r[0] for r in c.execute("SELECT series_key FROM generations")}
+        finally:
+            c.close()
+
+    with pytest.raises(SystemExit) as exc:
+        seed.main([])
+    assert exc.value.code == 1
+    assert keys() == {"zen5", "zen4", "zen3"}
+    seed.main(["--dry-run"])
+    assert keys() == {"zen5", "zen4", "zen3"}
+    seed.main(["--allow-bulk"])
+    assert keys() == {"zen6", "zen5", "zen4", "zen3"}
