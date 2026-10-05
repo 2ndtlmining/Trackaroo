@@ -135,6 +135,7 @@ gpu,AMD,Radeon RX 9070,16GB,rx9000,active
 gpu,AMD,Radeon RX 9070 GRE,12GB,rx9000,active
 gpu,AMD,Radeon RX 9070 XT,16GB,rx9000,active
 gpu,AMD,Radeon RX 9070 XTX,32GB,rx9000,retired
+gpu,AMD,Radeon RX 9050,8GB,rx9000,active
 gpu,Intel,Arc A380,6GB,arc-a,active
 gpu,Intel,Arc A750,8GB,arc-a,active
 gpu,Intel,Arc A770,16GB,arc-a,active

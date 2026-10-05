@@ -11,6 +11,8 @@ How it works:
 
 ## Unreleased
 
+- Now tracking the Radeon RX 9050 8GB (requested from the Discover page).
+
 ## 0.9.0 — 2026-10-06
 
 - Product generations now come from one config file (db/generations.toml); retiring a product is a status in the watchlist instead of a code change (#17, #18).
