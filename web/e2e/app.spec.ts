@@ -1735,6 +1735,9 @@ test.describe('is now a good time to buy? (#31)', () => {
 	});
 });
 
+// A browser form post asks for HTML; without it SvelteKit answers action failures as JSON with a 200.
+const HTML = { accept: 'text/html' };
+
 test.describe.serial('/discover (#16)', () => {
 	test('lists untracked, requested and conflicts; nav shows a badge', async ({ page }) => {
 		await goto(page, '/discover');
@@ -1771,6 +1774,36 @@ test.describe.serial('/discover (#16)', () => {
 		await requested.locator('li', { hasText: 'GeForce RTX 5050 8GB' }).getByRole('button', { name: 'Undo' }).click();
 		await page.waitForLoadState('networkidle');
 		await expect(page.getByTestId('discover-untracked').getByText('GeForce RTX 5050 8GB')).toBeVisible();
+	});
+
+	test('Ready to retire: Retire requests, Undo reverts', async ({ page }) => {
+		await goto(page, '/discover');
+		await expect(page.getByRole('heading', { name: /^Ready to retire/ })).toBeVisible();
+		const list = page.getByTestId('discover-retire');
+		const row = list.locator('li', { hasText: 'Ryzen 5 5600' });
+		await expect(row).toContainText('last seen 20 Aug at PCCG');
+		await row.getByRole('button', { name: 'Retire' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(list.getByText('Requested', { exact: true })).toBeVisible();
+		await list.getByRole('button', { name: 'Undo' }).click();
+		await page.waitForLoadState('networkidle');
+		await expect(list.getByRole('button', { name: 'Retire' })).toBeVisible();
+	});
+
+	test('retire/keep POSTs for a missing product return 404, a bad transition 400', async ({ page }) => {
+		for (const action of ['retire', 'keep']) {
+			const missing = await page.request.post(`/discover?/${action}`, { form: { productId: '999999' }, headers: HTML });
+			expect(missing.status(), `${action} unknown id`).toBe(404);
+		}
+		const bad = await page.request.post('/discover?/undoRetire', { form: { productId: '999999' }, headers: HTML });
+		expect(bad.status()).toBe(404);
+		const junk = await page.request.post('/discover?/retire', { form: { productId: 'abc' }, headers: HTML });
+		expect(junk.status()).toBe(400);
+		// A pending row cannot be undone: invalid transition, not a 500.
+		await goto(page, '/discover');
+		const id = await page.getByTestId('discover-retire').locator('input[name="productId"]').first().inputValue();
+		const invalid = await page.request.post('/discover?/undoRetire', { form: { productId: id }, headers: HTML });
+		expect(invalid.status()).toBe(400);
 	});
 });
 

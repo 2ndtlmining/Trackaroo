@@ -633,6 +633,15 @@ export function seedE2eDb(dbPath = DB_PATH) {
 		);
 	}
 
+	// Ready-to-retire fixture (#17): one pending suggestion for a seeded product.
+	const retireProduct = db.prepare("SELECT id FROM products WHERE model = 'Ryzen 5 5600' ORDER BY id LIMIT 1").get();
+	if (retireProduct) {
+		db.prepare(
+			`INSERT INTO retire_suggestions (product_id, first_flagged, last_seen, last_seen_retailer)
+			 VALUES (?, ?, '2026-08-20', 'pccg')`
+		).run(retireProduct.id, today);
+	}
+
 	// One cached AUD/USD rate so the MSRP cues have a value to show.
 	db.prepare(`INSERT INTO fx_rates (rate_date, aud_per_usd, source, fetched_at) VALUES (?, 1.5, 'rba', ?)`).run(
 		today, `${today}T00:00:00Z`

@@ -12,6 +12,7 @@ How it works:
 ## Unreleased
 
 - Product generations now come from one config file (db/generations.toml); retiring a product is a status in the watchlist instead of a code change (#17, #18).
+- The Discover page lists tracked parts no retailer has sold for 30 days, to retire or keep.
 
 ## 0.8.0 — 2026-10-05
 

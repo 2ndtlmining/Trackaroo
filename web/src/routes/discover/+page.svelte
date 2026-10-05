@@ -2,6 +2,7 @@
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import PageHead from '$lib/components/PageHead.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import RetireSuggestions from '$lib/components/RetireSuggestions.svelte';
 	import { copyText } from '$lib/clipboard';
 	import { formatAud, formatShortDate } from '$lib/formats';
 	import type { DiscoveredPart } from '$lib/types';
@@ -102,6 +103,8 @@
 			{/each}
 		</ul>
 	</section>
+
+	<RetireSuggestions suggestions={data.retire} />
 
 	<section aria-labelledby="conflicts-h">
 		<h2 id="conflicts-h" class="mb-2 text-sm font-semibold text-text">Conflicts ({data.conflicts.length})</h2>
