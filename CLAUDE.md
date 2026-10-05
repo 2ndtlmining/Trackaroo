@@ -19,11 +19,11 @@ by the Python pipeline and read by the dashboard. Daily snapshot cadence.
 
 ## Commands
 
-**Backend** (repo root): `python -m pytest -q` — 1564 tests.
+**Backend** (repo root): `python -m pytest -q` — 1565 tests.
 
 **Frontend** (from `web/`):
 
-- **Unit tests**: `npm test` (Vitest, 1295 tests, ~15s)
+- **Unit tests**: `npm test` (Vitest, 1298 tests, ~15s)
 - **Watch mode**: `npm run test:watch`
 - **E2E tests**: `npm run test:e2e` (Playwright, 233 tests (+1 skipped), Chromium only, must be kept fast)
   - Runs against a deterministic seeded DB (`e2e/seed.mjs` → `e2e/e2e.db`) served by a `vite dev` server on port 4174.

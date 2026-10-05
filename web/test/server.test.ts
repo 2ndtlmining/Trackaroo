@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import { gunzipSync } from 'node:zlib';
-import { createServer, installShutdown } from '../server.js';
+import { PROTO_HEADER, configureOrigin, createServer, installShutdown } from '../server.js';
 
 const BODY = '<html>' + 'x'.repeat(20_000) + '</html>';
 let server: Server;
@@ -54,6 +54,37 @@ describe('compression wrapper (#28)', () => {
 		});
 		const res = await fetch(base, { headers: { 'accept-encoding': 'gzip, br' } });
 		expect(res.headers.get('content-encoding')).toBe('br');
+	});
+});
+
+// adapter-node assumes https unless told otherwise, so on the plain-http LAN
+// deploy every form POST (Track/Ignore, Retire/Keep, price alerts) failed its
+// origin check with "Cross-site POST form submissions are forbidden".
+describe('form origin on plain http', () => {
+	it('stamps every request with the real protocol, overwriting a client value', async () => {
+		let seen: string | undefined;
+		const base = await start((req, res) => {
+			seen = req.headers[PROTO_HEADER];
+			res.end('ok');
+		});
+		await fetch(base, { headers: { [PROTO_HEADER]: 'https' } });
+		expect(seen).toBe('http');
+	});
+
+	it('points adapter-node at that header when nothing else is configured', () => {
+		const env: Record<string, string | undefined> = {};
+		configureOrigin(env);
+		expect(env.PROTOCOL_HEADER).toBe(PROTO_HEADER);
+	});
+
+	it('leaves an explicit ORIGIN or PROTOCOL_HEADER (reverse proxy) alone', () => {
+		const withOrigin: Record<string, string | undefined> = { ORIGIN: 'https://trackaroo.example.com' };
+		configureOrigin(withOrigin);
+		expect(withOrigin.PROTOCOL_HEADER).toBeUndefined();
+
+		const withHeader: Record<string, string | undefined> = { PROTOCOL_HEADER: 'x-forwarded-proto' };
+		configureOrigin(withHeader);
+		expect(withHeader.PROTOCOL_HEADER).toBe('x-forwarded-proto');
 	});
 });
 

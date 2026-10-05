@@ -73,6 +73,19 @@ jobs:
           test "$code" = 200
           curl -fsS http://127.0.0.1:3100/healthz | tee healthz.json
           grep -q '"ok":true' healthz.json
+          # Form POSTs must pass adapter-node's origin check over plain http
+          # (they all 403'd on prod until server.js stamped the protocol).
+          # id=0 is rejected by the action (400) after the check, so nothing
+          # is written; a cross-site Origin must still be refused (403).
+          post() {
+            curl -s -o /dev/null -w '%{http_code}' -X POST -H "Origin: $1" -H 'Accept: text/html' \
+              -H 'Content-Type: application/x-www-form-urlencoded' --data 'id=0' \
+              'http://127.0.0.1:3100/discover?/ignore'
+          }
+          same=$(post http://127.0.0.1:3100); cross=$(post http://evil.example)
+          echo "same-origin POST: $same, cross-site POST: $cross"
+          test "$same" = 400
+          test "$cross" = 403
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

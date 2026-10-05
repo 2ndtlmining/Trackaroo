@@ -40,11 +40,32 @@ function cacheFonts(req, res) {
 	};
 }
 
+// adapter-node checks every form POST's Origin against the origin it thinks it
+// serves, and with no ORIGIN / PROTOCOL_HEADER it assumes https. This server is
+// plain http on the LAN, so Track/Ignore, Retire/Keep and price alerts all
+// failed with "Cross-site POST form submissions are forbidden". This wrapper is
+// the one place that knows the real protocol (it never terminates TLS), so it
+// stamps it on every request, overwriting anything a client sent.
+export const PROTO_HEADER = 'x-trackaroo-proto';
+
+/**
+ * Tell adapter-node to read the protocol from PROTO_HEADER, unless the
+ * deployment configured its own (ORIGIN or PROTOCOL_HEADER behind a proxy).
+ * Must run before ./build/handler.js is imported: it reads env at load.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function configureOrigin(env = process.env) {
+	if (env.ORIGIN || env.PROTOCOL_HEADER) return;
+	env.PROTOCOL_HEADER = PROTO_HEADER;
+}
+
 /**
  * @param {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, next: () => void) => void} handler
  */
 export function createServer(handler) {
 	return http.createServer((req, res) => {
+		req.headers[PROTO_HEADER] = 'http';
 		cacheFonts(req, res);
 		// `compression`'s types expect Express req/res; we run it directly
 		// against the plain node:http objects adapter-node's handler also uses.
@@ -120,6 +141,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
 	// type-checking the generated ./build/handler.js bundle (svelte-check
 	// otherwise pulls its whole dependency closure into the project).
 	const handlerPath = './build/handler.js';
+	configureOrigin();
 	const { handler } = await import(handlerPath);
 	const host = process.env.HOST ?? '0.0.0.0';
 	const port = Number(process.env.PORT ?? 3000);
