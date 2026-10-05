@@ -135,7 +135,7 @@ class TestSeedProducts:
 
     def test_dry_run_no_insert(self, db, sample_cpu):
         stats = seed_products(db, [sample_cpu], dry_run=True)
-        assert stats["inserted"] == 0
+        assert stats["inserted"] == 1  # a dry run reports what it would insert
 
         # DB should be empty
         total = db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
@@ -272,11 +272,11 @@ class TestSpecSync:
         conn = init_db(tmp_path / "t.db")
         seed_products(conn, [{
             "category": "gpu", "brand": "Intel", "model": "Arc B570",
-            "vram_gb": 12, "cores": None, "generation_tier": "current", "tracked": 1,
+            "vram_gb": 12, "cores": None, "generation_tier": "current", "tracked": 1, "series": "battlemage",
         }])
         stats = seed_products(conn, [{
             "category": "gpu", "brand": "Intel", "model": "Arc B570",
-            "vram_gb": 10, "cores": None, "generation_tier": "current", "tracked": 1,
+            "vram_gb": 10, "cores": None, "generation_tier": "current", "tracked": 1, "series": "battlemage",
         }])
 
         assert stats["updated"] == 1

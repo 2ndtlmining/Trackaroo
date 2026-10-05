@@ -163,7 +163,10 @@ ozb_loop() {
 }
 
 # ── 1. Ensure the DB exists (init empty DB + seed watchlist) ──────────────
-python seed.py
+# seed.py exits 1 when it refuses a bulk tracked change (a rollover needs
+# --allow-bulk, run by hand after reviewing the dry run) or on a broken
+# generations.toml. Either way it wrote nothing to products: boot on.
+python seed.py || echo "[trackaroo] $(date '+%Y-%m-%d %H:%M:%S') ERROR: seed.py exited non-zero (see above) - products unchanged; run 'python seed.py --dry-run' then '--allow-bulk' if intended"
 
 # ── 1b. Bootstrap: hydrate a fresh DB with baked-in snapshot history ──────
 trackaroo-bootstrap-data

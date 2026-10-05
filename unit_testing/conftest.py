@@ -145,6 +145,7 @@ def sample_cpu():
         "cores": 8,
         "generation_tier": "current",
         "tracked": 1,
+        "series": "zen5x3d",
     }
 
 
@@ -159,6 +160,7 @@ def sample_gpu():
         "cores": None,
         "generation_tier": "current",
         "tracked": 1,
+        "series": "rtx5000",
     }
 
 
