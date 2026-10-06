@@ -12,6 +12,7 @@ How it works:
 ## Unreleased
 
 - Now tracking the Radeon RX 9050 8GB (requested from the Discover page).
+- Retired 23 parts that retailers no longer sell: Arc A770, Core Ultra 5 245, eleven Core 13th/14th-gen models, nine GeForce RTX 30/40 cards and the Radeon RX 6600. Their pages and price history stay.
 
 ## 0.9.0 — 2026-10-06
 

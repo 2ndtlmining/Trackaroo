@@ -62,28 +62,28 @@ cpu,AMD,Ryzen 9 9900X,12c,zen5,active
 cpu,AMD,Ryzen 9 9900X3D,12c,zen5,active
 cpu,AMD,Ryzen 9 9950X,16c,zen5,active
 cpu,AMD,Ryzen 9 9950X3D,16c,zen5,active
-cpu,Intel,Core i5-13400,10c,core-13,active
+cpu,Intel,Core i5-13400,10c,core-13,retired
 cpu,Intel,Core i5-13400F,10c,core-13,active
-cpu,Intel,Core i5-13600K,14c,core-13,active
-cpu,Intel,Core i5-13600KF,14c,core-13,active
-cpu,Intel,Core i7-13700K,16c,core-13,active
-cpu,Intel,Core i7-13700KF,16c,core-13,active
-cpu,Intel,Core i9-13900K,24c,core-13,active
-cpu,Intel,Core i9-13900KF,24c,core-13,active
+cpu,Intel,Core i5-13600K,14c,core-13,retired
+cpu,Intel,Core i5-13600KF,14c,core-13,retired
+cpu,Intel,Core i7-13700K,16c,core-13,retired
+cpu,Intel,Core i7-13700KF,16c,core-13,retired
+cpu,Intel,Core i9-13900K,24c,core-13,retired
+cpu,Intel,Core i9-13900KF,24c,core-13,retired
 cpu,Intel,Core i9-13900F,24c,core-13,active
 cpu,Intel,Core i5-14400,10c,core-14,active
 cpu,Intel,Core i5-14400F,10c,core-14,active
 cpu,Intel,Core i5-14500,14c,core-14,active
-cpu,Intel,Core i5-14600K,14c,core-14,active
-cpu,Intel,Core i5-14600KF,14c,core-14,active
+cpu,Intel,Core i5-14600K,14c,core-14,retired
+cpu,Intel,Core i5-14600KF,14c,core-14,retired
 cpu,Intel,Core i7-14700K,20c,core-14,active
 cpu,Intel,Core i7-14700KF,20c,core-14,active
 cpu,Intel,Core i9-14900,24c,core-14,active
 cpu,Intel,Core i9-14900K,24c,core-14,active
 cpu,Intel,Core i9-14900KF,24c,core-14,active
-cpu,Intel,Core i9-14900F,24c,core-14,active
-cpu,Intel,Core i9-14900KS,24c,core-14,active
-cpu,Intel,Core Ultra 5 245,14c,arrow-lake,active
+cpu,Intel,Core i9-14900F,24c,core-14,retired
+cpu,Intel,Core i9-14900KS,24c,core-14,retired
+cpu,Intel,Core Ultra 5 245,14c,arrow-lake,retired
 cpu,Intel,Core Ultra 5 245K,14c,arrow-lake,active
 cpu,Intel,Core Ultra 5 245KF,14c,arrow-lake,active
 cpu,Intel,Core Ultra 7 265K,20c,arrow-lake,active
@@ -93,22 +93,22 @@ cpu,AMD,Ryzen 9 9950X3D2,16c,zen5,active
 gpu,NVIDIA,GeForce RTX 3050,8GB,rtx30,active
 gpu,NVIDIA,GeForce RTX 3050 6GB,6GB,rtx30,active
 gpu,NVIDIA,GeForce RTX 3060,12GB,rtx30,active
-gpu,NVIDIA,GeForce RTX 3060 Ti,8GB,rtx30,active
+gpu,NVIDIA,GeForce RTX 3060 Ti,8GB,rtx30,retired
 gpu,NVIDIA,GeForce RTX 3070,8GB,rtx30,active
-gpu,NVIDIA,GeForce RTX 3070 Ti,8GB,rtx30,active
-gpu,NVIDIA,GeForce RTX 3080,10GB,rtx30,active
+gpu,NVIDIA,GeForce RTX 3070 Ti,8GB,rtx30,retired
+gpu,NVIDIA,GeForce RTX 3080,10GB,rtx30,retired
 gpu,NVIDIA,GeForce RTX 3080 Ti,12GB,rtx30,active
-gpu,NVIDIA,GeForce RTX 3090,24GB,rtx30,active
+gpu,NVIDIA,GeForce RTX 3090,24GB,rtx30,retired
 gpu,NVIDIA,GeForce RTX 3090 Ti,24GB,rtx30,active
 gpu,NVIDIA,GeForce RTX 4060,8GB,rtx40,active
 gpu,NVIDIA,GeForce RTX 4060 Ti,8GB,rtx40,active
-gpu,NVIDIA,GeForce RTX 4070,12GB,rtx40,active
-gpu,NVIDIA,GeForce RTX 4070 Super,12GB,rtx40,active
+gpu,NVIDIA,GeForce RTX 4070,12GB,rtx40,retired
+gpu,NVIDIA,GeForce RTX 4070 Super,12GB,rtx40,retired
 gpu,NVIDIA,GeForce RTX 4070 Ti,12GB,rtx40,active
 gpu,NVIDIA,GeForce RTX 4070 Ti Super,16GB,rtx40,active
-gpu,NVIDIA,GeForce RTX 4080,16GB,rtx40,active
-gpu,NVIDIA,GeForce RTX 4080 Super,16GB,rtx40,active
-gpu,NVIDIA,GeForce RTX 4090,24GB,rtx40,active
+gpu,NVIDIA,GeForce RTX 4080,16GB,rtx40,retired
+gpu,NVIDIA,GeForce RTX 4080 Super,16GB,rtx40,retired
+gpu,NVIDIA,GeForce RTX 4090,24GB,rtx40,retired
 gpu,NVIDIA,GeForce RTX 5060,8GB,rtx50,active
 gpu,NVIDIA,GeForce RTX 5060 Ti,16GB,rtx50,active
 gpu,NVIDIA,GeForce RTX 5060 Ti 8GB,8GB,rtx50,active
@@ -116,7 +116,7 @@ gpu,NVIDIA,GeForce RTX 5070,12GB,rtx50,active
 gpu,NVIDIA,GeForce RTX 5070 Ti,16GB,rtx50,active
 gpu,NVIDIA,GeForce RTX 5080,16GB,rtx50,active
 gpu,NVIDIA,GeForce RTX 5090,32GB,rtx50,active
-gpu,AMD,Radeon RX 6600,8GB,rx6000,active
+gpu,AMD,Radeon RX 6600,8GB,rx6000,retired
 gpu,AMD,Radeon RX 6650 XT,8GB,rx6000,active
 gpu,AMD,Radeon RX 6700 XT,12GB,rx6000,active
 gpu,AMD,Radeon RX 6750 XT,12GB,rx6000,active
@@ -139,6 +139,6 @@ gpu,AMD,Radeon RX 9070 XTX,32GB,rx9000,retired
 gpu,AMD,Radeon RX 9050,8GB,rx9000,active
 gpu,Intel,Arc A380,6GB,arc-a,active
 gpu,Intel,Arc A750,8GB,arc-a,active
-gpu,Intel,Arc A770,16GB,arc-a,active
+gpu,Intel,Arc A770,16GB,arc-a,retired
 gpu,Intel,Arc B570,10GB,arc-b,active
 gpu,Intel,Arc B580,12GB,arc-b,active

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from db.watchlist import (  # noqa: E402
     DEFAULT_WATCHLIST_PATH,
     WatchlistRowError,
+    load_all_rows,
     load_watchlist,
     load_watchlist_products,
     parse_spec,
@@ -241,9 +242,10 @@ class TestKnownMissingSpecsAreSeparated:
 
 def test_every_launch_msrp_key_names_a_watchlist_model():
     """db/launch_msrp.json is keyed by products.model and edited by hand next
-    to watchlist.csv (#20): a typo there would silently never apply."""
+    to watchlist.csv (#20): a typo there would silently never apply. Retired
+    rows count: their products stay in the DB with their MSRP."""
     import json
 
     msrp = json.loads((Path(DEFAULT_WATCHLIST_PATH).parent / "launch_msrp.json").read_text(encoding="utf-8"))
-    models = {w["model"] for w in load_watchlist()}
+    models = {w["model"] for w in load_all_rows()}
     assert sorted(k for k in msrp if k not in models) == []

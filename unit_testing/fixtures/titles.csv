@@ -17,11 +17,11 @@ cpu,AMD Ryzen 5 8600G with Radeon Graphics,Ryzen 5 8600G
 cpu,AMD Ryzen 5 5600 Gaming Processor,Ryzen 5 5600
 cpu,Intel Core i5-14400F Processor,Core i5-14400F
 cpu,Intel Core i5 14400 Processor,Core i5-14400
-cpu,Intel Core i9-14900KS,Core i9-14900KS
+cpu,Intel Core i9-14900KS,
 cpu,Intel Core i7-14700K,Core i7-14700K
 cpu,Intel Core i7-14700KF,Core i7-14700KF
 cpu,Intel Core Ultra 5 245K Processor,Core Ultra 5 245K
-cpu,Intel Core Ultra 5 245 Processor,Core Ultra 5 245
+cpu,Intel Core Ultra 5 245 Processor,
 cpu,Intel Core Ultra 5 245KF,Core Ultra 5 245KF
 cpu,Intel Core Ultra 7 270K Plus,
 cpu,Intel Core Ultra 7 Processor 265K,Core Ultra 7 265K
@@ -37,7 +37,7 @@ gpu,Gigabyte GeForce RTX 5060 Windforce OC 8GB,GeForce RTX 5060
 gpu,ASUS GeForce RTX 5070 Ti SUPER 24GB,
 gpu,ASUS GeForce RTX 4070 Ti Super 16GB,GeForce RTX 4070 Ti Super
 gpu,ASUS GeForce RTX 4070 Ti 12GB,GeForce RTX 4070 Ti
-gpu,ASUS GeForce RTX 4070 Super 12GB,GeForce RTX 4070 Super
+gpu,ASUS GeForce RTX 4070 Super 12GB,
 gpu,gigabyte aorus rtx 5090 ai box. 32gb,
 gpu,asus rog astral geforce rtx 5090 oc edition. 32gb,GeForce RTX 5090
 gpu,MSI GeForce RTX 3050 Ventus 2X 6G OC,GeForce RTX 3050 6GB

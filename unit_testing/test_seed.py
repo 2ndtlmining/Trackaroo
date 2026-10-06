@@ -103,11 +103,14 @@ class TestLoadWatchlist:
                 assert p["cores"] is None
 
     def test_active_in_scope_rows_are_tracked_and_retired_are_not(self):
+        from db.watchlist import load_all_rows
+
+        status = {r["model"]: r["status"] for r in load_all_rows(str(WATCHLIST_PATH))}
         products = {p["model"]: p for p in load_watchlist(WATCHLIST_PATH)}
         assert products["Radeon RX 9070 XTX"]["tracked"] == 0
         for p in products.values():
-            if p["model"] != "Radeon RX 9070 XTX":
-                assert p["tracked"] == 1, p["model"]
+            expected = 1 if status[p["model"]] == "active" else 0
+            assert p["tracked"] == expected, p["model"]
 
 
 class TestSeedProducts:
