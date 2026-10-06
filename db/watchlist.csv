@@ -89,7 +89,7 @@ cpu,Intel,Core Ultra 5 245KF,14c,arrow-lake,active
 cpu,Intel,Core Ultra 7 265K,20c,arrow-lake,active
 cpu,Intel,Core Ultra 7 265KF,20c,arrow-lake,active
 cpu,Intel,Core Ultra 9 285K,24c,arrow-lake,active
-cpu,AMD,Ryzen 9 9950X3D2,16c,zen5,current
+cpu,AMD,Ryzen 9 9950X3D2,16c,zen5,active
 gpu,NVIDIA,GeForce RTX 3050,8GB,rtx30,active
 gpu,NVIDIA,GeForce RTX 3050 6GB,6GB,rtx30,active
 gpu,NVIDIA,GeForce RTX 3060,12GB,rtx30,active
