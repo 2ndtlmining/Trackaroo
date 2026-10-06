@@ -97,7 +97,7 @@ pages and chart images were fetched directly over HTTPS (curl) in the same sessi
 |---|---|---|---|
 | `gpu_raster_1440p` | 12/14 | 16/18 | 8/18 |
 | `gpu_rt_1440p` | 12/14 | 16/18 | 8/18 |
-| `cpu_gaming_1080p` | 8/14 | 7/24 | 1/17 |
+| `cpu_gaming_1080p` | 8/15 | 7/24 | 1/17 |
 
 ## Not in source
 
@@ -110,8 +110,8 @@ pages and chart images were fetched directly over HTTPS (curl) in the same sessi
   Radeon RX 6800 16GB, Radeon RX 6950 XT 16GB
 
 **`cpu_gaming_1080p`**
-- current: Ryzen 9 9900, Ryzen 9 9900X, Ryzen 9 9900X3D, Core Ultra 5 245,
-  Core Ultra 5 245KF, Core Ultra 7 265KF
+- current: Ryzen 9 9900, Ryzen 9 9900X, Ryzen 9 9900X3D, Ryzen 9 9950X3D2,
+  Core Ultra 5 245, Core Ultra 5 245KF, Core Ultra 7 265KF
 - current-1: Ryzen 5 7600, Ryzen 5 7600X3D, Ryzen 5 8600G, Ryzen 9 7900,
   Ryzen 9 7900X, Ryzen 9 7900X3D, Ryzen 9 7950X3D, Core i5-14400,
   Core i5-14400F, Core i5-14500, Core i5-14600K, Core i5-14600KF,

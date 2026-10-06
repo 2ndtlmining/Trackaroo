@@ -240,6 +240,10 @@ does not change the watchlist by itself: it produces the CSV row you add in a PR
    list if TechPowerUp has no figure yet. CI fails without it. Also add the
    part's US launch MSRP to `db/launch_msrp.json`
    (keyed by the exact model name); it is applied on every container boot.
+   The `status` column is always `active` for a new part (never `current`:
+   tiers come from the series). If the part was parked as unmatched, its title
+   in `unit_testing/fixtures/titles.csv` has an empty `expected`; set it to the
+   new model name (`test_chip_key` fails otherwise).
    Specs follow on the next weekly sync, and until then (7 days) the spec
    report lists the part as pending rather than unmatched.
 5. CI checks the row (`unit_testing/test_watchlist_validation.py`,
