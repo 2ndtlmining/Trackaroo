@@ -237,7 +237,8 @@ does not change the watchlist by itself: it produces the CSV row you add in a PR
    (`GeForce RTX 5070 Ti Super`), as in the existing rows.
    In the same PR, add the part to `db/perf_index.json`: its figures under
    `products`, or its name (e.g. `Radeon RX 9050 8GB`) in each `not_in_source`
-   list if TechPowerUp has no figure yet. CI fails without it. Also add the
+   list if the source chart does not list it. CI fails without it. Which chart
+   to use and how to read it: [Performance figures for a new part](#performance-figures-for-a-new-part). Also add the
    part's US launch MSRP to `db/launch_msrp.json`
    (keyed by the exact model name); it is applied on every container boot.
    The `status` column is always `active` for a new part (never `current`:
@@ -298,7 +299,7 @@ nothing changes until the files do.
 | File | What it holds | Touch it when |
 |---|---|---|
 | `db/watchlist.csv` | One row per product: `category,brand,model,spec,series,status` | **Always.** Adding = a new `active` row; retiring = set `status` to `retired`; un-retiring = set it back to `active`. Rows are never deleted. |
-| `db/perf_index.json` | Performance figures for the /value page and Head to head | **Adding a GPU or CPU.** Add its figures under `products`, or, if the source (TechPowerUp) has none yet, list it under `not_in_source` for each metric. `test_perf_index` fails the PR otherwise. |
+| `db/perf_index.json` | Performance figures for the /value page and Head to head | **Adding a GPU or CPU.** Add its figures under `products`, or, if the source (TechPowerUp) has none yet, list it under `not_in_source` for each metric. `test_perf_index` fails the PR otherwise. How: [Performance figures for a new part](#performance-figures-for-a-new-part). |
 | `db/generations.toml` | The ordered series per product line (sets the tiers and labels) | Only when a **new generation** launches (`rollover`). |
 | `db/launch_msrp.json` | US launch MSRPs | Adding a part, when its MSRP is known (optional). |
 
@@ -344,6 +345,70 @@ database at container start. So:
   check the list, then `docker compose exec trackaroo python seed.py --allow-bulk`.
 
 More detail: `docs/ARCHITECTURE.md` Part 2 section 7.
+
+### Performance figures for a new part
+
+Every tracked GPU and CPU needs an entry in `db/perf_index.json`. CI
+(`test_perf_index`, and the web watchlist coverage test) fails the PR without
+one. The entry is either the part's figures or a "not on the chart" entry.
+
+**Where the figures come from.** Each metric has exactly **one** source chart, a
+TechPowerUp "Relative Performance" chart. Take figures only from that chart,
+never from another review, another site, or the part's own launch review: those
+use a different baseline and test bed, so the numbers would not compare. The
+current charts (also in `metrics` -> `source_url` in `db/perf_index.json` and in
+[`docs/perf-index-sources.md`](docs/perf-index-sources.md)):
+
+| Metric | Needed for | Chart to read |
+|---|---|---|
+| `gpu_raster_1440p` | every GPU | RTX 5090 Matrix review, p. 31: [page](https://www.techpowerup.com/review/asus-geforce-rtx-5090-matrix/31.html), [chart image](https://tpucdn.com/review/asus-geforce-rtx-5090-matrix/images/relative-performance-2560-1440.png) |
+| `gpu_rt_1440p` | every GPU | RTX 5090 Matrix review, p. 33: [page](https://www.techpowerup.com/review/asus-geforce-rtx-5090-matrix/33.html), [chart image](https://tpucdn.com/review/asus-geforce-rtx-5090-matrix/images/relative-performance-rt-2560-1440.png) |
+| `cpu_gaming_1080p` | every CPU | Ryzen 7 7700X3D review, p. 24: [page](https://www.techpowerup.com/review/amd-ryzen-7-7700x3d/24.html), [chart image](https://tpucdn.com/review/amd-ryzen-7-7700x3d/images/relative-performance-games-1920-1080.png) |
+
+Open the links in a browser (TechPowerUp often returns 403 to scripts and
+fetch tools). The charts are images, so zoom in to read the numbers.
+
+**How to add the entry.**
+
+1. Work out the key. CPU: the watchlist `model` (`Ryzen 9 9950X3D2`). GPU:
+   `<model> <spec>` (`GeForce RTX 5060 Ti 16GB`), or just the `model` when it
+   already ends with the VRAM (`Radeon RX 9050 8GB`).
+2. Find the part on each chart it needs (a GPU needs both GPU charts). Match the
+   model **and** the VRAM: "RTX 5060 Ti 8 GB" and "RTX 5060 Ti 16 GB" are
+   different rows. A K CPU's figure is not used for the KF.
+3. **On the chart:** copy the percentage exactly as shown, as a number, under
+   `products`:
+
+   ```json
+   "Ryzen 9 9950X3D": {
+     "cpu_gaming_1080p": 107.8
+   },
+   "GeForce RTX 5060 Ti 16GB": {
+     "gpu_raster_1440p": 35,
+     "gpu_rt_1440p": 35
+   },
+   ```
+
+4. **Not on the chart:** this is normal for a part newer than the chart. Add the
+   key to the `not_in_source` list of each metric it is missing from (both GPU
+   metrics for a GPU). Never estimate, average, or copy a similar part's
+   figure. A GPU can have a raster figure and still be `not_in_source` for RT.
+
+   ```json
+   "not_in_source": {
+     "cpu_gaming_1080p": [ ..., "Ryzen 9 9950X3D2", ... ]
+   }
+   ```
+
+5. Update the coverage table and the "Not in source" list in
+   `docs/perf-index-sources.md` to match.
+6. Check: `python -m pytest -q unit_testing/test_perf_index.py` and
+   `cd web && npx vitest run test/value.test.ts`.
+
+A part listed under `not_in_source` gets real figures only when the whole metric
+moves to a newer chart that includes it. See "Refreshing the index" under
+[Value](#value-price-to-performance). Never add one part from a newer chart on
+its own.
 
 ### Troubleshooting
 
@@ -633,7 +698,7 @@ Icons are Lucide (`@lucide/svelte`); `web/test/noEmoji.test.ts` fails if an emoj
 
 **Refreshing the index.**
 
-1. Pick one chart per metric: the recent TechPowerUp chart that lists the most tracked products of that category. Record it in `docs/perf-index-sources.md` and in `metrics` in `db/perf_index.json`.
+1. Pick one chart per metric: the recent TechPowerUp chart that lists the most tracked products of that category. Record it in `docs/perf-index-sources.md`, in `metrics` in `db/perf_index.json`, and in the chart table under [Performance figures for a new part](#performance-figures-for-a-new-part).
 2. Transcribe every value for that metric from that chart. Never mix old and new values.
 3. List each tracked current and previous generation product the chart lacks under `not_in_source`. Coverage rule: GPU raster and CPU gaming are required for current and current-1 products. Ray tracing is required only where the RT chart lists the card; otherwise the card goes to `not_in_source.gpu_rt_1440p`.
 4. Update the pinned VRAM-variant values in the tests (`unit_testing/test_perf_index.py`, `web/test/value.test.ts`, `web/test/compareRows.test.ts`).
