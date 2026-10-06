@@ -26,7 +26,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from db.watchlist import load_watchlist  # noqa: E402
+from db.watchlist import load_all_rows, load_watchlist  # noqa: E402
 
 PERF_INDEX_PATH = ROOT / "db" / "perf_index.json"
 
@@ -68,6 +68,16 @@ def watchlist() -> dict:
     return keyed
 
 
+@pytest.fixture(scope="module")
+def all_rows() -> dict:
+    """Every watchlist row, retired included, keyed by its perf-index key.
+
+    A retired product keeps its figures: its page and history stay, and a
+    retirement can be undone without re-transcribing the chart.
+    """
+    return {product_key(r): r for r in load_all_rows(strict=True)}
+
+
 def _metrics_for(category: str) -> tuple:
     return GPU_METRICS if category == "gpu" else CPU_METRICS
 
@@ -87,27 +97,27 @@ def test_metric_has_single_named_source(index, metric):
     assert re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", meta["as_of"]), meta["as_of"]
 
 
-def test_product_keys_match_watchlist(index, watchlist):
-    stray = sorted(set(index["products"]) - set(watchlist))
+def test_product_keys_match_watchlist(index, all_rows):
+    stray = sorted(set(index["products"]) - set(all_rows))
     assert not stray, f"keys not in watchlist: {stray}"
 
 
-def test_not_in_source_keys_match_watchlist(index, watchlist):
+def test_not_in_source_keys_match_watchlist(index, all_rows):
     for metric, keys in index["not_in_source"].items():
         assert metric in ALL_METRICS, metric
         assert len(keys) == len(set(keys)), f"duplicate in not_in_source[{metric}]"
-        stray = sorted(set(keys) - set(watchlist))
+        stray = sorted(set(keys) - set(all_rows))
         assert not stray, f"not_in_source[{metric}] keys not in watchlist: {stray}"
 
 
-def test_metrics_match_category(index, watchlist):
+def test_metrics_match_category(index, all_rows):
     for key, values in index["products"].items():
-        allowed = _metrics_for(watchlist[key]["category"])
+        allowed = _metrics_for(all_rows[key]["category"])
         wrong = sorted(set(values) - set(allowed))
         assert not wrong, f"{key} has metrics for the other category: {wrong}"
     for metric, keys in index["not_in_source"].items():
         for key in keys:
-            assert metric in _metrics_for(watchlist[key]["category"]), (key, metric)
+            assert metric in _metrics_for(all_rows[key]["category"]), (key, metric)
 
 
 def test_values_are_positive_numbers(index):
