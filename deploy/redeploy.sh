@@ -10,7 +10,9 @@
 #   4. build with the git SHA, then up -d
 #   5. wait for the Docker healthcheck (/healthz), then for the boot
 #      catch-up run to finish (it scrapes and ingests right after boot)
-#   6. repair_listings.py dry run; --apply only on an explicit "y"
+#   6. apply the watchlist (seed.py --allow-bulk: the boot seed refuses a
+#      change of more than 5 tracked parts), then the repair_listings.py dry
+#      run; --apply only on an explicit "y"
 #   7. /healthz must report this SHA and list umart
 #
 # Knobs: FORCE=1 (allow RUN_AT_HOUR..RETRY_UNTIL_HOUR), SKIP_BACKUP=1 (no
@@ -110,8 +112,14 @@ while :; do
     [ "$POLL_SECONDS" -gt 0 ] || waited=$((waited + 1))
 done
 
-# ── 6. Repair dry run ────────────────────────────────────────────────────
+# ── 6. Watchlist, then repair dry run ────────────────────────────────────
 if [ "$caught_up" = 1 ]; then
+    # The boot seed refuses more than 5 tracked flips (a retirement or a
+    # rollover) and the container carries on, so a merged watchlist PR would
+    # silently never apply. The PR was the review; apply it here. Seed runs
+    # before the repair so a listing can be re-pointed to a part it adds.
+    log "applying db/watchlist.csv (seed.py --allow-bulk)"
+    docker compose exec -T "$SERVICE" python seed.py --allow-bulk </dev/null         || die "seed.py failed (see above); the watchlist is not applied. Fix it, then: docker compose exec ${SERVICE} python seed.py --allow-bulk"
     # </dev/null on every exec: `exec -T` still forwards stdin, so the dry run
     # would otherwise swallow the operator's answer below.
     docker compose exec -T "$SERVICE" python repair_listings.py </dev/null
@@ -124,7 +132,8 @@ if [ "$caught_up" = 1 ]; then
         log "repairs not applied. To apply later: docker compose exec ${SERVICE} python repair_listings.py --apply"
     fi
 else
-    log "WARNING: the boot catch-up had not finished after ${CATCHUP_TIMEOUT}s; repair skipped so it cannot race the ingest."
+    log "WARNING: the boot catch-up had not finished after ${CATCHUP_TIMEOUT}s; watchlist and repair skipped so they cannot race the ingest."
+    log "Once 'Pipeline finished' shows in docker compose logs ${SERVICE}, run: docker compose exec ${SERVICE} python seed.py --allow-bulk"
     log "Once 'Pipeline finished' shows in docker compose logs ${SERVICE}, run: docker compose exec ${SERVICE} python repair_listings.py (then --apply)"
 fi
 
