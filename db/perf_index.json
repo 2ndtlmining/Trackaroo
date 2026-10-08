@@ -217,6 +217,16 @@
     },
     "Core Ultra 9 285K": {
       "cpu_gaming_1080p": 96.9
+    },
+    "Ryzen 7 9850X3D": {
+      "cpu_gaming_1080p": 113.9
+    },
+    "Core Ultra 7 270K Plus": {
+      "cpu_gaming_1080p": 97.7
+    },
+    "GeForce RTX 5050 8GB": {
+      "gpu_raster_1440p": 23,
+      "gpu_rt_1440p": 18
     }
   },
   "not_in_source": {
@@ -235,7 +245,8 @@
       "Radeon RX 9070 GRE 12GB",
       "Arc A380 6GB",
       "Arc A750 8GB",
-      "Arc B570 10GB"
+      "Arc B570 10GB",
+      "Radeon RX 6500 XT 4GB"
     ],
     "gpu_rt_1440p": [
       "GeForce RTX 3050 6GB",
@@ -252,7 +263,8 @@
       "Radeon RX 9070 GRE 12GB",
       "Arc A380 6GB",
       "Arc A750 8GB",
-      "Arc B570 10GB"
+      "Arc B570 10GB",
+      "Radeon RX 6500 XT 4GB"
     ],
     "cpu_gaming_1080p": [
       "Ryzen 5 5500",
@@ -294,7 +306,10 @@
       "Core i9-14900KS",
       "Core Ultra 5 245",
       "Core Ultra 5 245KF",
-      "Core Ultra 7 265KF"
+      "Core Ultra 7 265KF",
+      "Ryzen 9 5900XT",
+      "Ryzen 5 8500G",
+      "Ryzen 7 8700G"
     ]
   }
 }
