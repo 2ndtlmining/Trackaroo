@@ -331,8 +331,10 @@ python manage_watchlist.py check
 
 `rollover` edits `db/generations.toml` only (new series at the top of the line);
 the CSV is untouched. The series that falls to position 3 goes out of scope, and
-the next seed untracks its rows. Open a PR, merge, redeploy outside 04:00-09:59
-Melbourne, then on the host:
+the next seed untracks its rows. Open a PR, merge, then run `deploy/redeploy.sh`
+outside 04:00-09:59 Melbourne: after the boot catch-up it runs
+`seed.py --allow-bulk`, which applies the rollover and logs every tracked flip.
+Without redeploy.sh (a plain `git pull` + restart), apply it on the host by hand:
 
 ```bash
 docker compose exec trackaroo python seed.py --dry-run
@@ -344,7 +346,9 @@ also what a corrupted CSV looks like. If a seed run would change `tracked` on
 more than 5 products (a flat limit, so every real rollover needs it) it refuses, writes nothing
 (the `generations` table mirror is only written after a successful product sync) and logs the
 refusal; the container still boots (the entrypoints tolerate a seed refusal).
-`--allow-bulk` is the deliberate override. On a normal boot the seed log says
+`--allow-bulk` is the deliberate override; `deploy/redeploy.sh` passes it, since the
+merged PR was the review (until 8-Oct-2026 it did not, and #87's 23 retirements plus
+an added part sat unapplied on prod for two days with only a container log line). On a normal boot the seed log says
 `Tracked changes: 0`.
 
 #### Retiring one part
