@@ -93,5 +93,12 @@
   "Arc A750": 289,
   "Arc A770": 349,
   "Arc B570": 219,
-  "Arc B580": 249
+  "Arc B580": 249,
+  "Ryzen 9 5900XT": 349,
+  "Ryzen 5 8500G": 179,
+  "Ryzen 7 8700G": 329,
+  "Ryzen 7 9850X3D": 499,
+  "Core Ultra 7 270K Plus": 299,
+  "GeForce RTX 5050": 249,
+  "Radeon RX 6500 XT": 199
 }

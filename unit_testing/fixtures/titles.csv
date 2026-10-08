@@ -7,7 +7,7 @@ cpu,AMD Ryzen 5 5600 6-Core Processor,Ryzen 5 5600
 cpu,AMD Ryzen 7 5800XT Processor,
 cpu,AMD Ryzen 7 5800X Processor,Ryzen 7 5800X
 cpu,AMD Ryzen 7 5800X3D Processor,Ryzen 7 5800X3D
-cpu,AMD Ryzen 9 5900XT 16-Core,
+cpu,AMD Ryzen 9 5900XT 16-Core,Ryzen 9 5900XT
 cpu,AMD Ryzen 7 7700X3D Processor,
 cpu,AMD Ryzen 7 7700X Processor,Ryzen 7 7700X
 cpu,AMD Ryzen 9 9950X3D2 Processor,Ryzen 9 9950X3D2
@@ -23,7 +23,7 @@ cpu,Intel Core i7-14700KF,Core i7-14700KF
 cpu,Intel Core Ultra 5 245K Processor,Core Ultra 5 245K
 cpu,Intel Core Ultra 5 245 Processor,
 cpu,Intel Core Ultra 5 245KF,Core Ultra 5 245KF
-cpu,Intel Core Ultra 7 270K Plus,
+cpu,Intel Core Ultra 7 270K Plus,Core Ultra 7 270K Plus
 cpu,Intel Core Ultra 7 Processor 265K,Core Ultra 7 265K
 cpu,Gigabyte Z890 Ultra 5 Power Bundle,
 gpu,palit geforce rtx 5060 ti dual 8g,GeForce RTX 5060 Ti 8GB

@@ -14,6 +14,12 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-08 -- seven Discover requests tracked (PR #88); prod seed is stuck behind the bulk guard.**
+  Prod (09e8bf1) still lists the 23 parts retired in #87 and has no Ryzen 9 9950X3D2 product: the
+  boot `seed.py` refused the >5 tracked flips, so none of the watchlist changes since #84 applied, and
+  Discover's Requested list never empties. Fix on the host: `seed.py --dry-run`, then `--allow-bulk`;
+  Requested rows flip to tracked at the next daily discovery run.
+
 - **2026-10-06 -- generations config + retirement status (#17, #18, #19), one branch `feat/2026-10-06-generations`.**
   `db/generations.toml` is now the one list of series per product line (position = tier, labels, discovery
   `chips`); `db/watchlist.csv` gained `series` and `status` columns and `migrate.RETIRED_PRODUCTS` is gone.
