@@ -20,11 +20,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Runners pinned to 24.04: ubuntu-latest moves to 26.04 on 19 Oct 2026 and
+  # `npx playwright install --with-deps` may not support it yet.
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -34,7 +36,7 @@ jobs:
       - run: python manage_watchlist.py check
 
   web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
@@ -45,8 +47,8 @@ jobs:
       # test runner processes themselves, not just webServer's child process.
       TRACKAROO_SYNTHETIC: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -86,7 +88,7 @@ jobs:
           echo "same-origin POST: $same, cross-site POST: $cross"
           test "$same" = 400
           test "$cross" = 403
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-test-results
@@ -94,9 +96,9 @@ jobs:
           if-no-files-found: ignore
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The Dockerfile bakes data/ in as seed history; it is gitignored, so
       # give the build an empty one (bootstrap-data.sh skips an empty dir).
       - run: mkdir -p data
