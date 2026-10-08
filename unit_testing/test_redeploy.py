@@ -37,6 +37,7 @@ case "$*" in
   "inspect -f {{.State.Health.Status}} cid123") echo "${FAKE_HEALTH:-healthy}" ;;
   "compose exec -T trackaroo python backup_db.py") exit "${FAKE_BACKUP_EXIT:-0}" ;;
   "compose logs --no-color trackaroo") printf '%s\\n' "${FAKE_LOGS-Pipeline finished.}" ;;
+  "compose exec -T trackaroo python seed.py --allow-bulk") echo "Tracked changes: 23"; exit "${FAKE_SEED_EXIT:-0}" ;;
   "compose exec -T trackaroo python repair_listings.py") echo "Re-pointed 3 listing(s) (dry run)" ;;
   "compose exec -T trackaroo node -e"*)
     n=$(( $(cat "$CALLS.healthz" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$CALLS.healthz"
@@ -122,6 +123,8 @@ def test_happy_path_runs_every_step_in_order(project):
         "docker GIT_SHA=abc1234 compose build",
         "compose up -d",
         "inspect -f {{.State.Health.Status}} cid123",
+        "compose logs --no-color trackaroo",
+        "compose exec -T trackaroo python seed.py --allow-bulk",
         "compose exec -T trackaroo python repair_listings.py",
         "compose exec -T trackaroo node -e",
     ]
@@ -240,11 +243,30 @@ def test_repair_waits_for_the_boot_catchup(project):
     )
 
 
+def test_applies_the_watchlist_without_a_prompt(project):
+    # The boot seed refuses >5 tracked flips and the container boots anyway, so
+    # a merged retirement PR never applied (8-Oct-2026). redeploy applies it,
+    # whatever the operator answers to the repair prompt.
+    result, calls = run(project, stdin="")
+    assert result.returncode == 0, result.stderr
+    assert any("python seed.py --allow-bulk" in c for c in calls)
+    assert "Tracked changes: 23" in result.stdout  # the flips are shown
+
+
+def test_a_failed_seed_stops_before_the_repair(project):
+    result, calls = run(project, stdin="y\n", FAKE_SEED_EXIT="1")
+    assert result.returncode != 0
+    assert "seed.py --allow-bulk" in result.stderr  # how to retry
+    assert not any("repair_listings.py" in c for c in calls)
+
+
 def test_skips_the_repair_when_the_catchup_never_finishes(project):
     result, calls = run(project, stdin="y\n", FAKE_LOGS="Starting pipeline --pending-only...", CATCHUP_TIMEOUT="0")
     assert result.returncode == 0, result.stderr
     assert not any("repair_listings.py" in c for c in calls)
+    assert not any("seed.py" in c for c in calls)  # it would race the ingest
     assert "repair_listings.py" in result.stdout  # the command to run later
+    assert "seed.py --allow-bulk" in result.stdout
     assert any("compose exec -T trackaroo node -e" in c for c in calls)  # still verified
 
 
@@ -261,7 +283,7 @@ def test_every_exec_has_stdin_detached():
     text = SCRIPT.read_text(encoding="utf-8")
     lines = text.splitlines()
     execs = [i for i, line in enumerate(lines) if "docker compose exec -T" in line]
-    assert len(execs) == 4
+    assert len(execs) == 5
     for i in execs:
         # A call continued with "\" carries the redirect on its next line.
         call = lines[i] + (lines[i + 1] if lines[i].endswith("\\") else "")

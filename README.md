@@ -288,7 +288,7 @@ it is filed under, and why it looks wrong, for example:
 A series newer than `db/generations.toml` is treated as in scope at `current`, so
 it shows up on /discover instead of disappearing. Then follow
 `docs/ARCHITECTURE.md` Part 2 section 7 (launch day): `python manage_watchlist.py rollover`,
-add the SKU rows, `check`, PR, redeploy, `seed.py --allow-bulk`.
+add the SKU rows, `check`, PR, `deploy/redeploy.sh` (it applies the watchlist, bulk changes included).
 
 ### Managing the watchlist: the files, adding and retiring
 
@@ -341,7 +341,9 @@ database at container start. So:
 - Quick route for a CSV-only change: `git pull` then
   `docker compose exec trackaroo python seed.py`.
 - A change of more than 5 products at once (a rollover, or retiring a series)
-  is refused by seed's bulk guard. Run `docker compose exec trackaroo python seed.py --dry-run`,
+  is refused by seed's bulk guard on boot and by the quick route above.
+  `deploy/redeploy.sh` applies it for you (`seed.py --allow-bulk`, after the
+  boot catch-up); by hand, run `docker compose exec trackaroo python seed.py --dry-run`,
   check the list, then `docker compose exec trackaroo python seed.py --allow-bulk`.
 
 More detail: `docs/ARCHITECTURE.md` Part 2 section 7.
@@ -512,7 +514,8 @@ docker run -d --name trackaroo -p 3000:3000 --restart unless-stopped \
 
 1. Runs `seed.py`: creates the DB if it doesn't exist, and on every boot syncs
    `products` with `db/watchlist.csv` and `db/generations.toml` (new rows added,
-   `retired` rows untracked; more than 5 tracked changes need `--allow-bulk`).
+   `retired` rows untracked; more than 5 tracked changes need `--allow-bulk`,
+   which `deploy/redeploy.sh` runs after the boot).
 2. Hydrates a fresh DB from the snapshot history baked into the image
    (skipped once the DB has data).
 3. Starts the dashboard on :3000.

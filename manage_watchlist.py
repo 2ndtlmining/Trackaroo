@@ -38,7 +38,7 @@ from watchlist_edit import CSV_COLUMNS, append_row, insert_series, set_status, u
 CSV_PATH = str(WATCHLIST_PATH)
 TOML_PATH = str(GENERATIONS_PATH)
 
-SEED_HINT = "Next: python seed.py --dry-run, then python seed.py --allow-bulk (on the host after deploy)."
+SEED_HINT = "Next: PR, merge, then deploy/redeploy.sh on the host (it runs seed.py --allow-bulk)."
 
 
 def _read(path: str) -> str:

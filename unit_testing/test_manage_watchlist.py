@@ -66,7 +66,7 @@ def test_rollover_writes_toml_only(files, capsys):
     gens = parse_generations(files.toml.read_text())
     assert gens.lines["amd-cpu"].series[0].key == "zen6"
     assert gens.series["zen6"].chips == ("ryzen:10",)
-    assert "Next: python seed.py --dry-run, then python seed.py --allow-bulk (on the host after deploy)." in out
+    assert "Next: PR, merge, then deploy/redeploy.sh on the host (it runs seed.py --allow-bulk)." in out
 
 
 def test_rollover_duplicate_key_exits_1_and_writes_nothing(files, capsys):
