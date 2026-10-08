@@ -262,6 +262,18 @@ def main(argv: Optional[List[str]] = None) -> None:
     for model in report_missing(conn, products):
         LOGGER.warning("In the DB but not in watchlist.csv (left unchanged): %s", model)
 
+    # A part just added leaves /discover's Requested now, not at the next daily
+    # run (#90). Best-effort: seed runs at boot under `set -e`.
+    if not args.dry_run:
+        try:
+            import discover
+            flipped = discover.flip_resolved(conn)
+            conn.commit()
+            for name in flipped:
+                LOGGER.info("  Discover: %s is now tracked", name)
+        except Exception as e:  # noqa: BLE001 - best-effort, boot must not crash-loop
+            LOGGER.warning("Discover status refresh failed (best-effort; the daily run retries): %s", e)
+
     # Verify
     if not args.dry_run:
         total = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]

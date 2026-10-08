@@ -8,7 +8,8 @@ untracked part, records listings filed under the wrong product as
 discovery_conflicts, and posts parts seen for the first time to Discord once.
 A run never overwrites a decision (status/notified_at/decided_at); the only
 automatic status change is untracked|requested -> tracked when the watchlist
-now resolves the part. See README "Discovering and adding new parts".
+now resolves the part (here from today's catalogues, and from seed.py via
+flip_resolved() at every boot/redeploy). See README "Discovering and adding new parts".
 """
 from __future__ import annotations
 
@@ -57,9 +58,7 @@ def _classify(envelopes, matcher, watchlist=()) -> Tuple[Dict[Tuple[str, str], D
     # Retired rows are known chips (not new parts), but they are not 'tracked': a
     # retired part must not flip its discovered_parts row to status 'tracked'.
     known_chips = {(wp["category"], chip_key(wp["model"], wp["category"])) for wp in watchlist}
-    tracked_chips = {
-        (wp["category"], chip_key(wp["model"], wp["category"])) for wp in watchlist if wp.get("tracked", True)
-    }
+    tracked_chips = _tracked_chips(watchlist)
     groups: Dict[Tuple[str, str], Dict[str, Any]] = {}
     tracked: Set[Tuple[str, str]] = set()
     unrecognised: List[str] = []
@@ -83,14 +82,11 @@ def _classify(envelopes, matcher, watchlist=()) -> Tuple[Dict[Tuple[str, str], D
                 continue
             pkey = rules.part_key(category, key, vram)
             idx = matcher.resolve(title, category)
-            if idx is not None:
-                if matcher.watchlist[idx].get("tracked", True):
+            if idx is not None or (vram is None and (category, key) in known_chips):
+                # Known: a watchlist row, or a known chip whose title just omits the VRAM.
+                if _tracked_by(matcher, idx, category, key, vram, tracked_chips):
                     tracked.add((category, pkey))
                 continue
-            if vram is None and (category, key) in known_chips:
-                if (category, key) in tracked_chips:
-                    tracked.add((category, pkey))  # flips a bare-key part created before the VRAM rows existed
-                continue  # chip is known; the title just omits the VRAM, so Matcher cannot pick a row
             g = groups.setdefault((category, pkey), {
                 "key": key, "vram": vram, "titles": [], "retailers": set(), "count": 0,
                 "min_price": None, "min_url": None,
@@ -160,6 +156,47 @@ def _upsert(conn, groups, watchlist, today_iso: str) -> None:
                        :min_price, :min_price_url, :sample_titles, :suggested_row)""",
                 {**fields, "c": category, "p": pkey, "first": first_seen.get((category, pkey), today_iso)},
             )
+
+
+def _tracked_chips(watchlist) -> Set[Tuple[str, str]]:
+    return {(wp["category"], chip_key(wp["model"], wp["category"])) for wp in watchlist if wp.get("tracked", True)}
+
+
+def _tracked_by(matcher, idx, category, key, vram, tracked_chips) -> bool:
+    """Whether a recognised title belongs to a tracked watchlist row (idx = matcher.resolve)."""
+    if idx is not None:
+        return bool(matcher.watchlist[idx].get("tracked", True))
+    # A bare-key part created before the VRAM rows existed.
+    return vram is None and (category, key) in tracked_chips
+
+
+def flip_resolved(conn: sqlite3.Connection, watchlist=None) -> List[str]:
+    """Flip untracked/requested parts the watchlist now tracks, from their stored sample titles.
+
+    The daily run does the same from today's catalogues; seed.py calls this so a
+    part added in a PR leaves Requested at deploy, not at the next 04:00 run (#90).
+    Returns the display names flipped. The caller commits.
+    """
+    if _missing_tables(conn):
+        return []
+    wl = watchlist if watchlist is not None else load_watchlist() + load_retired()
+    matcher, tracked_chips = Matcher(wl), _tracked_chips(wl)
+    rows = conn.execute(
+        "SELECT category, part_key, display_name, sample_titles FROM discovered_parts"
+        " WHERE status IN ('untracked', 'requested')"
+    ).fetchall()
+    flipped = []
+    for category, pkey, name, samples in rows:
+        for title in json.loads(samples or "[]"):
+            kv = _group_key(category, title)
+            if kv is None:
+                continue
+            key, vram = kv
+            if _tracked_by(matcher, matcher.resolve(title, category), category, key, vram, tracked_chips):
+                _flip_tracked(conn, {(category, pkey)})
+                flipped.append(name)
+                break
+    return flipped
 
 
 def _flip_tracked(conn, tracked: Set[Tuple[str, str]]) -> None:

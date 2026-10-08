@@ -114,6 +114,44 @@ def test_requested_part_flips_to_tracked_once_watchlist_has_it(env):
     assert _parts(env[1])["ryzen 5600gt"]["status"] == "tracked"
 
 
+def test_flip_resolved_tracks_requested_parts_without_catalogues(env):
+    # #90: seed runs this at boot/redeploy, so Requested clears at deploy, not at the next 04:00 run.
+    _run(env)
+    conn = sqlite3.connect(env[1])
+    conn.execute("UPDATE discovered_parts SET status='requested' WHERE part_key IN ('ryzen 5600gt', 'rx 9070 gre|12')")
+    conn.commit()
+    wl = WATCHLIST + [{"category": "cpu", "brand": "AMD", "model": "Ryzen 5 5600GT", "gen_tier": "current-2",
+                       "vram_gb": None, "cores": 6}]
+    assert discover.flip_resolved(conn, wl) == ["Ryzen 5 5600GT"]
+    conn.commit()
+    parts = _parts(env[1])
+    assert parts["ryzen 5600gt"]["status"] == "tracked"
+    assert parts["rx 9070 gre|12"]["status"] == "requested"  # not in the watchlist
+    assert parts["rtx 6070|12"]["status"] == "untracked"
+
+
+def test_flip_resolved_leaves_ignored_and_retired_alone(env):
+    _run(env)
+    conn = sqlite3.connect(env[1])
+    conn.execute("UPDATE discovered_parts SET status='ignored' WHERE part_key='ryzen 5600gt'")
+    conn.execute("UPDATE discovered_parts SET status='requested' WHERE part_key='rx 9070 gre|12'")
+    conn.commit()
+    wl = WATCHLIST + [
+        {"category": "cpu", "brand": "AMD", "model": "Ryzen 5 5600GT", "gen_tier": "current-2", "vram_gb": None, "cores": 6},
+        {"category": "gpu", "brand": "AMD", "model": "Radeon RX 9070 GRE", "gen_tier": "current", "vram_gb": 12,
+         "cores": None, "tracked": False},
+    ]
+    assert discover.flip_resolved(conn, wl) == []
+    parts = _parts(env[1])
+    assert parts["ryzen 5600gt"]["status"] == "ignored"
+    assert parts["rx 9070 gre|12"]["status"] == "requested"
+
+
+def test_flip_resolved_without_discovery_tables_is_a_no_op(tmp_path):
+    conn = init_db(tmp_path / "fresh.db")
+    assert discover.flip_resolved(conn, WATCHLIST) == []
+
+
 def test_no_catalogues_keeps_previous_results(env, tmp_path):
     _run(env)
     summary = discover.run(db_path=env[1], data_dir=tmp_path / "empty", today=date(2026, 10, 3), watchlist=WATCHLIST)
