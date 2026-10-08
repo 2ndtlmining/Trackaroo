@@ -11,6 +11,7 @@ How it works:
 
 ## Unreleased
 
+- A part added to the watchlist now leaves Discover's Requested list as soon as it is deployed, instead of at the next morning's run (#90).
 - CI: actions updated for Node 24 and pinned to Ubuntu 24.04.
 - Now tracking the Radeon RX 9050 8GB (requested from the Discover page).
 - Retired 23 parts that retailers no longer sell: Arc A770, Core Ultra 5 245, eleven Core 13th/14th-gen models, nine GeForce RTX 30/40 cards and the Radeon RX 6600. Their pages and price history stay.

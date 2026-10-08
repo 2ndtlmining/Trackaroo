@@ -253,8 +253,9 @@ does not change the watchlist by itself: it produces the CSV row you add in a PR
 6. On the server, outside 04:00-09:59 Melbourne (the daily scrape window):
    `cd ~/docker/Trackaroo && deploy/redeploy.sh`. The boot runs `seed.py`, which
    adds the product.
-7. At the next daily run the part leaves **Requested** (status `tracked`) and
-   appears under GPUs with prices from that day. Specs arrive on the Sunday spec
+7. The part leaves **Requested** (status `tracked`) as soon as the deploy's
+   seed adds it (the seed log says `Discover: <part> is now tracked`), and
+   appears under GPUs with prices from the next daily run. Specs arrive on the Sunday spec
    sync, or run
    `docker compose exec trackaroo python sync_specs.py --category gpu`
    (`--category cpu` for a CPU).

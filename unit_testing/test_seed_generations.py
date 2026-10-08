@@ -210,3 +210,36 @@ def test_main_syncs_active_retailers_even_when_bulk_change_refused(tmp_path, mon
     finally:
         c.close()
     assert got == ["alpha", "beta"]
+
+
+def _db_with_requested_part(tmp_path):
+    from ingest import init_db
+    from migrate import migrate_add_discovery_tables
+    db_path = tmp_path / "d.db"
+    conn = init_db(db_path)
+    migrate_add_discovery_tables(conn)
+    conn.execute(
+        """INSERT INTO discovered_parts (category, part_key, display_name, status, first_seen, last_seen,
+               listing_count, retailers, sample_titles, suggested_row)
+           VALUES ('cpu', 'ryzen 9850x3d', 'Ryzen 7 9850X3D', 'requested', '2026-10-01', '2026-10-08',
+               3, 'scorptec', '["AMD Ryzen 7 9850X3D 8-Core Processor"]', 'x')"""
+    )
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _status(db_path):
+    conn = sqlite3.connect(str(db_path))
+    return conn.execute("SELECT status FROM discovered_parts WHERE part_key = 'ryzen 9850x3d'").fetchone()[0]
+
+
+def test_main_flips_requested_parts_the_watchlist_now_tracks(tmp_path, monkeypatch):
+    """#90: Requested clears when the deploy seeds the part, not at the next daily run."""
+    import seed
+    db_path = _db_with_requested_part(tmp_path)
+    monkeypatch.setattr(seed, "DB_PATH", db_path)
+    seed.main(["--dry-run"])
+    assert _status(db_path) == "requested"  # a dry run writes nothing
+    seed.main([])
+    assert _status(db_path) == "tracked"
