@@ -449,3 +449,36 @@ describe('OzBargain deals (#34)', () => {
 		for (const d of [...data.belowAverage, ...data.atAllTimeLow]) expect(d).toHaveProperty('ozb', null);
 	});
 });
+
+describe('/product/[id] price alert actions', () => {
+	const post = (fields: Record<string, string>) =>
+		new Request('http://x/product/1?/create', {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams(fields).toString()
+		});
+
+	// price_alerts has a foreign key to products: an alert for an id with no
+	// product used to fail the constraint and answer 500.
+	it('answers 404 for an alert on a product that does not exist', async () => {
+		const { actions } = await import('../src/routes/product/[id]/+page.server');
+		const { getDb } = await import('../src/lib/server/db');
+		const before = (getDb().prepare('SELECT COUNT(*) AS n FROM price_alerts').get() as { n: number }).n;
+
+		await expect(
+			actions.create({ params: { id: '999999' }, request: post({ target_price: '500', channel: 'discord' }) } as any)
+		).rejects.toMatchObject({ status: 404 });
+		expect((getDb().prepare('SELECT COUNT(*) AS n FROM price_alerts').get() as { n: number }).n).toBe(before);
+	});
+
+	it('still creates the alert for a product that does', async () => {
+		const { actions } = await import('../src/routes/product/[id]/+page.server');
+		const { getDb } = await import('../src/lib/server/db');
+		const id = (getDb().prepare('SELECT id FROM products ORDER BY id LIMIT 1').get() as { id: number }).id;
+
+		await expect(
+			actions.create({ params: { id: String(id) }, request: post({ target_price: '500', channel: 'discord' }) } as any)
+		).rejects.toMatchObject({ status: 303, location: `/product/${id}` });
+		expect(getDb().prepare('SELECT target_price FROM price_alerts WHERE product_id = ?').get(id)).toEqual({ target_price: 500 });
+	});
+});

@@ -93,6 +93,13 @@ export const actions = {
 		}
 		const notifyOnRestock = form.get('notify_on_restock') === 'on' || form.get('notify_on_restock') === '1';
 
+		// The id is only shaped like one above. price_alerts has a foreign key
+		// to products, so an alert for an id with no product was a constraint
+		// failure, answered as a 500 rather than the page's own 404.
+		if (!getDb().prepare('SELECT 1 FROM products WHERE id = ?').get(id)) {
+			error(404, 'Product not found');
+		}
+
 		upsertAlert(getWriteDb(), id, target, channel, notifyOnRestock);
 		redirect(303, `/product/${id}`);
 	},
