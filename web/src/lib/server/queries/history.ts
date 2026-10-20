@@ -1,7 +1,7 @@
-import type { DB, ListingRow, ProductRow, SnapshotRow } from '../db';
+import type { DB, ListingRow, ProductRow } from '../db';
 import type { ListingStatus, Retailer, StockStatus } from '../../types';
 import { dailyCheapestInStock, notBundle } from './sql';
-import type { PriceBandPoint, ProductHistory, SpecRow } from '../../models';
+import type { PriceBandPoint, ProductHistory, SeriesPoint, SpecRow } from '../../models';
 import { getProductStats } from './stats';
 
 export function getPriceBand(db: DB, productId: number): PriceBandPoint[] {
@@ -65,7 +65,7 @@ export function getProductHistory(
 			`SELECT
 				l.id AS lid, l.product_id, l.retailer, l.variant_name, l.retailer_sku,
 				l.listing_url, l.status, l.first_seen_at, l.last_seen_at, l.last_snapshot_at,
-				s.id AS sid, s.retailer_listing_id, s.snapshot_date, s.price_aud, s.stock_status, s.scraped_at
+				s.id AS sid, s.snapshot_date, s.price_aud, s.stock_status
 			FROM retailer_listings l
 			LEFT JOIN price_snapshots s ON s.retailer_listing_id = l.id
 			WHERE l.product_id = ? AND ${notBundle('l')}
@@ -83,14 +83,12 @@ export function getProductHistory(
 		last_seen_at: string | null;
 		last_snapshot_at: string | null;
 		sid: number | null;
-		retailer_listing_id: number | null;
 		snapshot_date: string | null;
 		price_aud: number | null;
 		stock_status: string | null;
-		scraped_at: string | null;
 	}>;
 
-	const listings = new Map<number, { listing: ListingRow; points: SnapshotRow[] }>();
+	const listings = new Map<number, { listing: ListingRow; points: SeriesPoint[] }>();
 	for (const r of rows) {
 		let entry = listings.get(r.lid);
 		if (!entry) {
@@ -112,13 +110,12 @@ export function getProductHistory(
 			listings.set(r.lid, entry);
 		}
 		if (r.sid !== null) {
+			// Only what the page reads (SeriesPoint): the rest of the row was
+			// most of the page's weight.
 			entry.points.push({
-				id: r.sid,
-				retailer_listing_id: r.retailer_listing_id!,
 				snapshot_date: r.snapshot_date!,
 				price_aud: r.price_aud!,
-				stock_status: r.stock_status as StockStatus,
-				scraped_at: r.scraped_at!
+				stock_status: r.stock_status as StockStatus
 			});
 		}
 	}
