@@ -274,6 +274,22 @@ describe('getProductHistory', () => {
 		}
 	});
 
+	// The product page's HTML is mostly these points; each used to carry its
+	// row id, listing id and scrape time too, which nothing on the page reads.
+	it('sends each point as date, price and stock only', () => {
+		const row = db
+			.prepare(
+				`SELECT product_id FROM retailer_listings GROUP BY product_id LIMIT 1`
+			)
+			.get() as { product_id: number } | undefined;
+		const history = getProductHistory(db, row!.product_id);
+		const points = history!.series.flatMap((series) => series.points);
+		expect(points.length).toBeGreaterThan(0);
+		for (const point of points) {
+			expect(Object.keys(point).sort()).toEqual(['price_aud', 'snapshot_date', 'stock_status']);
+		}
+	});
+
 	it('attaches trailing 30-day stats', () => {
 		const history = getProductHistory(db, 1);
 		expect(history).not.toBeNull();

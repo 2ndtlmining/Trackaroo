@@ -11,6 +11,10 @@ How it works:
 
 ## Unreleased
 
+- A $0 (or otherwise invalid) retailer price is no longer recorded as a real price, so it can't show as the cheapest price or all-time low or trigger price alerts.
+- Product pages load less data: their price history is about 40% smaller.
+- Setting a price alert on a product that doesn't exist now shows "not found" instead of an error page.
+- The database no longer keeps a second copy of the snapshot index (17% smaller after a year; applied by `migrate.py` on the next deploy).
 - A part added to the watchlist now leaves Discover's Requested list as soon as it is deployed, instead of at the next morning's run (#90).
 - CI: actions updated for Node 24 and pinned to Ubuntu 24.04.
 - Now tracking the Radeon RX 9050 8GB (requested from the Discover page).

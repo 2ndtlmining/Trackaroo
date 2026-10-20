@@ -692,6 +692,30 @@ def migrate_add_fx_rates_table(conn: sqlite3.Connection, dry_run: bool = False) 
     LOGGER.info("  [OK] fx_rates table created")
 
 
+def migrate_drop_duplicate_snapshot_index(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Drop idx_snapshots_listing_date, a copy of an index SQLite already has.
+
+    price_snapshots' UNIQUE (retailer_listing_id, snapshot_date) builds that
+    exact index itself (sqlite_autoindex_price_snapshots_1), and the planner
+    uses it for every lookup the duplicate served. The copy cost 17% of a
+    year-old DB and was written on every insert. Removing an index loses no
+    data; db/schema.sql no longer creates it.
+    """
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_snapshots_listing_date'"
+    ).fetchone()
+    if not exists:
+        LOGGER.info("  [SKIP] idx_snapshots_listing_date already gone")
+        return
+    if dry_run:
+        LOGGER.info("  [DRY-RUN] Would drop the duplicate index idx_snapshots_listing_date")
+        return
+    LOGGER.info("  [MIGRATE] Dropping the duplicate index idx_snapshots_listing_date...")
+    conn.execute("DROP INDEX idx_snapshots_listing_date")
+    conn.commit()
+    LOGGER.info("  [OK] idx_snapshots_listing_date dropped")
+
+
 RETIRE_SUGGESTIONS_TABLE_SQL = """
 CREATE TABLE retire_suggestions (
     product_id          INTEGER PRIMARY KEY REFERENCES products(id),
@@ -856,6 +880,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         # Migration: ready-to-retire suggestions (#17)
         migrate_add_retire_suggestions(conn, dry_run=args.dry_run)
+
+        # Migration: drop the index the UNIQUE constraint already provides
+        migrate_drop_duplicate_snapshot_index(conn, dry_run=args.dry_run)
 
         if not args.dry_run:
             # Verify

@@ -156,9 +156,16 @@ export interface Mover {
 	sparkline?: SparklinePoint[];
 }
 
+// One day of one listing's price, as the product page sends it: the three
+// columns its chart and listings panel read. The full SnapshotRow added a row
+// id, the listing id (already on `listing`) and a scrape timestamp to every
+// point -- over half of each point, and the product page's HTML is mostly
+// points: about 1 MB for a 16-listing product after a year of history.
+export type SeriesPoint = Pick<SnapshotRow, 'snapshot_date' | 'price_aud' | 'stock_status'>;
+
 export interface Series {
 	listing: ListingRow;
-	points: SnapshotRow[];
+	points: SeriesPoint[];
 }
 
 export interface PriceBandPoint {

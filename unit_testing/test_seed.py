@@ -219,7 +219,10 @@ class TestInitDb:
         ).fetchall()
         index_names = [i[0] for i in indexes]
         assert "idx_products_category_tracked" in index_names
-        assert "idx_snapshots_listing_date" in index_names
+        # The UNIQUE constraint's index serves (listing, date) lookups; the
+        # separate idx_snapshots_listing_date duplicated it and is gone.
+        assert "sqlite_autoindex_price_snapshots_1" in index_names
+        assert "idx_snapshots_listing_date" not in index_names
 
 
 class TestGenerationTierSync:

@@ -81,7 +81,10 @@ CREATE TABLE price_snapshots (
     UNIQUE (retailer_listing_id, snapshot_date)
 );
 
-CREATE INDEX idx_snapshots_listing_date ON price_snapshots (retailer_listing_id, snapshot_date);
+-- No separate (retailer_listing_id, snapshot_date) index: the UNIQUE
+-- constraint above already builds exactly that one, and the planner uses it.
+-- idx_snapshots_listing_date duplicated it -- 17% of a year-old DB and a
+-- second index written on every insert -- until migrate.py dropped it.
 CREATE INDEX idx_snapshots_date ON price_snapshots (snapshot_date);
 
 -- ─────────────────────────────────────────────────────────────

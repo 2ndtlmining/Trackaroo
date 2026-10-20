@@ -475,6 +475,57 @@ class TestIngestFile:
         # Still only 1 snapshot
         assert db.execute("SELECT COUNT(*) FROM price_snapshots").fetchone()[0] == 1
 
+    @pytest.mark.parametrize("price", [0, 0.0, -5, "0", "abc", float("nan"), float("inf"), True])
+    def test_a_price_that_is_not_a_positive_amount_is_not_stored(self, db, tmp_path, price):
+        # A $0 row became the day's cheapest price, fired every alert on the
+        # product at "$0.00" and showed as an all-time low.
+        products = [{
+            "watchlist_model": "Ryzen 7 9800X3D",
+            "watchlist_category": "cpu",
+            "watchlist_brand": "AMD",
+            "watchlist_gen_tier": "current",
+            "retailer": "scorptec",
+            "price_aud": price,
+            "stock_status": "in_stock",
+            "url": "https://scorptec.com.au/products/12345",
+        }]
+        stats = ingest_file(db, self._make_json_file(tmp_path, products))
+        assert stats["inserted"] == 0
+        assert stats["skipped"] == 1
+        assert db.execute("SELECT COUNT(*) FROM price_snapshots").fetchone()[0] == 0
+
+    def test_a_bad_price_does_not_stop_the_rest_of_the_file(self, db, tmp_path):
+        good = {
+            "watchlist_model": "Ryzen 7 9800X3D",
+            "watchlist_category": "cpu",
+            "watchlist_brand": "AMD",
+            "watchlist_gen_tier": "current",
+            "retailer": "scorptec",
+            "price_aud": 599.0,
+            "stock_status": "in_stock",
+            "url": "https://scorptec.com.au/products/12345",
+        }
+        zero = {**good, "watchlist_model": "Ryzen 5 9600X", "price_aud": 0,
+                "url": "https://scorptec.com.au/products/67890"}
+        stats = ingest_file(db, self._make_json_file(tmp_path, [zero, good]))
+        assert (stats["inserted"], stats["skipped"]) == (1, 1)
+        assert db.execute("SELECT price_aud FROM price_snapshots").fetchone()[0] == 599.0
+
+    def test_a_numeric_string_price_is_stored_as_a_number(self, db, tmp_path):
+        products = [{
+            "watchlist_model": "Ryzen 7 9800X3D",
+            "watchlist_category": "cpu",
+            "watchlist_brand": "AMD",
+            "watchlist_gen_tier": "current",
+            "retailer": "scorptec",
+            "price_aud": "599.00",
+            "stock_status": "in_stock",
+            "url": "https://scorptec.com.au/products/12345",
+        }]
+        assert ingest_file(db, self._make_json_file(tmp_path, products))["inserted"] == 1
+        row = db.execute("SELECT price_aud, typeof(price_aud) FROM price_snapshots").fetchone()
+        assert (row[0], row[1]) == (599.0, "real")
+
     def test_dry_run_no_insert(self, db, tmp_path):
         products = [{
             "watchlist_model": "Ryzen 7 9800X3D",
