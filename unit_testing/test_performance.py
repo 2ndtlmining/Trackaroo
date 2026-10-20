@@ -121,5 +121,7 @@ class TestBulkQueryPerformance:
 
         detail = " ".join(row[3] for row in plan)
         assert "USING COVERING INDEX idx_retailer_listings_product" in detail, detail
-        assert "USING INDEX idx_snapshots_listing_date" in detail, detail
+        # The UNIQUE (retailer_listing_id, snapshot_date) constraint's own
+        # index; idx_snapshots_listing_date was a duplicate of it.
+        assert "USING INDEX sqlite_autoindex_price_snapshots_1" in detail, detail
         assert "SCAN" not in detail, detail

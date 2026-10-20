@@ -904,3 +904,44 @@ class TestRetireSuggestionsTable:
         migrate.migrate_add_retire_suggestions(mig)
         cols = lambda c: c.execute("PRAGMA table_info(retire_suggestions)").fetchall()
         assert cols(schema) == cols(mig)
+
+
+class TestDropDuplicateSnapshotIndex:
+    """idx_snapshots_listing_date duplicated the index price_snapshots' UNIQUE
+    (retailer_listing_id, snapshot_date) constraint already builds."""
+
+    def _old_db(self):
+        conn = sqlite3.connect(":memory:")
+        conn.executescript((Path(__file__).resolve().parent.parent / "db" / "schema.sql").read_text(encoding="utf-8"))
+        conn.execute("CREATE INDEX idx_snapshots_listing_date ON price_snapshots (retailer_listing_id, snapshot_date)")
+        return conn
+
+    def _indexes(self, conn):
+        return {r[1] for r in conn.execute("PRAGMA index_list(price_snapshots)")}
+
+    def test_drops_it_and_is_idempotent(self):
+        conn = self._old_db()
+        migrate.migrate_drop_duplicate_snapshot_index(conn)
+        migrate.migrate_drop_duplicate_snapshot_index(conn)
+        assert "idx_snapshots_listing_date" not in self._indexes(conn)
+        # The constraint's own index, which serves the same lookups, stays.
+        assert "sqlite_autoindex_price_snapshots_1" in self._indexes(conn)
+
+    def test_dry_run_keeps_it(self):
+        conn = self._old_db()
+        migrate.migrate_drop_duplicate_snapshot_index(conn, dry_run=True)
+        assert "idx_snapshots_listing_date" in self._indexes(conn)
+
+    def test_lookups_still_use_an_index_without_it(self):
+        conn = self._old_db()
+        migrate.migrate_drop_duplicate_snapshot_index(conn)
+        plan = " ".join(r[3] for r in conn.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM price_snapshots WHERE retailer_listing_id = 1 AND snapshot_date = '2026-10-01'"
+        ))
+        assert "sqlite_autoindex_price_snapshots_1" in plan, plan
+        assert "SCAN" not in plan, plan
+
+    def test_a_fresh_schema_never_has_it(self):
+        conn = sqlite3.connect(":memory:")
+        conn.executescript((Path(__file__).resolve().parent.parent / "db" / "schema.sql").read_text(encoding="utf-8"))
+        assert "idx_snapshots_listing_date" not in self._indexes(conn)
