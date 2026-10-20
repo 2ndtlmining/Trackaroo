@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import re
 import sqlite3
 import sys
@@ -436,6 +437,27 @@ def find_or_create_listing(
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
+def valid_price(price: Any) -> Optional[float]:
+    """The price as a positive finite float, or None when it is not one.
+
+    Nothing upstream rejected a zero: PCCG's `_parse_price` passes a numeric 0
+    straight through, and Scorptec and Umart parse a "0" price attribute. A $0
+    row is not a price -- it is a placeholder ("call for price", "coming
+    soon") -- yet stored, it became the day's cheapest in-stock price, fired
+    every price alert on the product at "$0.00" and showed as an all-time low.
+    `check_json_files` already reports such a file as an ERROR; this keeps the
+    row out of the DB as well. A bool is not a price either, whatever
+    `float(True)` says.
+    """
+    if isinstance(price, bool):
+        return None
+    try:
+        value = float(price)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value > 0 else None
+
+
 def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False) -> Stats:
     """Ingest a single JSON file.
 
@@ -485,6 +507,12 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, dry_run: bool = False
 
         # Skip entries without essential data
         if not url or price is None:
+            stats["skipped"] += 1
+            continue
+        price = valid_price(price)
+        if price is None:
+            LOGGER.warning("Skipping %s at %s: price %r is not a positive amount",
+                           model, url, product_data.get("price_aud"))
             stats["skipped"] += 1
             continue
 
