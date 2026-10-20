@@ -14,6 +14,15 @@ backup integrity.
 
 ## Recent changes
 
+- **2026-10-20 -- review fixes: invalid prices, product-page payload, alert 404, duplicate index.**
+  `ingest.py` skips any `price_aud` that is not a positive finite number (`valid_price`); a $0 row
+  used to become the cheapest price and fire alerts at "$0.00" (`check_json_files` already flagged
+  it, but ingest stored it anyway). Worth a one-off look on prod: `SELECT COUNT(*) FROM price_snapshots
+  WHERE price_aud <= 0`. The product page's series points are now `SeriesPoint` (date, price, stock)
+  instead of full rows: on a 1-year synthetic DB its HTML went 1.02 MB to 611 KB (gzip 105 to 64 KB).
+  The alert create action 404s for a missing product instead of 500ing on the foreign key.
+  `migrate.py` drops `idx_snapshots_listing_date`, a duplicate of the UNIQUE constraint's index
+  (17% of a 1-year DB, ~40% faster inserts); the file shrinks only after a `VACUUM`.
 - **2026-10-08 -- seven Discover requests tracked (PR #88); prod seed is stuck behind the bulk guard.**
   Prod (09e8bf1) still lists the 23 parts retired in #87 and has no Ryzen 9 9950X3D2 product: the
   boot `seed.py` refused the >5 tracked flips, so none of the watchlist changes since #84 applied, and
